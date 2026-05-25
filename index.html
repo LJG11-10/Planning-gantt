@@ -279,32 +279,39 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
 <!-- LOGIN OVERLAY -->
 <div id="login-screen" style="position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#1e3a5f 0%,#2563EB 60%,#1D4ED8 100%);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif">
-  <div style="background:#fff;border-radius:20px;padding:40px 44px;width:380px;box-shadow:0 24px 80px rgba(0,0,0,.35)">
-    <div style="text-align:center;margin-bottom:32px">
+  <div style="background:#fff;border-radius:20px;padding:40px 44px;width:400px;box-shadow:0 24px 80px rgba(0,0,0,.35)">
+    <div style="text-align:center;margin-bottom:28px">
       <div style="width:60px;height:60px;background:linear-gradient(135deg,#2563EB,#1D4ED8);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:28px">📊</div>
-      <div style="font-size:20px;font-weight:900;color:#1A1917">Planning Pétrole</div>
+      <div id="login-title" style="font-size:20px;font-weight:900;color:#1A1917">Planning Pétrole</div>
       <div style="font-size:12px;color:#9A978F;margin-top:4px">Connectez-vous pour accéder au planning</div>
     </div>
-    <div style="margin-bottom:16px">
+    <div style="margin-bottom:14px">
       <label style="font-size:10px;font-weight:700;color:#5A574F;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Email</label>
-      <input id="login-email" type="email" placeholder="email@exemple.fr" autocomplete="email"
-        style="width:100%;border:2px solid #E0DDD8;border-radius:10px;padding:12px 14px;font-size:13px;font-family:Arial,sans-serif;color:#1A1917;outline:none;transition:border .15s"
+      <input id="login-email" type="email" placeholder="prenom@genesienne.fr" autocomplete="email"
+        style="width:100%;border:2px solid #E0DDD8;border-radius:10px;padding:12px 14px;font-size:13px;font-family:Arial,sans-serif;color:#1A1917;outline:none;transition:border .15s;box-sizing:border-box"
         onfocus="this.style.border='2px solid #2563EB'" onblur="this.style.border='2px solid #E0DDD8'"
         onkeydown="if(event.key==='Enter')document.getElementById('login-pwd').focus()">
     </div>
-    <div style="margin-bottom:24px">
+    <div style="margin-bottom:18px">
       <label style="font-size:10px;font-weight:700;color:#5A574F;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Mot de passe</label>
       <input id="login-pwd" type="password" placeholder="••••••••" autocomplete="current-password"
-        style="width:100%;border:2px solid #E0DDD8;border-radius:10px;padding:12px 14px;font-size:13px;font-family:Arial,sans-serif;color:#1A1917;outline:none;transition:border .15s"
+        style="width:100%;border:2px solid #E0DDD8;border-radius:10px;padding:12px 14px;font-size:13px;font-family:Arial,sans-serif;color:#1A1917;outline:none;transition:border .15s;box-sizing:border-box"
         onfocus="this.style.border='2px solid #2563EB'" onblur="this.style.border='2px solid #E0DDD8'"
         onkeydown="if(event.key==='Enter')doLogin()">
     </div>
-    <div id="login-err" style="color:#DC2626;font-size:11px;font-weight:700;text-align:center;min-height:16px;margin-bottom:12px"></div>
-    <button onclick="doLogin()" style="width:100%;padding:14px;border-radius:10px;background:linear-gradient(135deg,#2563EB,#1D4ED8);border:none;color:#fff;font-size:14px;font-weight:700;font-family:Arial,sans-serif;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,.35);transition:transform .1s"
-      onmousedown="this.style.transform='scale(.98)'" onmouseup="this.style.transform='scale(1)'">
+    <div id="login-err" style="font-size:11px;font-weight:700;text-align:center;min-height:16px;margin-bottom:12px;color:#DC2626"></div>
+    <button id="btn-login" onclick="doLogin()" style="width:100%;padding:14px;border-radius:10px;background:linear-gradient(135deg,#2563EB,#1D4ED8);border:none;color:#fff;font-size:14px;font-weight:700;font-family:Arial,sans-serif;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,.35);display:block;box-sizing:border-box">
       Se connecter →
     </button>
-    <div style="text-align:center;margin-top:20px;font-size:10px;color:#9A978F">Planning interne — accès restreint</div>
+    <button id="btn-signup" onclick="doSignup()" style="width:100%;padding:14px;border-radius:10px;background:linear-gradient(135deg,#16A34A,#15803D);border:none;color:#fff;font-size:14px;font-weight:700;font-family:Arial,sans-serif;cursor:pointer;display:none;box-sizing:border-box">
+      Créer mon compte →
+    </button>
+    <div style="text-align:center;margin-top:14px;display:flex;flex-direction:column;gap:6px">
+      <span id="lnk-signup" onclick="toggleSignup(true)" style="font-size:11px;color:#2563EB;cursor:pointer;font-weight:600">Première connexion ? Créer mon compte</span>
+      <span id="lnk-back" onclick="toggleSignup(false)" style="font-size:11px;color:#2563EB;cursor:pointer;font-weight:600;display:none">← Retour à la connexion</span>
+      <span onclick="doResetPassword()" style="font-size:10px;color:#9A978F;cursor:pointer">Mot de passe oublié ?</span>
+    </div>
+    <div style="text-align:center;margin-top:16px;font-size:10px;color:#9A978F">Planning interne — accès restreint</div>
   </div>
 </div>
 
@@ -413,30 +420,150 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <span class="pill" style="background:var(--st-bg);color:var(--st-c)">S-T</span>
   <span style="margin-left:auto;display:flex;align-items:center;gap:14px;font-size:9px"><span style="display:flex;align-items:center;gap:5px"><span style="display:inline-flex;flex-direction:column;width:36px;height:18px;border-radius:2px;overflow:hidden;border:1px solid rgba(0,0,0,.15)"><span style="flex:1;background:#BDD7EE;display:flex;align-items:center;justify-content:center;font-size:6px;font-weight:700;color:#1F4E79">PRÉV.</span><span style="height:1px;background:rgba(255,255,255,.6)"></span><span style="flex:1;background:#1F4E79;display:flex;align-items:center;justify-content:center;font-size:6px;font-weight:700;color:#fff">RÉEL.</span></span></div>
 <script>
-function doLogin(){
-  var email=document.getElementById('login-email').value.trim().toLowerCase();
-  var pwd=document.getElementById('login-pwd').value;
-  var LMAIL='planning@els-pro.fr';
-  var LPWD='ELS2026!';
-  if(email===LMAIL&&pwd===LPWD){
-    document.getElementById('login-screen').style.display='none';
-    // Initialize app only after successful login
+// ─── Auth globals ───
+var CURRENT_USER = null;
+var CURRENT_ROLE = null;
+
+function showLoginMsg(msg, color) {
+  var err = document.getElementById('login-err');
+  if (err) { err.style.color = color||'#DC2626'; err.textContent = msg; }
+}
+
+function setLoginLoading(on) {
+  var btn = document.getElementById('btn-login');
+  if (btn) btn.textContent = on ? 'Connexion...' : 'Se connecter →';
+}
+
+async function doLogin() {
+  var email = document.getElementById('login-email').value.trim().toLowerCase();
+  var pwd = document.getElementById('login-pwd').value;
+  if (!email || !pwd) { showLoginMsg("Remplissez tous les champs."); return; }
+  if (!supa) { showLoginMsg("Erreur de connexion au serveur."); return; }
+  setLoginLoading(true);
+  try {
+    var res = await supa.auth.signInWithPassword({ email: email, password: pwd });
+    if (res.error) {
+      setLoginLoading(false);
+      showLoginMsg("Email ou mot de passe incorrect.");
+      document.getElementById('login-pwd').value = '';
+      return;
+    }
+    CURRENT_USER = res.data.user;
+    await loadRoleAndStart();
+  } catch(e) {
+    setLoginLoading(false);
+    showLoginMsg("Erreur réseau, réessayez.");
+  }
+}
+
+async function doSignup() {
+  var email = document.getElementById('login-email').value.trim().toLowerCase();
+  var pwd = document.getElementById('login-pwd').value;
+  if (!email || !pwd) { showLoginMsg("Remplissez tous les champs."); return; }
+  if (pwd.length < 6) { showLoginMsg("Mot de passe trop court (6 caractères min)."); return; }
+  if (!supa) { showLoginMsg("Erreur de connexion au serveur."); return; }
+  setLoginLoading(true);
+  try {
+    // Vérifier si email autorisé
+    var check = await supa.from('roles').select('role').eq('email', email).single();
+    if (check.error || !check.data) {
+      setLoginLoading(false);
+      showLoginMsg("Cet email n'est pas autorisé. Contactez votre administrateur.");
+      return;
+    }
+    var res = await supa.auth.signUp({ email: email, password: pwd });
+    if (res.error) { setLoginLoading(false); showLoginMsg(res.error.message); return; }
+    setLoginLoading(false);
+    showLoginMsg("Compte créé ! Vérifiez vos emails pour confirmer, puis connectez-vous.", '#16A34A');
+    toggleSignup(false);
+  } catch(e) {
+    setLoginLoading(false);
+    showLoginMsg("Erreur, réessayez.");
+  }
+}
+
+async function doResetPassword() {
+  var email = document.getElementById('login-email').value.trim().toLowerCase();
+  if (!email) { showLoginMsg("Entrez votre email d'abord."); return; }
+  await supa.auth.resetPasswordForEmail(email);
+  showLoginMsg("Email de réinitialisation envoyé !", '#16A34A');
+}
+
+function toggleSignup(on) {
+  document.getElementById('btn-login').style.display = on ? 'none' : 'block';
+  document.getElementById('btn-signup').style.display = on ? 'block' : 'none';
+  document.getElementById('lnk-signup').style.display = on ? 'none' : 'block';
+  document.getElementById('lnk-back').style.display = on ? 'block' : 'none';
+  document.getElementById('login-title').textContent = on ? 'Créer mon compte' : 'Planning Pétrole';
+}
+
+async function loadRoleAndStart() {
+  try {
+    var email = CURRENT_USER.email;
+    var res = await supa.from('roles').select('role,nom').eq('email', email).single();
+    if (res.error || !res.data) {
+      await supa.auth.signOut();
+      setLoginLoading(false);
+      showLoginMsg("Accès non autorisé. Contactez votre administrateur.");
+      return;
+    }
+    CURRENT_ROLE = res.data.role;
+    document.getElementById('login-screen').style.display = 'none';
     loadStore();
-    if(!STORE.absences)STORE.absences={};
-    if(!STORE.weekPlan)STORE.weekPlan={};
-    // Auto-calculate hPrev for all activities that have a duration but no hours set
+    if (!STORE.absences) STORE.absences = {};
+    if (!STORE.weekPlan) STORE.weekPlan = {};
     autoCalcAllHPrev();
     renderProjSel();
-    var firstProj=STORE.current||Object.keys(STORE.projects)[0];
-    if(firstProj)switchProjet(firstProj);
-    setTimeout(navRefreshArchBtn,100);
-  }else{
-    var err=document.getElementById('login-err');
-    err.textContent='Email ou mot de passe incorrect.';
-    setTimeout(function(){err.textContent='';},3000);
-    document.getElementById('login-pwd').value='';
-    document.getElementById('login-pwd').focus();
+    var firstProj = STORE.current || Object.keys(STORE.projects)[0];
+    if (firstProj) switchProjet(firstProj);
+    setTimeout(navRefreshArchBtn, 100);
+    applyRoleRestrictions();
+  } catch(e) {
+    setLoginLoading(false);
+    showLoginMsg("Erreur lors du chargement du rôle.");
   }
+}
+
+function applyRoleRestrictions() {
+  if (CURRENT_ROLE === 'chef_chantier') {
+    // Masquer tous les onglets sauf GANTT et Fiche d'heure
+    document.querySelectorAll('.nb[data-tab]').forEach(function(btn) {
+      var tab = btn.getAttribute('data-tab');
+      if (tab !== 'gantt' && tab !== 'fiche') btn.style.display = 'none';
+    });
+    // Masquer toute la barre d'actions (sbar)
+    var sbar = document.getElementById('sbar');
+    if (sbar) sbar.style.display = 'none';
+    // Masquer le bouton Éditer planning et autres boutons admin
+    document.querySelectorAll('[onclick="openPlanEditor()"]').forEach(function(b){ b.style.display='none'; });
+    document.querySelectorAll('[onclick*="openModal"]').forEach(function(b){ b.style.display='none'; });
+    document.querySelectorAll('[onclick="downloadPlanning()"]').forEach(function(b){ b.style.display='none'; });
+    // Désactiver les clics sur le GANTT (lecture seule)
+    window._ganttReadOnly = true;
+    // Ajouter badge utilisateur
+    addUserBadge();
+  } else if (CURRENT_ROLE === 'admin') {
+    addUserBadge();
+  }
+}
+
+function addUserBadge() {
+  var navR = document.querySelector('.nav-r');
+  if (!navR || !CURRENT_USER) return;
+  var badge = document.createElement('div');
+  badge.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 10px;background:var(--bg3);border-radius:20px;border:1px solid var(--bd);font-size:10px;font-weight:600;color:var(--tx2)';
+  var roleLabel = CURRENT_ROLE === 'admin' ? '👑 Admin' : '👷 Chef de chantier';
+  badge.innerHTML = '<span>' + CURRENT_USER.email.split('@')[0] + '</span>'
+    + '<span style="color:var(--tx3)">|</span>'
+    + '<span>' + roleLabel + '</span>'
+    + '<button onclick="doLogout()" style="background:var(--rd2);color:var(--rd);border:1px solid var(--rd);border-radius:10px;padding:1px 7px;font-size:9px;font-weight:700;cursor:pointer;font-family:inherit">Déco</button>';
+  navR.insertBefore(badge, navR.firstChild);
+}
+
+async function doLogout() {
+  if (supa) await supa.auth.signOut();
+  CURRENT_USER = null; CURRENT_ROLE = null;
+  location.reload();
 }
 
 
