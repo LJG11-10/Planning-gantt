@@ -4500,6 +4500,142 @@ function dbBuildPlanningGrid(){
   grid.innerHTML=html;
 }
 
+function dbDownloadWeek(){
+  if(!window._dbwk)window._dbwk=TODAY?TODAY.w:1;
+  var selWk=window._dbwk;
+  var selAff=window._dbaff||'__ALL__';
+  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+
+  if(!STORE.weekPlan||!STORE.weekPlan[selWk]){
+    alert("Aucun planning saisi pour cette semaine.");return;
+  }
+  var wp=STORE.weekPlan[selWk];
+
+  // Collecter toutes les personnes de cette semaine
+  var personMap={};
+  var affs=selAff==='__ALL__'
+    ?Object.keys(STORE.projects).sort().filter(function(a){return !STORE.projects[a].closed;})
+    :[selAff];
+
+  affs.forEach(function(aff){
+    var affKey=aff.replace(/[^a-z0-9]/gi,'_');
+    var affData=wp[affKey]||{};
+    var allActs=(STORE.projects[aff]&&STORE.projects[aff].data||[]).filter(function(r){return r.t==='act';});
+    var persons=(affData.__persons__||[]).filter(function(n){return n&&n.trim();});
+    // aussi les personnes du GANTT
+    allActs.forEach(function(a){
+      (a.p||[]).forEach(function(pp){
+        if(pp.name&&pp.name.trim()&&persons.indexOf(pp.name.trim())<0)
+          persons.push(pp.name.trim());
+      });
+    });
+    persons.forEach(function(nm){
+      if(!nm||!nm.trim())return;
+      var nmKey=nm.replace(/[^a-z0-9]/gi,'_');
+      var nmData=affData[nmKey]||{};
+      if(!personMap[nm])personMap[nm]=[];
+      // Jours
+      for(var di=0;di<5;di++){
+        var entries=nmData[di]||[];
+        if(!Array.isArray(entries))entries=[entries];
+        entries.filter(function(e){return e&&e.actId;}).forEach(function(e){
+          var act=allActs.find(function(a){return a.id===e.actId;})||{lb:e.actId,pk:''};
+          personMap[nm].push({di:di,aff:aff,actLb:act.lb,actPk:act.pk,h:+(e.h||0)});
+        });
+      }
+    });
+  });
+
+  var persons=Object.keys(personMap).sort();
+  if(!persons.length){alert("Aucune personne avec des activités cette semaine.");return;}
+
+  function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  var dStart=wkD(selWk);
+  var dEnd=new Date(dStart);dEnd.setDate(dStart.getDate()+4);
+  var wkLabel='Semaine '+selWk+' — '+dStart.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'})+' au '+dEnd.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+  var dateEd=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+
+  // Construire le tableau global
+  var rows='';
+  persons.forEach(function(nm){
+    var entries=personMap[nm];
+    var totalH=entries.reduce(function(s,e){return s+e.h;},0);
+    var dayMap={};
+    entries.forEach(function(e){
+      if(!dayMap[e.di])dayMap[e.di]=[];
+      dayMap[e.di].push(e);
+    });
+    var firstRow=true;
+    var dayRows='';
+    for(var di=0;di<5;di++){
+      var dayEntries=dayMap[di]||[];
+      var dtStr=new Date(dStart.getTime()+di*86400000).toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
+      var dayH=dayEntries.reduce(function(s,e){return s+e.h;},0);
+      if(!dayEntries.length){
+        dayRows+='<tr>'
+          +(firstRow?'<td class="nm" rowspan="5">'+esc(nm)+'</td>':'')
+          +'<td class="day">'+dtStr+'</td>'
+          +'<td class="act" style="color:#aaa;font-style:italic">—</td>'
+          +'<td class="aff"></td>'
+          +'<td class="h">0H</td>'
+          +'<td class="tot">'+(di===4?totalH+'H':'')+'</td>'
+          +'</tr>';
+      } else {
+        dayEntries.forEach(function(e,ei){
+          dayRows+='<tr>'
+            +(firstRow&&ei===0?'<td class="nm" rowspan="5">'+esc(nm)+'</td>':'')
+            +(ei===0?'<td class="day" rowspan="'+dayEntries.length+'">'+dtStr+'</td>':'')
+            +'<td class="act">'+(e.actPk?'<span class="pk">'+esc(e.actPk)+'</span>':'')+esc(e.actLb)+'</td>'
+            +'<td class="aff">'+esc(e.aff)+'</td>'
+            +'<td class="h">'+e.h+'H</td>'
+            +(ei===dayEntries.length-1?'<td class="tot day-tot">'+dayH+'H</td>':'<td class="tot"></td>')
+            +'</tr>';
+        });
+      }
+      if(di===0)firstRow=false;
+    }
+    rows+=dayRows;
+    rows+='<tr class="total-row"><td colspan="4" class="tf-lbl">Total semaine — '+esc(nm)+'</td><td class="tf-h" colspan="2">'+totalH+' H</td></tr>';
+  });
+
+  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
+    +'<title>Planning S'+selWk+'</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}'
+    +'h1{font-size:20px;font-weight:900;color:#1F4E79;margin-bottom:4px}'
+    +'.meta{font-size:11px;color:#666;margin-bottom:20px}'
+    +'table{width:100%;border-collapse:collapse;border:1px solid #CBD5E1;border-radius:8px;overflow:hidden}'
+    +'th{background:#1F4E79;color:#fff;padding:8px 12px;text-align:left;font-size:10px;font-weight:700}'
+    +'td{padding:6px 10px;border-bottom:1px solid #E5E7EB;vertical-align:middle}'
+    +'.nm{font-weight:900;color:#1F4E79;background:#EFF6FF;width:130px;border-right:2px solid #BFDBFE;font-size:12px}'
+    +'.day{font-weight:700;color:#374151;background:#F8FAFF;width:130px;font-size:11px}'
+    +'.act{color:#111;font-size:11px}.aff{font-size:10px;color:#6B7280;font-style:italic}'
+    +'.pk{background:#DBEAFE;color:#1E40AF;border-radius:4px;padding:1px 6px;font-size:9px;font-weight:700;margin-right:5px}'
+    +'.h{text-align:center;color:#666;width:50px}.tot{text-align:center;width:55px}'
+    +'.day-tot{font-weight:900;color:#1F4E79;background:#EFF6FF}'
+    +'.total-row td{background:#1F4E79;color:#fff;font-weight:700;padding:7px 10px}'
+    +'.tf-lbl{text-align:right}.tf-h{text-align:center;font-size:14px;font-weight:900;color:#FDE047}'
+    +'@media print{@page{size:A4 landscape;margin:10mm}body{padding:0}}</style>'
+    +'</head><body>'
+    +'<h1>Planning réunion — '+wkLabel+'</h1>'
+    +'<div class="meta">Édité le '+dateEd+' · Planning Pétrole</div>'
+    +'<table><thead><tr>'
+    +'<th style="width:130px">Personne</th>'
+    +'<th style="width:130px">Jour</th>'
+    +'<th>Activité</th>'
+    +'<th style="width:120px">Affaire</th>'
+    +'<th style="width:50px;text-align:center">H</th>'
+    +'<th style="width:55px;text-align:center">/ Jour</th>'
+    +'</tr></thead><tbody>'+rows+'</tbody></table>'
+    +'</body></html>';
+
+  var win=window.open('','_blank','width=1200,height=800,scrollbars=yes');
+  if(!win){alert('Autorisez les popups puis réessayez.');return;}
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(function(){win.print();},600);
+}
+
 function dbChangePerson(sel){
   var affKey=sel.dataset.affkey,nmIdx=+sel.dataset.nmidx,wk=+sel.dataset.wk;
   var val=sel.value;
@@ -4545,6 +4681,7 @@ function dbPlanningUI(){
     +'style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 10px;font-size:12px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+affOpts+'</select>'
     +'</div>'
     +'<span style="font-size:10px;color:var(--tx3)">Cliquez sur une case pour affecter personne, activité et heures</span>'
+    +'<button onclick="dbDownloadWeek()" style="margin-left:auto;background:#1F4E79;color:#fff;border:none;border-radius:var(--r);padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⬇ Télécharger planning semaine</button>'
     +'</div>'
     +'<div id="db-grid"></div>';
 }
