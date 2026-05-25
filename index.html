@@ -988,9 +988,20 @@ function confirmNew(){
     };
     STORE.projects[k]=src;
   } else {
-    STORE.projects[k]={data:freshData(),budget:500,sk1:200,sk2:200,fh:{},customPhases:{},skBuds:{}};
+    // Nouvelle affaire vide — pas de données préchargées
+    STORE.projects[k]={data:[],budget:0,sk1:0,sk2:0,fh:{},customPhases:{},skBuds:{}};
   }
-  closeModal();switchProjet(k);
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
+  closeModal();
+  switchProjet(k);
+  // Si nouvelle affaire vide → ouvrir directement l'éditeur de planning
+  if(!copyFrom){
+    setTimeout(function(){
+      var btn=document.querySelector('[onclick="openPlanEditor()"]');
+      if(btn)btn.click();
+      else if(typeof openPlanEditor==='function')openPlanEditor();
+    },200);
+  }
 }
 function confirmDel(){
   const aff=STORE.current;delete STORE.projects[aff];
