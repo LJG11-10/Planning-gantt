@@ -2,19 +2,19 @@
 <head>
 <meta charset="UTF-8">
 <title>Planning Pétrole</title>
-<!-- PDF -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <!-- SUPABASE -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
 <script>
   const SUPA_URL = 'https://phcnmrsvywnzdrfazavv.supabase.co';
   const SUPA_KEY = 'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
-  const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+  let supa = null;
+  try { supa = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) { console.warn('Supabase non disponible:', e); }
 
   // ─── Sync Supabase ───
   let _syncTimeout = null;
 
   async function supaLoad() {
+    if (!supa) return null;
     try {
       const { data, error } = await supa.from('planning').select('data').eq('key','main').single();
       if (error || !data) return null;
@@ -23,6 +23,7 @@
   }
 
   async function supaSave(store) {
+    if (!supa) return;
     try {
       const payload = { key: 'main', data: JSON.stringify(store), updated_at: new Date().toISOString() };
       await supa.from('planning').upsert(payload, { onConflict: 'key' });
@@ -36,6 +37,7 @@
 
   // Écoute les changements en temps réel
   function startRealtime() {
+    if (!supa) return;
     supa.channel('planning-changes')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'planning', filter: 'key=eq.main' }, payload => {
         try {
