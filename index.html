@@ -1,7 +1,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Planning 2026</title>
+<title>Planning Pétrole</title>
 <!-- SUPABASE -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -278,7 +278,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div style="background:#fff;border-radius:20px;padding:40px 44px;width:380px;box-shadow:0 24px 80px rgba(0,0,0,.35)">
     <div style="text-align:center;margin-bottom:32px">
       <div style="width:60px;height:60px;background:linear-gradient(135deg,#2563EB,#1D4ED8);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:28px">📊</div>
-      <div style="font-size:20px;font-weight:900;color:#1A1917">Planning 2026</div>
+      <div style="font-size:20px;font-weight:900;color:#1A1917">Planning Pétrole</div>
       <div style="font-size:12px;color:#9A978F;margin-top:4px">Connectez-vous pour accéder au planning</div>
     </div>
     <div style="margin-bottom:16px">
@@ -317,7 +317,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div class="bdot" style="background:var(--A2)"></div>
       <div class="bdot" style="background:var(--C2)"></div>
     </div>
-    <span class="bname">Planning 2026</span>
+    <span class="bname">Planning Pétrole</span>
   </div>
   <button class="nb on" data-tab="gantt">📊 GANTT</button>
   <button class="nb" data-tab="recap">📋 Récap</button>
@@ -3529,6 +3529,59 @@ function fhImprimer(){
   fhPrintFiche(nm);
 }
 
+function fhTelecharger(){
+  var nm=document.getElementById('fc-nm')?document.getElementById('fc-nm').value:'';
+  if(!nm||!nm.trim()){alert("Sélectionnez une personne avant de télécharger.");return;}
+  fhGenerateHTML(nm,function(html){
+    var blob=new Blob([html],{type:'text/html;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;
+    var aff=window._fhAff||STORE.current;
+    var date=new Date().toISOString().slice(0,10);
+    a.download='FicheHeure_'+nm.replace(/[^a-z0-9]/gi,'_')+'_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date+'.html';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},5000);
+  });
+}
+
+function fhGenerateHTML(nm,cb){
+  var aff=window._fhAff||STORE.current;
+  if(!STORE.projects[aff]){alert('Affaire introuvable.');return;}
+  var fhData=(STORE.projects[aff].fh||{})[nm]||{};
+  var wks=Object.keys(fhData).map(Number).sort(function(a,b){return a-b;});
+  function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function getAct(actId){var r=(STORE.projects[aff].data||[]).find(function(x){return x.id===actId;});return r||{lb:actId,pk:''};}
+  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  var grandTotal=0;var body='';
+  if(!wks.length){alert('Aucune fiche trouvée pour '+nm+'.');return;}
+  wks.forEach(function(wk){
+    var wkData=fhData[wk]||{};var wkTotal=0;
+    var dStart=wkD(wk);var dEnd=new Date(dStart);dEnd.setDate(dStart.getDate()+4);
+    var wkLabel='Semaine '+wk+' &nbsp;·&nbsp; '+dStart.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'})+' au '+dEnd.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+    var rows='';
+    DN.forEach(function(dayName,di){
+      var dayDate=new Date(dStart);dayDate.setDate(dStart.getDate()+di);
+      var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
+      var lines=wkData[di]||[];if(!Array.isArray(lines))lines=[];
+      var valid=lines.filter(function(l){return l&&l.actId;});
+      var dayH=valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0);
+      wkTotal+=dayH;
+      if(!valid.length){rows+='<tr><td class="day">'+dayStr+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="h">0H</td><td class="tot"></td></tr>';}
+      else{valid.forEach(function(l,i){var h=+(l.hours||l.h)||0;var act=getAct(l.actId);rows+='<tr>'+(i===0?'<td class="day" rowspan="'+valid.length+'">'+dayStr+'</td>':'')+'<td class="act">'+(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')+esc(act.lb)+'</td>'+'<td class="h">'+h+'H</td>'+(i===valid.length-1?'<td class="tot day-tot">'+dayH+'H</td>':'<td class="tot"></td>')+'</tr>';});}
+    });
+    grandTotal+=wkTotal;
+    body+='<div class="week"><div class="week-hdr"><span>'+wkLabel+'</span><span class="week-tot">'+wkTotal+' H</span></div><table><thead><tr><th class="th-day">Jour</th><th class="th-act">Activité</th><th class="th-h">H</th><th class="th-tot">/ Jour</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><td colspan="3" class="tf-lbl">Total semaine '+wk+'</td><td class="tf-h">'+wkTotal+' H</td></tr></tfoot></table></div>';
+  });
+  body+='<div class="sig"><div class="sig-box"><div class="sig-lbl">Signature du salarié</div><div class="sig-name">'+esc(nm)+'</div></div><div class="sig-box"><div class="sig-lbl">Visa du responsable</div></div></div>';
+  var dateStr=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Fiche heure '+esc(nm)+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}h1{font-size:20px;font-weight:900;color:#1F4E79}.meta{font-size:11px;color:#666;margin:4px 0 20px}.kpi{display:flex;gap:20px;margin-bottom:24px}.kpi-box{background:#1F4E79;color:#fff;padding:10px 20px;border-radius:8px;text-align:center}.kpi-h{font-size:26px;font-weight:900}.kpi-l{font-size:9px;opacity:.8;font-weight:700}.week{margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #CBD5E1}.week-hdr{background:#1F4E79;color:#fff;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12px}.week-tot{background:rgba(255,255,255,.2);padding:2px 12px;border-radius:20px;font-size:13px;font-weight:900}table{width:100%;border-collapse:collapse}th{background:#EFF6FF;color:#1F4E79;padding:6px 10px;text-align:left;font-size:10px;border-bottom:2px solid #BFDBFE}.th-h,.th-tot{text-align:center;width:60px}td{padding:6px 10px;border-bottom:1px solid #E5E7EB;vertical-align:middle}.day{font-weight:700;color:#1F4E79;background:#F8FAFF;width:140px;font-size:11px}.pk{background:#DBEAFE;color:#1E40AF;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px}.h{text-align:center;color:#666;width:60px}.tot{text-align:center;width:60px}.day-tot{font-weight:900;color:#1F4E79;background:#EFF6FF}tfoot td{background:#1F4E79;color:#fff;padding:7px 10px;font-weight:700}.tf-lbl{text-align:right}.tf-h{text-align:center;font-size:15px;font-weight:900;color:#FDE047}.sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:32px}.sig-box{border-top:2px solid #1F4E79;padding-top:8px}.sig-lbl{font-size:10px;color:#999;margin-bottom:36px}.sig-name{font-size:12px;font-weight:700}@media print{@page{size:A4 portrait;margin:12mm}body{padding:0}.week{page-break-inside:avoid}}</style></head><body>'
+    +'<h1>Fiche d\'heure</h1><div class="meta"><strong>'+esc(nm)+'</strong> &nbsp;·&nbsp; '+esc(aff)+' &nbsp;·&nbsp; Édité le '+dateStr+'</div>'
+    +'<div class="kpi"><div class="kpi-box"><div class="kpi-h">'+grandTotal+'H</div><div class="kpi-l">TOTAL GÉNÉRAL</div></div><div class="kpi-box" style="background:#374151"><div class="kpi-h">'+wks.length+'</div><div class="kpi-l">SEMAINE'+(wks.length>1?'S':'')+'</div></div></div>'
+    +body+'</body></html>';
+  cb(html);
+}
+
 function fhPrintFiche(nm){
   if(!nm||!nm.trim()){alert("Sélectionnez une personne avant d'imprimer.");return;}
   var aff=window._fhAff||STORE.current;
@@ -3731,6 +3784,7 @@ function renderFiche(){
     +availWks.map(function(w){return '<option value="'+w+'"'+(selWk==w?' selected':'')+'>S'+w+' — '+fmt(wkD(w))+' au '+fmt(ddD(w,4))+'</option>';}).join('')
     +'</select>'
     +'<button class="btn btn-g" onclick="fhImprimer()">🖨 Imprimer</button>'
+    +'<button class="btn btn-a" onclick="fhTelecharger()" style="margin-left:6px">⬇ Télécharger</button>'
     +'<button class="btn" onclick="syncFichesToGantt()" style="background:#7C3AED;color:#fff;border:none" title="Reporter les heures des fiches sur le GANTT">⚡ Sync → GANTT</button>'
     +'</div>';
 
