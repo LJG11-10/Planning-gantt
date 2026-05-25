@@ -522,7 +522,7 @@ function applyRoleRestrictions() {
     // Masquer tous les onglets sauf GANTT et Fiche d'heure
     document.querySelectorAll('.nb[data-tab]').forEach(function(btn) {
       var tab = btn.getAttribute('data-tab');
-      if (tab !== 'gantt' && tab !== 'fiche') btn.style.display = 'none';
+      if (tab !== 'gantt' && tab !== 'fiche' && tab !== 'skids') btn.style.display = 'none';
     });
     // Masquer toute la barre d'actions (sbar)
     var sbar = document.getElementById('sbar');
@@ -533,6 +533,10 @@ function applyRoleRestrictions() {
     document.querySelectorAll('[onclick="downloadPlanning()"]').forEach(function(b){ b.style.display='none'; });
     // Désactiver les clics sur le GANTT (lecture seule)
     window._ganttReadOnly = true;
+    // Skids en lecture seule — désactiver les inputs budget
+    setTimeout(function(){
+      document.querySelectorAll('#skw input').forEach(function(i){ i.disabled=true; i.style.opacity='0.5'; });
+    }, 500);
     // Ajouter badge utilisateur
     addUserBadge();
   } else if (CURRENT_ROLE === 'admin') {
