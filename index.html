@@ -2,6 +2,54 @@
 <head>
 <meta charset="UTF-8">
 <title>Planning 2026</title>
+<!-- SUPABASE -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPA_URL = 'https://phcnmrsvywnzdrfazavv.supabase.co';
+  const SUPA_KEY = 'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
+  const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+  // ─── Sync Supabase ───
+  let _syncTimeout = null;
+
+  async function supaLoad() {
+    try {
+      const { data, error } = await supa.from('planning').select('data').eq('key','main').single();
+      if (error || !data) return null;
+      return JSON.parse(data.data);
+    } catch(e) { return null; }
+  }
+
+  async function supaSave(store) {
+    try {
+      const payload = { key: 'main', data: JSON.stringify(store), updated_at: new Date().toISOString() };
+      await supa.from('planning').upsert(payload, { onConflict: 'key' });
+    } catch(e) { console.warn('Supabase save error:', e); }
+  }
+
+  function scheduleSupa() {
+    clearTimeout(_syncTimeout);
+    _syncTimeout = setTimeout(() => supaSave(STORE), 800);
+  }
+
+  // Écoute les changements en temps réel
+  function startRealtime() {
+    supa.channel('planning-changes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'planning', filter: 'key=eq.main' }, payload => {
+        try {
+          const remote = JSON.parse(payload.new.data);
+          STORE = remote;
+          localStorage.setItem(SK, JSON.stringify(STORE));
+          renderProjSel();
+          const c = STORE.current || Object.keys(STORE.projects)[0];
+          if (c) switchProjet(c);
+          const sv = document.getElementById('sv');
+          if (sv) { sv.textContent = '🔄 Sync'; sv.style.display = 'inline'; setTimeout(() => { sv.textContent = '✓ Enregistré'; sv.style.display = 'none'; }, 2000); }
+        } catch(e) {}
+      })
+      .subscribe();
+  }
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -606,6 +654,17 @@ function loadStore(){
   }catch{
     STORE={projects:{'Affaire 1':{data:freshData(),budget:500,sk1:200,sk2:200,fh:{}}},current:'Affaire 1'};
   }
+  // Charge depuis Supabase en arrière-plan et met à jour si plus récent
+  supaLoad().then(function(remote){
+    if(!remote||!remote.projects)return;
+    STORE=remote;
+    localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
+    renderProjSel();
+    var c=STORE.current||Object.keys(STORE.projects)[0];
+    if(c)switchProjet(c);
+    startRealtime();
+  }).catch(function(){startRealtime();});
+  startRealtime();
   // normalise
   Object.values(STORE.projects).forEach(p=>{
     if(!p.fh)p.fh={};
@@ -665,7 +724,7 @@ function saveSkBud(grp,val){
   if(num===1)p.sk1=+val||0;
   else if(num===2)p.sk2=+val||0;
   else p.skBuds[grp]=+val||0;
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   // Update delta display without full re-render (preserves focus)
   _updateSkidDelta(grp,+val||0);
 }
@@ -707,7 +766,7 @@ function saveNow(){
   p.budget=+document.getElementById('inp-bud').value||0;
 
 
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   const b=document.getElementById('sv');b.style.display='inline';
   clearTimeout(saveNow._t);saveNow._t=setTimeout(()=>b.style.display='none',1800);
   updBudget();
@@ -759,7 +818,7 @@ function toggleAffaireClosed(val){
   var p=currP();
   p.closed=!!val;
   // Save directly to localStorage without triggering renderProjSel
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   // Show saved indicator
   var sv=document.getElementById('sv');
   if(sv){sv.style.display='inline';clearTimeout(toggleAffaireClosed._t);toggleAffaireClosed._t=setTimeout(function(){sv.style.display='none';},1800);}
@@ -3176,7 +3235,7 @@ function renderSkids(){
     if(n===1)p.sk1=+val||0;
     else if(n===2)p.sk2=+val||0;
     else p.skBuds[grp]=+val||0;
-    localStorage.setItem(SK,JSON.stringify(STORE));
+    localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   }
 
   function skCard(grp){
@@ -3331,7 +3390,7 @@ function fhPut(aff,nm,w,d,lines){
   if(!p.fh[nm][w])p.fh[nm][w]={};
   // Keep all lines including empty ones (user needs to see them to fill in)
   p.fh[nm][w][d]=lines.slice();
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   // Auto-sync to GANTT on every fiche save
   syncFichesToGantt();
 }
@@ -3374,14 +3433,14 @@ function fhWeekAdd(aff,nm,w){
   if(!p.fh)p.fh={};
   if(!p.fh[nm])p.fh[nm]={};
   if(!p.fh[nm][w])p.fh[nm][w]={};
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   renderFiche();
 }
 function fhWeekDel(aff,nm,w){
   if(!confirm('Supprimer la semaine S'+w+' et toutes ses heures ?'))return;
   var p=STORE.projects[aff];
   if(p&&p.fh&&p.fh[nm])delete p.fh[nm][w];
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   renderFiche();
 }
 function fhTotals(aff,nm,w){
@@ -3450,7 +3509,7 @@ function syncFichesToGantt(){
       r.p=newP.length?newP:[{name:'',ent:'',heures:0}];
     });
   });
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   renderGantt();
   var activeTab=document.querySelector('.nb.on');
   if(activeTab){
@@ -4006,7 +4065,7 @@ function dbAddEntry(affKey,nmKey,di,wk){
   if(!Array.isArray(existing))existing=existing?[existing]:[];
   existing.push({actId:'',h:0});
   STORE.weekPlan[wk][affKey][nmKey][di]=existing;
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   dbBuildPlanningGrid();
 }
 
@@ -4059,7 +4118,7 @@ function dbAddPerson(affKey,wk){
     if(!STORE.weekPlan[wk][affKey].__persons__)STORE.weekPlan[wk][affKey].__persons__=[];
     if(STORE.weekPlan[wk][affKey].__persons__.indexOf(nm)<0)
       STORE.weekPlan[wk][affKey].__persons__.push(nm);
-    localStorage.setItem(SK,JSON.stringify(STORE));
+    localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
     dbBuildPlanningGrid();
   };
   if(nmInp){nmInp.onkeydown=function(e){if(e.key==='Enter')document.getElementById('dap-ok').click();if(e.key==='Escape')modal.remove();};}
@@ -4258,7 +4317,7 @@ function dbChangePerson(sel){
   while(persons.length<=nmIdx)persons.push('');
   persons[nmIdx]=val;
   STORE.weekPlan[wk][affKey].__persons__=persons;
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   dbBuildPlanningGrid();
 }
 
@@ -4494,7 +4553,7 @@ function syncWeekPlanToGantt(){
   });
   
   if(updated){
-    localStorage.setItem(SK,JSON.stringify(STORE));
+    localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
     // Always refresh GANTT to update NB column
     refreshAllTabs();
     var sv=document.getElementById('sv');
@@ -4511,7 +4570,7 @@ function dbSaveHours(inp){
   while(existing.length<=ei)existing.push({actId:'',h:0});
   existing[ei].h=+inp.value||0;
   STORE.weekPlan[wk][aff][nm][di]=existing;
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   syncWeekPlanToGantt();
 }
 
@@ -4519,7 +4578,7 @@ function dbSaveNote(inp){
   var w=+inp.dataset.wk,aff=inp.dataset.aff,nm=inp.dataset.nm,di=+inp.dataset.di;
   if(!STORE.weekPlan||!STORE.weekPlan[w]||!STORE.weekPlan[w][aff]||!STORE.weekPlan[w][aff][nm]||!STORE.weekPlan[w][aff][nm][di])return;
   STORE.weekPlan[w][aff][nm][di].note=inp.value;
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
 }
 
 function dbSavePlan(sel){
@@ -4549,7 +4608,7 @@ function dbSavePlan(sel){
     existing[ei].h=0;
   }
   STORE.weekPlan[wk][aff][nm][di]=existing;
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   syncWeekPlanToGantt();
   dbBuildPlanningGrid();
 }
@@ -4565,7 +4624,7 @@ function dbUpdateActHours(inp){
     var a=(STORE.projects[aff].data||[]).find(function(r){return r.id===actId;});
     if(a){a[field]=val;}
   });
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   renderGantt();
 }
 
@@ -4573,7 +4632,7 @@ function navDesarchiver(){
   var aff=STORE.current;
   if(!STORE.projects[aff])return;
   STORE.projects[aff].closed=false;
-  localStorage.setItem(SK,JSON.stringify(STORE));
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   // Update selector
   // Rebuild selector properly (handles affaire names with special characters)
   var sel=document.getElementById('sel-aff');
@@ -4616,7 +4675,7 @@ function importData(e){
   r.onload=ev=>{try{
     const o=JSON.parse(ev.target.result);
     if(!o.projects)throw new Error();
-    STORE=o;localStorage.setItem(SK,JSON.stringify(STORE));
+    STORE=o;localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
     EXP=null;renderProjSel();switchProjet(STORE.current||Object.keys(STORE.projects)[0]);
   }catch{alert('Fichier invalide.');}};
   r.readAsText(f);
