@@ -3542,7 +3542,7 @@ function fhTelecharger(){
     var htmlAvecGuide=html.replace('<body>',
       '<body><div style="background:#1F4E79;color:#fff;padding:12px 20px;margin-bottom:16px;border-radius:8px;font-family:Arial,sans-serif;display:flex;align-items:center;gap:14px;font-size:13px">'
       +'<span style="font-size:22px">💡</span>'
-      +'<span><strong>Pour sauvegarder en PDF :</strong> Dans la fenêtre d'impression → Destination → choisissez <strong>"Enregistrer en PDF"</strong> → nommez le fichier <em>'+nomFichier+'</em></span>'
+      +'<span><strong>Pour sauvegarder en PDF :</strong> Dans la boite qui s\'ouvre → Destination → choisissez <strong>Enregistrer en PDF</strong> → nommez le fichier <em>'+nomFichier+'</em></span>'
       +'</div>');
     var win=window.open('','_blank','width=900,height=700,scrollbars=yes');
     if(!win){alert('Veuillez autoriser les popups.');return;}
@@ -5744,7 +5744,7 @@ function downloadPlanning(){
   var htmlAvecGuide=html.replace('<div class="no-print"',
     '<div style="background:#1F4E79;color:#fff;padding:12px 20px;margin-bottom:16px;border-radius:8px;font-family:Arial,sans-serif;display:flex;align-items:center;gap:14px;font-size:13px">'
     +'<span style="font-size:22px">💡</span>'
-    +'<span><strong>Pour sauvegarder en PDF :</strong> Destination → <strong>"Enregistrer en PDF"</strong> → nommez le fichier <em>'+nomFichier+'</em></span>'
+    +'<span><strong>Pour sauvegarder en PDF :</strong> Destination → <strong>Enregistrer en PDF</strong> → nommez le fichier <em>'+nomFichier+'</em></span>'
     +'</div><div class="no-print"');
   var win=window.open('','_blank','width=1200,height=800,scrollbars=yes');
   if(!win){alert('Veuillez autoriser les popups.');return;}
