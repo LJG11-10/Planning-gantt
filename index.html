@@ -3539,19 +3539,13 @@ function fhTelecharger(){
   fhGenerateHTML(nm,function(html){
     var aff=window._fhAff||STORE.current;
     var date=new Date().toISOString().slice(0,10);
-    var nomFichier='FicheHeure_'+nm.replace(/[^a-z0-9]/gi,'_')+'_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date;
-    // Injecter le nom de fichier et l'instruction dans le HTML
-    var htmlAvecGuide=html.replace('<body>',
-      '<body><div style="background:#1F4E79;color:#fff;padding:12px 20px;margin-bottom:16px;border-radius:8px;font-family:Arial,sans-serif;display:flex;align-items:center;gap:14px;font-size:13px">'
-      +'<span style="font-size:22px">💡</span>'
-      +'<span><strong>Pour sauvegarder en PDF :</strong> Dans la boite qui s\'ouvre → Destination → choisissez <strong>Enregistrer en PDF</strong> → nommez le fichier <em>'+nomFichier+'</em></span>'
-      +'</div>');
-    var win=window.open('','_blank','width=900,height=700,scrollbars=yes');
-    if(!win){alert('Veuillez autoriser les popups.');return;}
-    win.document.write(htmlAvecGuide);
-    win.document.close();
-    win.focus();
-    setTimeout(function(){win.print();},500);
+    var blob=new Blob([html],{type:'text/html;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;
+    a.download='FicheHeure_'+nm.replace(/[^a-z0-9]/gi,'_')+'_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date+'.html';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},5000);
   });
 }
 
@@ -5741,19 +5735,13 @@ function downloadPlanning(){
     +'<span style="font-size:12px;color:#2563EB;font-weight:600">Rapport complet · '+esc(aff)+' · '+dateStr+'</span>'
     +'</div><div class="recap-page">'+body+'</div>'+ganttPage+'</body></html>';
 
-  // Ouvrir dans une nouvelle fenêtre et déclencher l'impression PDF
-  var nomFichier='Planning_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date;
-  var htmlAvecGuide=html.replace('<div class="no-print"',
-    '<div style="background:#1F4E79;color:#fff;padding:12px 20px;margin-bottom:16px;border-radius:8px;font-family:Arial,sans-serif;display:flex;align-items:center;gap:14px;font-size:13px">'
-    +'<span style="font-size:22px">💡</span>'
-    +'<span><strong>Pour sauvegarder en PDF :</strong> Destination → <strong>Enregistrer en PDF</strong> → nommez le fichier <em>'+nomFichier+'</em></span>'
-    +'</div><div class="no-print"');
-  var win=window.open('','_blank','width=1200,height=800,scrollbars=yes');
-  if(!win){alert('Veuillez autoriser les popups.');return;}
-  win.document.write(htmlAvecGuide);
-  win.document.close();
-  win.focus();
-  setTimeout(function(){win.print();},600);
+  var blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;
+  a.download='Planning_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date+'.html';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},5000);
 }
 </script>
 
