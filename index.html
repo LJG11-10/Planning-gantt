@@ -2,6 +2,8 @@
 <head>
 <meta charset="UTF-8">
 <title>Planning Pétrole</title>
+<!-- PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <!-- SUPABASE -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -3533,15 +3535,22 @@ function fhTelecharger(){
   var nm=document.getElementById('fc-nm')?document.getElementById('fc-nm').value:'';
   if(!nm||!nm.trim()){alert("Sélectionnez une personne avant de télécharger.");return;}
   fhGenerateHTML(nm,function(html){
-    var blob=new Blob([html],{type:'text/html;charset=utf-8'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');
-    a.href=url;
     var aff=window._fhAff||STORE.current;
     var date=new Date().toISOString().slice(0,10);
-    a.download='FicheHeure_'+nm.replace(/[^a-z0-9]/gi,'_')+'_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date+'.html';
-    document.body.appendChild(a);a.click();document.body.removeChild(a);
-    setTimeout(function(){URL.revokeObjectURL(url);},5000);
+    var filename='FicheHeure_'+nm.replace(/[^a-z0-9]/gi,'_')+'_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date+'.pdf';
+    var tmp=document.createElement('div');
+    tmp.style.cssText='position:fixed;left:-9999px;top:0;width:794px;background:#fff;font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px;';
+    tmp.innerHTML=html;
+    document.body.appendChild(tmp);
+    html2pdf().set({
+      margin:[10,10,10,10],
+      filename:filename,
+      image:{type:'jpeg',quality:0.98},
+      html2canvas:{scale:2,useCORS:true},
+      jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
+    }).from(tmp).save().then(function(){
+      document.body.removeChild(tmp);
+    });
   });
 }
 
@@ -5731,13 +5740,24 @@ function downloadPlanning(){
     +'<span style="font-size:12px;color:#2563EB;font-weight:600">Rapport complet · '+esc(aff)+' · '+dateStr+'</span>'
     +'</div><div class="recap-page">'+body+'</div>'+ganttPage+'</body></html>';
 
-  var blob=new Blob([html],{type:'text/html;charset=utf-8'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');
-  a.href=url;
-  a.download='Planning_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date+'.html';
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  setTimeout(function(){URL.revokeObjectURL(url);},5000);
+  // Génération PDF
+  var tmp=document.createElement('div');
+  tmp.style.cssText='position:fixed;left:-9999px;top:0;width:1050px;background:#fff;font-family:Arial,sans-serif;font-size:11px;color:#111;padding:20px;';
+  // On retire les balises HTML/head/body pour ne garder que le contenu
+  var bodyContent=html.replace(/<!DOCTYPE[^>]*>/i,'').replace(/<html[^>]*>/i,'').replace(/<\/html>/i,'')
+    .replace(/<head[\s\S]*?<\/head>/i,'').replace(/<body[^>]*>/i,'').replace(/<\/body>/i,'');
+  tmp.innerHTML=bodyContent;
+  document.body.appendChild(tmp);
+  var filename='Planning_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date+'.pdf';
+  html2pdf().set({
+    margin:[8,8,8,8],
+    filename:filename,
+    image:{type:'jpeg',quality:0.97},
+    html2canvas:{scale:1.5,useCORS:true},
+    jsPDF:{unit:'mm',format:'a4',orientation:'landscape'}
+  }).from(tmp).save().then(function(){
+    document.body.removeChild(tmp);
+  });
 }
 </script>
 
