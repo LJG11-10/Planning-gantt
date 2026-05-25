@@ -460,21 +460,14 @@ async function doSignup() {
   var email = document.getElementById('login-email').value.trim().toLowerCase();
   var pwd = document.getElementById('login-pwd').value;
   if (!email || !pwd) { showLoginMsg("Remplissez tous les champs."); return; }
-  if (pwd.length < 6) { showLoginMsg("Mot de passe trop court (6 caractères min)."); return; }
+  if (pwd.length < 6) { showLoginMsg("Mot de passe minimum 6 caractères."); return; }
   if (!supa) { showLoginMsg("Erreur de connexion au serveur."); return; }
   setLoginLoading(true);
   try {
-    // Vérifier si email autorisé
-    var check = await supa.from('roles').select('role').eq('email', email).single();
-    if (check.error || !check.data) {
-      setLoginLoading(false);
-      showLoginMsg("Cet email n'est pas autorisé. Contactez votre administrateur.");
-      return;
-    }
     var res = await supa.auth.signUp({ email: email, password: pwd });
     if (res.error) { setLoginLoading(false); showLoginMsg(res.error.message); return; }
     setLoginLoading(false);
-    showLoginMsg("Compte créé ! Vérifiez vos emails pour confirmer, puis connectez-vous.", '#16A34A');
+    showLoginMsg("Compte créé ! Connectez-vous maintenant.", '#16A34A');
     toggleSignup(false);
   } catch(e) {
     setLoginLoading(false);
