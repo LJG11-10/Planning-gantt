@@ -36,22 +36,59 @@
   }
 
   // Écoute les changements en temps réel
+  var _realtimeChannel = null;
+  var _pollInterval = null;
+  var _lastUpdatedAt = null;
+
   function startRealtime() {
     if (!supa) return;
-    supa.channel('planning-changes')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'planning', filter: 'key=eq.main' }, payload => {
+
+    // Realtime via websocket
+    try {
+      if (_realtimeChannel) supa.removeChannel(_realtimeChannel);
+      _realtimeChannel = supa.channel('planning-changes')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'planning', filter: 'key=eq.main' }, function(payload) {
+          try {
+            var remote = JSON.parse(payload.new.data);
+            STORE = remote;
+            localStorage.setItem(SK, JSON.stringify(STORE));
+            _lastUpdatedAt = payload.new.updated_at;
+            applySync();
+          } catch(e) {}
+        })
+        .subscribe();
+    } catch(e) { console.warn('Realtime websocket failed:', e); }
+
+    // Polling toutes les 10s en secours
+    if (_pollInterval) clearInterval(_pollInterval);
+    _pollInterval = setInterval(function() {
+      if (!supa) return;
+      supa.from('planning').select('data,updated_at').eq('key','main').single().then(function(res) {
+        if (res.error || !res.data) return;
+        if (_lastUpdatedAt && res.data.updated_at === _lastUpdatedAt) return;
         try {
-          const remote = JSON.parse(payload.new.data);
+          var remote = JSON.parse(res.data.data);
+          _lastUpdatedAt = res.data.updated_at;
           STORE = remote;
           localStorage.setItem(SK, JSON.stringify(STORE));
-          renderProjSel();
-          const c = STORE.current || Object.keys(STORE.projects)[0];
-          if (c) switchProjet(c);
-          const sv = document.getElementById('sv');
-          if (sv) { sv.textContent = '🔄 Sync'; sv.style.display = 'inline'; setTimeout(() => { sv.textContent = '✓ Enregistré'; sv.style.display = 'none'; }, 2000); }
+          applySync();
         } catch(e) {}
-      })
-      .subscribe();
+      });
+    }, 10000);
+  }
+
+  function applySync() {
+    try {
+      renderProjSel();
+      var c = STORE.current || Object.keys(STORE.projects)[0];
+      if (c) switchProjet(c);
+      var sv = document.getElementById('sv');
+      if (sv) {
+        sv.textContent = '🔄 Sync';
+        sv.style.display = 'inline';
+        setTimeout(function() { sv.style.display = 'none'; }, 2000);
+      }
+    } catch(e) {}
   }
 </script>
 <style>
