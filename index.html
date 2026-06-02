@@ -5836,7 +5836,11 @@ function sendRappelsManuellement(){
   var SUPA_KEY='sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
   fetch(SUPA_URL,{
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization':'Bearer '+SUPA_KEY,
+      'apikey':SUPA_KEY
+    },
     body:JSON.stringify(payload)
   })
   .then(function(res){
