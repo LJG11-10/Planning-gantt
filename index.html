@@ -821,6 +821,7 @@ function loadStore(){
   }catch{
     STORE={projects:{'Affaire 1':{data:freshData(),budget:500,sk1:200,sk2:200,fh:{}}},current:'Affaire 1'};
   }
+  if(!STORE.settings)STORE.settings={};
   // Charge depuis Supabase en arrière-plan et met à jour si plus récent
   supaLoad().then(function(remote){
     if(!remote||!remote.projects)return;
@@ -5750,7 +5751,11 @@ function delRappel(actId,ri){
   saveNow();_refreshPanelInPlace(actId);
 }
 function getNextWeekRappels(){
-  var nextWk=(TODAY?TODAY.w:1)+1;
+  // Calcul semaine suivante robuste
+  var _now=new Date();var _W1=new Date(2026,0,5);
+  var _days=Math.floor((_now-_W1)/864e5);
+  var _curWk=Math.max(1,Math.floor(_days/7)+1);
+  var nextWk=(TODAY?TODAY.w:_curWk)+1;
   // Date lundi et vendredi de la semaine suivante
   var dLun=weekDayToDate(nextWk,0);
   var dVen=weekDayToDate(nextWk,4);
@@ -5758,7 +5763,7 @@ function getNextWeekRappels(){
   var label='Semaine S'+nextWk+' \u2014 du '+fmt(dLun)+' au '+fmt(dVen);
   var results=[];
   Object.keys(STORE.projects).forEach(function(aff){
-    var proj=STORE.projects[aff];if(proj.closed)return;
+    var proj=STORE.projects[aff];
     (proj.data||[]).filter(function(r){return r.t==='act';}).forEach(function(act){
       if(!act.rappels||!act.rappels.length)return;
       // Tâche active pendant la semaine SUIVANTE
@@ -5773,22 +5778,42 @@ function getNextWeekRappels(){
 }
 function openRappelsSettings(){
   var modal=document.getElementById('rappels-modal');if(!modal)return;
-  document.getElementById('rm-emails').value=(STORE.settings&&STORE.settings.rappelEmails)||'';
-  loadRappelsPreview();modal.style.display='flex';
+  if(!STORE.settings)STORE.settings={};
+  var ta=document.getElementById('rm-emails');
+  if(ta)ta.value=STORE.settings.rappelEmails||'';
+  loadRappelsPreview();
+  modal.style.display='flex';
 }
 function saveRappelsEmails(){
   if(!STORE.settings)STORE.settings={};
-  STORE.settings.rappelEmails=document.getElementById('rm-emails').value.trim();
-  saveNow();alert('Emails sauvegard\u00e9s !');
+  var ta=document.getElementById('rm-emails');
+  var val=ta?ta.value.trim():'';
+  STORE.settings.rappelEmails=val;
+  saveNow();
+  var nb=val?val.split('\n').filter(function(e){return e.trim();}).length:0;
+  alert('\u2705 '+nb+' email'+(nb>1?'s':'')+' sauvegard\u00e9'+(nb>1?'s':'')+'.');
 }
 function loadRappelsPreview(){
   var preview=document.getElementById('rm-preview');if(!preview)return;
+  // Calcul semaine suivante robuste
+  var _now=new Date();var _W1=new Date(2026,0,5);
+  var _days=Math.floor((_now-_W1)/864e5);
+  var _curWk=Math.max(1,Math.floor(_days/7)+1);
+  var nextWk=(TODAY?TODAY.w:_curWk)+1;
   var rappels=getNextWeekRappels();
-  if(!rappels.length){preview.innerHTML='<span style="color:var(--tx3);font-style:italic">Aucun rappel pour la semaine prochaine.</span>';return;}
-  var label=rappels[0].weekLabel||'';
-  var html='<div style="font-size:10px;color:var(--ac);font-weight:700;margin-bottom:8px">'+label+'</div>';
+  var dLun=weekDayToDate(nextWk,0);
+  var dVen=weekDayToDate(nextWk,4);
+  var fmtD=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'});};
+  var label='S'+nextWk+' \u2014 du '+fmtD(dLun)+' au '+fmtD(dVen);
+  if(!rappels.length){
+    preview.innerHTML='<div style="font-size:10px;font-weight:700;color:var(--ac);margin-bottom:8px">'+label+'</div>'
+      +'<div style="text-align:center;padding:16px;color:var(--tx3);font-style:italic;font-size:11px">'
+      +'\u2705 Aucun rappel pour cette semaine</div>';
+    return;
+  }
+  var html='<div style="font-size:10px;font-weight:700;color:var(--ac);margin-bottom:8px">'+label+'</div>';
   html+=rappels.map(function(r){
-    return '<div style="margin-bottom:6px;padding:5px 8px;background:var(--bg2);border-left:3px solid #D97706;border-radius:0 4px 4px 0">'
+    return '<div style="margin-bottom:5px;padding:5px 8px;background:var(--bg2);border-left:3px solid #D97706;border-radius:0 4px 4px 0">'
       +'<div style="font-size:10px;font-weight:700;color:var(--tx)">'+r.actLb+'</div>'
       +'<div style="font-size:10px;color:var(--tx3)">'+r.aff+' \u00b7 &#128204; '+r.text+'</div>'
       +'</div>';
@@ -5797,15 +5822,36 @@ function loadRappelsPreview(){
 }
 function sendRappelsManuellement(){
   var rappels=getNextWeekRappels();
-  if(!rappels.length){alert('Aucun rappel pour la semaine prochaine.');return;}
   var emails=(STORE.settings&&STORE.settings.rappelEmails)||'';
-  if(!emails.trim()){alert('Renseignez les emails de l\u2019\u00e9quipe.');return;}
-  var nextWk=(TODAY?TODAY.w:1)+1;
-  var payload={emails:emails.split('\n').map(function(e2){return e2.trim();}).filter(Boolean),semaine:nextWk,rappels:rappels};
+  if(!emails.trim()){alert('Renseignez les emails de l\u2019\u00e9quipe d\u2019abord (champ en haut du modal).');return;}
+  // Calcul semaine suivante robuste
+  var _now=new Date();var _W1=new Date(2026,0,5);
+  var _days=Math.floor((_now-_W1)/864e5);
+  var _curWk=Math.max(1,Math.floor(_days/7)+1);
+  var nextWk=(TODAY?TODAY.w:_curWk)+1;
+  var emailList=emails.split('\n').map(function(e2){return e2.trim();}).filter(Boolean);
+  var payload={emails:emailList,semaine:nextWk,rappels:rappels,forceEnvoi:true};
   var btn=document.getElementById('rm-send-btn');btn.textContent='Envoi\u2026';btn.disabled=true;
-  fetch('https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU'},body:JSON.stringify(payload)})
-  .then(function(r){return r.json();}).then(function(data){btn.textContent='&#128231; Envoyer maintenant';btn.disabled=false;alert(data.ok?'Emails envoy\u00e9s !':'Erreur : '+(data.error||'inconnue'));})
-  .catch(function(err){btn.textContent='&#128231; Envoyer maintenant';btn.disabled=false;alert('Erreur r\u00e9seau : '+err.message);});
+  var SUPA_URL='https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels';
+  var SUPA_KEY='sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
+  fetch(SUPA_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+    body:JSON.stringify(payload)
+  })
+  .then(function(res){
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    return res.json();
+  })
+  .then(function(data){
+    btn.textContent='&#128231; Envoyer maintenant';btn.disabled=false;
+    if(data.ok){alert('\u2705 Emails envoy\u00e9s \u00e0 '+emailList.length+' destinataire(s) !');}
+    else{alert('\u274c Erreur : '+(data.error||JSON.stringify(data)));}
+  })
+  .catch(function(err){
+    btn.textContent='&#128231; Envoyer maintenant';btn.disabled=false;
+    alert('\u274c Erreur : '+err.message+'\n\nV\u00e9rifiez que la Edge Function \'send-rappels\' est bien d\u00e9ploy\u00e9e dans Supabase.');
+  });
 }
 
 function renderAbsences(){
