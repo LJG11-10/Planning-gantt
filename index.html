@@ -381,6 +381,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="btn" style="background:#FFF7ED;color:#C05A00;border:1px solid #FCE4D6;font-size:11px;font-weight:700" onclick="openPlanEditor()" title="Ajouter / modifier phases, sous-phases, activités">✏ Éditer planning</button>
     <button id="nav-desarch-btn" onclick="navDesarchiver()" style="display:none;background:#059669;color:#fff;border:1px solid #059669;border-radius:var(--r);padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ Désarchiver</button>
     <button style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;font-size:11px;font-weight:700" onclick="downloadPlanning()" title="Télécharger le planning complet (fichier autonome)">📥 Télécharger planning</button>
+    <button style="background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" onclick="openRappelsSettings()">&#128276; Rappels</button>
     <button style="background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 12px;cursor:pointer;font-family:inherit" onclick="openFortuitModal()" title="Ajouter un événement fortuit sur une activité">⚡ Fortuit</button>
     <button class="btn btn-a" onclick="exportData()">↓ Export</button>
     <label class="btn btn-g" style="cursor:pointer">↑ Import<input type="file" accept=".json" style="display:none" onchange="importData(event)"></label>
@@ -457,6 +458,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <span class="pill" style="background:var(--st-bg);color:var(--st-c)">S-T</span>
   <span style="margin-left:auto;display:flex;align-items:center;gap:14px;font-size:9px"><span style="display:flex;align-items:center;gap:5px"><span style="display:inline-flex;flex-direction:column;width:36px;height:18px;border-radius:2px;overflow:hidden;border:1px solid rgba(0,0,0,.15)"><span style="flex:1;background:#BDD7EE;display:flex;align-items:center;justify-content:center;font-size:6px;font-weight:700;color:#1F4E79">PRÉV.</span><span style="height:1px;background:rgba(255,255,255,.6)"></span><span style="flex:1;background:#1F4E79;display:flex;align-items:center;justify-content:center;font-size:6px;font-weight:700;color:#fff">RÉEL.</span></span></div>
 <script>
+
 // ─── Auth globals ───
 var CURRENT_USER = null;
 var CURRENT_ROLE = null;
@@ -2486,7 +2488,7 @@ function buildExpandPanel(row,ph,nd){
             ${nameOpts}
           </select>
           <span style="${entPillStyle}">${p.ent||''}</span>
-          ${(()=>{if(!p.name)return '';var _ad=STORE.absences&&STORE.absences[p.name];if(!_ad||!_ad.school||!_ad.school.length)return '';var _sw=_ad.school;var _cf=[];for(var _cw=row.s;_cw<=(row.e||row.s);_cw++){if(_sw.indexOf(_cw)>=0)_cf.push(_cw);}if(!_cf.length)return '';return '<span style="font-size:9px;padding:2px 7px;border-radius:10px;background:#FEE2E2;color:#DC2626;border:1px solid #EF4444;font-weight:700">\uD83C\uDFEB S'+_cf.join(',S')+'</span>';})()}
+          ${(()=>{if(!p.name)return '';var _ad=STORE.absences&&STORE.absences[p.name];if(!_ad||!_ad.school||!_ad.school.length)return '';var _sw=_ad.school;var _cf=[];for(var _cw=row.s;_cw<=(row.e||row.s);_cw++){if(_sw.indexOf(_cw)>=0)_cf.push(_cw);}if(weekHasCongesDays(p.name,row.s)){return '<span style="font-size:9px;padding:2px 7px;border-radius:10px;background:#FEE2E2;color:#DC2626;border:1px solid #EF4444;font-weight:700">&#127958; En cong&#233;s</span>';}if(!_cf.length)return '';return '<span style="font-size:9px;padding:2px 7px;border-radius:10px;background:#FEE2E2;color:#DC2626;border:1px solid #EF4444;font-weight:700">\uD83C\uDFEB S'+_cf.join(',S')+'</span>';})()}
           <input type="number" min="0" value="${+p.heures||''}" placeholder="H"
             style="width:54px;border:1px solid var(--bd);border-radius:var(--r);padding:4px 6px;font-size:12px;font-weight:700;font-family:Courier New,monospace;color:var(--ac);background:var(--bg2);outline:none;text-align:center"
             onchange="updP('${row.id}',${i},'heures',+this.value||0)" onblur="updP('${row.id}',${i},'heures',+this.value||0)">
@@ -2495,6 +2497,7 @@ function buildExpandPanel(row,ph,nd){
       }).join('')}
       <button class="btn-ap" onclick="event.stopPropagation();addP('${row.id}')">+ Ajouter une personne</button>
     </div>
+    <div id="rp-${row.id}" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd2)"></div>
   </div>`;
 }
 
@@ -2634,6 +2637,7 @@ function toggleDayExp(evt,actId,dayAbsIdx,dayLabel){
 
 function closeExp(){EXP=null;_reRenderGanttKeepScroll();}
 function toggleExp(id){
+  setTimeout(function(){_buildRappelsSection(id);},20);
   // If same row clicked again, close it
   if(EXP===id){
     EXP=null;
@@ -4467,8 +4471,10 @@ function dbBuildPlanningGrid(){
         var _absNm=nm&&STORE.absences?STORE.absences[nm]||{}:{};
         var _isSchool=_isAlt&&(_absNm.school||[]).indexOf(selWk)>=0;
         var _isComp=_isAlt&&(_absNm.company||[]).indexOf(selWk)>=0;
+        var _isConges=weekHasCongesDays(nm,selWk);
         var _absBadge='';
-        if(_isSchool) _absBadge='<div style="background:#DBEAFE;color:#1D4ED8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;margin-bottom:4px;text-align:center">📚 École cette semaine</div>';
+        if(_isConges) _absBadge='<div style="background:#FEE2E2;color:#DC2626;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;margin-bottom:4px;text-align:center">&#127958; En cong&#233;s cette semaine</div>';
+        else if(_isSchool) _absBadge='<div style="background:#DBEAFE;color:#1D4ED8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;margin-bottom:4px;text-align:center">📚 École cette semaine</div>';
         else if(_isComp) _absBadge='<div style="background:#D1FAE5;color:#065F46;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;margin-bottom:4px;text-align:center">🏭 Entreprise cette semaine</div>';
         html+=_absBadge;
         html+='<select data-affkey="'+affKey+'" data-nmidx="'+nmIdx+'" data-wk="'+selWk+'"'
@@ -5625,6 +5631,183 @@ function absImport(e,person){
   reader.readAsText(f);
 }
 
+function weekHasCongesDays(person,wk){
+  if(typeof STORE==='undefined'||!STORE||!STORE.absences||!STORE.absences[person])return false;
+  var days=STORE.absences[person].congesDays||[];
+  for(var di=0;di<5;di++){var d=weekDayToDate(wk,di);var k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');if(days.indexOf(k)>=0)return true;}
+  return false;
+}
+function deleteCongesPeriod(person,startDay){
+  if(!STORE.absences||!STORE.absences[person])return;
+  var cd=STORE.absences[person].congesDays||[];
+  var i2=cd.indexOf(startDay);if(i2<0)return;
+  var toRemove=[];var i=i2;
+  while(i<cd.length){if(i>i2){var pv=new Date(cd[i-1]),cv=new Date(cd[i]);if(Math.round((cv-pv)/86400000)>3)break;}toRemove.push(cd[i]);i++;}
+  toRemove.forEach(function(d2){var ii=cd.indexOf(d2);if(ii>=0)cd.splice(ii,1);});
+  saveNow();renderAbsences();
+}
+function absAddConges(person){
+  var ex=document.getElementById('abs-conges-modal');if(ex)ex.remove();
+  var modal=document.createElement('div');
+  modal.id='abs-conges-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:400;display:flex;align-items:center;justify-content:center';
+  var t2=new Date();
+  var fi=function(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+  var ts=fi(t2);
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--bg2);border-radius:20px;padding:28px 32px;width:440px;box-shadow:0 20px 60px rgba(0,0,0,.25);border:2px solid #FECACA';
+  box.innerHTML='<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px"><span style="font-size:30px">&#127958;</span><div><div style="font-size:16px;font-weight:800">Cong&#233;s / Vacances</div><div style="font-size:12px;color:var(--tx3)">pour '+person+'</div></div></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">'
+    +'<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:6px">DATE DE D&#201;BUT</label>'
+    +'<input type="date" id="abs-cp-start" value="'+ts+'" style="width:100%;border:2px solid #FECACA;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;background:#FEF2F2;outline:none;box-sizing:border-box"></div>'
+    +'<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:6px">DATE DE FIN</label>'
+    +'<input type="date" id="abs-cp-end" value="'+ts+'" style="width:100%;border:2px solid #FECACA;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;background:#FEF2F2;outline:none;box-sizing:border-box"></div>'
+    +'</div>'
+    +'<div id="abs-cp-preview" style="background:#FEF2F2;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#DC2626;font-weight:600;text-align:center">&#8212;</div>'
+    +'<div style="display:flex;gap:10px">'
+    +'<button id="abs-cp-ok" style="flex:1;padding:12px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;background:#DC2626;border:none;color:#fff;font-family:inherit">&#10003; Confirmer</button>'
+    +'<button onclick="document.getElementById(\'abs-conges-modal\').remove()" style="flex:1;padding:12px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;background:var(--bg3);border:2px solid var(--bd);color:var(--tx2);font-family:inherit">Annuler</button>'
+    +'</div>';
+  modal.appendChild(box);document.body.appendChild(modal);
+  modal.onclick=function(e){if(e.target===modal)modal.remove();};
+  function upPrev(){
+    var s=document.getElementById('abs-cp-start').value;
+    var e=document.getElementById('abs-cp-end').value;
+    if(!s||!e)return;
+    var ds=new Date(s),de=new Date(e);
+    if(de<ds){document.getElementById('abs-cp-end').value=s;de=new Date(s);}
+    var jrs=0,cu=new Date(ds);
+    while(cu<=de){var wd=cu.getDay();if(wd>=1&&wd<=5)jrs++;cu.setDate(cu.getDate()+1);}
+    var fd=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'});};
+    document.getElementById('abs-cp-preview').textContent='&#127958; '+fd(ds)+(s!==e?' \u2192 '+fd(de):'')+' \u00b7 '+jrs+' jour'+(jrs>1?'s ouvrés':'');
+  }
+  document.getElementById('abs-cp-start').addEventListener('change',upPrev);
+  document.getElementById('abs-cp-end').addEventListener('change',upPrev);
+  upPrev();
+  document.getElementById('abs-cp-ok').onclick=function(){
+    var s=document.getElementById('abs-cp-start').value;
+    var e=document.getElementById('abs-cp-end').value;
+    if(!s||!e){alert('S\u00e9lectionnez les dates.');return;}
+    var ds=new Date(s),de=new Date(e);
+    if(de<ds){alert('La date de fin doit \u00eatre apr\u00e8s le d\u00e9but.');return;}
+    if(!STORE.absences)STORE.absences={};
+    if(!STORE.absences[person])STORE.absences[person]={school:[],company:[],congesDays:[]};
+    if(!STORE.absences[person].congesDays)STORE.absences[person].congesDays=[];
+    var cd=STORE.absences[person].congesDays;
+    var cu=new Date(ds);
+    while(cu<=de){var wd=cu.getDay();if(wd>=1&&wd<=5){var k=fi(cu);if(cd.indexOf(k)<0)cd.push(k);}cu.setDate(cu.getDate()+1);}
+    cd.sort();modal.remove();saveNow();renderAbsences();
+  };
+}
+function _buildRappelsSection(actId){
+  var container=document.getElementById('rp-'+actId);
+  if(!container)return;
+  container.innerHTML='<div style="font-size:9px;font-weight:700;letter-spacing:.8px;color:#92400E;margin-bottom:5px">&#128276; RAPPELS &mdash; 1 semaine avant</div>'
+    +'<div id="rappels-list-'+actId+'"></div>'
+    +'<div style="display:flex;gap:5px;margin-top:4px">'
+    +'<input type="text" id="rappel-inp-'+actId+'" placeholder="Ex: Passer commande c&#226;ble&#8230;" style="flex:1;border:1px solid var(--bd);border-radius:var(--r);padding:4px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
+    +'<button style="padding:4px 12px;border-radius:var(--r);background:#D97706;border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit" id="rappel-add-'+actId+'">+</button>'
+    +'</div>';
+  var addBtn=document.getElementById('rappel-add-'+actId);
+  if(addBtn){(function(id){addBtn.onclick=function(e){e.stopPropagation();addRappel(id);};})(actId);}
+  var inp=document.getElementById('rappel-inp-'+actId);
+  if(inp){(function(id){inp.onkeydown=function(e){if(e.key==='Enter'){e.stopPropagation();addRappel(id);}};})(actId);}
+  _refreshPanelInPlace(actId);
+}
+function _refreshPanelInPlace(actId){
+  var listEl=document.getElementById('rappels-list-'+actId);
+  if(!listEl)return;
+  var act=D().find(function(x){return x.id===actId;});
+  if(!act)return;
+  listEl.innerHTML='';
+  (act.rappels||[]).forEach(function(r,ri){
+    var row2=document.createElement('div');
+    row2.style.cssText='display:flex;align-items:center;gap:6px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:var(--r);padding:4px 8px;margin-bottom:3px';
+    var txt=document.createElement('span');
+    txt.style.cssText='font-size:10px;flex:1;color:var(--tx2)';
+    txt.innerHTML='&#128204; '+r.text;
+    var btn=document.createElement('button');
+    btn.innerHTML='&times;';
+    btn.style.cssText='background:none;border:none;cursor:pointer;color:var(--tx3);font-size:14px;padding:0 2px';
+    (function(id,i){btn.onclick=function(e){e.stopPropagation();delRappel(id,i);};})(actId,ri);
+    row2.appendChild(txt);row2.appendChild(btn);listEl.appendChild(row2);
+  });
+}
+function addRappel(actId){
+  var inp=document.getElementById('rappel-inp-'+actId);
+  if(!inp||!inp.value.trim())return;
+  var act=D().find(function(x){return x.id===actId;});
+  if(!act)return;
+  if(!act.rappels)act.rappels=[];
+  act.rappels.push({text:inp.value.trim(),createdAt:new Date().toISOString()});
+  inp.value='';
+  saveNow();_refreshPanelInPlace(actId);
+}
+function delRappel(actId,ri){
+  var act=D().find(function(x){return x.id===actId;});
+  if(!act||!act.rappels)return;
+  act.rappels.splice(ri,1);
+  saveNow();_refreshPanelInPlace(actId);
+}
+function getNextWeekRappels(){
+  var nextWk=(TODAY?TODAY.w:1)+1;
+  // Date lundi et vendredi de la semaine suivante
+  var dLun=weekDayToDate(nextWk,0);
+  var dVen=weekDayToDate(nextWk,4);
+  var fmt=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'});};
+  var label='Semaine S'+nextWk+' \u2014 du '+fmt(dLun)+' au '+fmt(dVen);
+  var results=[];
+  Object.keys(STORE.projects).forEach(function(aff){
+    var proj=STORE.projects[aff];if(proj.closed)return;
+    (proj.data||[]).filter(function(r){return r.t==='act';}).forEach(function(act){
+      if(!act.rappels||!act.rappels.length)return;
+      // Tâche active pendant la semaine SUIVANTE
+      if(act.s<=nextWk&&(act.e||act.s)>=nextWk){
+        act.rappels.forEach(function(rap){
+          results.push({aff:aff,actLb:act.lb,wk:nextWk,weekLabel:label,text:rap.text});
+        });
+      }
+    });
+  });
+  return results;
+}
+function openRappelsSettings(){
+  var modal=document.getElementById('rappels-modal');if(!modal)return;
+  document.getElementById('rm-emails').value=(STORE.settings&&STORE.settings.rappelEmails)||'';
+  loadRappelsPreview();modal.style.display='flex';
+}
+function saveRappelsEmails(){
+  if(!STORE.settings)STORE.settings={};
+  STORE.settings.rappelEmails=document.getElementById('rm-emails').value.trim();
+  saveNow();alert('Emails sauvegard\u00e9s !');
+}
+function loadRappelsPreview(){
+  var preview=document.getElementById('rm-preview');if(!preview)return;
+  var rappels=getNextWeekRappels();
+  if(!rappels.length){preview.innerHTML='<span style="color:var(--tx3);font-style:italic">Aucun rappel pour la semaine prochaine.</span>';return;}
+  var label=rappels[0].weekLabel||'';
+  var html='<div style="font-size:10px;color:var(--ac);font-weight:700;margin-bottom:8px">'+label+'</div>';
+  html+=rappels.map(function(r){
+    return '<div style="margin-bottom:6px;padding:5px 8px;background:var(--bg2);border-left:3px solid #D97706;border-radius:0 4px 4px 0">'
+      +'<div style="font-size:10px;font-weight:700;color:var(--tx)">'+r.actLb+'</div>'
+      +'<div style="font-size:10px;color:var(--tx3)">'+r.aff+' \u00b7 &#128204; '+r.text+'</div>'
+      +'</div>';
+  }).join('');
+  preview.innerHTML=html;
+}
+function sendRappelsManuellement(){
+  var rappels=getNextWeekRappels();
+  if(!rappels.length){alert('Aucun rappel pour la semaine prochaine.');return;}
+  var emails=(STORE.settings&&STORE.settings.rappelEmails)||'';
+  if(!emails.trim()){alert('Renseignez les emails de l\u2019\u00e9quipe.');return;}
+  var nextWk=(TODAY?TODAY.w:1)+1;
+  var payload={emails:emails.split('\n').map(function(e2){return e2.trim();}).filter(Boolean),semaine:nextWk,rappels:rappels};
+  var btn=document.getElementById('rm-send-btn');btn.textContent='Envoi\u2026';btn.disabled=true;
+  fetch('https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU'},body:JSON.stringify(payload)})
+  .then(function(r){return r.json();}).then(function(data){btn.textContent='&#128231; Envoyer maintenant';btn.disabled=false;alert(data.ok?'Emails envoy\u00e9s !':'Erreur : '+(data.error||'inconnue'));})
+  .catch(function(err){btn.textContent='&#128231; Envoyer maintenant';btn.disabled=false;alert('Erreur r\u00e9seau : '+err.message);});
+}
+
 function renderAbsences(){
   var container=document.getElementById('absw');
   if(!container)return;
@@ -5633,7 +5816,7 @@ function renderAbsences(){
   Object.keys(STORE.projects).forEach(function(aff){
     var proj=STORE.projects[aff];if(proj.closed)return;
     (proj.persons||[]).forEach(function(ap){
-      if(ap.name&&ap.name.trim()&&(ap.type==='Alternant'||ap.type==='Stagiaire'))
+      if(ap.name&&ap.name.trim())
         allPersonsMap[ap.name]={name:ap.name,type:ap.type,aff:aff};
     });
   });
@@ -5671,11 +5854,12 @@ function renderAbsences(){
     calHtml+='<div style="display:flex;flex:1;gap:0">';
     wks.forEach(function(wk){
       var isS=schoolWks.indexOf(wk)>=0,isC=companyWks.indexOf(wk)>=0;
+      var isV=weekHasCongesDays(selP,wk);
       var isTW=TODAY&&TODAY.w===wk;
-      var bg=isS?'#DBEAFE':isC?'#DCFCE7':isTW?'#FEF9C3':'var(--bg2)';
-      var bc=isS?'#3B82F6':isC?'#22C55E':isTW?'#EAB308':'var(--bd)';
-      var tc=isS?'#1E40AF':isC?'#15803D':isTW?'#92400E':'var(--tx3)';
-      var icon=isS?'\uD83C\uDFEB':isC?'\uD83C\uDFED':isTW?'\u25CF':'';
+      var bg=isS?'#DBEAFE':isC?'#DCFCE7':isV?'#FEE2E2':isTW?'#FEF9C3':'var(--bg2)';
+      var bc=isS?'#3B82F6':isC?'#22C55E':isV?'#EF4444':isTW?'#EAB308':'var(--bd)';
+      var tc=isS?'#1E40AF':isC?'#15803D':isV?'#DC2626':isTW?'#92400E':'var(--tx3)';
+      var icon=isS?'\uD83C\uDFEB':isC?'\uD83C\uDFED':isV?'\uD83C\uDFD6':isTW?'\u25CF':'';
       calHtml+='<div onclick="absToggle(\''+selP+'\','+wk+')" style="flex:1;min-width:48px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px;background:'+bg+';border-left:1px solid rgba(0,0,0,.06);border-top:3px solid '+bc+';user-select:none" onmouseenter="this.style.opacity=\'.8\'" onmouseleave="this.style.opacity=\'1\'" title="S'+wk+(isS?' — École':isC?' — Entreprise':' — Non défini')+'">'
         +'<div style="font-size:9px;font-weight:700;color:var(--tx3);margin-bottom:2px">S'+wk+'</div>'
         +'<div style="font-size:16px;line-height:1">'+icon+'</div>'
@@ -5702,6 +5886,7 @@ function renderAbsences(){
       +'<button onclick="absAddPeriod(\''+selP+'\',\'school\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:#EFF6FF;border:2px solid #BFDBFE;color:#1E40AF">\uD83C\uDFEB Ajouter période École</button>'
       +'<button onclick="absAddPeriod(\''+selP+'\',\'company\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:#F0FDF4;border:2px solid #BBF7D0;color:#15803D">\uD83C\uDFED Ajouter période Entreprise</button>'
       +'<button onclick="absReset(\''+selP+'\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:var(--bg3);border:2px solid var(--bd);color:var(--tx3)">\uD83D\uDDD1 Effacer tout</button>'
+      +'<button onclick="absAddConges(\''+selP+'\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:#FEF2F2;border:2px solid #FECACA;color:#DC2626">&#127958; Ajouter Cong&#233;s</button>'
       +'</div>'
       +'<div style="font-size:10px;color:var(--tx3);margin-bottom:16px">Cliquez sur une semaine : non défini → École → Entreprise → effacé</div>'
       +calHtml;
@@ -6052,6 +6237,7 @@ function downloadPlanning(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(function(){URL.revokeObjectURL(url);},5000);
 }
+
 </script>
 
 <!-- Fortuit Modal -->
@@ -6099,6 +6285,30 @@ function downloadPlanning(){
   </div>
 </div>
 
+
+<div id="rappels-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--bg2);border-radius:var(--r2);width:100%;max-width:520px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
+    <div style="padding:14px 20px;background:#92400E;color:#fff;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:13px;font-weight:800">&#128276; Rappels</div>
+      <button onclick="document.getElementById('rappels-modal').style.display='none'" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">&times;</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+      <div>
+        <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:6px">EMAILS EQUIPE (un par ligne)</label>
+        <textarea id="rm-emails" rows="4" placeholder="prenom@entreprise.fr" style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;resize:vertical;box-sizing:border-box"></textarea>
+        <button onclick="saveRappelsEmails()" style="margin-top:6px;padding:5px 16px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Sauvegarder</button>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:12px 14px">
+        <div style="font-size:10px;font-weight:700;color:var(--tx2);margin-bottom:8px">RAPPELS SEMAINE PROCHAINE</div>
+        <div id="rm-preview" style="font-size:11px;color:var(--tx3)">Chargement...</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="rm-send-btn" onclick="sendRappelsManuellement()" style="flex:1;padding:10px;border-radius:var(--r);background:#92400E;border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Envoyer maintenant</button>
+        <button onclick="document.getElementById('rappels-modal').style.display='none'" style="padding:10px 16px;border-radius:var(--r);background:var(--bg3);border:1px solid var(--bd);color:var(--tx2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Fermer</button>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
 <div id="tab-dashboard" class="tab"><div id="dbw" class="pg"></div></div>
