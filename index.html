@@ -2587,7 +2587,7 @@ function buildExpandPanel(row,ph,nd){
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <div>
             <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">H PRÉVUES</div>
-            <input type="number" min="0" value="${+row.hPrev||0}"
+            <input type="number" min="0" id="ep-hp-${row.id}" value="${+row.hPrev||0}"
               style="width:60px;border:1px solid ${ph.xl};border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:var(--or);background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
               onchange="updActHSync('${row.id}','prev',+this.value)" onblur="updActHSync('${row.id}','prev',+this.value)">
           </div>
@@ -2595,7 +2595,7 @@ function buildExpandPanel(row,ph,nd){
             <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">DURÉE (j)</div>
             <input type="number" min="1" step="1" value="${dDurP}"
               style="width:54px;border:1px solid ${ph.xl};border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:${ph.xd};background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
-              onchange="updActDurSync('${row.id}','prev',+this.value)" onblur="updActDurSync('${row.id}','prev',+this.value)">
+              oninput="updActDurLive('${row.id}','prev',+this.value)" onblur="updActDurSync('${row.id}','prev',+this.value)">
           </div>
           <div>
             <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">H/JOUR</div>
@@ -2624,7 +2624,7 @@ function buildExpandPanel(row,ph,nd){
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <div>
             <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">H RÉELLES</div>
-            <input type="number" min="0" value="${row.hReel||0}"
+            <input type="number" min="0" id="ep-hr-${row.id}" value="${row.hReel||0}"
               style="width:60px;border:1px solid var(--gn3);border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:var(--gn);background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
               onchange="updActHSync('${row.id}','reel',+this.value)" onblur="updActHSync('${row.id}','reel',+this.value)">
           </div>
@@ -2632,7 +2632,7 @@ function buildExpandPanel(row,ph,nd){
             <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">DURÉE (j)</div>
             <input type="number" min="1" step="1" value="${dDurR}"
               style="width:54px;border:1px solid var(--gn3);border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:var(--gn);background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
-              onchange="updActDurSync('${row.id}','reel',+this.value)" onblur="updActDurSync('${row.id}','reel',+this.value)">
+              oninput="updActDurLive('${row.id}','reel',+this.value)" onblur="updActDurSync('${row.id}','reel',+this.value)">
           </div>
           <div>
             <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">H/JOUR</div>
@@ -2944,6 +2944,30 @@ function _refreshPanelInPlace(id){var r2=D().find(function(x){return x.id===id;}
 
 function updActDurNoFlicker(id,val){if(window._rendering)return;const r=D().find(x=>x.id===id);if(!r)return;const days=Math.max(1,+val||1);const dStart=r.dStart||0;const totalDayOffset=dStart+(days-1);r.dDur=days;r.e=Math.min(52,r.s+Math.floor(totalDayOffset/5));r.dEnd=totalDayOffset%5;r.ePrev=r.e;r.eReel=r.e;saveNow();_refreshPanelInPlace(id);}
 
+function updActDurLive(id,field,val){
+  // Mise à jour rapide des heures sans reconstruire le panel
+  if(window._rendering)return;
+  var r=D().find(function(x){return x.id===id;});if(!r)return;
+  var days=Math.max(1,Math.round(+val||1));
+  if(field==='prev'){
+    r.dDur=days;
+    var hj=r.hDur!=null?r.hDur:8;
+    r.hPrev=Math.round(days*hj*10)/10;
+    // Mise à jour directe du champ H PRÉVUES
+    var hpEl=document.getElementById('ep-hp-'+id);
+    if(hpEl)hpEl.value=r.hPrev;
+  } else {
+    r.dDurR=days;
+    var hjR=r.hDurR!=null?r.hDurR:(r.hDur!=null?r.hDur:8);
+    r.hReel=Math.round(days*hjR*10)/10;
+    // Mise à jour directe du champ H RÉELLES
+    var hrEl=document.getElementById('ep-hr-'+id);
+    if(hrEl)hrEl.value=r.hReel;
+  }
+  // Sauvegarde différée
+  clearTimeout(updActDurLive._t);
+  updActDurLive._t=setTimeout(function(){saveNow();},600);
+}
 function updActDurSync(id,field,val){
   // field: 'prev' or 'reel'
   if(window._rendering)return;
@@ -6354,19 +6378,22 @@ function downloadPlanning(mode){
       +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.s||'—')+'</td>'
       +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.e||'—')+'</td>'
       +'<td style="padding:7px 10px;text-align:center;color:#555">'+(r.dDur||'—')+'</td>'
-      +(mode!=='client'?'<td style="padding:7px 10px;text-align:center;font-weight:700;color:#D97706">'+hP+'H</td>'
-      +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:#059669">'+hR+'H</td>'
-      +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:'+(d>0?'#DC2626':d<0?'#059669':'#888')+'">'+(d===0?'—':(d>0?'+':'')+d+'H')+'</td>'
-      +'<td style="padding:7px 10px;font-size:10px;color:#555">'+persons+'</td>'
-      :'<td style="padding:7px 10px;font-size:10px;color:#555">'+persons+'</td>')
+      +(mode!=='client'
+        ?('<td style="padding:7px 10px;text-align:center;font-weight:700;color:#D97706">'+hP+'H</td>'
+          +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:#059669">'+hR+'H</td>'
+          +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:'+(d>0?'#DC2626':d<0?'#059669':'#888')+'">'+(d===0?'—':(d>0?'+':'')+d+'H')+'</td>'
+          +'<td style="padding:7px 10px;font-size:10px;color:#555">'+persons+'</td>')
+        :('<td style="padding:7px 10px;font-size:10px;color:#555">'+persons+'</td>'))
       +'<td style="padding:7px 10px;text-align:center;white-space:nowrap">'+(r.done?'<span style="background:#DCFCE7;color:#15803D;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700">✓ Terminé</span>':(r.inProgress?'<span style="background:#FEF3C7;color:#D97706;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700">⚡ En cours — '+(r.progress||0)+'%</span>':'<span style="background:#F3F4F6;color:#6B7280;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700">Planifié</span>'))+'</td>'
       +'</tr>';
   });
-  body+='<tr style="background:#EFF6FF;font-weight:700"><td colspan="6" style="padding:8px 10px;text-align:right;color:#1F4E79">TOTAL</td>'
-    +'<td style="padding:8px 10px;text-align:center;color:#D97706">'+Math.round(totP)+'H</td>'
-    +'<td style="padding:8px 10px;text-align:center;color:#059669">'+Math.round(totR)+'H</td>'
-    +'<td style="padding:8px 10px;text-align:center;color:'+(ecart<0?'#DC2626':'#059669')+'">'+(ecart>=0?'+':'')+ecart+'H</td>'
-    +'<td colspan="2"></td></tr>';
+  if(mode!=='client'){
+    body+='<tr style="background:#EFF6FF;font-weight:700"><td colspan="6" style="padding:8px 10px;text-align:right;color:#1F4E79">TOTAL</td>';
+    body+='<td style="padding:8px 10px;text-align:center;color:#D97706">'+Math.round(totP)+'H</td>';
+    body+='<td style="padding:8px 10px;text-align:center;color:#059669">'+Math.round(totR)+'H</td>';
+    body+='<td style="padding:8px 10px;text-align:center;color:'+(ecart<0?'#DC2626':'#059669')+'">'+(ecart>=0?'+':'')+ecart+'H</td>';
+    body+='<td colspan="2"></td></tr>';
+  }
   body+='</tbody></table>';
 
   // ── Personnes impliquées ──────────────────────────
@@ -6484,7 +6511,7 @@ function downloadPlanning(mode){
         +'<div style="font-size:9px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(r.done?'#059669':'#1A1917')+'">'
         +(r.done?'✓ ':(r.inProgress&&!r.done)?'⚡ '+( r.progress||0)+'% — ':'')+lbl+'</div>'
         +(curSb?'<div style="font-size:7px;color:#9CA3AF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(curSb)+'</div>':'')
-        +'<div style="font-size:8px;color:#6B7280">'+hP+'H'+(nb?' · '+nb+'👤':'')+'</div>'
+        +(mode!=='client'?('<div style="font-size:8px;color:#6B7280">'+hP+'H'+(nb?' · '+nb+'👤':'')+'</div>'):'')
         +'</div></td>';
 
       for(var w=fromW;w<=toW;w++){
