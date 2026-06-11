@@ -954,7 +954,7 @@ function freshData(){return TMPL.map(r=>r.t==='act'?{...r,p:[mkP()],done:false,h
 // ═══════════════════════════════
 let STORE={projects:{},current:''};
 let EXP=null;
-let ZOOM_DW=13; // largeur colonne jour en px
+let ZOOM_DW=36; // largeur colonne jour en px // largeur colonne jour en px
 let GANTT_VIEW='week'; // 'week' or 'day'
 const SK='plan26v5';
 // Identifiant unique de session (pour ignorer ses propres mises à jour Realtime)
@@ -3903,7 +3903,7 @@ function renderGantt(){
       const clr=isFerieCol?'#DC2626':isTD?'#D97706':'var(--tx3)';
       const fw=isTD||isFerieCol?'700':'400';
       const bot=isFerieCol?'border-bottom:2px solid #DC2626;border-top:2px solid #DC2626':isTD?'border-bottom:2px solid #D97706':'border-bottom:2px solid var(--bd2)';
-      dH+=`<th title="${fmt(ddD(w,di))}" style="background:${bg};font-size:8px;font-weight:${fw};color:${clr};text-align:center;width:${DW}px;min-width:${DW}px;max-width:${DW}px;padding:0;${bot};${di===4&&sep?'border-right:1px solid var(--bd)':'border-right:none'}">${d}${isTD?'<span style="color:#D97706;font-size:6px">•</span>':''}</th>`;
+      dH+=`<th title="${fmt(ddD(w,di))}" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;width:${DW}px;min-width:${DW}px;max-width:${DW}px;padding:3px 1px;line-height:1.4;vertical-align:middle;${bot};${di===4&&sep?'border-right:1px solid var(--bd)':'border-right:none'}">${d}${isTD?'<span style="color:#D97706">•</span>':''}<br><span style="font-size:10px;font-weight:700">${fmt(ddD(w,di))}</span></th>`;
     });
   }
   let html=`<table class="gt" style="min-width:${255+38+NC*DW}px">
