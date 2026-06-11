@@ -2851,7 +2851,16 @@ function dbBuildPlanningGrid(){
     html+='<tr style="border-bottom:1px solid var(--bd);background:'+(pi%2===0?'#fff':'#F8FBFF')+'">';
     html+='<td style="padding:10px 16px;font-weight:800;font-size:13px;white-space:nowrap;border-right:3px solid #BFDBFE;vertical-align:top;background:linear-gradient(135deg,#EFF6FF,#DBEAFE);color:#1E40AF">'+nm+'</td>';
     DN.forEach(function(d,di){
-      if(weekHasCongesDays(nm,selWk)){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#FEE2E2,#FECACA);border:1px solid #FCA5A5;vertical-align:middle"><div style="font-size:20px">&#127958;</div><div style="font-size:11px;font-weight:800;color:#DC2626;margin-top:2px">Cong&#233;s</div></td>';return;}
+      // Vérifier congé pour CE jour spécifique
+      var _dayDate=new Date(dLun.getTime()+di*86400000);
+      var _dayKey=_dayDate.getFullYear()+'-'+String(_dayDate.getMonth()+1).padStart(2,'0')+'-'+String(_dayDate.getDate()).padStart(2,'0');
+      var _congesDays=(STORE.absences&&STORE.absences[nm]&&STORE.absences[nm].congesDays)||[];
+      var _isConge=_congesDays.indexOf(_dayKey)>=0;
+      // Vérifier alternant à l'école pour CETTE semaine
+      var _absData=STORE.absences&&STORE.absences[nm];
+      var _isEcole=_absData&&(_absData.school||[]).indexOf(selWk)>=0;
+      if(_isConge){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#FEE2E2,#FECACA);border:1px solid #FCA5A5;vertical-align:middle"><div style="font-size:20px">🏖</div><div style="font-size:11px;font-weight:800;color:#DC2626;margin-top:2px">Congé</div></td>';return;}
+      if(_isEcole){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#EFF6FF,#DBEAFE);border:1px solid #BFDBFE;vertical-align:middle"><div style="font-size:20px">🏫</div><div style="font-size:11px;font-weight:800;color:#1D4ED8;margin-top:2px">École</div></td>';return;}
       var rows=getCellRows(nm,di);var totalRows=rows.length;
       html+='<td style="padding:4px;border:1px solid var(--bd);vertical-align:top;background:#fff">';
       rows.forEach(function(entry,ei){
@@ -3046,100 +3055,245 @@ function dbFortuites(){
 
 
 
+// ── Congés & Absences ────────────────────────────────────────────────
+
+function toggleCongeDay(name, dateISO){
+  if(!STORE.absences)STORE.absences={};
+  if(!STORE.absences[name])STORE.absences[name]={school:[],company:[],congesDays:[]};
+  if(!STORE.absences[name].congesDays)STORE.absences[name].congesDays=[];
+  var days=STORE.absences[name].congesDays;
+  var idx=days.indexOf(dateISO);
+  if(idx>=0)days.splice(idx,1);
+  else days.push(dateISO);
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  renderAbsences();
+}
+
+function addCongePeriod(name){
+  var start=document.getElementById('conge-start-'+name.replace(/[^a-z0-9]/gi,'_'));
+  var end=document.getElementById('conge-end-'+name.replace(/[^a-z0-9]/gi,'_'));
+  if(!start||!end||!start.value||!end.value)return;
+  var d=new Date(start.value),dEnd=new Date(end.value);
+  if(d>dEnd){var tmp=d;d=dEnd;dEnd=tmp;}
+  if(!STORE.absences)STORE.absences={};
+  if(!STORE.absences[name])STORE.absences[name]={school:[],company:[],congesDays:[]};
+  if(!STORE.absences[name].congesDays)STORE.absences[name].congesDays=[];
+  var days=STORE.absences[name].congesDays;
+  var cur=new Date(d);
+  while(cur<=dEnd){
+    var k=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0');
+    var dow=cur.getDay();
+    if(dow!==0&&dow!==6&&days.indexOf(k)<0)days.push(k);
+    cur.setDate(cur.getDate()+1);
+  }
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  renderAbsences();
+}
+
+function clearAllConges(name){
+  if(!confirm('Effacer tous les congés de '+name+' ?'))return;
+  if(STORE.absences&&STORE.absences[name])STORE.absences[name].congesDays=[];
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  renderAbsences();
+}
+
+function getCongesDays(name){
+  if(!STORE.absences||!STORE.absences[name]||!STORE.absences[name].congesDays)return [];
+  return STORE.absences[name].congesDays;
+}
+
+function buildCongesCalendar(name){
+  var days=getCongesDays(name);
+  var year=2026;
+  var moisFr=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var jourFr=['D','L','M','M','J','V','S'];
+  var html='';
+  // Afficher mois par mois
+  for(var m=0;m<12;m++){
+    var firstDay=new Date(year,m,1);
+    var lastDay=new Date(year,m+1,0);
+    var startDow=firstDay.getDay(); // 0=dim
+    html+='<div style="display:inline-block;vertical-align:top;margin:0 8px 16px 0;width:210px">';
+    html+='<div style="font-size:11px;font-weight:800;color:var(--tx2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;text-align:center">'+moisFr[m]+'</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
+    // En-têtes jours
+    ['L','M','M','J','V','S','D'].forEach(function(d){
+      html+='<div style="text-align:center;font-size:9px;font-weight:700;color:var(--tx3);padding:2px 0">'+d+'</div>';
+    });
+    // Décalage (lundi=0)
+    var offset=(startDow+6)%7;
+    for(var i=0;i<offset;i++)html+='<div></div>';
+    // Jours
+    for(var day=1;day<=lastDay.getDate();day++){
+      var d2=new Date(year,m,day);
+      var dow=d2.getDay();
+      var k=year+'-'+String(m+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+      var isConge=days.indexOf(k)>=0;
+      var isWE=dow===0||dow===6;
+      var isToday=TODAY&&d2.toDateString()===new Date().toDateString();
+      var bg=isConge?'#EF4444':isWE?'var(--bg3)':isToday?'#FEF08A':'var(--bg2)';
+      var color=isConge?'#fff':isWE?'var(--tx3)':'var(--tx)';
+      var border=isToday?'1px solid #EAB308':isConge?'1px solid #DC2626':'1px solid var(--bd)';
+      var cursor=isWE?'default':'pointer';
+      var safeK=k;
+      var safeName=name;
+      var onclick=isWE?'':(' onclick="toggleCongeDay(this.dataset.nm,this.dataset.k)" data-nm="'+safeName.replace(/"/g,'&quot;')+'" data-k="'+safeK+'"');
+      html+='<div'+onclick+' title="'+(isConge?'Cliquer pour retirer':'Cliquer pour marquer congé')+'" style="text-align:center;font-size:10px;font-weight:'+(isConge?'700':'500')+';padding:3px 1px;border-radius:3px;background:'+bg+';color:'+color+';border:'+border+';cursor:'+cursor+'">'+(isWE&&!isConge?'<span style="opacity:.3">'+day+'</span>':day)+'</div>';
+    }
+    html+='</div></div>';
+  }
+  return html;
+}
+
 function renderAbsences(){
   var container=document.getElementById('absw');
   if(!container)return;
   if(!STORE.absences)STORE.absences={};
-  var allPersonsMap={};
+  var absTab=window._absTab||'conges';
+  window._absTab=absTab;
+
+  // ── Toutes les personnes (pour les congés)
+  var allNames=getAllPersons();
+
+  // ── Alternants/Stagiaires (pour école/entreprise)
+  var altMap={};
   Object.keys(STORE.projects).forEach(function(aff){
     var proj=STORE.projects[aff];if(proj.closed)return;
     (proj.persons||[]).forEach(function(ap){
       if(ap.name&&ap.name.trim()&&(ap.type==='Alternant'||ap.type==='Stagiaire'))
-        allPersonsMap[ap.name]={name:ap.name,type:ap.type,aff:aff};
+        altMap[ap.name]={name:ap.name,type:ap.type,aff:aff};
     });
   });
-  var allPersons=Object.values(allPersonsMap);
-  var selP=window._absPerson||(allPersons.length?allPersons[0].name:'');
+  var altPersons=Object.values(altMap);
+
+  var selP=window._absPerson||(allNames.length?allNames[0]:'');
   window._absPerson=selP;
-  if(!STORE.absences[selP])STORE.absences[selP]={school:[],company:[]};
-  var absData=STORE.absences[selP];
-  var schoolWks=absData.school||[];
-  var companyWks=absData.company||[];
-  var months=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-  var weekToMonth={};
-  var monthToWeeks={};
-  for(var wk=1;wk<=52;wk++){
-    var d=weekDayToDate(wk,0);var m=d.getMonth();
-    weekToMonth[wk]=m;
-    if(!monthToWeeks[m])monthToWeeks[m]=[];
-    monthToWeeks[m].push(wk);
-  }
-  var nS=schoolWks.length,nC=companyWks.length,total=nS+nC;
-  var pctS=total?Math.round(nS/total*100):0,pctC=total?100-pctS:0;
-  var personTabs='';
-  allPersons.forEach(function(ap){
-    var isSel=ap.name===selP;
-    var ad=STORE.absences[ap.name]||{school:[],company:[]};
-    var ns=(ad.school||[]).length;
-    personTabs+='<button onclick="window._absPerson=\''+ap.name+'\';renderAbsences()" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;border:2px solid '+(isSel?'var(--ac)':'var(--bd)')+';background:'+(isSel?'var(--ac)':'var(--bg2)')+';color:'+(isSel?'#fff':'var(--tx2)')+'">'+ap.name+(ap.type?'<span style="opacity:.65;font-size:10px;margin-left:6px">'+ap.type+'</span>':'')+(ns?'<span style="margin-left:8px;background:'+(isSel?'rgba(255,255,255,.2)':'#DBEAFE')+';color:'+(isSel?'#fff':'#1D4ED8')+';border-radius:20px;padding:2px 8px;font-size:10px">'+ns+' sem.</span>':'')+'</button>';
+
+  // ── TABS
+  var tabs='<div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid var(--bd);padding-bottom:0">';
+  [{id:'conges',icon:'🏖',label:'Congés'},{id:'altstagaire',icon:'🎓',label:'Alternants / Stagiaires'}].forEach(function(t){
+    var active=absTab===t.id;
+    tabs+='<button onclick="window._absTab=\''+t.id+'\';renderAbsences()" style="padding:9px 18px;border:none;border-bottom:3px solid '+(active?'var(--ac)':'transparent')+';background:none;font-family:inherit;font-size:13px;font-weight:'+(active?'800':'600')+';color:'+(active?'var(--ac)':'var(--tx3)')+';cursor:pointer">'+t.icon+' '+t.label+'</button>';
   });
-  var calHtml='<div style="display:flex;flex-direction:column;gap:0;border-radius:16px;overflow:hidden;border:2px solid var(--bd)">';
-  var monthOrder=Object.keys(monthToWeeks).map(Number).sort(function(a,b){return a-b;});
-  monthOrder.forEach(function(m){
-    var wks=monthToWeeks[m];
-    calHtml+='<div style="display:flex;align-items:stretch;border-bottom:1px solid var(--bd)">';
-    calHtml+='<div style="width:90px;min-width:90px;display:flex;align-items:center;justify-content:center;background:var(--bg3);border-right:2px solid var(--bd);padding:8px"><div style="text-align:center"><div style="font-size:13px;font-weight:800;color:var(--tx2)">'+months[m]+'</div><div style="font-size:10px;color:var(--tx3)">'+wks.length+' sem.</div></div></div>';
-    calHtml+='<div style="display:flex;flex:1;gap:0">';
-    wks.forEach(function(wk){
-      var isS=schoolWks.indexOf(wk)>=0,isC=companyWks.indexOf(wk)>=0;
-      var isTW=TODAY&&TODAY.w===wk;
-      var bg=isS?'#DBEAFE':isC?'#DCFCE7':isTW?'#FEF9C3':'var(--bg2)';
-      var bc=isS?'#3B82F6':isC?'#22C55E':isTW?'#EAB308':'var(--bd)';
-      var tc=isS?'#1E40AF':isC?'#15803D':isTW?'#92400E':'var(--tx3)';
-      var icon=isS?'\uD83C\uDFEB':isC?'\uD83C\uDFED':isTW?'\u25CF':'';
-      calHtml+='<div onclick="absToggle(\''+selP+'\','+wk+')" style="flex:1;min-width:48px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px;background:'+bg+';border-left:1px solid rgba(0,0,0,.06);border-top:3px solid '+bc+';user-select:none" onmouseenter="this.style.opacity=\'.8\'" onmouseleave="this.style.opacity=\'1\'" title="S'+wk+(isS?' — École':isC?' — Entreprise':' — Non défini')+'">'
-        +'<div style="font-size:9px;font-weight:700;color:var(--tx3);margin-bottom:2px">S'+wk+'</div>'
-        +'<div style="font-size:16px;line-height:1">'+icon+'</div>'
-        +'<div style="font-size:8px;font-weight:700;color:'+tc+';margin-top:3px">'+(isS?'ÉCOLE':isC?'ENT.':'')+'</div>'
-        +'</div>';
-    });
-    calHtml+='</div></div>';
-  });
-  calHtml+='</div>';
-  var statsBar='';
-  if(total>0){
-    statsBar='<div style="background:var(--bg2);border:2px solid var(--bd);border-radius:14px;padding:20px;margin-bottom:24px;display:flex;gap:32px;align-items:center">';
-    statsBar+='<div style="text-align:center"><div style="font-size:32px;font-weight:900;color:#3B82F6">'+nS+'</div><div style="font-size:11px;color:var(--tx3);font-weight:600">SEM. ÉCOLE</div></div>';
-    statsBar+='<div style="text-align:center"><div style="font-size:32px;font-weight:900;color:#22C55E">'+nC+'</div><div style="font-size:11px;color:var(--tx3);font-weight:600">SEM. ENTREPRISE</div></div>';
-    statsBar+='<div style="flex:1"><div style="height:14px;background:var(--bg3);border-radius:7px;overflow:hidden;display:flex;margin-bottom:6px"><div style="background:#3B82F6;width:'+pctS+'%"></div><div style="background:#22C55E;width:'+pctC+'%"></div></div><div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700"><span style="color:#3B82F6">\uD83C\uDFEB École '+pctS+'%</span><span style="color:#22C55E">\uD83C\uDFED Entreprise '+pctC+'%</span></div></div></div>';
-  }
-  var mainContent='';
-  if(!allPersons.length){
-    mainContent='<div style="text-align:center;padding:60px 24px;background:var(--bg2);border-radius:16px;border:2px dashed var(--bd)"><div style="font-size:48px;margin-bottom:16px">\uD83D\uDC64</div><div style="font-size:16px;font-weight:700;color:var(--tx);margin-bottom:8px">Aucune personne définie</div><div style="font-size:13px;color:var(--tx3)">Ajoutez vos alternants/stagiaires dans l\'éditeur (statut Alternant ou Stagiaire)</div></div>';
-  } else {
-    mainContent=statsBar
-      +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">'
-      +'<label class="btn btn-a" style="cursor:pointer;font-size:12px;padding:10px 18px;border-radius:10px;display:flex;align-items:center;gap:8px">\uD83D\uDCE5 Importer .ics<input type="file" accept=".ics,.csv,.txt,.pdf" style="display:none" onchange="absImport(event,\''+selP+'\')"></label>'
-      +'<button onclick="absAddPeriod(\''+selP+'\',\'school\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:#EFF6FF;border:2px solid #BFDBFE;color:#1E40AF">\uD83C\uDFEB Ajouter période École</button>'
-      +'<button onclick="absAddPeriod(\''+selP+'\',\'company\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:#F0FDF4;border:2px solid #BBF7D0;color:#15803D">\uD83C\uDFED Ajouter période Entreprise</button>'
-      +'<button onclick="absReset(\''+selP+'\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:var(--bg3);border:2px solid var(--bd);color:var(--tx3)">\uD83D\uDDD1 Effacer tout</button>'
-      +'</div>'
-      +'<div style="font-size:10px;color:var(--tx3);margin-bottom:16px">Cliquez sur une semaine : non défini → École → Entreprise → effacé</div>'
-      +calHtml;
-    var periods=_groupWeeks(schoolWks);
-    if(periods.length){
-      mainContent+='<div style="margin-top:20px"><div style="font-size:11px;font-weight:700;color:var(--tx3);letter-spacing:.8px;margin-bottom:10px">PÉRIODES ÉCOLE</div><div style="display:flex;flex-wrap:wrap;gap:8px">';
-      periods.forEach(function(per){
-        var dS=weekDayToDate(per.s,0),dE=weekDayToDate(per.e,4);
-        var fmtD=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});};
-        mainContent+='<div style="background:#DBEAFE;border:1px solid #3B82F6;border-radius:var(--r);padding:8px 14px;font-size:11px"><span style="font-weight:700;color:#1D4ED8">S'+per.s+(per.e!==per.s?'→S'+per.e:'')+'</span> <span style="color:#3B82F6;font-size:10px">'+fmtD(dS)+' – '+fmtD(dE)+' ('+(per.e-per.s+1)+' sem.)</span></div>';
+  tabs+='</div>';
+
+  var bodyHtml='';
+
+  if(absTab==='conges'){
+    // ── Sélecteur de personne
+    if(!allNames.length){
+      bodyHtml='<div style="text-align:center;padding:60px;color:var(--tx3)">Aucune personne définie. Ajoutez des personnes dans l\'éditeur de planning.</div>';
+    } else {
+      // Tabs personnes
+      var ptabs='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">';
+      allNames.forEach(function(nm){
+        var isSel=nm===selP;
+        var nb=getCongesDays(nm).length;
+        ptabs+='<button onclick="window._absPerson=\''+nm.replace(/'/g,"\\'")+'\';renderAbsences()" style="padding:8px 16px;border-radius:20px;border:2px solid '+(isSel?'var(--ac)':'var(--bd)')+';background:'+(isSel?'var(--ac)':'var(--bg2)')+';color:'+(isSel?'#fff':'var(--tx)')+';font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">'+nm+(nb?'<span style="margin-left:6px;background:'+(isSel?'rgba(255,255,255,.25)':'#FEE2E2')+';color:'+(isSel?'#fff':'#DC2626')+';border-radius:10px;padding:1px 7px;font-size:10px">'+nb+'j</span>':'')+'</button>';
       });
-      mainContent+='</div></div>';
+      ptabs+='</div>';
+
+      // Jours de congé count
+      var congesList=getCongesDays(selP).sort();
+      var nbJours=congesList.length;
+
+      // Ajouter une période
+      var safeId=selP.replace(/[^a-z0-9]/gi,'_');
+      var addPeriod='<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);padding:14px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+      addPeriod+='<span style="font-size:12px;font-weight:700;color:var(--tx2)">📅 Ajouter une période :</span>';
+      addPeriod+='<input type="date" id="conge-start-'+safeId+'" style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx)">';
+      addPeriod+='<span style="font-size:12px;color:var(--tx3)">→</span>';
+      addPeriod+='<input type="date" id="conge-end-'+safeId+'" style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx)">';
+      addPeriod+='<button onclick="addCongePeriod(\''+selP.replace(/'/g,"\\'")+'\')\" style="padding:6px 16px;border-radius:var(--r);background:#EF4444;border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Marquer comme congé</button>';
+      if(nbJours>0)addPeriod+='<button onclick="clearAllConges(\''+selP.replace(/'/g,"\\'")+'\')\" style="padding:6px 14px;border-radius:var(--r);background:var(--bg3);border:1px solid var(--bd);color:var(--tx3);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🗑 Effacer tout</button>';
+      addPeriod+='</div>';
+
+      // Stats
+      var statsHtml='';
+      if(nbJours>0){
+        statsHtml='<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:var(--r2);padding:10px 16px;margin-bottom:20px;display:flex;align-items:center;gap:12px">';
+        statsHtml+='<span style="font-size:28px;font-weight:900;color:#EF4444">'+nbJours+'</span>';
+        statsHtml+='<div><div style="font-size:12px;font-weight:700;color:#DC2626">jour(s) de congé planifié(s)</div>';
+        statsHtml+='<div style="font-size:11px;color:#9CA3AF">Valable sur toutes les affaires • Visible dans le Planning Réunion</div></div>';
+        statsHtml+='</div>';
+      }
+
+      // Légende
+      var legend='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--tx3)">';
+      legend+='<span><span style="display:inline-block;width:12px;height:12px;background:#EF4444;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Congé (cliquer pour retirer)</span>';
+      legend+='<span><span style="display:inline-block;width:12px;height:12px;background:var(--bg3);border-radius:2px;vertical-align:middle;margin-right:4px"></span>Week-end</span>';
+      legend+='<span><span style="display:inline-block;width:12px;height:12px;background:#FEF08A;border-radius:2px;border:1px solid #EAB308;vertical-align:middle;margin-right:4px"></span>Aujourd\'hui</span>';
+      legend+='</div>';
+
+      bodyHtml=ptabs+statsHtml+addPeriod+legend+buildCongesCalendar(selP);
+    }
+  } else {
+    // ── Alternants/Stagiaires (code existant)
+    var selAlt=window._absPerson||(altPersons.length?altPersons[0].name:'');
+    if(!altPersons.length){
+      bodyHtml='<div style="text-align:center;padding:60px 24px;background:var(--bg2);border-radius:16px;border:2px dashed var(--bd)"><div style="font-size:48px;margin-bottom:16px">👤</div><div style="font-size:16px;font-weight:700;color:var(--tx);margin-bottom:8px">Aucun alternant ou stagiaire</div><div style="font-size:13px;color:var(--tx3)">Ajoutez des personnes avec le statut Alternant ou Stagiaire dans l\'éditeur</div></div>';
+    } else {
+      var absData=STORE.absences[selAlt]||{school:[],company:[]};
+      var schoolWks=absData.school||[],companyWks=absData.company||[];
+      var months=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+      var weekToMonth={},monthToWeeks={};
+      for(var wk=1;wk<=52;wk++){var d=weekDayToDate(wk,0);var mo=d.getMonth();weekToMonth[wk]=mo;if(!monthToWeeks[mo])monthToWeeks[mo]=[];monthToWeeks[mo].push(wk);}
+      var nS=schoolWks.length,nC=companyWks.length,total=nS+nC;
+      var pctS=total?Math.round(nS/total*100):0,pctC=total?100-pctS:0;
+      var personTabs2='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">';
+      altPersons.forEach(function(ap){
+        var isSel=ap.name===selAlt;
+        var ad=STORE.absences[ap.name]||{school:[],company:[]};
+        var ns=(ad.school||[]).length;
+        personTabs2+='<button onclick="window._absPerson=\''+ap.name.replace(/'/g,"\\'")+'\';window._absTab=\'altstagaire\';renderAbsences()" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;border:2px solid '+(isSel?'var(--ac)':'var(--bd)')+';background:'+(isSel?'var(--ac)':'var(--bg2)')+';color:'+(isSel?'#fff':'var(--tx2)')+'">'+ap.name+'<span style="opacity:.65;font-size:10px;margin-left:6px">'+ap.type+'</span>'+(ns?'<span style="margin-left:8px;background:'+(isSel?'rgba(255,255,255,.2)':'#DBEAFE')+';color:'+(isSel?'#fff':'#1D4ED8')+';border-radius:20px;padding:2px 8px;font-size:10px">'+ns+' sem.</span>':'')+'</button>';
+      });
+      personTabs2+='</div>';
+      var statsBar2='';
+      if(total>0){
+        statsBar2='<div style="background:var(--bg2);border:2px solid var(--bd);border-radius:14px;padding:20px;margin-bottom:24px;display:flex;gap:32px;align-items:center">';
+        statsBar2+='<div style="text-align:center"><div style="font-size:32px;font-weight:900;color:#3B82F6">'+nS+'</div><div style="font-size:11px;color:var(--tx3);font-weight:600">SEM. ÉCOLE</div></div>';
+        statsBar2+='<div style="text-align:center"><div style="font-size:32px;font-weight:900;color:#22C55E">'+nC+'</div><div style="font-size:11px;color:var(--tx3);font-weight:600">SEM. ENTREPRISE</div></div>';
+        statsBar2+='<div style="flex:1"><div style="height:14px;background:var(--bg3);border-radius:7px;overflow:hidden;display:flex;margin-bottom:6px"><div style="background:#3B82F6;width:'+pctS+'%"></div><div style="background:#22C55E;width:'+pctC+'%"></div></div><div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700"><span style="color:#3B82F6">🏫 École '+pctS+'%</span><span style="color:#22C55E">🏭 Entreprise '+pctC+'%</span></div></div></div>';
+      }
+      var calHtml2='<div style="display:flex;flex-direction:column;gap:0;border-radius:16px;overflow:hidden;border:2px solid var(--bd)">';
+      var monthOrder2=Object.keys(monthToWeeks).map(Number).sort(function(a,b){return a-b;});
+      monthOrder2.forEach(function(mo){
+        var wks=monthToWeeks[mo];
+        calHtml2+='<div style="display:flex;align-items:stretch;border-bottom:1px solid var(--bd)">';
+        calHtml2+='<div style="width:90px;min-width:90px;display:flex;align-items:center;justify-content:center;background:var(--bg3);border-right:2px solid var(--bd);padding:8px"><div style="text-align:center"><div style="font-size:13px;font-weight:800;color:var(--tx2)">'+months[mo]+'</div><div style="font-size:10px;color:var(--tx3)">'+wks.length+' sem.</div></div></div>';
+        calHtml2+='<div style="display:flex;flex:1;gap:0">';
+        wks.forEach(function(wk2){
+          var isS2=schoolWks.indexOf(wk2)>=0,isC2=companyWks.indexOf(wk2)>=0;
+          var isTW2=TODAY&&TODAY.w===wk2;
+          var bg2=isS2?'#DBEAFE':isC2?'#DCFCE7':isTW2?'#FEF9C3':'var(--bg2)';
+          var bc2=isS2?'#3B82F6':isC2?'#22C55E':isTW2?'#EAB308':'var(--bd)';
+          var tc2=isS2?'#1E40AF':isC2?'#15803D':isTW2?'#92400E':'var(--tx3)';
+          var icon2=isS2?'🏫':isC2?'🏭':isTW2?'●':'';
+          calHtml2+='<div onclick="absToggle(\''+selAlt.replace(/'/g,"\\'")+'\','+wk2+')" style="flex:1;min-width:48px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px;background:'+bg2+';border-left:1px solid rgba(0,0,0,.06);border-top:3px solid '+bc2+';user-select:none">'
+            +'<div style="font-size:9px;font-weight:700;color:var(--tx3);margin-bottom:2px">S'+wk2+'</div>'
+            +'<div style="font-size:16px;line-height:1">'+icon2+'</div>'
+            +'<div style="font-size:8px;font-weight:700;color:'+tc2+';margin-top:3px">'+(isS2?'ÉCOLE':isC2?'ENT.':'')+'</div>'
+            +'</div>';
+        });
+        calHtml2+='</div></div>';
+      });
+      calHtml2+='</div>';
+      bodyHtml=personTabs2+statsBar2
+        +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+        +'<button onclick="absAddPeriod(\''+selAlt.replace(/'/g,"\\'")+'\',\'school\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:#EFF6FF;border:2px solid #BFDBFE;color:#1E40AF">🏫 Ajouter période École</button>'
+        +'<button onclick="absAddPeriod(\''+selAlt.replace(/'/g,"\\'")+'\',\'company\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:#F0FDF4;border:2px solid #BBF7D0;color:#15803D">🏭 Ajouter période Entreprise</button>'
+        +'<button onclick="absReset(\''+selAlt.replace(/'/g,"\\'")+'\')\" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:var(--bg3);border:2px solid var(--bd);color:var(--tx3)">🗑 Effacer tout</button>'
+        +'</div>'
+        +'<div style="font-size:10px;color:var(--tx3);margin-bottom:16px">Cliquez sur une semaine : non défini → École → Entreprise → effacé</div>'
+        +calHtml2;
     }
   }
-  container.innerHTML='<div style="padding:28px;max-width:1100px"><div style="font-size:20px;font-weight:900;color:var(--tx);margin-bottom:6px">Calendrier des alternants & stagiaires</div><div style="font-size:13px;color:var(--tx3);margin-bottom:24px">Périodes école / entreprise par personne</div>'+(allPersons.length?'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px">'+personTabs+'</div>':'')+mainContent+'</div>';
-}
 
+  container.innerHTML='<div style="padding:24px;max-width:1100px">'
+    +'<div style="font-size:20px;font-weight:900;color:var(--tx);margin-bottom:4px">📅 Congés & Absences</div>'
+    +'<div style="font-size:13px;color:var(--tx3);margin-bottom:20px">Gestion des congés (toutes affaires) et calendriers alternants/stagiaires</div>'
+    +tabs+bodyHtml+'</div>';
+}
 
 function renderFiche(){
   var selAff='__ALL__'; // always all active affaires
