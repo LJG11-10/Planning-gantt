@@ -450,7 +450,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="btn" style="background:#FFF7ED;color:#C05A00;border:1px solid #FCE4D6;font-size:11px;font-weight:700" onclick="openPlanEditor()" title="Ajouter / modifier phases, sous-phases, activités">✏ Éditer planning</button>
     <button id="nav-desarch-btn" onclick="navDesarchiver()" style="display:none;background:#059669;color:#fff;border:1px solid #059669;border-radius:var(--r);padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ Désarchiver</button>
     <button onclick="downloadPlanning('interne')" style="background:var(--ac);color:#fff;border:none;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" title="Télécharger le planning complet (version interne avec heures et budget)">📥 Planning interne</button>
-    <button onclick="downloadPlanning('client')" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" title="Télécharger le planning simplifié (version client sans heures ni budget)">📄 Planning client</button>
+    <button onclick="showClientDownloadModal()" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" title="Télécharger le planning simplifié (version client sans heures ni budget)">📄 Planning client</button>
     <button style="background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" onclick="openRappelsSettings()">&#128276; Rappels</button>
     <button style="background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 12px;cursor:pointer;font-family:inherit" onclick="openFortuitModal()" title="Ajouter un événement fortuit sur une activité">⚡ Fortuit</button>
     <button class="btn btn-a" onclick="exportData()">↓ Export</button>
@@ -547,6 +547,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <span style="font-weight:700;color:var(--tx2)">Phases :</span>
   <div class="ld"><div class="ldot" style="background:var(--E2)"></div></div></div>
 <script>
+
 function showLoginMsg(msg, color) {
   var err = document.getElementById('login-err');
   if (err) { err.style.color = color||'#DC2626'; err.textContent = msg; }
@@ -799,7 +800,7 @@ function getPH(){
 // getPH() replaces PH everywhere — PH kept as a getter function
 function PH_get(k){try{return getPH()[k]||PH_BASE['CHANTIER'];}catch(e){return PH_BASE['CHANTIER'];}}
 const ES={ELS:{bg:'var(--els-bg)',tc:'var(--els-c)'},Interim:{bg:'var(--int-bg)',tc:'var(--int-c)'},'S-T':{bg:'var(--st-bg)',tc:'var(--st-c)'},Alternant:{bg:'#EDE9FE',tc:'#6D28D9'},Stagiaire:{bg:'#FDF2F8',tc:'#9D174D'}};
-const DS=['L','M','M','J','V'];
+const DS=['L','M','M','J','V','S','D'];
 // ═══════════════════════════════
 // JOURS FÉRIÉS FRANÇAIS 2025-2026
 // ═══════════════════════════════
@@ -832,7 +833,7 @@ function weekHasFerie(w){
   return false;
 }
 
-const DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+const DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 const MG=[
   {l:'Janvier',s:1,e:4},{l:'Février',s:5,e:8},{l:'Mars',s:9,e:13},{l:'Avril',s:14,e:17},
   {l:'Mai',s:18,e:21},{l:'Juin',s:22,e:26},{l:'Juillet',s:27,e:30},{l:'Août',s:31,e:35},
@@ -1210,51 +1211,147 @@ function renderHeuresInto(cid){
   if(dst){dst.innerHTML='<div id="hw" class="pg"></div>';renderHeures();}
 }
 
-// Annuaire & Recherche combinés
-function renderPersonnelSearch(){
-  var el=document.getElementById('pers-search');
-  if(!el)return;
-  // Construire l'annuaire de toutes les personnes
-  var personMap={};
-  Object.keys(STORE.projects).forEach(function(aff){
-    var p=STORE.projects[aff];
+// ── Annuaire & Habilitations ─────────────────────────────────────────
+
+function _getGlobalPersons(){
+  if(!STORE.globalPersons)STORE.globalPersons={};
+  return STORE.globalPersons;
+}
+
+function _mergePersonsFromProjects(){
+  // Assurer que toutes les personnes des affaires sont dans globalPersons
+  var gp=_getGlobalPersons();
+  Object.values(STORE.projects).forEach(function(p){
     (p.persons||[]).forEach(function(pp){
       if(!pp.name||!pp.name.trim())return;
       var nm=pp.name.trim();
-      if(!personMap[nm])personMap[nm]={name:nm,type:pp.type||'',affaires:[]};
-      if(personMap[nm].affaires.indexOf(aff)<0)personMap[nm].affaires.push(aff);
+      if(!gp[nm])gp[nm]={name:nm,type:pp.type||'',habilitations:[]};
     });
     (p.data||[]).filter(function(r){return r.t==='act';}).forEach(function(a){
       (a.p||[]).forEach(function(pp){
         if(!pp.name||!pp.name.trim())return;
         var nm=pp.name.trim();
-        if(!personMap[nm])personMap[nm]={name:nm,type:pp.ent||'',affaires:[]};
-        else if(!personMap[nm].type&&pp.ent)personMap[nm].type=pp.ent;
-        if(personMap[nm].affaires.indexOf(aff)<0)personMap[nm].affaires.push(aff);
+        if(!gp[nm])gp[nm]={name:nm,type:pp.ent||'',habilitations:[]};
       });
     });
   });
-  var persons=Object.values(personMap).sort(function(a,b){return a.name.localeCompare(b.name);});
+}
+
+function saveGlobalPerson(nm,type,habsArr){
+  var gp=_getGlobalPersons();
+  if(!nm||!nm.trim())return;
+  nm=nm.trim();
+  if(!gp[nm])gp[nm]={};
+  gp[nm].name=nm;
+  gp[nm].type=type||'';
+  gp[nm].habilitations=habsArr||[];
+  // Aussi ajouter dans l'affaire courante si elle existe
+  var aff=STORE.current;
+  if(aff&&STORE.projects[aff]){
+    var p=STORE.projects[aff];
+    if(!p.persons)p.persons=[];
+    if(!p.persons.find(function(pp){return pp.name===nm;})){
+      p.persons.push({name:nm,type:type||'',ent:''});
+    }
+  }
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+}
+
+function deleteGlobalPerson(nm){
+  if(!confirm('Supprimer '+nm+' de l\'annuaire ?'))return;
+  var gp=_getGlobalPersons();
+  delete gp[nm];
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  renderPersonnelSearch();
+}
+
+function openPersonEditor(nm){
+  window._editingPerson=nm||'';
+  renderPersonnelSearch();
+}
+
+function renderPersonnelSearch(){
+  var el=document.getElementById('pers-search');
+  if(!el)return;
+  _mergePersonsFromProjects();
+  var gp=_getGlobalPersons();
+  var persons=Object.values(gp).sort(function(a,b){return a.name.localeCompare(b.name);});
+  var editingNm=window._editingPerson;
   var ES2=ES||{};
-  var annuaire='<div style="padding:16px 20px">';
-  annuaire+='<div style="font-size:16px;font-weight:800;margin-bottom:16px">&#128100; Annuaire &mdash; '+persons.length+' personne'+(persons.length>1?'s':'')+'</div>';
-  annuaire+='<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;overflow:hidden;margin-bottom:28px">';
-  persons.forEach(function(p2,pi){
-    var ec=p2.type&&ES2[p2.type]?ES2[p2.type]:{bg:'var(--bg3)',tc:'var(--tx2)'};
-    annuaire+='<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--bd);background:'+(pi%2===0?'var(--bg2)':'var(--bg3)')+'">';
-    annuaire+='<span style="font-weight:700;font-size:13px;flex:1">'+p2.name+'</span>';
-    if(p2.type)annuaire+='<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+ec.bg+';color:'+ec.tc+'">'+p2.type+'</span>';
-    annuaire+='</div>';
-  });
-  annuaire+='</div>';
-  // Ajouter la recherche classique en dessous
-  annuaire+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">&#128269; Recherche par activité</div>';
-  annuaire+='<div class="srb" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">';
-  annuaire+='<span class="sri">&#8981;</span><input id="si" type="text" placeholder="Nom..." oninput="renderSearch()" style="flex:1;min-width:120px;border:2px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">';
-  annuaire+='</div><div id="sr"></div>';
-  annuaire+='</div>';
-  el.innerHTML=annuaire;
-  // Synchroniser le rendu de recherche si déjà une valeur
+  var typeOpts=['','ELS','Interim','S-T','Alternant','Stagiaire'];
+
+  var html='<div style="padding:20px">';
+
+  // ── Header
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
+  html+='<div><div style="font-size:18px;font-weight:900;color:var(--tx)">📋 Annuaire du personnel</div>';
+  html+='<div style="font-size:12px;color:var(--tx3);margin-top:2px">'+persons.length+' personne'+(persons.length!==1?'s':'')+' • Inter-affaires</div></div>';
+  html+='<button onclick="openPersonEditor(\'\')" style="padding:8px 16px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">+ Ajouter une personne</button>';
+  html+='</div>';
+
+  // ── Formulaire d'ajout / édition
+  if(editingNm!==undefined){
+    var ep=editingNm&&gp[editingNm]?gp[editingNm]:{name:editingNm,type:'',habilitations:[]};
+    var habStr=(ep.habilitations||[]).join(', ');
+    var isNew=!editingNm;
+    html+='<div style="background:var(--bg2);border:2px solid var(--ac);border-radius:var(--r2);padding:20px;margin-bottom:20px">';
+    html+='<div style="font-size:13px;font-weight:800;color:var(--tx);margin-bottom:14px">'+(isNew?'➕ Nouvelle personne':'✏️ Modifier — '+editingNm)+'</div>';
+    html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">';
+    html+='<div style="flex:1;min-width:180px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">NOM COMPLET</div>';
+    html+='<input id="_pe_name" type="text" value="'+ep.name.replace(/"/g,'&quot;')+'" placeholder="Prénom Nom" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box"></div>';
+    html+='<div style="flex:1;min-width:160px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">TYPE / RÔLE</div>';
+    html+='<select id="_pe_type" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">';
+    typeOpts.forEach(function(t){html+='<option value="'+t+'"'+(ep.type===t?' selected':'')+'>'+( t||'— Type —')+'</option>';});
+    html+='</select></div></div>';
+    // Habilitations
+    html+='<div style="margin-bottom:14px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">🏅 HABILITATIONS <span style="font-weight:400;font-style:italic">(séparées par des virgules : B0, H0, CACES 3...)</span></div>';
+    html+='<input id="_pe_habs" type="text" value="'+habStr.replace(/"/g,'&quot;')+'" placeholder="Ex: B0, H0, BR, CACES 3, ..." style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box">';
+    html+='<div style="font-size:10px;color:var(--tx3);margin-top:4px">Exemples : B0, H0, BR, BC, BE Essai, HC, CACES 1, CACES 3, Travaux en hauteur...</div></div>';
+    html+='<div style="display:flex;gap:8px">';
+    html+='<button onclick="(function(){var nm=document.getElementById(\'_pe_name\').value.trim();if(!nm){alert(\'Entrez un nom\');return;}var type=document.getElementById(\'_pe_type\').value;var habs=document.getElementById(\'_pe_habs\').value.split(\',\').map(function(h){return h.trim();}).filter(Boolean);saveGlobalPerson(nm,type,habs);window._editingPerson=undefined;renderPersonnelSearch();refreshAllTabs();})()" style="padding:8px 20px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sauvegarder</button>';
+    html+='<button onclick="window._editingPerson=undefined;renderPersonnelSearch()" style="padding:8px 16px;border-radius:var(--r);background:var(--bg3);border:1px solid var(--bd);color:var(--tx2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Annuler</button>';
+    html+='</div></div>';
+  }
+
+  // ── Liste des personnes
+  if(!persons.length){
+    html+='<div style="text-align:center;padding:48px 24px;background:var(--bg2);border-radius:var(--r2);border:2px dashed var(--bd)">';
+    html+='<div style="font-size:40px;margin-bottom:12px">👤</div>';
+    html+='<div style="font-size:14px;font-weight:700;color:var(--tx)">Aucune personne dans l\'annuaire</div>';
+    html+='<div style="font-size:12px;color:var(--tx3);margin-top:6px">Cliquez "+ Ajouter une personne" pour commencer</div></div>';
+  } else {
+    html+='<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);overflow:hidden">';
+    persons.forEach(function(p2,pi){
+      var ec=p2.type&&ES2[p2.type]?ES2[p2.type]:{bg:'var(--bg3)',tc:'var(--tx2)'};
+      var habs=p2.habilitations||[];
+      html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--bd);background:'+(pi%2===0?'var(--bg2)':'var(--bg3)')+'">';
+      // Nom + type + habilitations
+      html+='<div style="flex:1">';
+      html+='<div style="font-weight:700;font-size:13px;color:var(--tx)">'+p2.name+'</div>';
+      if(habs.length){
+        html+='<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">';
+        habs.forEach(function(h){
+          html+='<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;background:#DBEAFE;color:#1D4ED8;border:1px solid #BFDBFE">'+h+'</span>';
+        });
+        html+='</div>';
+      }
+      html+='</div>';
+      if(p2.type)html+='<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+ec.bg+';color:'+ec.tc+'">'+p2.type+'</span>';
+      html+='<button onclick="openPersonEditor(\''+p2.name.replace(/'/g,"\\'")+'\')" style="padding:4px 10px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:var(--tx3);font-size:11px;cursor:pointer;font-family:inherit">✏️</button>';
+      html+='<button onclick="deleteGlobalPerson(\''+p2.name.replace(/'/g,"\\'")+'\')\" style="padding:4px 8px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:#DC2626;font-size:11px;cursor:pointer;font-family:inherit">🗑</button>';
+      html+='</div>';
+    });
+    html+='</div>';
+  }
+
+  // ── Recherche rapide
+  html+='<div style="margin-top:24px"><div style="font-size:12px;font-weight:700;color:var(--tx2);margin-bottom:8px">🔍 Recherche par activité</div>';
+  html+='<div class="srb" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">';
+  html+='<span class="sri">⌕</span><input id="si" type="text" placeholder="Chercher une personne par nom..." oninput="renderSearch()" style="flex:1;border:2px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">';
+  html+='</div><div id="sr"></div></div>';
+  html+='</div>';
+
+  el.innerHTML=html;
   var si=document.getElementById('si');if(si&&si.value)renderSearch();
 }
 
@@ -1284,7 +1381,7 @@ function renderDashboard(){
 function dbEquipe(){
   if(!window._eqWk)window._eqWk=TODAY?TODAY.w:1;
   var selWk=window._eqWk;
-  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 
   // ── Build data from weekPlan ONLY ───────────────────────────────
   var wp=(STORE.weekPlan&&STORE.weekPlan[selWk])||{};
@@ -1396,7 +1493,7 @@ function fhPrintFiche(nm){
     return r||{lb:actId,pk:''};
   }
 
-  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
   var grandTotal=0;
   var body='';
 
@@ -2068,6 +2165,14 @@ function importData(e){
 }
 
 
+function ftToggleType(){
+  var isDecalage=document.getElementById('ft-type-decalage')&&document.getElementById('ft-type-decalage').checked;
+  var secR=document.getElementById('ft-section-retard');
+  var secD=document.getElementById('ft-section-decalage');
+  if(secR)secR.style.display=isDecalage?'none':'block';
+  if(secD)secD.style.display=isDecalage?'block':'none';
+}
+
 function openFortuitModal(){
   var modal=document.getElementById('fortuit-modal');
   if(!modal)return;
@@ -2167,36 +2272,45 @@ function confirmFortuit(){
   var ftAff=document.getElementById('ft-aff');
   var ftAct=document.getElementById('ft-act');
   var ftObj=document.getElementById('ft-obj');
-  var ftDur=document.getElementById('ft-dur');
-  var ftUnit=document.getElementById('ft-unit');
-  var ftDate=document.getElementById('ft-date');
-  if(!ftAff||!ftAct||!ftObj||!ftDur)return;
+  if(!ftAff||!ftAct||!ftObj)return;
   var aff=ftAff.value;
   var actId=ftAct.value;
   var obj=ftObj.value.trim();
-  var dur=+ftDur.value||1;
-  var unit=ftUnit?ftUnit.value:'days';
-  var date=ftDate?ftDate.value:'';
   if(!aff||!actId||!obj){alert('Remplissez tous les champs obligatoires.');return;}
+
+  // Type : retard ou décalage
+  var typeEl=document.querySelector('input[name="ft-type"]:checked');
+  var ftType=typeEl?typeEl.value:'retard';
+
   var proj=STORE.projects[aff];
   if(!proj)return;
   if(!proj.fortuites)proj.fortuites=[];
-  var durDays=unit==='hours'?Math.ceil(dur/8):dur;
   var actObj=(proj.data||[]).find(function(r){return r.id===actId;});
 
+  // Annuler l'ancienne version si édition
   var editAff=window._fortuitEditAff;
   var editIdx=window._fortuitEditIdx;
   var isEdit=(editAff!==undefined&&editIdx!==undefined);
-
   if(isEdit){
     var oldFt=(STORE.projects[editAff]&&STORE.projects[editAff].fortuites)||[];
     var oldF=oldFt[editIdx];
     if(oldF){
       var oldAct=(STORE.projects[editAff].data||[]).find(function(r){return r.id===oldF.actId;});
       if(oldAct){
-        // Annuler ancien impact sur RÉEL
-        oldAct.dDurR=Math.max(0,(oldAct.dDurR||oldAct.dDur||0)-Math.ceil(oldF.dur/(oldF.unit==='hours'?8:1)));
-        oldAct.hReel=Math.max(0,(oldAct.hReel||0)-(oldF.durDays||0)*((oldAct.hDurR||oldAct.hDur||8)));
+        if(oldF.ftType==='decalage'){
+          // Restaurer position originale
+          if(oldF.origS!=null)oldAct.s=oldF.origS;
+          if(oldF.origSPrev!=null)oldAct.sPrev=oldF.origSPrev;
+          if(oldF.origSReel!=null)oldAct.sReel=oldF.origSReel;
+          if(oldF.origDStart!=null)oldAct.dStart=oldF.origDStart;
+          if(oldF.origDStartR!=null)oldAct.dStartR=oldF.origDStartR;
+          if(oldF.origE!=null)oldAct.e=oldF.origE;
+          if(oldF.origEPrev!=null)oldAct.ePrev=oldF.origEPrev;
+          if(oldF.origEReel!=null)oldAct.eReel=oldF.origEReel;
+        } else {
+          oldAct.dDurR=Math.max(0,(oldAct.dDurR||oldAct.dDur||0)-Math.ceil(oldF.dur/(oldF.unit==='hours'?8:1)));
+          oldAct.hReel=Math.max(0,(oldAct.hReel||0)-(oldF.durDays||0)*((oldAct.hDurR||oldAct.hDur||8)));
+        }
       }
       oldFt.splice(editIdx,1);
     }
@@ -2204,19 +2318,76 @@ function confirmFortuit(){
     window._fortuitEditIdx=undefined;
   }
 
-  // Appliquer impact sur RÉEL
-  if(actObj){
-    actObj.dDurR=(actObj.dDurR!=null?actObj.dDurR:(actObj.dDur||0))+durDays;
-    var hj=actObj.hDurR||actObj.hDur||8;
-    actObj.hReel=Math.round(((actObj.hReel||0)+durDays*hj)*10)/10;
-    // Ajuster semaine fin réelle
-    if(actObj.sReel||actObj.s){
-      var sR=actObj.sReel||actObj.s;
-      actObj.eReel=Math.min(52,sR+Math.floor(((actObj.dDurR||1)-1)/5));
+  var ftRecord;
+
+  if(ftType==='decalage'){
+    // ── DÉCALAGE : déplacer début P et R à la date choisie ────────────
+    var decEl=document.getElementById('ft-decalage-date');
+    var decDate=decEl?decEl.value:'';
+    if(!decDate){alert('Choisissez une date de décalage.');return;}
+    var wdh=dateToWkDay(decDate+'T08:00');
+    if(!wdh){alert('Date invalide.');return;}
+
+    // Sauvegarder position originale
+    var origS=actObj?actObj.s:null;
+    var origSPrev=actObj?actObj.sPrev:null;
+    var origSReel=actObj?actObj.sReel:null;
+    var origDStart=actObj?actObj.dStart:null;
+    var origDStartR=actObj?(actObj.dStartR!=null?actObj.dStartR:actObj.dStart||0):null;
+    var origE=actObj?actObj.e:null;
+    var origEPrev=actObj?actObj.ePrev:null;
+    var origEReel=actObj?actObj.eReel:null;
+
+    if(actObj){
+      var dur=actObj.dDur||1;
+      var newS=wdh.w;
+      var newDStart=wdh.d;
+      var total=newDStart+(dur-1);
+      var newE=Math.min(52,newS+Math.floor(total/5));
+      var newDEnd=total%5;
+      actObj.s=newS; actObj.sPrev=newS; actObj.sReel=newS;
+      actObj.dStart=newDStart;
+      actObj.dStartR=newDStart; // sync R start day offset
+      actObj.e=newE; actObj.ePrev=newE; actObj.eReel=newE;
+      actObj.dEnd=newDEnd;
+      // Sync réel duration to prévu duration (pas de retard)
+      actObj.dDurR=dur;
+      var hjR=actObj.hDurR||actObj.hDur||8;
+      actObj.hReel=Math.round(dur*hjR*10)/10;
     }
+
+    ftRecord={
+      actId:actId,obj:obj,ftType:'decalage',
+      decalageDate:decDate,
+      origS:origS,origSPrev:origSPrev,origSReel:origSReel,
+      origDStart:origDStart,origDStartR:origDStartR,
+      origE:origE,origEPrev:origEPrev,origEReel:origEReel
+    };
+
+  } else {
+    // ── RETARD : ajouter durée au réel ────────────────────────────────
+    var ftDur=document.getElementById('ft-dur');
+    var ftUnit=document.getElementById('ft-unit');
+    var ftDate=document.getElementById('ft-date');
+    var dur=+ftDur.value||1;
+    var unit=ftUnit?ftUnit.value:'days';
+    var date=ftDate?ftDate.value:'';
+    var durDays=unit==='hours'?Math.ceil(dur/8):dur;
+
+    if(actObj){
+      actObj.dDurR=(actObj.dDurR!=null?actObj.dDurR:(actObj.dDur||0))+durDays;
+      var hj=actObj.hDurR||actObj.hDur||8;
+      actObj.hReel=Math.round(((actObj.hReel||0)+durDays*hj)*10)/10;
+      if(actObj.sReel||actObj.s){
+        var sR=actObj.sReel||actObj.s;
+        actObj.eReel=Math.min(52,sR+Math.floor(((actObj.dDurR||1)-1)/5));
+      }
+    }
+
+    ftRecord={actId:actId,obj:obj,ftType:'retard',dur:dur,unit:unit,date:date,durDays:durDays};
   }
 
-  STORE.projects[aff].fortuites.push({actId:actId,obj:obj,dur:dur,unit:unit,date:date,durDays:durDays});
+  STORE.projects[aff].fortuites.push(ftRecord);
   saveNow();closeFortuitModal();renderGantt();renderDashboard();refreshAllTabs();
 }
 function deleteFortuit(aff,idx){
@@ -2225,49 +2396,38 @@ function deleteFortuit(aff,idx){
   var f=p.fortuites[idx];
   if(!f)return;
   var actId=f.actId;
-  // Remove the fortuit
-  p.fortuites.splice(idx,1);
-  // Find the activity
   var act=(p.data||[]).find(function(x){return x.id===actId;});
+
+  // Annuler l'impact avant de supprimer
   if(act){
-    var remaining=p.fortuites.filter(function(ft){return ft.actId===actId;});
-    if(remaining.length===0){
-      // No more fortuites on this activity: restore original snapshot
-      if(act._origSnapshot){
-        var snap=act._origSnapshot;
-        act.hPrev=snap.hPrev; act.hReel=snap.hReel;
-        act.dDur=snap.dDur;   act.dDurR=snap.dDurR;
-        act.s=snap.s;         act.e=snap.e;
-        act.sReel=snap.sReel; act.eReel=snap.eReel;
-        act.dStart=snap.dStart; act.dEnd=snap.dEnd;
-        act.dStartR=snap.dStartR;
-        delete act._origSnapshot;
-      }
+    if(f.ftType==='decalage'){
+      // Restaurer position originale
+      if(f.origS!=null)act.s=f.origS;
+      if(f.origSPrev!=null)act.sPrev=f.origSPrev;
+      if(f.origSReel!=null)act.sReel=f.origSReel;
+      if(f.origDStart!=null)act.dStart=f.origDStart;
+      if(f.origDStartR!=null)act.dStartR=f.origDStartR;
+      if(f.origE!=null)act.e=f.origE;
+      if(f.origEPrev!=null)act.ePrev=f.origEPrev;
+      if(f.origEReel!=null)act.eReel=f.origEReel;
     } else {
-      // Re-apply remaining fortuites from original snapshot
-      if(act._origSnapshot){
-        var snap=act._origSnapshot;
-        act.hReel=snap.hReel;
-        act.dDurR=snap.dDurR;
-        act.eReel=snap.eReel;
-        remaining.forEach(function(ft){
-          var addedH=ft.unit==='hours'?ft.dur:ft.dur*8;
-          act.hReel=(act.hReel||0)+addedH;
-          var dDurR2=(act.dDurR||act.dDur||((act.e-act.s+1)*5));
-          act.dDurR=dDurR2+Math.round(ft.durDays);
-          var dStartR2=act.dStartR||act.dStart||0;
-          var totalR2=dStartR2+(act.dDurR-1);
-          act.eReel=Math.min(52,(act.sReel||act.s)+Math.floor(totalR2/5));
-        });
-      }
+      // Retard : soustraire les jours ajoutés
+      var durDays=f.durDays||Math.ceil(f.dur/(f.unit==='hours'?8:1));
+      act.dDurR=Math.max(0,(act.dDurR||act.dDur||0)-durDays);
+      var hj=act.hDurR||act.hDur||8;
+      act.hReel=Math.max(0,Math.round(((act.hReel||0)-durDays*hj)*10)/10);
+      var sR=act.sReel||act.s;
+      if(act.dDurR>0)
+        act.eReel=Math.min(52,sR+Math.floor((act.dDurR-1)/5));
     }
   }
+
+  p.fortuites.splice(idx,1);
   saveNow();
+  renderGantt();
   renderDashboard();
   refreshAllTabs();
 }
-
-
 function isPersonAbsent(personName,wk){
   if(!STORE.absences||!STORE.absences[personName])return false;
   var d=STORE.absences[personName];
@@ -2501,6 +2661,51 @@ function dbExportExcel(aff){
 }
 
 
+function showClientDownloadModal(){
+  var existing=document.getElementById('_cdl_modal');
+  if(existing)existing.remove();
+  var aff=STORE.current;
+  if(!aff){alert('Aucune affaire sélectionnée');return;}
+  var acts=(STORE.projects[aff]&&STORE.projects[aff].data||[]).filter(function(r){return r.t==='act';});
+  var defFrom=acts.length?Math.max(1,Math.min.apply(null,acts.map(function(a){return a.s||1;}))): 1;
+  var defTo=acts.length?Math.min(52,Math.max.apply(null,acts.map(function(a){return a.e||a.s||52;}))):52;
+  function wkToISO(wk){var d=new Date(2026,0,5);d.setDate(d.getDate()+(wk-1)*7);return d.toISOString().slice(0,10);}
+  var modal=document.createElement('div');
+  modal.id='_cdl_modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  var inner=document.createElement('div');
+  inner.style.cssText='background:var(--bg2);border-radius:16px;padding:32px;min-width:360px;box-shadow:0 20px 60px rgba(0,0,0,.3)';
+  inner.innerHTML=''
+    +'<div style="font-size:16px;font-weight:900;color:var(--tx);margin-bottom:6px">&#128229; Export client</div>'
+    +'<div style="font-size:12px;color:var(--tx3);margin-bottom:20px">Choisissez la plage de semaines à afficher dans le GANTT</div>'
+    +'<div style="display:flex;gap:12px;margin-bottom:16px;align-items:flex-end">'
+    +'<div><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">DATE DÉBUT</div>'
+    +'<input type="date" id="_cdl_from" value="'+wkToISO(defFrom)+'" style="border:2px solid var(--bd);border-radius:8px;padding:6px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx)"></div>'
+    +'<div style="font-weight:700;color:var(--tx3);padding-bottom:8px">&#8594;</div>'
+    +'<div><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">DATE FIN</div>'
+    +'<input type="date" id="_cdl_to" value="'+wkToISO(defTo)+'" style="border:2px solid var(--bd);border-radius:8px;padding:6px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx)"></div>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:20px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Seules les tâches dans cette plage apparaîtront sur le GANTT exporté</div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+    +'<button id="_cdl_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid var(--bd);background:var(--bg3);font-family:inherit;font-size:13px;cursor:pointer">Annuler</button>'
+    +'<button id="_cdl_ok" style="padding:8px 24px;border-radius:8px;border:none;background:var(--ac);color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">&#128229; Télécharger</button>'
+    +'</div>';
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
+  modal.onclick=function(e){if(e.target===modal)modal.remove();};
+  document.getElementById('_cdl_cancel').onclick=function(){modal.remove();};
+  document.getElementById('_cdl_ok').onclick=function(){
+    var f=document.getElementById('_cdl_from').value;
+    var t=document.getElementById('_cdl_to').value;
+    var base=new Date(2026,0,5);
+    window._clientGanttFrom=Math.max(1,Math.min(52,Math.floor((new Date(f)-base)/604800000)+1));
+    window._clientGanttTo=Math.max(1,Math.min(52,Math.floor((new Date(t)-base)/604800000)+1));
+    if(window._clientGanttFrom>window._clientGanttTo)window._clientGanttTo=window._clientGanttFrom;
+    modal.remove();
+    downloadPlanning('client');
+  };
+}
+
 function downloadPlanning(mode){
   mode=mode||'interne';
   var aff=STORE.current;
@@ -2533,9 +2738,9 @@ function downloadPlanning(mode){
   body+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:28px">';
   [
     {v:pct+'%',l:'Avancement',sub:done+'/'+acts.length+' activités terminées',c:'#2563EB',bg:'#EFF6FF'},
-    {v:Math.round(totP)+'H',l:'H Prévues',sub:'Budget : '+(bud||'—')+'H',c:'#D97706',bg:'#FFF7ED'},
-    {v:Math.round(totR)+'H',l:'H Réelles',sub:'Écart : '+(ecart>=0?'+':'')+ecart+'H',c:ecart>0?'#DC2626':'#059669',bg:ecart>0?'#FEF2F2':'#F0FDF4'},
-  ].forEach(function(x){
+    {v:mode!=='client'?Math.round(totP)+'H':'—',l:'H Prévues',sub:'Budget : '+(bud||'—')+'H',c:'#D97706',bg:'#FFF7ED',hide:mode==='client'},
+    {v:mode!=='client'?Math.round(totR)+'H':'—',l:'H Réelles',sub:'Écart : '+(ecart>=0?'+':'')+ecart+'H',c:ecart>0?'#DC2626':'#059669',bg:ecart>0?'#FEF2F2':'#F0FDF4',hide:mode==='client'},
+  ].filter(function(x){return !x.hide;}).forEach(function(x){
     body+='<div style="background:'+x.bg+';border-radius:12px;padding:20px;border-top:4px solid '+x.c+'">'
       +'<div style="font-size:36px;font-weight:900;color:'+x.c+'">'+x.v+'</div>'
       +'<div style="font-size:12px;font-weight:700;color:#555;margin-top:4px">'+x.l+'</div>'
@@ -2607,7 +2812,7 @@ function downloadPlanning(mode){
       body+='<div style="background:#F0F4F8;border-radius:10px;padding:10px 16px;border:1px solid #DDE3EA">'
         +'<div style="font-weight:700;font-size:12px;color:#1F4E79">'+esc(nm)+'</div>'
         +(type?'<div style="font-size:10px;color:#7C3AED;margin-top:2px">'+esc(type)+'</div>':'')
-        +'<div style="font-size:11px;color:#888;margin-top:4px">'+persMap[nm]+'H assignées</div></div>';
+        +(mode!=='client'?'<div style="font-size:11px;color:#888;margin-top:4px">'+persMap[nm]+'H assignées</div>':'')+'</div>';
     });
     body+='</div>';
   }
@@ -2753,8 +2958,12 @@ function downloadPlanning(mode){
     return html;
   }
 
-  var ganttPage='<div class="gantt-page">'+buildGanttHalf(1,26,'GANTT S1 → S26 (Janvier – Juin)')+'</div>'
-    +'<div class="gantt-page">'+buildGanttHalf(27,52,'GANTT S27 → S52 (Juillet – Décembre)')+'</div>';
+  var _fw=mode==='client'?(window._clientGanttFrom||1):1;
+  var _tw=mode==='client'?(window._clientGanttTo||52):52;
+  var ganttPage=mode==='client'
+    ?'<div class="gantt-page">'+buildGanttHalf(_fw,_tw,'GANTT S'+_fw+' → S'+_tw)+'</div>'
+    :'<div class="gantt-page">'+buildGanttHalf(1,26,'GANTT S1 → S26 (Janvier – Juin)')+'</div>'
+     +'<div class="gantt-page">'+buildGanttHalf(27,52,'GANTT S27 → S52 (Juillet – Décembre)')+'</div>';
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
     +'<title>'+esc(aff)+' — Planning 2026</title>'
     +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px;max-width:1100px;margin:0 auto}@media print{@page{size:A4 landscape;margin:7mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;width:100%!important;border-collapse:collapse}tr{page-break-inside:avoid}.no-print{display:none}.gantt-page{page-break-before:always;padding:4px}.recap-page{page-break-after:always}}</style>'
@@ -2812,9 +3021,9 @@ function dbBuildPlanningGrid(){
   if(!STORE.weekPlan)STORE.weekPlan={};
   if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};
   if(!window._wpExtra||window._wpExtraWk!==selWk){window._wpExtra={};window._wpExtraWk=selWk;}
-  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
   var affs=Object.keys(STORE.projects).sort().filter(function(a){return !STORE.projects[a].closed;});
-  function getAllPersons(){var ps={};Object.values(STORE.projects).forEach(function(p){(p.persons||[]).forEach(function(pp){if(pp.name&&pp.name.trim())ps[pp.name.trim()]=true;});(p.data||[]).filter(function(r){return r.t==='act';}).forEach(function(a){(a.p||[]).forEach(function(pp){if(pp.name&&pp.name.trim())ps[pp.name.trim()]=true;});});});return Object.keys(ps).sort();}
+  function getAllPersons(){var ps={};Object.values(STORE.projects).forEach(function(p){(p.persons||[]).forEach(function(pp){if(pp.name&&pp.name.trim())ps[pp.name.trim()]=true;});(p.data||[]).filter(function(r){return r.t==='act';}).forEach(function(a){(a.p||[]).forEach(function(pp){if(pp.name&&pp.name.trim())ps[pp.name.trim()]=true;});});});if(STORE.globalPersons)Object.keys(STORE.globalPersons).forEach(function(nm){if(nm.trim())ps[nm.trim()]=true;});return Object.keys(ps).sort();}
   function buildAffOpts(selAff){var o='<option value="">-- Choisir affaire --</option>';affs.forEach(function(a){o+='<option value="'+a+'"'+(selAff===a?' selected':'')+'>'+a+'</option>';});return o;}
   function buildActOpts(aff,selId){if(!aff)return '<option value="">-- Choisir activite --</option>';var o='<option value="">-- Choisir activite --</option>';var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];var sb='';dat.forEach(function(r){if(r.t==='sb'){sb=r.lb;return;}if(r.t!=='act')return;o+='<option value="'+r.id+'"'+(selId===r.id?' selected':'')+'>'+(sb?sb+' > ':'')+r.lb+'</option>';});return o;}
   function getSavedEntries(nm,di){var key=nm+'::'+di;var val=STORE.weekPlan[selWk][key];if(!val)return [];if(Array.isArray(val))return val;return [val];}
@@ -2849,7 +3058,11 @@ function dbBuildPlanningGrid(){
   persons.forEach(function(nm,pi){
     var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var nmEsc=nm.replace(/"/g,'&quot;');
     html+='<tr style="border-bottom:1px solid var(--bd);background:'+(pi%2===0?'#fff':'#F8FBFF')+'">';
-    html+='<td style="padding:10px 16px;font-weight:800;font-size:13px;white-space:nowrap;border-right:3px solid #BFDBFE;vertical-align:top;background:linear-gradient(135deg,#EFF6FF,#DBEAFE);color:#1E40AF">'+nm+'</td>';
+    var _gp2=STORE.globalPersons&&STORE.globalPersons[nm];
+    var _habs=_gp2&&_gp2.habilitations&&_gp2.habilitations.length
+      ?'<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:2px">'+_gp2.habilitations.map(function(h){return '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;background:#DBEAFE;color:#1D4ED8;border:1px solid #BFDBFE">'+h+'</span>';}).join('')+'</div>'
+      :'';
+    html+='<td style="padding:10px 16px;font-weight:800;font-size:13px;white-space:nowrap;border-right:3px solid #BFDBFE;vertical-align:top;background:linear-gradient(135deg,#EFF6FF,#DBEAFE);color:#1E40AF">'+nm+_habs+'</td>';
     DN.forEach(function(d,di){
       // Vérifier congé pour CE jour spécifique
       var _dayDate=new Date(dLun.getTime()+di*86400000);
@@ -2885,7 +3098,7 @@ function dbBuildPlanningGrid(){
 function dbDownloadWeek(){
   if(!window._dbwk)window._dbwk=TODAY?TODAY.w+1:2;
   var selWk=window._dbwk;
-  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
   if(!STORE.weekPlan||!STORE.weekPlan[selWk]){alert("Aucun planning saisi pour cette semaine.");return;}
   var wp=STORE.weekPlan[selWk];
   var personMap={};
@@ -3010,9 +3223,29 @@ function dbFortuites(){
     html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">';
     forts.forEach(function(f,i){
       var ph=PH_get(f.pk||'CHANTIER');
-      var impactH=Math.round((f.durDays||0)*8);
+      var isDecalage=f.ftType==='decalage';
+      var impactH=isDecalage?0:Math.round((f.durDays||0)*8);
+      // Date d'événement
       var dateStr=f.date?new Date(f.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}):'Date non renseignée';
-      var dureeStr=f.dur+' '+(f.unit==='hours'?'heure'+(f.dur>1?'s':''):'jour'+(f.dur>1?'s':''));
+      // Durée / info selon le type
+      var dureeStr,decalageInfo='';
+      if(isDecalage){
+        // Calculer combien de jours de décalage entre orig et nouvelle date
+        var decDate=f.decalageDate?new Date(f.decalageDate):null;
+        var decLabel=decDate?decDate.toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}):'—';
+        // Calcul écart en jours ouvrés depuis l'orig
+        var ecartJ='';
+        if(f.origS!=null&&decDate){
+          var origDate=new Date(2026,0,5);origDate.setDate(origDate.getDate()+(f.origS-1)*7+(f.origDStart||0));
+          var diffMs=decDate.getTime()-origDate.getTime();
+          var diffJ=Math.round(diffMs/86400000);
+          ecartJ=diffJ>0?'+'+diffJ+' j':diffJ+'j';
+        }
+        dureeStr=decLabel;
+        decalageInfo=ecartJ;
+      } else {
+        dureeStr=f.dur+' '+(f.unit==='hours'?'heure'+(f.dur>1?'s':''):'jour'+(f.dur>1?'s':''));
+      }
 
       html+='<div style="background:var(--bg2);border-radius:14px;border:2px solid var(--bd);overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);transition:box-shadow .15s" onmouseenter="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.12)\'" onmouseleave="this.style.boxShadow=\'0 2px 12px rgba(0,0,0,.06)\'">'
         // Top color strip with phase
@@ -3030,14 +3263,23 @@ function dbFortuites(){
         +'<div style="font-size:12px;color:var(--tx2);margin-bottom:14px;padding:8px 12px;background:var(--bg3);border-radius:8px;border-left:3px solid #DC2626">'+f.obj+'</div>'
         // Stats row
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'
-        +'<div style="background:#FEF2F2;border-radius:8px;padding:10px;text-align:center;border:1px solid #FECCcA">'
-        +'<div style="font-size:18px;font-weight:900;color:#DC2626">+'+impactH+'H</div>'
-        +'<div style="font-size:9px;color:#9A0000;font-weight:700">IMPACT HEURES</div>'
-        +'</div>'
-        +'<div style="background:#FFF7ED;border-radius:8px;padding:10px;text-align:center;border:1px solid #FDE68A">'
-        +'<div style="font-size:18px;font-weight:900;color:#D97706">'+dureeStr+'</div>'
-        +'<div style="font-size:9px;color:#92400E;font-weight:700">DURÉE</div>'
-        +'</div>'
+        +(isDecalage
+          ?('<div style="background:#F5F3FF;border-radius:8px;padding:10px;text-align:center;border:1px solid #DDD6FE">'
+           +'<div style="font-size:16px;font-weight:900;color:#7C3AED">'+dureeStr+'</div>'
+           +'<div style="font-size:9px;color:#5B21B6;font-weight:700">DÉCALÉ AU</div>'
+           +'</div>'
+           +'<div style="background:#F5F3FF;border-radius:8px;padding:10px;text-align:center;border:1px solid #DDD6FE">'
+           +'<div style="font-size:18px;font-weight:900;color:#7C3AED">'+(decalageInfo||'—')+'</div>'
+           +'<div style="font-size:9px;color:#5B21B6;font-weight:700">DÉCALAGE</div>'
+           +'</div>')
+          :('<div style="background:#FEF2F2;border-radius:8px;padding:10px;text-align:center;border:1px solid #FECCcA">'
+           +'<div style="font-size:18px;font-weight:900;color:#DC2626">+'+impactH+'H</div>'
+           +'<div style="font-size:9px;color:#9A0000;font-weight:700">IMPACT HEURES</div>'
+           +'</div>'
+           +'<div style="background:#FFF7ED;border-radius:8px;padding:10px;text-align:center;border:1px solid #FDE68A">'
+           +'<div style="font-size:18px;font-weight:900;color:#D97706">'+dureeStr+'</div>'
+           +'<div style="font-size:9px;color:#92400E;font-weight:700">DURÉE</div>'
+           +'</div>'))
         +'</div>'
         // Footer
         +'<div style="display:flex;justify-content:flex-end;gap:6px">'
@@ -3923,8 +4165,7 @@ function renderPortfolio(){
       if(a.s<minWk)minWk=a.s;if((a.e||a.s)>maxWk)maxWk=(a.e||a.s);
     });
   });
-  if(minWk>maxWk){minWk=1;maxWk=52;}
-  minWk=Math.max(1,minWk-1);maxWk=Math.min(52,maxWk+1);
+  minWk=1;maxWk=52; // Afficher toutes les semaines de l'année
   var NW=maxWk-minWk+1;
   var CW=Math.max(16,Math.floor((wrap.offsetWidth-270)/NW));
   var todayWk=TODAY?TODAY.w:null;
@@ -4027,13 +4268,13 @@ function renderPortfolio(){
 function renderGantt(){
   if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='day'){renderGanttDay();return;}
   if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='global'){renderPortfolio();return;}
-  const DW=ZOOM_DW,NC=52*5;
+  const DW=ZOOM_DW,NC=52*7;
   const wrap=document.getElementById('gw');
   // Mois
   let mH='';
   MG.forEach(m=>{
     const n=m.e-m.s+1;
-    mH+=`<th colspan="${n*5}" style="background:var(--bg2);font-size:9px;font-weight:600;color:var(--tx2);text-align:center;border-bottom:1px solid var(--bd);border-right:1px solid var(--bd)">${m.l}</th>`;
+    mH+=`<th colspan="${n*7}" style="background:var(--bg2);font-size:9px;font-weight:600;color:var(--tx2);text-align:center;border-bottom:1px solid var(--bd);border-right:1px solid var(--bd)">${m.l}</th>`;
   });
   // Semaines
   let wH='';
@@ -4044,7 +4285,7 @@ function renderGantt(){
     const bg=hasFerie?'#FEE2E2':isTW?'#FEF3C7':'var(--ac2)';
     const clr=hasFerie?'#DC2626':isTW?'#D97706':'var(--ac)';
     const fw=isTW||hasFerie?'700':'600';
-    wH+=`<th colspan="5" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;border-bottom:1px solid var(--bd2);${sep}${hasFerie?';border-top:2px solid #DC2626':''}">S${w}${hasFerie?'<br><span style="font-size:7px">🎌</span>':isTW?'<br><span style="font-size:7px">auj.</span>':''}</th>`;
+    wH+=`<th colspan="7" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;border-bottom:1px solid var(--bd2);${sep}${hasFerie?';border-top:2px solid #DC2626':''}">S${w}${hasFerie?'<br><span style="font-size:7px">🎌</span>':isTW?'<br><span style="font-size:7px">auj.</span>':''}</th>`;
   }
   // Jours
   let dH='';
@@ -4057,7 +4298,7 @@ function renderGantt(){
       const clr=isFerieCol?'#DC2626':isTD?'#D97706':'var(--tx3)';
       const fw=isTD||isFerieCol?'700':'400';
       const bot=isFerieCol?'border-bottom:2px solid #DC2626;border-top:2px solid #DC2626':isTD?'border-bottom:2px solid #D97706':'border-bottom:2px solid var(--bd2)';
-      dH+=`<th title="${fmt(ddD(w,di))}" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;width:${DW}px;min-width:${DW}px;max-width:${DW}px;padding:3px 1px;line-height:1.4;vertical-align:middle;${bot};${di===4&&sep?'border-right:1px solid var(--bd)':'border-right:none'}">${d}${isTD?'<span style="color:#D97706">•</span>':''}<br><span style="font-size:10px;font-weight:700">${fmt(ddD(w,di))}</span></th>`;
+      dH+=`<th title="${fmt(ddD(w,di))}" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;width:${DW}px;min-width:${DW}px;max-width:${DW}px;padding:3px 1px;line-height:1.4;vertical-align:middle;${bot};${(d===4||d===6)&&sep?'border-right:1px solid var(--bd)':d>=5?'background:var(--bg3);opacity:.7':'border-right:none'}">${d}${isTD?'<span style="color:#D97706">•</span>':''}<br><span style="font-size:10px;font-weight:700">${fmt(ddD(w,di))}</span></th>`;
     });
   }
   let html=`<table class="gt" style="min-width:${255+38+NC*DW}px">
@@ -4131,17 +4372,24 @@ function renderGantt(){
       const sep=MG.some(m=>m.e===w);
       const isTW=TODAY&&TODAY.w===w;
 
-      for(let d=0;d<5;d++){
-        const absDay=(w-1)*5+d;
-        const inPrev=absDay>=prevStartDay&&absDay<=prevEndDay;
-        const inReel=absDay>=reelStartDay&&absDay<=reelEndDay;
-        const isFirstPrev=inPrev&&absDay===prevStartDay;
-        const isFirstReel=inReel&&absDay===reelStartDay;
+      for(let d=0;d<7;d++){
+        const isWE=d>=5;
+        const absDay=(w-1)*7+d;
+        const d5=isWE?-1:(w-1)*5+d; // Equivalent 5-col pour les barres
+        const inPrev=!isWE&&d5>=prevStartDay&&d5<=prevEndDay;
+        const inReel=!isWE&&d5>=reelStartDay&&d5<=reelEndDay;
+        const isFirstPrev=inPrev&&d5===prevStartDay;
+        const isFirstReel=inReel&&d5===reelStartDay;
         const inAny=inPrev||inReel;
         const isTD=isTW&&TODAY.di===d;
-        const sepBdr=d===4&&sep?'border-right:1px solid var(--bd2);':'';
+        const sepBdr=(d===4||d===6)&&sep?'border-right:1px solid var(--bd2);':'';
         const todBdr=isTD?'outline:2px solid #D97706;outline-offset:-2px;position:relative;z-index:1;':'';
 
+        // Cellule week-end
+        if(isWE){
+          dc+=`<td style="background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px);border-right:${d===6&&sep?'1px solid var(--bd)':'none'};min-width:${DW}px"></td>`;
+          continue;
+        }
         if(!inAny){
           dc+=`<td style="background:${isTD?'#FEF9C3':'var(--bg2)'};${sepBdr}${todBdr}"></td>`;
           continue;
@@ -5613,7 +5861,7 @@ function fhGenerateHTML(nm,cb){
   if(_fcWk&&_fcWk!=='all'){var _selN=+_fcWk;wks=wks.filter(function(w){return w===_selN;});}
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   function getAct(actId){var r=(STORE.projects[aff].data||[]).find(function(x){return x.id===actId;});return r||{lb:actId,pk:''};}
-  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
   var grandTotal=0;var body='';
   if(!wks.length){alert('Aucune fiche trouvée pour '+nm+'.');return;}
   wks.forEach(function(wk){
@@ -5945,6 +6193,19 @@ function toggleExp(id){
     expandTr.scrollIntoView({block:'nearest',behavior:'smooth'});
   });
 }
+
+function setProgress(id,val){
+  const r=D().find(x=>x.id===id);if(!r)return;
+  r.progress=Math.min(100,Math.max(0,+val||0));
+  clearTimeout(setProgress._t);
+  setProgress._t=setTimeout(function(){saveNow();refreshAllTabs();},400);
+}
+function toggleInProgress(id){
+  const r=D().find(x=>x.id===id);if(!r)return;
+  r.inProgress=!r.inProgress;
+  if(!r.inProgress)r.progress=0;
+  saveNow();refreshAllTabs();
+}
 function toggleDone(id){const r=D().find(x=>x.id===id);if(!r)return;r.done=!r.done;saveNow();refreshAllTabs();}
 function updDate(id,f,v){
   const n=Math.min(52,Math.max(1,parseInt(v)||1));
@@ -6006,23 +6267,34 @@ function updActDurNoFlicker(id,val){if(window._rendering)return;const r=D().find
 function updActDurLive(id,field,val){
   if(window._rendering)return;
   var r=D().find(function(x){return x.id===id;});if(!r)return;
-  var days=Math.max(1,Math.round(+val||1));
+  var days=Math.max(0,Math.round(+val||0)); // 0 = tâche non planifiée
   if(field==='prev'){
     var hj=r.hDur!=null?r.hDur:8;
-    var newH=Math.round(days*hj*10)/10;
-    r.dDur=days; r.hPrev=newH;
-    var dStart=r.dStart||0;
-    var total=dStart+(days-1);
-    r.e=Math.min(52,r.s+Math.floor(total/5));r.dEnd=total%5;r.ePrev=r.e;
-    var hEl=document.getElementById('ep-hp-'+id);if(hEl&&document.activeElement!==hEl)hEl.value=newH;
+    if(days===0){
+      // Non planifié : heures = 0, pas de barre
+      r.dDur=0; r.hPrev=0;
+      var hEl=document.getElementById('ep-hp-'+id);if(hEl&&document.activeElement!==hEl)hEl.value=0;
+    } else {
+      var newH=Math.round(days*hj*10)/10;
+      r.dDur=days; r.hPrev=newH;
+      var dStart=r.dStart||0;
+      var total=dStart+(days-1);
+      r.e=Math.min(52,r.s+Math.floor(total/5));r.dEnd=total%5;r.ePrev=r.e;
+      var hEl2=document.getElementById('ep-hp-'+id);if(hEl2&&document.activeElement!==hEl2)hEl2.value=newH;
+    }
   } else {
     var hjR=r.hDurR!=null?r.hDurR:(r.hDur!=null?r.hDur:8);
-    var newHR=Math.round(days*hjR*10)/10;
-    r.dDurR=days; r.hReel=newHR;
-    var dStartR=r.dStartR!=null?r.dStartR:(r.dStart||0);
-    var totalR=dStartR+(days-1);
-    r.eReel=Math.min(52,(r.sReel||r.s)+Math.floor(totalR/5));
-    var hEl2=document.getElementById('ep-hr-'+id);if(hEl2&&document.activeElement!==hEl2)hEl2.value=newHR;
+    if(days===0){
+      r.dDurR=0; r.hReel=0;
+      var hEl3=document.getElementById('ep-hr-'+id);if(hEl3&&document.activeElement!==hEl3)hEl3.value=0;
+    } else {
+      var newHR=Math.round(days*hjR*10)/10;
+      r.dDurR=days; r.hReel=newHR;
+      var dStartR=r.dStartR!=null?r.dStartR:(r.dStart||0);
+      var totalR=dStartR+(days-1);
+      r.eReel=Math.min(52,(r.sReel||r.s)+Math.floor(totalR/5));
+      var hEl4=document.getElementById('ep-hr-'+id);if(hEl4&&document.activeElement!==hEl4)hEl4.value=newHR;
+    }
   }
   updBudget();
   clearTimeout(updActDurLive._t);
@@ -6063,49 +6335,45 @@ function updActDurSync(id,field,val){
 }
 
 function updActHSync(id,field,val){
-  // field: 'prev' or 'reel'
   if(window._rendering)return;
   const r=D().find(x=>x.id===id);if(!r)return;
   const h=Math.max(0,+val||0);
   if(field==='prev'){
     r.hPrev=h;
-    // Update dDur: ceil(h / H/jour)
     const hj=r.hDur!=null?r.hDur:8;
-    if(hj>0){
+    if(h===0){
+      // Non planifié : 0 jour, pas de barre
+      r.dDur=0;
+      var _dEl=document.getElementById('ep-dp-'+id);if(_dEl&&document.activeElement!==_dEl)_dEl.value=0;
+    } else if(hj>0){
       const days=Math.max(1,Math.ceil(h/hj));
       const dStart=r.dStart||0;
       const totalDayOffset=dStart+(days-1);
       r.dDur=days;
-      var _dEl=document.getElementById('ep-dp-'+id);if(_dEl&&document.activeElement!==_dEl)_dEl.value=days;
+      var _dEl2=document.getElementById('ep-dp-'+id);if(_dEl2&&document.activeElement!==_dEl2)_dEl2.value=days;
       r.e=Math.min(52,r.s+Math.floor(totalDayOffset/5));
       r.dEnd=totalDayOffset%5;
       r.ePrev=r.e;
-      // Sync hReel and dDurR to match new duration
-      r.dDurR=days;
-      const hjR=r.hDurR!=null?r.hDurR:hj;
-      r.hReel=Math.round(days*hjR*10)/10;
-      const dStartR=r.dStartR!=null?r.dStartR:(r.dStart||0);
-      const totalR=dStartR+(days-1);
-      r.eReel=Math.min(52,(r.sReel||r.s)+Math.floor(totalR/5));
     }
   } else {
     r.hReel=h;
-    // Update dDurR: ceil(h / H/jour réel)
     const hjR=r.hDurR!=null?r.hDurR:(r.hDur!=null?r.hDur:8);
-    if(hjR>0){
+    if(h===0){
+      r.dDurR=0;
+      var _dEl3=document.getElementById('ep-dr-'+id);if(_dEl3&&document.activeElement!==_dEl3)_dEl3.value=0;
+    } else if(hjR>0){
       const days=Math.max(1,Math.ceil(h/hjR));
       const dStartR=r.dStartR!=null?r.dStartR:(r.dStart||0);
       const totalR=dStartR+(days-1);
       r.dDurR=days;
-      var _dEl2=document.getElementById('ep-dr-'+id);if(_dEl2&&document.activeElement!==_dEl2)_dEl2.value=days;
-      r.eReel=Math.min(52,r.sReel+Math.floor(totalR/5));
+      var _dEl4=document.getElementById('ep-dr-'+id);if(_dEl4&&document.activeElement!==_dEl4)_dEl4.value=days;
+      r.eReel=Math.min(52,(r.sReel||r.s)+Math.floor(totalR/5));
     }
   }
   updBudget();
   clearTimeout(updActHSync._t);
   updActHSync._t=setTimeout(function(){saveNow();},300);
 }
-
 function updActDuration(id,unit,val){
   if(window._rendering)return;
   const r=D().find(x=>x.id===id);if(!r)return;
@@ -6431,6 +6699,9 @@ function renderRecap(){
   function aRow(r){
     const ph=PH_get(r.pk),tot=r.p.reduce((s,p)=>s+(+p.heures||0),0);
     const done=r.done?'<span style="color:var(--gn);font-size:10px;margin-right:3px">✓</span>':'';
+    const progBadge=(r.inProgress&&!r.done&&r.progress>0)
+      ?'<span style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;font-size:9px;font-weight:700;color:#D97706;padding:1px 6px;margin-right:3px">⚡'+r.progress+'%</span>'
+      :'';
     const pc=r.p.map((p,i)=>{const es=p.ent?ES[p.ent]:null;
       return `<td style="white-space:nowrap">${p.name||'—'}</td>`+
              `<td>${p.ent?`<span class="pill" style="background:${es.bg};color:${es.tc}">${p.ent}</span>`:'—'}</td>`+
@@ -6442,7 +6713,7 @@ function renderRecap(){
       ?`<td style="text-align:center;font-weight:700;font-size:10px;color:${delta>0?'var(--rd)':delta<0?'var(--gn)':'var(--tx3)'}">${delta>0?'+':''}${delta}H</td>`
       :'<td style="text-align:center;color:var(--tx3)">—</td>';
     return `<tr style="border-bottom:1px solid var(--bd)">
-      <td style="padding:4px 8px;white-space:nowrap">${done}${r.lb}</td>${pc}
+      <td style="padding:4px 8px;white-space:nowrap">${progBadge}${done}${r.lb}</td>${pc}
       <td style="text-align:right;font-weight:700;color:${tot?'var(--ac)':'var(--tx3)'};">${tot||'—'}</td>
       <td style="text-align:center;font-weight:700;color:var(--or)">${r.hPrev!=null?r.hPrev+'H':'—'}</td>
       <td style="text-align:center;font-weight:700;color:var(--gn)">${r.hReel!=null?r.hReel+'H':'—'}</td>
@@ -6857,7 +7128,8 @@ function buildActOpts(aff,selActId){
   });
   opts+='</optgroup>';
   return opts;
-}</script>
+}
+</script>
 <!-- Fortuit Modal -->
 <div id="fortuit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center;padding:20px">
   <div style="background:var(--bg2);border-radius:var(--r2);width:100%;max-width:520px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
@@ -6878,22 +7150,40 @@ function buildActOpts(aff,selActId){
         <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:4px">OBJET DU FORTUIT</label>
         <input id="ft-obj" type="text" placeholder="Ex: Intempéries, panne machine..." style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box">
       </div>
-      <div style="display:flex;gap:10px">
-        <div style="flex:1">
-          <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:4px">DURÉE</label>
-          <input id="ft-dur" type="number" min="0.5" step="0.5" value="1" style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:'Courier New',monospace;font-weight:700;background:var(--bg2);color:var(--rd);outline:none">
-        </div>
-        <div style="flex:1">
-          <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:4px">UNITÉ</label>
-          <select id="ft-unit" style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">
-            <option value="days">Jours</option>
-            <option value="hours">Heures</option>
-          </select>
+      <div>
+        <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:6px">TYPE DE FORTUIT</label>
+        <div style="display:flex;gap:0;border:1px solid var(--bd);border-radius:var(--r);overflow:hidden">
+          <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;background:var(--bg2);font-size:12px;font-weight:700;border-right:1px solid var(--bd)">
+            <input type="radio" name="ft-type" id="ft-type-retard" value="retard" checked onchange="ftToggleType()" style="accent-color:#DC2626">
+            <span style="color:#DC2626">⏱ Retard</span>
+          </label>
+          <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;background:var(--bg2);font-size:12px;font-weight:700">
+            <input type="radio" name="ft-type" id="ft-type-decalage" value="decalage" onchange="ftToggleType()" style="accent-color:#7C3AED">
+            <span style="color:#7C3AED">📅 Décalage</span>
+          </label>
         </div>
       </div>
-      <div>
-        <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:4px">DATE DU FORTUIT</label>
-        <input id="ft-date" type="date" style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box">
+      <div id="ft-section-retard">
+        <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:4px">DATE DU RETARD <span style="font-weight:400">(optionnel)</span></label>
+        <input id="ft-date" type="date" style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box;margin-bottom:8px">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:4px">DURÉE DU RETARD</label>
+            <input id="ft-dur" type="number" min="0.5" step="0.5" value="1" style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:'Courier New',monospace;font-weight:700;background:var(--bg2);color:var(--rd);outline:none">
+          </div>
+          <div style="flex:1">
+            <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:4px">UNITÉ</label>
+            <select id="ft-unit" style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">
+              <option value="days">Jours</option>
+              <option value="hours">Heures</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="ft-section-decalage" style="display:none">
+        <label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;display:block;margin-bottom:4px">DÉCALER LE DÉBUT DE LA TÂCHE AU</label>
+        <input id="ft-decalage-date" type="date" style="width:100%;border:1.5px solid #7C3AED;border-radius:var(--r);padding:6px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:#7C3AED;font-weight:700;outline:none;box-sizing:border-box">
+        <div style="font-size:10px;color:var(--tx3);margin-top:4px">La durée de la tâche est conservée, seule la date de début (P et R) est modifiée</div>
       </div>
       <div style="display:flex;gap:8px;margin-top:4px">
         <button onclick="confirmFortuit()" style="flex:1;background:#DC2626;color:#fff;border:none;border-radius:var(--r);padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⚡ Appliquer le fortuit</button>
