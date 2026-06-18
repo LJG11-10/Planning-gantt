@@ -4298,7 +4298,7 @@ function renderGantt(){
       const clr=isFerieCol?'#DC2626':isTD?'#D97706':'var(--tx3)';
       const fw=isTD||isFerieCol?'700':'400';
       const bot=isFerieCol?'border-bottom:2px solid #DC2626;border-top:2px solid #DC2626':isTD?'border-bottom:2px solid #D97706':'border-bottom:2px solid var(--bd2)';
-      dH+=`<th title="${fmt(ddD(w,di))}" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;width:${DW}px;min-width:${DW}px;max-width:${DW}px;padding:3px 1px;line-height:1.4;vertical-align:middle;${bot};${(d===4||d===6)&&sep?'border-right:1px solid var(--bd)':d>=5?'background:var(--bg3);opacity:.7':'border-right:none'}">${d}${isTD?'<span style="color:#D97706">•</span>':''}<br><span style="font-size:10px;font-weight:700">${fmt(ddD(w,di))}</span></th>`;
+      dH+=`<th title="${fmt(ddD(w,di))}" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;width:${DW}px;min-width:${DW}px;max-width:${DW}px;padding:3px 1px;line-height:1.4;vertical-align:middle;${bot};${d===6?'border-right:2px solid #374151':d>=5?'background:var(--bg3);opacity:.7':(d===4&&sep?'border-right:1px solid var(--bd)':'border-right:none')}">${d}${isTD?'<span style="color:#D97706">•</span>':''}<br><span style="font-size:10px;font-weight:700">${fmt(ddD(w,di))}</span></th>`;
     });
   }
   let html=`<table class="gt" style="min-width:${255+38+NC*DW}px">
@@ -4382,12 +4382,12 @@ function renderGantt(){
         const isFirstReel=inReel&&d5===reelStartDay;
         const inAny=inPrev||inReel;
         const isTD=isTW&&TODAY.di===d;
-        const sepBdr=(d===4||d===6)&&sep?'border-right:1px solid var(--bd2);':'';
+        const sepBdr=d===6?'border-right:2px solid #374151;':(d===4&&sep?'border-right:1px solid var(--bd2);':'');
         const todBdr=isTD?'outline:2px solid #D97706;outline-offset:-2px;position:relative;z-index:1;':'';
 
         // Cellule week-end
         if(isWE){
-          dc+=`<td style="background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px);border-right:${d===6&&sep?'1px solid var(--bd)':'none'};min-width:${DW}px"></td>`;
+          dc+=`<td style="background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px);border-right:${d===6?'2px solid #374151':'none'};min-width:${DW}px"></td>`;
           continue;
         }
         if(!inAny){
@@ -4607,8 +4607,8 @@ function renderPlanEditor(){
         +'</div>';
     });
     var title='<div style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;margin-bottom:10px">PERSONNES SUR L\u2019AFFAIRE</div>';
-    var addBtn='<button onclick="pedAddPerson()" style="width:100%;margin-top:4px;background:var(--bg3);border:1px dashed var(--bd2);border-radius:var(--r);padding:6px;font-size:11px;font-weight:700;color:var(--tx2);cursor:pointer;font-family:inherit">+ Ajouter une personne</button>';
-    pedPersDiv.innerHTML=title+rows+addBtn;
+    var note='<div style="font-size:9px;color:var(--tx3);font-style:italic;margin-top:4px">Pour ajouter une personne, rendez-vous dans Personnel → Annuaire</div>';
+    pedPersDiv.innerHTML=title+rows+note;
   }
   renderPedPersons();
   body.appendChild(pedPersDiv);
