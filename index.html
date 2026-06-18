@@ -25,29 +25,25 @@
   async function supaSave(store) {
     if (!supa) return;
     try {
-      // Récupérer l'état distant pour FUSIONNER les affaires
-      var merged = JSON.parse(JSON.stringify(store)); // deep copy
+      var merged = JSON.parse(JSON.stringify(store));
       try {
-        var remRes = await supa.from('planning').select('data,session_id').eq('key','main').single();
-        if (remRes.data && remRes.data.data && remRes.data.session_id !== SESSION_ID) {
+        var remRes = await supa.from('planning').select('data').eq('key','main').single();
+        if (remRes.data && remRes.data.data) {
           var remoteStore = JSON.parse(remRes.data.data);
           if (remoteStore && remoteStore.projects) {
-            // Garder TOUTES les affaires : les miennes écrasent les leurs sur les projets communs
+            // TOUJOURS fusionner : remote = base, local = priorité sur les projets communs
+            // Résultat : union de tous les projets de tous les utilisateurs
             merged.projects = Object.assign({}, remoteStore.projects, store.projects);
           }
-          // Fusionner globalPersons
-          if (remoteStore.globalPersons) {
+          if (remoteStore.globalPersons)
             merged.globalPersons = Object.assign({}, remoteStore.globalPersons, store.globalPersons||{});
-          }
-          // Fusionner absences / weekPlan / conges
           if (remoteStore.absences && !merged.absences) merged.absences = remoteStore.absences;
           if (remoteStore.weekPlan && !merged.weekPlan) merged.weekPlan = remoteStore.weekPlan;
           if (remoteStore.conges && !merged.conges) merged.conges = remoteStore.conges;
-          // Mettre à jour STORE local avec la version fusionnée
           STORE = merged;
           localStorage.setItem(SK, JSON.stringify(STORE));
         }
-      } catch(mergeErr) { /* En cas d'erreur de merge, sauvegarder quand même */ }
+      } catch(e) {}
       _lastSaveSid = SESSION_ID;
       var payload = { key: 'main', data: JSON.stringify(merged), session_id: SESSION_ID, updated_at: new Date().toISOString() };
       await supa.from('planning').upsert(payload, { onConflict: 'key' });
