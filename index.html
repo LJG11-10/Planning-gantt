@@ -12,7 +12,7 @@
 
   let _syncTimeout = null;
 
-  // ── LECTURE : récupère tout depuis Supabase ──────────────────────
+  // ── LECTURE ──────────────────────────────────────────────────────
   async function supaLoad() {
     if (!supa) return null;
     try {
@@ -23,41 +23,17 @@
     } catch(e) { return null; }
   }
 
-  // ── ÉCRITURE : fusionne et sauvegarde tout ───────────────────────
+  // ── ÉCRITURE : simple, pas de merge, Supabase = maître ───────────
   async function supaSave(store) {
     if (!supa) return;
     try {
-      // 1. Lire l'état actuel de Supabase
-      let merged = JSON.parse(JSON.stringify(store));
-      try {
-        const { data } = await supa
-          .from('planning').select('data,session_id').eq('key','main').single();
-        if (data && data.data) {
-          const remote = JSON.parse(data.data);
-          if (remote && remote.projects) {
-            // Fusionner : prendre TOUS les projets distants + les miens
-            // Les miens ont la priorité en cas de conflit
-            merged.projects = Object.assign({}, remote.projects, store.projects);
-          }
-          if (remote.globalPersons)
-            merged.globalPersons = Object.assign({}, remote.globalPersons, store.globalPersons || {});
-          if (remote.weekPlan && !merged.weekPlan) merged.weekPlan = remote.weekPlan;
-          if (remote.absences && !merged.absences) merged.absences = remote.absences;
-        }
-      } catch(e) {}
-
-      // 2. Mettre à jour le STORE local avec la version fusionnée
-      STORE = merged;
-      localStorage.setItem(SK, JSON.stringify(STORE));
-
-      // 3. Uploader la version fusionnée
+      _lastSaveSid = SESSION_ID;
       await supa.from('planning').upsert({
         key: 'main',
-        data: JSON.stringify(merged),
+        data: JSON.stringify(store),
         session_id: SESSION_ID,
         updated_at: new Date().toISOString()
       }, { onConflict: 'key' });
-
     } catch(e) { console.warn('supaSave error:', e); }
   }
 
@@ -74,10 +50,10 @@
   function startRealtime() {
     if (!supa) return;
 
-    // WebSocket
+    // WebSocket (instantané)
     try {
       if (_realtimeChannel) supa.removeChannel(_realtimeChannel);
-      _realtimeChannel = supa.channel('planning-rt')
+      _realtimeChannel = supa.channel('planning-shared')
         .on('postgres_changes', {
           event: 'UPDATE', schema: 'public', table: 'planning', filter: 'key=eq.main'
         }, function(payload) {
@@ -85,51 +61,40 @@
             if (!payload.new || payload.new.session_id === SESSION_ID) return;
             if (payload.new.updated_at === _lastUpdatedAt) return;
             _lastUpdatedAt = payload.new.updated_at;
-            const remote = JSON.parse(payload.new.data);
-            _mergeRemote(remote);
+            _applyRemote(JSON.parse(payload.new.data));
           } catch(e) {}
         })
         .subscribe(function(status) {
-          const dot = document.getElementById('_rt_dot');
+          var dot = document.getElementById('_rt_dot');
           if (dot) dot.style.background = status === 'SUBSCRIBED' ? '#22C55E' : '#F59E0B';
         });
     } catch(e) {}
 
-    // Polling toutes les 3s (secours si WebSocket KO)
+    // Polling toutes les 3s (secours)
     if (_pollInterval) clearInterval(_pollInterval);
     _pollInterval = setInterval(function() {
       if (!supa) return;
-      supa.from('planning')
-        .select('data,updated_at,session_id')
+      supa.from('planning').select('data,updated_at,session_id')
         .eq('key','main').single()
         .then(function(res) {
-          if (res.error || !res.data) return;
+          if (!res || !res.data) return;
+          // Ignorer nos propres sauvegardes
           if (res.data.session_id === SESSION_ID) {
-            _lastUpdatedAt = res.data.updated_at; return;
+            _lastUpdatedAt = res.data.updated_at;
+            return;
           }
+          // Ignorer si déjà traité
           if (_lastUpdatedAt && res.data.updated_at === _lastUpdatedAt) return;
           _lastUpdatedAt = res.data.updated_at;
-          try {
-            const remote = JSON.parse(res.data.data);
-            _mergeRemote(remote);
-          } catch(e) {}
+          try { _applyRemote(JSON.parse(res.data.data)); } catch(e) {}
         });
     }, 3000);
   }
 
-  function _mergeRemote(remote) {
-    if (!remote || !remote.projects) return;
-    // Intégrer les projets du collègue sans écraser les miens
-    Object.keys(remote.projects).forEach(function(aff) {
-      if (!STORE.projects[aff]) {
-        // Nouveau projet d'un collègue → l'ajouter
-        STORE.projects[aff] = remote.projects[aff];
-      }
-    });
-    if (remote.globalPersons)
-      STORE.globalPersons = Object.assign({}, remote.globalPersons, STORE.globalPersons || {});
-    if (remote.weekPlan) STORE.weekPlan = Object.assign({}, remote.weekPlan, STORE.weekPlan || {});
-    if (remote.absences) STORE.absences = Object.assign({}, remote.absences, STORE.absences || {});
+  // Appliquer les données d'un collègue
+  function _applyRemote(remote) {
+    if (!remote) return;
+    STORE = remote;
     localStorage.setItem(SK, JSON.stringify(STORE));
     applySync();
   }
@@ -139,18 +104,20 @@
       renderProjSel();
       updBudget();
       renderGantt();
-      const t = (document.querySelector('.nb.on') || {}).dataset && document.querySelector('.nb.on').dataset.tab;
-      if (t === 'recap') { syncFichesToGantt(); renderRecap(); }
-      else if (t === 'charges') renderCharges();
-      else if (t === 'dashboard') renderDashboard();
-      const notif = document.createElement('div');
-      notif.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:700;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)';
-      notif.textContent = '🔄 Mis à jour par un collègue';
+      var t = document.querySelector('.nb.on');
+      if (t && t.dataset) {
+        var tab = t.dataset.tab;
+        if (tab==='recap') { syncFichesToGantt(); renderRecap(); }
+        else if (tab==='charges') renderCharges();
+        else if (tab==='dashboard') renderDashboard();
+      }
+      var notif = document.createElement('div');
+      notif.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:10px 16px;border-radius:10px;font-size:12px;font-weight:700;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.25)';
+      notif.textContent = '🔄 Planning mis à jour par un collègue';
       document.body.appendChild(notif);
       setTimeout(function() { notif.remove(); }, 3000);
     } catch(e) {}
   }
-
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1056,24 +1023,25 @@ function loadStore(){
   }
 
   // Charger depuis Supabase et fusionner avec local
+  // Chargement depuis Supabase — source de vérité commune
   supaLoad().then(function(remote){
     if(remote&&remote.projects){
-      // Remote = base (contient les affaires de TOUS les collègues)
-      // Local = priorité (mes dernières modifications)
-      var merged=Object.assign({},remote.projects,STORE.projects);
-      STORE.projects=merged;
-      if(remote.globalPersons)
-        STORE.globalPersons=Object.assign({},remote.globalPersons,STORE.globalPersons||{});
-      if(remote.weekPlan&&!STORE.weekPlan)STORE.weekPlan=remote.weekPlan;
-      if(remote.absences&&!STORE.absences)STORE.absences=remote.absences;
-      localStorage.setItem(SK,JSON.stringify(STORE));
-      renderProjSel();
-      var first=STORE.current||Object.keys(STORE.projects)[0];
-      if(first)switchProjet(first);
-      // Sauvegarder immédiatement la version fusionnée sur Supabase
-      // pour que les collègues voient aussi mes affaires
-      supaSave(STORE);
+      // Fusionner UNE SEULE FOIS au démarrage :
+      // prendre l'union de local + remote pour ne rien perdre
+      var localProjs=STORE.projects||{};
+      STORE.projects=Object.assign({},remote.projects,localProjs);
+      // Pour le reste (weekPlan, absences, etc.) : remote a la priorité
+      if(remote.weekPlan)STORE.weekPlan=Object.assign({},remote.weekPlan,STORE.weekPlan||{});
+      if(remote.absences)STORE.absences=Object.assign({},remote.absences,STORE.absences||{});
+      if(remote.globalPersons)STORE.globalPersons=Object.assign({},remote.globalPersons,STORE.globalPersons||{});
+      if(remote.conges)STORE.conges=Object.assign({},remote.conges,STORE.conges||{});
     }
+    // Uploader immédiatement sur Supabase (fusion des données de tout le monde)
+    supaSave(STORE);
+    localStorage.setItem(SK,JSON.stringify(STORE));
+    renderProjSel();
+    var first=STORE.current||Object.keys(STORE.projects)[0];
+    if(first)switchProjet(first);
     startRealtime();
   }).catch(function(){startRealtime();});
   // Check envoi rappels lundi 8h
