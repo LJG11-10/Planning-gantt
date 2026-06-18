@@ -10,144 +10,171 @@
   let supa = null;
   try { supa = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) { console.warn('Supabase non disponible:', e); }
 
-  // ─── Sync Supabase ───
+  // ─── Sync Supabase : 1 ligne par affaire ───────────────────────────
+  // Format : key='proj_NomAffaire' pour les projets
+  //          key='global' pour weekPlan, absences, globalPersons
+  // Avantage : 0 conflit entre collègues, chaque affaire est indépendante
   let _syncTimeout = null;
 
   async function supaLoad() {
     if (!supa) return null;
     try {
-      const { data, error } = await supa.from('planning').select('data').eq('key','main').single();
-      if (error || !data) return null;
-      return JSON.parse(data.data);
+      const { data, error } = await supa.from('planning').select('key,data');
+      if (error || !data || !data.length) return null;
+      var store = { projects: {} };
+      data.forEach(function(row) {
+        try {
+          if (row.key === 'global') {
+            var g = JSON.parse(row.data);
+            if (g.weekPlan) store.weekPlan = g.weekPlan;
+            if (g.absences) store.absences = g.absences;
+            if (g.globalPersons) store.globalPersons = g.globalPersons;
+            if (g.conges) store.conges = g.conges;
+          } else if (row.key.indexOf('proj_') === 0) {
+            var affName = row.key.slice(5);
+            store.projects[affName] = JSON.parse(row.data);
+          } else if (row.key === 'main') {
+            // Migration : ancien format monobloc
+            var old = JSON.parse(row.data);
+            if (old.projects) Object.assign(store.projects, old.projects);
+            if (old.weekPlan && !store.weekPlan) store.weekPlan = old.weekPlan;
+            if (old.absences && !store.absences) store.absences = old.absences;
+            if (old.globalPersons && !store.globalPersons) store.globalPersons = old.globalPersons;
+          }
+        } catch(e) {}
+      });
+      return Object.keys(store.projects).length ? store : null;
     } catch(e) { return null; }
   }
 
   async function supaSave(store) {
     if (!supa) return;
     try {
-      var merged = JSON.parse(JSON.stringify(store));
-      try {
-        var remRes = await supa.from('planning').select('data').eq('key','main').single();
-        if (remRes.data && remRes.data.data) {
-          var remoteStore = JSON.parse(remRes.data.data);
-          if (remoteStore && remoteStore.projects) {
-            // TOUJOURS fusionner : remote = base, local = priorité sur les projets communs
-            // Résultat : union de tous les projets de tous les utilisateurs
-            merged.projects = Object.assign({}, remoteStore.projects, store.projects);
-          }
-          if (remoteStore.globalPersons)
-            merged.globalPersons = Object.assign({}, remoteStore.globalPersons, store.globalPersons||{});
-          if (remoteStore.absences && !merged.absences) merged.absences = remoteStore.absences;
-          if (remoteStore.weekPlan && !merged.weekPlan) merged.weekPlan = remoteStore.weekPlan;
-          if (remoteStore.conges && !merged.conges) merged.conges = remoteStore.conges;
-          STORE = merged;
-          localStorage.setItem(SK, JSON.stringify(STORE));
-        }
-      } catch(e) {}
+      var ts = new Date().toISOString();
+      var saves = [];
+      // Sauvegarder chaque affaire dans sa propre ligne
+      Object.keys(store.projects || {}).forEach(function(affName) {
+        saves.push(
+          supa.from('planning').upsert({
+            key: 'proj_' + affName,
+            data: JSON.stringify(store.projects[affName]),
+            session_id: SESSION_ID,
+            updated_at: ts
+          }, { onConflict: 'key' })
+        );
+      });
+      // Sauvegarder les données globales
+      saves.push(
+        supa.from('planning').upsert({
+          key: 'global',
+          data: JSON.stringify({
+            weekPlan: store.weekPlan || {},
+            absences: store.absences || {},
+            globalPersons: store.globalPersons || {},
+            conges: store.conges || {}
+          }),
+          session_id: SESSION_ID,
+          updated_at: ts
+        }, { onConflict: 'key' })
+      );
       _lastSaveSid = SESSION_ID;
-      var payload = { key: 'main', data: JSON.stringify(merged), session_id: SESSION_ID, updated_at: new Date().toISOString() };
-      await supa.from('planning').upsert(payload, { onConflict: 'key' });
+      await Promise.all(saves);
     } catch(e) { console.warn('Supabase save error:', e); }
   }
 
   function scheduleSupa() {
     clearTimeout(_syncTimeout);
-    _syncTimeout = setTimeout(() => supaSave(STORE), 800);
+    _syncTimeout = setTimeout(function() { supaSave(STORE); }, 800);
   }
 
   // Écoute les changements en temps réel
   var _realtimeChannel = null;
   var _pollInterval = null;
-  var _lastUpdatedAt = null;
+  var _seenKeys = {};
 
   function startRealtime() {
     if (!supa) return;
 
-    // Realtime via websocket
+    // Realtime via websocket — écoute TOUTES les lignes de la table
     try {
       if (_realtimeChannel) supa.removeChannel(_realtimeChannel);
-      _realtimeChannel = supa.channel('planning-changes')
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'planning', filter: 'key=eq.main' }, function(payload) {
+      _realtimeChannel = supa.channel('planning-all')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'planning' }, function(payload) {
           try {
-            // Ignorer si c'est notre propre save
-            if(payload.new.session_id&&payload.new.session_id===SESSION_ID){return;}
-            if(payload.new.updated_at===_lastUpdatedAt)return;
-            var remote = JSON.parse(payload.new.data);
-            // Merge: garder mes affaires + ajouter les nouvelles du collègue
-            Object.keys(STORE.projects).forEach(function(aff){
-              if(!remote.projects[aff]) remote.projects[aff] = STORE.projects[aff];
-            });
-            STORE = remote;
-            localStorage.setItem(SK, JSON.stringify(STORE));
-            _lastUpdatedAt = payload.new.updated_at;
-            applySync();
+            if (!payload.new) return;
+            if (payload.new.session_id === SESSION_ID) return; // ignorer nos propres saves
+            _applyRow(payload.new);
           } catch(e) {}
         })
-        .subscribe(function(status){
-          console.log('[Realtime] Status:', status);
-          // Afficher indicateur de connexion
-          var dot=document.getElementById('_rt_dot');
-          if(dot)dot.style.background=status==='SUBSCRIBED'?'#22C55E':'#F59E0B';
+        .subscribe(function(status) {
+          var dot = document.getElementById('_rt_dot');
+          if (dot) dot.style.background = status === 'SUBSCRIBED' ? '#22C55E' : '#F59E0B';
         });
-    } catch(e) { console.warn('Realtime websocket failed:', e); }
+    } catch(e) { console.warn('Realtime failed:', e); }
 
-    // Polling toutes les 10s en secours
+    // Polling toutes les 3s en secours
     if (_pollInterval) clearInterval(_pollInterval);
     _pollInterval = setInterval(function() {
       if (!supa) return;
-      supa.from('planning').select('data,updated_at,session_id').eq('key','main').single().then(function(res) {
+      supa.from('planning').select('key,data,updated_at,session_id').then(function(res) {
         if (res.error || !res.data) return;
-        if (_lastUpdatedAt && res.data.updated_at === _lastUpdatedAt) return;
-        // Ignorer si c'est notre propre save (session_id)
-        if (res.data.session_id && res.data.session_id === SESSION_ID) {
-          _lastUpdatedAt = res.data.updated_at; return;
-        }
-        try {
-          var remote = JSON.parse(res.data.data);
-          // Merge: garder mes affaires locales + nouvelles du collègue
-          Object.keys(STORE.projects).forEach(function(aff){
-            if(!remote.projects[aff]) remote.projects[aff] = STORE.projects[aff];
-          });
-          _lastUpdatedAt = res.data.updated_at;
-          STORE = remote;
-          localStorage.setItem(SK, JSON.stringify(STORE));
-          applySync();
-        } catch(e) {}
+        var changed = false;
+        res.data.forEach(function(row) {
+          if (row.session_id === SESSION_ID) return; // ignorer nos propres saves
+          var seen = _seenKeys[row.key];
+          if (seen && seen === row.updated_at) return; // déjà traité
+          _seenKeys[row.key] = row.updated_at;
+          _applyRow(row);
+          changed = true;
+        });
+        if (changed) applySync();
       });
     }, 3000);
   }
 
+  function _applyRow(row) {
+    try {
+      if (!row || !row.key || !row.data) return;
+      var d = JSON.parse(row.data);
+      if (row.key.indexOf('proj_') === 0) {
+        var affName = row.key.slice(5);
+        STORE.projects[affName] = d;
+        localStorage.setItem(SK, JSON.stringify(STORE));
+        applySync();
+      } else if (row.key === 'global') {
+        if (d.weekPlan) STORE.weekPlan = d.weekPlan;
+        if (d.absences) STORE.absences = d.absences;
+        if (d.globalPersons) STORE.globalPersons = d.globalPersons;
+        localStorage.setItem(SK, JSON.stringify(STORE));
+        applySync();
+      }
+    } catch(e) {}
+  }
+
   function applySync() {
     try {
-      // Mettre à jour les données sans déclencher une nouvelle sauvegarde
       renderProjSel();
       updBudget();
-      // Re-rendre le GANTT et l'onglet actif
       renderGantt();
-      var activeTab=document.querySelector('.nb.on');
-      if(activeTab){
-        var t=activeTab.dataset.tab;
-        if(t==='recap'){syncFichesToGantt();renderRecap();}
-        else if(t==='charges')renderCharges();
-        else if(t==='dashboard')renderDashboard();
-        else if(t==='personnel')switchPersonnelTab(window._personnelTab||'equipe');
-        else if(t==='absences')renderAbsences();
+      var activeTab = document.querySelector('.nb.on');
+      if (activeTab) {
+        var t = activeTab.dataset.tab;
+        if (t==='recap'){syncFichesToGantt();renderRecap();}
+        else if (t==='charges') renderCharges();
+        else if (t==='dashboard') renderDashboard();
+        else if (t==='personnel') switchPersonnelTab(window._personnelTab||'equipe');
+        else if (t==='absences') renderAbsences();
       }
-      // Indicateur visuel de sync
       var sv = document.getElementById('sv');
-      if (sv) {
-        sv.textContent = '🔄 Sync';
-        sv.style.display = 'inline';
-        setTimeout(function() { sv.style.display = 'none'; }, 2000);
-      }
-      // Notification discrète
-      var notif=document.createElement('div');
-      notif.style.cssText='position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2);transition:opacity .3s';
-      notif.textContent='🔄 Planning mis à jour par un collègue';
+      if (sv) { sv.textContent='🔄 Sync'; sv.style.display='inline'; setTimeout(function(){sv.style.display='none';},2000); }
+      var notif = document.createElement('div');
+      notif.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2);transition:opacity .3s';
+      notif.textContent = '🔄 Planning mis à jour par un collègue';
       document.body.appendChild(notif);
       setTimeout(function(){notif.style.opacity='0';setTimeout(function(){if(notif.parentNode)notif.remove();},300);},3000);
-    } catch(e) {console.warn('applySync error:',e);}
+    } catch(e) { console.warn('applySync error:',e); }
   }
+
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1066,6 +1093,8 @@ function loadStore(){
       renderProjSel();
       var first=STORE.current||Object.keys(STORE.projects)[0];
       if(first)switchProjet(first);
+      // Upload la version fusionnée pour que les collègues la voient
+      supaSave(STORE);
     }
     if(!_realtimeStarted){_realtimeStarted=true;startRealtime();}
   }).catch(function(){
