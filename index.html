@@ -8,78 +8,57 @@
   const SUPA_URL = 'https://phcnmrsvywnzdrfazavv.supabase.co';
   const SUPA_KEY = 'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
   let supa = null;
-  try { supa = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) { console.warn('Supabase non disponible:', e); }
+  try { supa = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) {}
 
-  // ─── Sync Supabase : 1 ligne par affaire ───────────────────────────
-  // Format : key='proj_NomAffaire' pour les projets
-  //          key='global' pour weekPlan, absences, globalPersons
-  // Avantage : 0 conflit entre collègues, chaque affaire est indépendante
   let _syncTimeout = null;
 
+  // ── LECTURE : récupère tout depuis Supabase ──────────────────────
   async function supaLoad() {
     if (!supa) return null;
     try {
-      const { data, error } = await supa.from('planning').select('key,data');
-      if (error || !data || !data.length) return null;
-      var store = { projects: {} };
-      data.forEach(function(row) {
-        try {
-          if (row.key === 'global') {
-            var g = JSON.parse(row.data);
-            if (g.weekPlan) store.weekPlan = g.weekPlan;
-            if (g.absences) store.absences = g.absences;
-            if (g.globalPersons) store.globalPersons = g.globalPersons;
-            if (g.conges) store.conges = g.conges;
-          } else if (row.key.indexOf('proj_') === 0) {
-            var affName = row.key.slice(5);
-            store.projects[affName] = JSON.parse(row.data);
-          } else if (row.key === 'main') {
-            // Migration : ancien format monobloc
-            var old = JSON.parse(row.data);
-            if (old.projects) Object.assign(store.projects, old.projects);
-            if (old.weekPlan && !store.weekPlan) store.weekPlan = old.weekPlan;
-            if (old.absences && !store.absences) store.absences = old.absences;
-            if (old.globalPersons && !store.globalPersons) store.globalPersons = old.globalPersons;
-          }
-        } catch(e) {}
-      });
-      return Object.keys(store.projects).length ? store : null;
+      const { data, error } = await supa
+        .from('planning').select('data').eq('key','main').single();
+      if (error || !data || !data.data) return null;
+      return JSON.parse(data.data);
     } catch(e) { return null; }
   }
 
+  // ── ÉCRITURE : fusionne et sauvegarde tout ───────────────────────
   async function supaSave(store) {
     if (!supa) return;
     try {
-      var ts = new Date().toISOString();
-      var saves = [];
-      // Sauvegarder chaque affaire dans sa propre ligne
-      Object.keys(store.projects || {}).forEach(function(affName) {
-        saves.push(
-          supa.from('planning').upsert({
-            key: 'proj_' + affName,
-            data: JSON.stringify(store.projects[affName]),
-            session_id: SESSION_ID,
-            updated_at: ts
-          }, { onConflict: 'key' })
-        );
-      });
-      // Sauvegarder les données globales
-      saves.push(
-        supa.from('planning').upsert({
-          key: 'global',
-          data: JSON.stringify({
-            weekPlan: store.weekPlan || {},
-            absences: store.absences || {},
-            globalPersons: store.globalPersons || {},
-            conges: store.conges || {}
-          }),
-          session_id: SESSION_ID,
-          updated_at: ts
-        }, { onConflict: 'key' })
-      );
-      _lastSaveSid = SESSION_ID;
-      await Promise.all(saves);
-    } catch(e) { console.warn('Supabase save error:', e); }
+      // 1. Lire l'état actuel de Supabase
+      let merged = JSON.parse(JSON.stringify(store));
+      try {
+        const { data } = await supa
+          .from('planning').select('data,session_id').eq('key','main').single();
+        if (data && data.data) {
+          const remote = JSON.parse(data.data);
+          if (remote && remote.projects) {
+            // Fusionner : prendre TOUS les projets distants + les miens
+            // Les miens ont la priorité en cas de conflit
+            merged.projects = Object.assign({}, remote.projects, store.projects);
+          }
+          if (remote.globalPersons)
+            merged.globalPersons = Object.assign({}, remote.globalPersons, store.globalPersons || {});
+          if (remote.weekPlan && !merged.weekPlan) merged.weekPlan = remote.weekPlan;
+          if (remote.absences && !merged.absences) merged.absences = remote.absences;
+        }
+      } catch(e) {}
+
+      // 2. Mettre à jour le STORE local avec la version fusionnée
+      STORE = merged;
+      localStorage.setItem(SK, JSON.stringify(STORE));
+
+      // 3. Uploader la version fusionnée
+      await supa.from('planning').upsert({
+        key: 'main',
+        data: JSON.stringify(merged),
+        session_id: SESSION_ID,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'key' });
+
+    } catch(e) { console.warn('supaSave error:', e); }
   }
 
   function scheduleSupa() {
@@ -87,68 +66,72 @@
     _syncTimeout = setTimeout(function() { supaSave(STORE); }, 800);
   }
 
-  // Écoute les changements en temps réel
+  // ── TEMPS RÉEL ───────────────────────────────────────────────────
   var _realtimeChannel = null;
   var _pollInterval = null;
-  var _seenKeys = {};
+  var _lastUpdatedAt = null;
 
   function startRealtime() {
     if (!supa) return;
 
-    // Realtime via websocket — écoute TOUTES les lignes de la table
+    // WebSocket
     try {
       if (_realtimeChannel) supa.removeChannel(_realtimeChannel);
-      _realtimeChannel = supa.channel('planning-all')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'planning' }, function(payload) {
+      _realtimeChannel = supa.channel('planning-rt')
+        .on('postgres_changes', {
+          event: 'UPDATE', schema: 'public', table: 'planning', filter: 'key=eq.main'
+        }, function(payload) {
           try {
-            if (!payload.new) return;
-            if (payload.new.session_id === SESSION_ID) return; // ignorer nos propres saves
-            _applyRow(payload.new);
+            if (!payload.new || payload.new.session_id === SESSION_ID) return;
+            if (payload.new.updated_at === _lastUpdatedAt) return;
+            _lastUpdatedAt = payload.new.updated_at;
+            const remote = JSON.parse(payload.new.data);
+            _mergeRemote(remote);
           } catch(e) {}
         })
         .subscribe(function(status) {
-          var dot = document.getElementById('_rt_dot');
+          const dot = document.getElementById('_rt_dot');
           if (dot) dot.style.background = status === 'SUBSCRIBED' ? '#22C55E' : '#F59E0B';
         });
-    } catch(e) { console.warn('Realtime failed:', e); }
+    } catch(e) {}
 
-    // Polling toutes les 3s en secours
+    // Polling toutes les 3s (secours si WebSocket KO)
     if (_pollInterval) clearInterval(_pollInterval);
     _pollInterval = setInterval(function() {
       if (!supa) return;
-      supa.from('planning').select('key,data,updated_at,session_id').then(function(res) {
-        if (res.error || !res.data) return;
-        var changed = false;
-        res.data.forEach(function(row) {
-          if (row.session_id === SESSION_ID) return; // ignorer nos propres saves
-          var seen = _seenKeys[row.key];
-          if (seen && seen === row.updated_at) return; // déjà traité
-          _seenKeys[row.key] = row.updated_at;
-          _applyRow(row);
-          changed = true;
+      supa.from('planning')
+        .select('data,updated_at,session_id')
+        .eq('key','main').single()
+        .then(function(res) {
+          if (res.error || !res.data) return;
+          if (res.data.session_id === SESSION_ID) {
+            _lastUpdatedAt = res.data.updated_at; return;
+          }
+          if (_lastUpdatedAt && res.data.updated_at === _lastUpdatedAt) return;
+          _lastUpdatedAt = res.data.updated_at;
+          try {
+            const remote = JSON.parse(res.data.data);
+            _mergeRemote(remote);
+          } catch(e) {}
         });
-        if (changed) applySync();
-      });
     }, 3000);
   }
 
-  function _applyRow(row) {
-    try {
-      if (!row || !row.key || !row.data) return;
-      var d = JSON.parse(row.data);
-      if (row.key.indexOf('proj_') === 0) {
-        var affName = row.key.slice(5);
-        STORE.projects[affName] = d;
-        localStorage.setItem(SK, JSON.stringify(STORE));
-        applySync();
-      } else if (row.key === 'global') {
-        if (d.weekPlan) STORE.weekPlan = d.weekPlan;
-        if (d.absences) STORE.absences = d.absences;
-        if (d.globalPersons) STORE.globalPersons = d.globalPersons;
-        localStorage.setItem(SK, JSON.stringify(STORE));
-        applySync();
+  function _mergeRemote(remote) {
+    if (!remote || !remote.projects) return;
+    // Intégrer les projets du collègue sans écraser les miens
+    Object.keys(remote.projects).forEach(function(aff) {
+      if (!STORE.projects[aff]) {
+        // Nouveau projet d'un collègue → l'ajouter
+        STORE.projects[aff] = remote.projects[aff];
       }
-    } catch(e) {}
+    });
+    if (remote.globalPersons)
+      STORE.globalPersons = Object.assign({}, remote.globalPersons, STORE.globalPersons || {});
+    if (remote.weekPlan) STORE.weekPlan = Object.assign({}, remote.weekPlan, STORE.weekPlan || {});
+    if (remote.absences) STORE.absences = Object.assign({}, remote.absences, STORE.absences || {});
+    localStorage.setItem(SK, JSON.stringify(STORE));
+    applySync();
   }
 
   function applySync() {
@@ -156,23 +139,16 @@
       renderProjSel();
       updBudget();
       renderGantt();
-      var activeTab = document.querySelector('.nb.on');
-      if (activeTab) {
-        var t = activeTab.dataset.tab;
-        if (t==='recap'){syncFichesToGantt();renderRecap();}
-        else if (t==='charges') renderCharges();
-        else if (t==='dashboard') renderDashboard();
-        else if (t==='personnel') switchPersonnelTab(window._personnelTab||'equipe');
-        else if (t==='absences') renderAbsences();
-      }
-      var sv = document.getElementById('sv');
-      if (sv) { sv.textContent='🔄 Sync'; sv.style.display='inline'; setTimeout(function(){sv.style.display='none';},2000); }
-      var notif = document.createElement('div');
-      notif.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2);transition:opacity .3s';
-      notif.textContent = '🔄 Planning mis à jour par un collègue';
+      const t = (document.querySelector('.nb.on') || {}).dataset && document.querySelector('.nb.on').dataset.tab;
+      if (t === 'recap') { syncFichesToGantt(); renderRecap(); }
+      else if (t === 'charges') renderCharges();
+      else if (t === 'dashboard') renderDashboard();
+      const notif = document.createElement('div');
+      notif.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:700;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)';
+      notif.textContent = '🔄 Mis à jour par un collègue';
       document.body.appendChild(notif);
-      setTimeout(function(){notif.style.opacity='0';setTimeout(function(){if(notif.parentNode)notif.remove();},300);},3000);
-    } catch(e) { console.warn('applySync error:',e); }
+      setTimeout(function() { notif.remove(); }, 3000);
+    } catch(e) {}
   }
 
 </script>
@@ -1079,27 +1055,27 @@ function loadStore(){
     });
   }
 
-  var _realtimeStarted=false;
+  // Charger depuis Supabase et fusionner avec local
   supaLoad().then(function(remote){
     if(remote&&remote.projects){
-      // Fusionner : garder les projets locaux + ajouter ceux du serveur
-      var localProjs=STORE.projects||{};
-      var merged=Object.assign({},remote.projects,localProjs);
-      STORE=Object.assign({},remote,{projects:merged});
-      if(remote.globalPersons)STORE.globalPersons=Object.assign({},remote.globalPersons,STORE.globalPersons||{});
-      if(remote.absences&&!STORE.absences)STORE.absences=remote.absences;
+      // Remote = base (contient les affaires de TOUS les collègues)
+      // Local = priorité (mes dernières modifications)
+      var merged=Object.assign({},remote.projects,STORE.projects);
+      STORE.projects=merged;
+      if(remote.globalPersons)
+        STORE.globalPersons=Object.assign({},remote.globalPersons,STORE.globalPersons||{});
       if(remote.weekPlan&&!STORE.weekPlan)STORE.weekPlan=remote.weekPlan;
+      if(remote.absences&&!STORE.absences)STORE.absences=remote.absences;
       localStorage.setItem(SK,JSON.stringify(STORE));
       renderProjSel();
       var first=STORE.current||Object.keys(STORE.projects)[0];
       if(first)switchProjet(first);
-      // Upload la version fusionnée pour que les collègues la voient
+      // Sauvegarder immédiatement la version fusionnée sur Supabase
+      // pour que les collègues voient aussi mes affaires
       supaSave(STORE);
     }
-    if(!_realtimeStarted){_realtimeStarted=true;startRealtime();}
-  }).catch(function(){
-    if(!_realtimeStarted){_realtimeStarted=true;startRealtime();}
-  });
+    startRealtime();
+  }).catch(function(){startRealtime();});
   // Check envoi rappels lundi 8h
   setTimeout(checkAndSendMondayRappel,5000);
   setInterval(checkAndSendMondayRappel,1800000); // check every 30min
@@ -1286,11 +1262,12 @@ function renderHeuresInto(cid){
 // ── Annuaire & Habilitations ─────────────────────────────────────────
 
 const HABILITATIONS_LIST = [
-  'B0','H0','H0V','B1','B2','BR','BE','BC','H1','H2','HC',
+  'B0','H0','H0V','B1','B1V','B2','B2V','BR','BE','BE mesure','BE essai','BE vérification','BC','H1','H2','HC',
   'SST','Extincteur','Travaux en hauteur','CACES','MANITOU','Nacelle','ATEX','Chimie N1','Chimie N2'
 ];
 const HAB_GROUPS = [
-  {label:'⚡ Électrique',items:['B0','H0','H0V','B1','B2','BR','BE','BC','H1','H2','HC']},
+  {label:'⚡ Électrique — Basse tension',items:['B0','H0','H0V','B1','B1V','B2','B2V','BR','BE','BE mesure','BE essai','BE vérification','BC']},
+  {label:'⚡ Électrique — Haute tension',items:['H1','H2','HC']},
   {label:'🛡 Autres',items:['SST','Extincteur','Travaux en hauteur','CACES','MANITOU','Nacelle','ATEX','Chimie N1','Chimie N2']}
 ];
 
@@ -1333,6 +1310,17 @@ function saveGlobalPerson(origNm, newNm, type, habsArr){
       });
       if(p.fh&&p.fh[origNm]){p.fh[newNm]=p.fh[origNm];delete p.fh[origNm];}
     });
+    // Renommer dans fiches d'heure globales
+    if(STORE.fh&&STORE.fh[origNm]){STORE.fh[newNm]=STORE.fh[origNm];delete STORE.fh[origNm];}
+    // Renommer dans weekPlan
+    Object.values(STORE.weekPlan||{}).forEach(function(wk){
+      Object.keys(wk).forEach(function(key){
+        if(key.split('::')[0]===origNm){
+          var newKey=newNm+'::'+key.split('::')[1];
+          wk[newKey]=wk[key];delete wk[key];
+        }
+      });
+    });
     if(STORE.absences&&STORE.absences[origNm]){
       STORE.absences[newNm]=STORE.absences[origNm];
       delete STORE.absences[origNm];
@@ -1355,12 +1343,31 @@ function saveGlobalPerson(origNm, newNm, type, habsArr){
 }
 
 function deleteGlobalPerson(nm){
-  if(!confirm('Supprimer '+nm+' de l\'annuaire ?'))return;
+  if(!confirm('Supprimer '+nm+' de l\'annuaire et de toutes les tâches ?'))return;
+  // 1. Supprimer de l'annuaire global
   var gp=_getGlobalPersons();
   delete gp[nm];
+  // 2. Supprimer de toutes les tâches de toutes les affaires
+  Object.values(STORE.projects).forEach(function(proj){
+    if(proj.persons)
+      proj.persons=proj.persons.filter(function(pp){return pp.name!==nm;});
+    (proj.data||[]).forEach(function(row){
+      if(row.t==='act'&&row.p)
+        row.p=row.p.filter(function(pp){return pp.name!==nm;});
+    });
+  });
+  // 3. Supprimer des fiches d'heure (STORE.fh)
+  if(STORE.fh&&STORE.fh[nm])delete STORE.fh[nm];
+  // 4. Supprimer du weekPlan
+  Object.values(STORE.weekPlan||{}).forEach(function(wk){
+    Object.keys(wk).forEach(function(key){
+      if(key.split('::')[0]===nm)delete wk[key];
+    });
+  });
   localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
   window._editingPerson=undefined;
   renderPersonnelSearch();
+  refreshAllTabs();
 }
 
 function openPersonEditor(nm){
@@ -3217,7 +3224,23 @@ function dbBuildPlanningGrid(){
   function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length)STORE.weekPlan[selWk][key]=clean;else delete STORE.weekPlan[selWk][key];localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
   function removeEntry(nm,di,ei){var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved.splice(ei,1);var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length)STORE.weekPlan[selWk][key]=clean;else delete STORE.weekPlan[selWk][key];localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}else{if(extra>0)window._wpExtra[key]=extra-1;}dbBuildPlanningGrid();}
   window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){as.innerHTML=buildActOpts(sel.value,'');as.style.display=sel.value?'block':'none';}};
-  window._wpActChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'actId',sel.value);};
+  window._wpActChange=function(sel){
+  var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;
+  saveCellEntry(nm,di,ei,'actId',sel.value);
+  // Planning Réunion → GANTT : ajouter la personne à la tâche si pas déjà là
+  var saved=getSavedEntries(nm,di);
+  var entry=saved[ei]||{};
+  if(sel.value&&entry.aff&&STORE.projects[entry.aff]){
+    var proj=STORE.projects[entry.aff];
+    var act=(proj.data||[]).find(function(r){return r.id===sel.value;});
+    if(act){
+      if(!act.p)act.p=[];
+      if(!act.p.some(function(p){return p.name===nm;}))
+        act.p.push({name:nm.trim(),heures:0,ent:''});
+      localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
+    }
+  }
+};
   window._wpCommentChange=function(ta){var nm=ta.dataset.nm,di=+ta.dataset.di,ei=+ta.dataset.ei;saveCellEntry(nm,di,ei,'comment',ta.value);};
   window._wpAddEntry=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di;var key=nm+'::'+di;window._wpExtra[key]=(window._wpExtra[key]||0)+1;dbBuildPlanningGrid();};
   window._wpRemove=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di,ei=+btn.dataset.ei;removeEntry(nm,di,ei);};
@@ -3274,6 +3297,21 @@ function dbBuildPlanningGrid(){
         html+='</div>';
       });
       html+='<div style="text-align:center;margin-top:5px"><span class="wp-add" data-nm="'+nmEsc+'" data-di="'+di+'" onclick="window._wpAddEntry(this)" style="font-size:11px;color:#2563EB;cursor:pointer;font-weight:700;padding:3px 12px;border-radius:20px;border:1.5px dashed #93C5FD;display:inline-block;background:#EFF6FF">+ Ajouter</span></div>';
+      // GANTT → Planning Réunion : afficher les tâches GANTT de cette personne cette semaine
+      var _savedForCell=getSavedEntries(nm,di);
+      Object.keys(STORE.projects).forEach(function(affG){
+        var projG=STORE.projects[affG];if(!projG)return;
+        (projG.data||[]).filter(function(r){return r.t==='act'&&r.s&&r.dDur!==0;}).forEach(function(actG){
+          if((actG.s||0)>selWk||(actG.e||actG.s||0)<selWk)return;
+          if(!(actG.p||[]).some(function(p){return p.name===nm;}))return;
+          // Ne pas doubler si déjà dans weekPlan
+          var already=_savedForCell.some(function(e){return e.aff===affG&&e.actId===actG.id;});
+          if(already)return;
+          var ph=PH_get(actG.pk);
+          html+='<div style="background:'+ph.f+';border:1px solid '+ph.xl+';border-left:3px solid '+ph.h+';border-radius:4px;padding:3px 6px;font-size:10px;color:'+ph.xd+';font-weight:600;margin-top:3px">'
+            +'⚙ '+actG.lb+'<span style="font-size:9px;opacity:.7;margin-left:4px">('+affG+')</span></div>';
+        });
+      });
       html+='</td>';
     });
     html+='</tr>';
@@ -5797,12 +5835,12 @@ function buildExpandPanel(row,ph,nd){
 
       <!-- Bouton aligner -->
       <div style="display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation()">
-        <button onclick="alignPrevToReel('${row.id}')" title="Copier les valeurs réelles dans les valeurs prévues" style="padding:5px 10px;border-radius:6px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">← Aligner prévu sur réel</button>
+        <button onclick="event.stopPropagation();alignReelToPrev('${row.id}')" title="Copier les valeurs prévues dans les valeurs réelles" style="padding:3px 8px;border-radius:4px;background:#F0FDF4;color:var(--gn);border:1px solid var(--gn3);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">→ Réel = Prévu</button>
       </div>
 
       <!-- RÉEL -->
       <div style="flex:1;min-width:200px;background:#F0FDF4;border:2px solid var(--gn);border-radius:var(--r2);padding:8px 10px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:9px;font-weight:700;color:var(--gn);letter-spacing:.5px">▶ RÉEL</div><button onclick="event.stopPropagation();alignReelToPrev('${row.id}')" title="Copier les valeurs prévues dans les valeurs réelles" style="padding:3px 8px;border-radius:4px;background:#F0FDF4;color:var(--gn);border:1px solid var(--gn3);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">→ Réel = Prévu</button></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:9px;font-weight:700;color:var(--gn);letter-spacing:.5px">▶ RÉEL</div><button onclick="event.stopPropagation();alignPrevToReel('${row.id}')" title="Copier les valeurs prévues dans les valeurs réelles" style="padding:3px 8px;border-radius:4px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">← Aligner prévu sur réel</button></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
           <div style="flex:1;min-width:160px">
             <div style="font-size:7px;color:var(--tx3);margin-bottom:2px;font-weight:700">📅 DATE & HEURE DÉBUT</div>
