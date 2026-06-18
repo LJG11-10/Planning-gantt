@@ -25,8 +25,31 @@
   async function supaSave(store) {
     if (!supa) return;
     try {
-      _lastSaveSid=SESSION_ID;
-      const payload = { key: 'main', data: JSON.stringify(store), session_id: SESSION_ID, updated_at: new Date().toISOString() };
+      // Récupérer l'état distant pour FUSIONNER les affaires
+      var merged = JSON.parse(JSON.stringify(store)); // deep copy
+      try {
+        var remRes = await supa.from('planning').select('data,session_id').eq('key','main').single();
+        if (remRes.data && remRes.data.data && remRes.data.session_id !== SESSION_ID) {
+          var remoteStore = JSON.parse(remRes.data.data);
+          if (remoteStore && remoteStore.projects) {
+            // Garder TOUTES les affaires : les miennes écrasent les leurs sur les projets communs
+            merged.projects = Object.assign({}, remoteStore.projects, store.projects);
+          }
+          // Fusionner globalPersons
+          if (remoteStore.globalPersons) {
+            merged.globalPersons = Object.assign({}, remoteStore.globalPersons, store.globalPersons||{});
+          }
+          // Fusionner absences / weekPlan / conges
+          if (remoteStore.absences && !merged.absences) merged.absences = remoteStore.absences;
+          if (remoteStore.weekPlan && !merged.weekPlan) merged.weekPlan = remoteStore.weekPlan;
+          if (remoteStore.conges && !merged.conges) merged.conges = remoteStore.conges;
+          // Mettre à jour STORE local avec la version fusionnée
+          STORE = merged;
+          localStorage.setItem(SK, JSON.stringify(STORE));
+        }
+      } catch(mergeErr) { /* En cas d'erreur de merge, sauvegarder quand même */ }
+      _lastSaveSid = SESSION_ID;
+      var payload = { key: 'main', data: JSON.stringify(merged), session_id: SESSION_ID, updated_at: new Date().toISOString() };
       await supa.from('planning').upsert(payload, { onConflict: 'key' });
     } catch(e) { console.warn('Supabase save error:', e); }
   }
@@ -54,13 +77,22 @@
             if(payload.new.session_id&&payload.new.session_id===SESSION_ID){return;}
             if(payload.new.updated_at===_lastUpdatedAt)return;
             var remote = JSON.parse(payload.new.data);
+            // Merge: garder mes affaires + ajouter les nouvelles du collègue
+            Object.keys(STORE.projects).forEach(function(aff){
+              if(!remote.projects[aff]) remote.projects[aff] = STORE.projects[aff];
+            });
             STORE = remote;
             localStorage.setItem(SK, JSON.stringify(STORE));
             _lastUpdatedAt = payload.new.updated_at;
             applySync();
           } catch(e) {}
         })
-        .subscribe();
+        .subscribe(function(status){
+          console.log('[Realtime] Status:', status);
+          // Afficher indicateur de connexion
+          var dot=document.getElementById('_rt_dot');
+          if(dot)dot.style.background=status==='SUBSCRIBED'?'#22C55E':'#F59E0B';
+        });
     } catch(e) { console.warn('Realtime websocket failed:', e); }
 
     // Polling toutes les 10s en secours
@@ -76,13 +108,17 @@
         }
         try {
           var remote = JSON.parse(res.data.data);
+          // Merge: garder mes affaires locales + nouvelles du collègue
+          Object.keys(STORE.projects).forEach(function(aff){
+            if(!remote.projects[aff]) remote.projects[aff] = STORE.projects[aff];
+          });
           _lastUpdatedAt = res.data.updated_at;
           STORE = remote;
           localStorage.setItem(SK, JSON.stringify(STORE));
           applySync();
         } catch(e) {}
       });
-    }, 5000);
+    }, 3000);
   }
 
   function applySync() {
@@ -1020,16 +1056,25 @@ function loadStore(){
     });
   }
 
+  var _realtimeStarted=false;
   supaLoad().then(function(remote){
-    if(!remote||!remote.projects)return;
-    STORE=remote;
-    localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
-    renderProjSel();
-    var c=STORE.current||Object.keys(STORE.projects)[0];
-    if(c)switchProjet(c);
-    startRealtime();
-  }).catch(function(){startRealtime();});
-  startRealtime();
+    if(remote&&remote.projects){
+      // Fusionner : garder les projets locaux + ajouter ceux du serveur
+      var localProjs=STORE.projects||{};
+      var merged=Object.assign({},remote.projects,localProjs);
+      STORE=Object.assign({},remote,{projects:merged});
+      if(remote.globalPersons)STORE.globalPersons=Object.assign({},remote.globalPersons,STORE.globalPersons||{});
+      if(remote.absences&&!STORE.absences)STORE.absences=remote.absences;
+      if(remote.weekPlan&&!STORE.weekPlan)STORE.weekPlan=remote.weekPlan;
+      localStorage.setItem(SK,JSON.stringify(STORE));
+      renderProjSel();
+      var first=STORE.current||Object.keys(STORE.projects)[0];
+      if(first)switchProjet(first);
+    }
+    if(!_realtimeStarted){_realtimeStarted=true;startRealtime();}
+  }).catch(function(){
+    if(!_realtimeStarted){_realtimeStarted=true;startRealtime();}
+  });
   // Check envoi rappels lundi 8h
   setTimeout(checkAndSendMondayRappel,5000);
   setInterval(checkAndSendMondayRappel,1800000); // check every 30min
@@ -1213,13 +1258,23 @@ function renderHeuresInto(cid){
 
 // ── Annuaire & Habilitations ─────────────────────────────────────────
 
+// ── Annuaire & Habilitations ─────────────────────────────────────────
+
+const HABILITATIONS_LIST = [
+  'B0','H0','H0V','B1','B2','BR','BE','BC','H1','H2','HC',
+  'SST','Extincteur','Travaux en hauteur','CACES','MANITOU','Nacelle','ATEX','Chimie N1','Chimie N2'
+];
+const HAB_GROUPS = [
+  {label:'⚡ Électrique',items:['B0','H0','H0V','B1','B2','BR','BE','BC','H1','H2','HC']},
+  {label:'🛡 Autres',items:['SST','Extincteur','Travaux en hauteur','CACES','MANITOU','Nacelle','ATEX','Chimie N1','Chimie N2']}
+];
+
 function _getGlobalPersons(){
   if(!STORE.globalPersons)STORE.globalPersons={};
   return STORE.globalPersons;
 }
 
 function _mergePersonsFromProjects(){
-  // Assurer que toutes les personnes des affaires sont dans globalPersons
   var gp=_getGlobalPersons();
   Object.values(STORE.projects).forEach(function(p){
     (p.persons||[]).forEach(function(pp){
@@ -1237,21 +1292,38 @@ function _mergePersonsFromProjects(){
   });
 }
 
-function saveGlobalPerson(nm,type,habsArr){
+function saveGlobalPerson(origNm, newNm, type, habsArr){
   var gp=_getGlobalPersons();
-  if(!nm||!nm.trim())return;
-  nm=nm.trim();
-  if(!gp[nm])gp[nm]={};
-  gp[nm].name=nm;
-  gp[nm].type=type||'';
-  gp[nm].habilitations=habsArr||[];
-  // Aussi ajouter dans l'affaire courante si elle existe
+  newNm=(newNm||'').trim();
+  origNm=(origNm||'').trim();
+  if(!newNm){alert('Le nom ne peut pas être vide.');return;}
+  // Si renommage → supprimer l'ancien, créer le nouveau
+  if(origNm && origNm !== newNm && gp[origNm]){
+    delete gp[origNm];
+    // Mettre à jour dans toutes les affaires
+    Object.values(STORE.projects).forEach(function(p){
+      (p.persons||[]).forEach(function(pp){if(pp.name===origNm)pp.name=newNm;});
+      (p.data||[]).filter(function(r){return r.t==='act';}).forEach(function(a){
+        (a.p||[]).forEach(function(pp){if(pp.name===origNm)pp.name=newNm;});
+      });
+      if(p.fh&&p.fh[origNm]){p.fh[newNm]=p.fh[origNm];delete p.fh[origNm];}
+    });
+    if(STORE.absences&&STORE.absences[origNm]){
+      STORE.absences[newNm]=STORE.absences[origNm];
+      delete STORE.absences[origNm];
+    }
+  }
+  if(!gp[newNm])gp[newNm]={};
+  gp[newNm].name=newNm;
+  gp[newNm].type=type||'';
+  gp[newNm].habilitations=habsArr||[];
+  // Ajouter dans l'affaire courante si pas déjà présent
   var aff=STORE.current;
   if(aff&&STORE.projects[aff]){
     var p=STORE.projects[aff];
     if(!p.persons)p.persons=[];
-    if(!p.persons.find(function(pp){return pp.name===nm;})){
-      p.persons.push({name:nm,type:type||'',ent:''});
+    if(!p.persons.find(function(pp){return pp.name===newNm;})){
+      p.persons.push({name:newNm,type:type||'',ent:''});
     }
   }
   localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
@@ -1262,6 +1334,7 @@ function deleteGlobalPerson(nm){
   var gp=_getGlobalPersons();
   delete gp[nm];
   localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  window._editingPerson=undefined;
   renderPersonnelSearch();
 }
 
@@ -1276,7 +1349,7 @@ function renderPersonnelSearch(){
   _mergePersonsFromProjects();
   var gp=_getGlobalPersons();
   var persons=Object.values(gp).sort(function(a,b){return a.name.localeCompare(b.name);});
-  var editingNm=window._editingPerson;
+  var editingNm=window._editingPerson; // undefined = pas d'édition, ''=new, 'nom'=edit
   var ES2=ES||{};
   var typeOpts=['','ELS','Interim','S-T','Alternant','Stagiaire'];
 
@@ -1291,24 +1364,43 @@ function renderPersonnelSearch(){
 
   // ── Formulaire d'ajout / édition
   if(editingNm!==undefined){
-    var ep=editingNm&&gp[editingNm]?gp[editingNm]:{name:editingNm,type:'',habilitations:[]};
-    var habStr=(ep.habilitations||[]).join(', ');
-    var isNew=!editingNm;
+    var origNm=editingNm;
+    var ep=origNm&&gp[origNm]?gp[origNm]:{name:'',type:'',habilitations:[]};
+    var curHabs=ep.habilitations||[];
+    var isNew=!origNm;
     html+='<div style="background:var(--bg2);border:2px solid var(--ac);border-radius:var(--r2);padding:20px;margin-bottom:20px">';
-    html+='<div style="font-size:13px;font-weight:800;color:var(--tx);margin-bottom:14px">'+(isNew?'➕ Nouvelle personne':'✏️ Modifier — '+editingNm)+'</div>';
-    html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">';
-    html+='<div style="flex:1;min-width:180px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">NOM COMPLET</div>';
+    html+='<div style="font-size:13px;font-weight:800;color:var(--tx);margin-bottom:14px">'+(isNew?'➕ Nouvelle personne':'✏️ Modifier — '+origNm)+'</div>';
+
+    // Nom + Type
+    html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">';
+    html+='<div style="flex:2;min-width:180px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">NOM COMPLET</div>';
     html+='<input id="_pe_name" type="text" value="'+ep.name.replace(/"/g,'&quot;')+'" placeholder="Prénom Nom" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box"></div>';
-    html+='<div style="flex:1;min-width:160px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">TYPE / RÔLE</div>';
+    html+='<div style="flex:1;min-width:140px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">STATUT</div>';
     html+='<select id="_pe_type" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">';
-    typeOpts.forEach(function(t){html+='<option value="'+t+'"'+(ep.type===t?' selected':'')+'>'+( t||'— Type —')+'</option>';});
+    typeOpts.forEach(function(t){html+='<option value="'+t+'"'+(ep.type===t?' selected':'')+'>'+( t||'— Statut —')+'</option>';});
     html+='</select></div></div>';
-    // Habilitations
-    html+='<div style="margin-bottom:14px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">🏅 HABILITATIONS <span style="font-weight:400;font-style:italic">(séparées par des virgules : B0, H0, CACES 3...)</span></div>';
-    html+='<input id="_pe_habs" type="text" value="'+habStr.replace(/"/g,'&quot;')+'" placeholder="Ex: B0, H0, BR, CACES 3, ..." style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box">';
-    html+='<div style="font-size:10px;color:var(--tx3);margin-top:4px">Exemples : B0, H0, BR, BC, BE Essai, HC, CACES 1, CACES 3, Travaux en hauteur...</div></div>';
+
+    // Habilitations — checkboxes groupées
+    html+='<div style="margin-bottom:14px">';
+    html+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:10px">🏅 HABILITATIONS</div>';
+    HAB_GROUPS.forEach(function(grp){
+      html+='<div style="margin-bottom:10px">';
+      html+='<div style="font-size:9px;font-weight:800;color:var(--tx2);letter-spacing:.6px;margin-bottom:6px">'+grp.label+'</div>';
+      html+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      grp.items.forEach(function(h){
+        var checked=curHabs.indexOf(h)>=0;
+        var safeId='_hab_'+h.replace(/[^a-z0-9]/gi,'_');
+        html+='<label style="display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;cursor:pointer;border:2px solid '+(checked?'#1D4ED8':'var(--bd)')+';background:'+(checked?'#DBEAFE':'var(--bg3)')+'">';
+        html+='<input type="checkbox" id="'+safeId+'" value="'+h+'" '+(checked?'checked':'')+' style="accent-color:#1D4ED8;width:13px;height:13px">';
+        html+='<span style="font-size:12px;font-weight:700;color:'+(checked?'#1D4ED8':'var(--tx2)')+'">'+h+'</span></label>';
+      });
+      html+='</div></div>';
+    });
+    html+='</div>';
+
+    // Boutons
     html+='<div style="display:flex;gap:8px">';
-    html+='<button onclick="(function(){var nm=document.getElementById(\'_pe_name\').value.trim();if(!nm){alert(\'Entrez un nom\');return;}var type=document.getElementById(\'_pe_type\').value;var habs=document.getElementById(\'_pe_habs\').value.split(\',\').map(function(h){return h.trim();}).filter(Boolean);saveGlobalPerson(nm,type,habs);window._editingPerson=undefined;renderPersonnelSearch();refreshAllTabs();})()" style="padding:8px 20px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sauvegarder</button>';
+    html+='<button id="_pe_save" style="padding:8px 20px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sauvegarder</button>';
     html+='<button onclick="window._editingPerson=undefined;renderPersonnelSearch()" style="padding:8px 16px;border-radius:var(--r);background:var(--bg3);border:1px solid var(--bd);color:var(--tx2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Annuler</button>';
     html+='</div></div>';
   }
@@ -1322,10 +1414,9 @@ function renderPersonnelSearch(){
   } else {
     html+='<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);overflow:hidden">';
     persons.forEach(function(p2,pi){
-      var ec=p2.type&&ES2[p2.type]?ES2[p2.type]:{bg:'var(--bg3)',tc:'var(--tx2)'};
       var habs=p2.habilitations||[];
-      html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--bd);background:'+(pi%2===0?'var(--bg2)':'var(--bg3)')+'">';
-      // Nom + type + habilitations
+      var ec=p2.type&&ES2[p2.type]?ES2[p2.type]:{bg:'var(--bg3)',tc:'var(--tx2)'};
+      html+='<div data-pname="'+p2.name.replace(/"/g,'&quot;')+'" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--bd);background:'+(pi%2===0?'var(--bg2)':'var(--bg3)')+'">';
       html+='<div style="flex:1">';
       html+='<div style="font-weight:700;font-size:13px;color:var(--tx)">'+p2.name+'</div>';
       if(habs.length){
@@ -1337,24 +1428,70 @@ function renderPersonnelSearch(){
       }
       html+='</div>';
       if(p2.type)html+='<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+ec.bg+';color:'+ec.tc+'">'+p2.type+'</span>';
-      html+='<button onclick="openPersonEditor(\''+p2.name.replace(/'/g,"\\'")+'\')" style="padding:4px 10px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:var(--tx3);font-size:11px;cursor:pointer;font-family:inherit">✏️</button>';
-      html+='<button onclick="deleteGlobalPerson(\''+p2.name.replace(/'/g,"\\'")+'\')\" style="padding:4px 8px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:#DC2626;font-size:11px;cursor:pointer;font-family:inherit">🗑</button>';
+      html+='<button class="_edit_btn" style="padding:4px 10px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:var(--tx3);font-size:11px;cursor:pointer;font-family:inherit">✏️</button>';
+      html+='<button class="_del_btn" style="padding:4px 8px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:#DC2626;font-size:11px;cursor:pointer;font-family:inherit">🗑</button>';
       html+='</div>';
     });
     html+='</div>';
   }
 
-  // ── Recherche rapide
+  // Recherche
   html+='<div style="margin-top:24px"><div style="font-size:12px;font-weight:700;color:var(--tx2);margin-bottom:8px">🔍 Recherche par activité</div>';
-  html+='<div class="srb" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">';
-  html+='<span class="sri">⌕</span><input id="si" type="text" placeholder="Chercher une personne par nom..." oninput="renderSearch()" style="flex:1;border:2px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">';
-  html+='</div><div id="sr"></div></div>';
-  html+='</div>';
+  html+='<div class="srb" style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="sri">⌕</span><input id="si" type="text" placeholder="Chercher..." oninput="renderSearch()" style="flex:1;border:2px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>';
+  html+='<div id="sr"></div></div></div>';
 
   el.innerHTML=html;
-  var si=document.getElementById('si');if(si&&si.value)renderSearch();
-}
 
+  // ── Wirer les événements APRÈS injection HTML ────────────────────
+  // Bouton Sauvegarder
+  var saveBtn=el.querySelector('#_pe_save');
+  if(saveBtn){
+    saveBtn.onclick=function(){
+      var newNm=el.querySelector('#_pe_name').value.trim();
+      if(!newNm){alert('Entrez un nom.');return;}
+      var type=el.querySelector('#_pe_type').value;
+      var habs=[];
+      el.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb){habs.push(cb.value);});
+      var orig=editingNm||'';
+      saveGlobalPerson(orig,newNm,type,habs);
+      window._editingPerson=undefined;
+      renderPersonnelSearch();
+      refreshAllTabs();
+    };
+  }
+
+  // Boutons ✏️ et 🗑 — délégation via data-pname du parent
+  el.querySelectorAll('._edit_btn').forEach(function(btn){
+    btn.onclick=function(e){
+      e.stopPropagation();
+      var nm=btn.closest('[data-pname]').dataset.pname;
+      openPersonEditor(nm);
+    };
+  });
+  el.querySelectorAll('._del_btn').forEach(function(btn){
+    btn.onclick=function(e){
+      e.stopPropagation();
+      var nm=btn.closest('[data-pname]').dataset.pname;
+      deleteGlobalPerson(nm);
+    };
+  });
+
+  // Checkboxes — mettre à jour le style à la volée
+  el.querySelectorAll('input[type="checkbox"]').forEach(function(cb){
+    cb.onchange=function(){
+      var lbl=cb.closest('label');
+      if(cb.checked){
+        lbl.style.borderColor='#1D4ED8';lbl.style.background='#DBEAFE';
+        lbl.querySelector('span').style.color='#1D4ED8';
+      } else {
+        lbl.style.borderColor='var(--bd)';lbl.style.background='var(--bg3)';
+        lbl.querySelector('span').style.color='var(--tx2)';
+      }
+    };
+  });
+
+  var si=el.querySelector('#si');if(si&&si.value)renderSearch();
+}
 
 function renderDashboard(){
   var fw=document.getElementById('dbw');
@@ -2153,18 +2290,45 @@ function exportData(){
 
 
 function importData(e){
-  const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=ev=>{try{
-    const o=JSON.parse(ev.target.result);
-    if(!o.projects)throw new Error();
-    STORE=o;localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
-    EXP=null;renderProjSel();switchProjet(STORE.current||Object.keys(STORE.projects)[0]);
-  }catch{alert('Fichier invalide.');}};
-  r.readAsText(f);
+  var f=e.target.files[0];if(!f)return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var o=JSON.parse(ev.target.result);
+      if(!o.projects)throw new Error('Pas de projets trouvés');
+      var incoming=Object.keys(o.projects);
+      if(!incoming.length){alert('Aucune affaire trouvée dans ce fichier.');return;}
+
+      // Lister conflits
+      var existing=Object.keys(STORE.projects);
+      var conflicts=incoming.filter(function(a){return existing.indexOf(a)>=0;});
+      var news=incoming.filter(function(a){return existing.indexOf(a)<0;});
+
+      var msg='📂 Import — '+incoming.length+' affaire(s) :\n\n';
+      if(news.length)msg+='✅ Nouvelles : '+news.join(', ')+'\n';
+      if(conflicts.length)msg+='⚠️ Déjà existantes (seront écrasées) : '+conflicts.join(', ')+'\n';
+      msg+='\nLes autres affaires ne seront PAS touchées.\nContinuer ?';
+      if(!confirm(msg))return;
+
+      // Fusionner uniquement les affaires importées
+      incoming.forEach(function(aff){
+        STORE.projects[aff]=o.projects[aff];
+      });
+      if(o.globalPersons&&!STORE.globalPersons)STORE.globalPersons=o.globalPersons;
+
+      localStorage.setItem(SK,JSON.stringify(STORE));
+      scheduleSupa();
+      EXP=null;
+      renderProjSel();
+      switchProjet(incoming[0]);
+      alert('✅ '+incoming.length+' affaire(s) importée(s) !');
+    }catch(err){
+      alert('Fichier invalide.\n'+(err.message||''));
+    }
+  };
+  reader.readAsText(f);
+  e.target.value='';
 }
-
-
 function ftToggleType(){
   var isDecalage=document.getElementById('ft-type-decalage')&&document.getElementById('ft-type-decalage').checked;
   var secR=document.getElementById('ft-section-retard');
@@ -4346,9 +4510,32 @@ function renderGantt(){
       html+='<tr class="ra'+(isE?' exp-open':'')+'" data-rid="'+row.id+'" onclick="toggleExp(\''+row.id+'\')" style="height:34px">';
       html+='<td class="al s1" style="background:'+_nb2+';font-size:11px;border-right:1px solid var(--bd);padding:4px 8px;vertical-align:middle;position:sticky;left:0;z-index:5">';
       html+='<span style="font-weight:600">'+row.lb+'</span> ';
-      html+='<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E">Non planifi\u00e9e</span>';
+      if(!row.s){
+        html+='<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E">Non planifi\u00e9e</span>';
+      } else {
+        // 0h avec date : badge "À prévoir"
+        var _dLabel=weekDayToDate(row.s,row.dStart||0).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
+        html+='<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#EDE9FE;color:#6D28D9">\uD83D\uDCCC '+_dLabel+'</span>';
+      }
       html+='</td>';
-      html+='<td colspan="'+(2+NC)+'" style="background:repeating-linear-gradient(90deg,var(--bg3) 0,var(--bg3) 2px,transparent 2px,transparent 10px);opacity:.3"></td>';
+      if(!row.s){
+        html+='<td colspan="'+(2+NC)+'" style="background:repeating-linear-gradient(90deg,var(--bg3) 0,var(--bg3) 2px,transparent 2px,transparent 10px);opacity:.3"></td>';
+      } else {
+        // Construire les cellules avec un losange à la semaine prévue
+        var _mc='';
+        for(var _mw=1;_mw<=52;_mw++){
+          var _md=row.dStart||0;
+          var _showMark=_mw===row.s;
+          var _sepM=MG.some(function(m){return m.e===_mw;})?'border-right:1px solid var(--bd2);':'';
+          for(var _dd=0;_dd<7;_dd++){
+            var _isMark=_showMark&&_dd===_md;
+            _mc+='<td style="width:'+DW+'px;min-width:'+DW+'px;padding:0;position:relative;'+(_dd===6?_sepM:'')+'">'
+              +(_isMark?'<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div style="width:8px;height:8px;background:'+ph.x+';transform:rotate(45deg);border-radius:1px"></div></div>':'')
+              +'</td>';
+          }
+        }
+        html+='<td style="width:20px"></td><td style="width:20px"></td>'+_mc;
+      }
       html+='</tr>';
       if(isE)html+='<tr id="exp-panel-row"><td colspan="'+(3+NC)+'" style="padding:0;background:var(--bg2)">'+buildExpandPanel(row,ph,0)+'</td></tr>';
       return;
