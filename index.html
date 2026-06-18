@@ -1371,7 +1371,6 @@ function openPersonEditor(nm){
 function renderPersonnelSearch(){
   var el=document.getElementById('pers-search');
   if(!el)return;
-  _mergePersonsFromProjects();
   var gp=_getGlobalPersons();
   var persons=Object.values(gp).sort(function(a,b){return a.name.localeCompare(b.name);});
   var editingNm=window._editingPerson; // undefined = pas d'édition, ''=new, 'nom'=edit
