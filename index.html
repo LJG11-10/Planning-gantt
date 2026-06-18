@@ -1453,8 +1453,8 @@ function renderPersonnelSearch(){
       }
       html+='</div>';
       if(p2.type)html+='<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+ec.bg+';color:'+ec.tc+'">'+p2.type+'</span>';
-      html+='<button class="_edit_btn" style="padding:4px 10px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:var(--tx3);font-size:11px;cursor:pointer;font-family:inherit">✏️</button>';
-      html+='<button class="_del_btn" style="padding:4px 8px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:#DC2626;font-size:11px;cursor:pointer;font-family:inherit">🗑</button>';
+      html+='<button class="_edit_btn" data-pname="'+p2.name.replace(/"/g,'&quot;')+'" style="padding:4px 10px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:var(--tx3);font-size:11px;cursor:pointer;font-family:inherit">✏️</button>';
+      html+='<button class="_del_btn" data-pname="'+p2.name.replace(/"/g,'&quot;')+'" style="padding:4px 8px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:#DC2626;font-size:11px;cursor:pointer;font-family:inherit">🗑</button>';
       html+='</div>';
     });
     html+='</div>';
@@ -1489,15 +1489,13 @@ function renderPersonnelSearch(){
   el.querySelectorAll('._edit_btn').forEach(function(btn){
     btn.onclick=function(e){
       e.stopPropagation();
-      var nm=btn.closest('[data-pname]').dataset.pname;
-      openPersonEditor(nm);
+      openPersonEditor(btn.dataset.pname);
     };
   });
   el.querySelectorAll('._del_btn').forEach(function(btn){
     btn.onclick=function(e){
       e.stopPropagation();
-      var nm=btn.closest('[data-pname]').dataset.pname;
-      deleteGlobalPerson(nm);
+      deleteGlobalPerson(btn.dataset.pname);
     };
   });
 
