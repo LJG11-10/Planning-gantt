@@ -12,20 +12,30 @@
 
   let _syncTimeout = null;
 
-  // ── LECTURE ──────────────────────────────────────────────────────
+  // Vérifie que les données sont valides (pas vides)
+  function _isValidStore(s) {
+    return s && s.projects && Object.keys(s.projects).length > 0;
+  }
+
   async function supaLoad() {
     if (!supa) return null;
     try {
       const { data, error } = await supa
         .from('planning').select('data').eq('key','main').single();
       if (error || !data || !data.data) return null;
-      return JSON.parse(data.data);
+      const parsed = JSON.parse(data.data);
+      // Ne retourner que si les données sont valides
+      return _isValidStore(parsed) ? parsed : null;
     } catch(e) { return null; }
   }
 
-  // ── ÉCRITURE : simple, pas de merge, Supabase = maître ───────────
   async function supaSave(store) {
     if (!supa) return;
+    // Ne jamais sauvegarder un store vide
+    if (!_isValidStore(store)) {
+      console.warn('supaSave: store vide, abandon');
+      return;
+    }
     try {
       _lastSaveSid = SESSION_ID;
       await supa.from('planning').upsert({
@@ -42,7 +52,6 @@
     _syncTimeout = setTimeout(function() { supaSave(STORE); }, 800);
   }
 
-  // ── TEMPS RÉEL ───────────────────────────────────────────────────
   var _realtimeChannel = null;
   var _pollInterval = null;
   var _lastUpdatedAt = null;
@@ -50,7 +59,7 @@
   function startRealtime() {
     if (!supa) return;
 
-    // WebSocket (instantané)
+    // WebSocket
     try {
       if (_realtimeChannel) supa.removeChannel(_realtimeChannel);
       _realtimeChannel = supa.channel('planning-shared')
@@ -61,7 +70,8 @@
             if (!payload.new || payload.new.session_id === SESSION_ID) return;
             if (payload.new.updated_at === _lastUpdatedAt) return;
             _lastUpdatedAt = payload.new.updated_at;
-            _applyRemote(JSON.parse(payload.new.data));
+            var remote = JSON.parse(payload.new.data);
+            _applyRemote(remote);
           } catch(e) {}
         })
         .subscribe(function(status) {
@@ -70,7 +80,7 @@
         });
     } catch(e) {}
 
-    // Polling toutes les 3s (secours)
+    // Polling toutes les 3s
     if (_pollInterval) clearInterval(_pollInterval);
     _pollInterval = setInterval(function() {
       if (!supa) return;
@@ -78,22 +88,34 @@
         .eq('key','main').single()
         .then(function(res) {
           if (!res || !res.data) return;
-          // Ignorer nos propres sauvegardes
           if (res.data.session_id === SESSION_ID) {
             _lastUpdatedAt = res.data.updated_at;
             return;
           }
-          // Ignorer si déjà traité
           if (_lastUpdatedAt && res.data.updated_at === _lastUpdatedAt) return;
           _lastUpdatedAt = res.data.updated_at;
-          try { _applyRemote(JSON.parse(res.data.data)); } catch(e) {}
+          try {
+            var remote = JSON.parse(res.data.data);
+            _applyRemote(remote);
+          } catch(e) {}
         });
     }, 3000);
   }
 
-  // Appliquer les données d'un collègue
   function _applyRemote(remote) {
-    if (!remote) return;
+    // Ne jamais appliquer des données vides ou invalides
+    if (!_isValidStore(remote)) {
+      console.warn('_applyRemote: données invalides ignorées', remote);
+      return;
+    }
+    // Fusionner : garder mes affaires locales + ajouter celles du collègue
+    if (STORE && STORE.projects) {
+      Object.keys(STORE.projects).forEach(function(aff) {
+        if (!remote.projects[aff]) {
+          remote.projects[aff] = STORE.projects[aff];
+        }
+      });
+    }
     STORE = remote;
     localStorage.setItem(SK, JSON.stringify(STORE));
     applySync();
@@ -113,7 +135,7 @@
       }
       var notif = document.createElement('div');
       notif.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:10px 16px;border-radius:10px;font-size:12px;font-weight:700;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.25)';
-      notif.textContent = '🔄 Planning mis à jour par un collègue';
+      notif.textContent = '\uD83D\uDD04 Planning mis à jour';
       document.body.appendChild(notif);
       setTimeout(function() { notif.remove(); }, 3000);
     } catch(e) {}
