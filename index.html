@@ -9,144 +9,120 @@
   const SUPA_KEY = 'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
   let supa = null;
   try { supa = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) {}
-
   let _syncTimeout = null;
 
-  // Donnees valides = au moins un projet
-  function _isValidStore(s) {
+  function _isValidStore(s){
     return s && s.projects && Object.keys(s.projects).length > 0;
   }
 
-  // Message visible a l'ecran
-  function _showMsg(msg, color) {
-    var el = document.createElement('div');
-    el.style.cssText = 'position:fixed;top:60px;right:16px;background:'+color+';color:#fff;padding:10px 16px;border-radius:8px;font-size:12px;font-weight:700;z-index:99999;max-width:300px';
-    el.textContent = msg;
+  function _showMsg(msg, color){
+    var el=document.createElement('div');
+    el.style.cssText='position:fixed;top:60px;right:16px;background:'+color+';color:#fff;padding:10px 16px;border-radius:8px;font-size:12px;font-weight:700;z-index:99999;max-width:320px';
+    el.textContent=msg;
     document.body.appendChild(el);
-    setTimeout(function(){if(el.parentNode)el.remove();},6000);
+    setTimeout(function(){if(el.parentNode)el.remove();},7000);
   }
 
-  async function supaLoad() {
-    if (!supa) return null;
-    try {
-      const { data, error } = await supa
-        .from('planning').select('data').eq('key','main').single();
-      if (error || !data || !data.data) return null;
-      const parsed = JSON.parse(data.data);
-      // Retourner null si donnees invalides
-      return _isValidStore(parsed) ? parsed : null;
-    } catch(e) { return null; }
+  async function supaLoad(){
+    if(!supa)return null;
+    try{
+      const {data,error}=await supa.from('planning').select('data').eq('key','main').single();
+      if(error||!data||!data.data)return null;
+      const p=JSON.parse(data.data);
+      return _isValidStore(p)?p:null;
+    }catch(e){return null;}
   }
 
-  async function supaSave(store) {
-    if (!supa) { _showMsg('Supabase non connecte','#DC2626'); return; }
-    // Ne jamais sauvegarder un store vide
-    if (!_isValidStore(store)) {
-      console.warn('supaSave: store vide ou invalide, abandon');
-      return;
-    }
-    try {
-      _lastSaveSid = SESSION_ID;
-      const ts = new Date().toISOString();
-      const strData = JSON.stringify(store);
-      // Essayer INSERT d'abord
-      const { error: insErr } = await supa.from('planning').insert({
-        key: 'main', data: strData, session_id: SESSION_ID, updated_at: ts
-      });
-      if (insErr) {
-        // Ligne existante -> UPDATE
-        const { error: updErr } = await supa.from('planning')
-          .update({ data: strData, session_id: SESSION_ID, updated_at: ts })
-          .eq('key', 'main');
-        if (updErr) {
-          _showMsg('Erreur sync: ' + updErr.message, '#DC2626');
-          console.error('supaSave UPDATE error:', updErr);
-        }
+  async function supaSave(store){
+    if(!supa)return;
+    if(!_isValidStore(store)){console.warn('supaSave: store vide');return;}
+    try{
+      _lastSaveSid=SESSION_ID;
+      const ts=new Date().toISOString();
+      const d=JSON.stringify(store);
+      // Upsert = INSERT ou UPDATE selon existence
+      const {error}=await supa.from('planning').upsert(
+        {key:'main',data:d,session_id:SESSION_ID,updated_at:ts},
+        {onConflict:'key',ignoreDuplicates:false}
+      );
+      if(error){
+        _showMsg('Erreur sync: '+error.message,'#DC2626');
+        console.error('supaSave error:',error);
       }
-    } catch(e) {
-      _showMsg('Erreur sync: ' + e.message, '#DC2626');
-      console.error('supaSave error:', e);
+    }catch(e){
+      _showMsg('Erreur sync: '+e.message,'#DC2626');
+      console.error('supaSave:',e);
     }
   }
 
-  function scheduleSupa() {
+  function scheduleSupa(){
     clearTimeout(_syncTimeout);
-    _syncTimeout = setTimeout(function() { supaSave(STORE); }, 800);
+    _syncTimeout=setTimeout(function(){supaSave(STORE);},800);
   }
 
-  var _realtimeChannel = null, _pollInterval = null, _lastUpdatedAt = null;
+  var _realtimeChannel=null,_pollInterval=null,_lastUpdatedAt=null;
 
-  function startRealtime() {
-    if (!supa) return;
-    // WebSocket
-    try {
-      if (_realtimeChannel) supa.removeChannel(_realtimeChannel);
-      _realtimeChannel = supa.channel('planning-rt')
-        .on('postgres_changes', {
-          event: 'UPDATE', schema: 'public', table: 'planning', filter: 'key=eq.main'
-        }, function(payload) {
-          try {
-            if (!payload.new || payload.new.session_id === SESSION_ID) return;
-            if (payload.new.updated_at === _lastUpdatedAt) return;
-            _lastUpdatedAt = payload.new.updated_at;
-            _applyRemote(JSON.parse(payload.new.data));
-          } catch(e) {}
-        })
-        .subscribe(function(status) {
-          var dot = document.getElementById('_rt_dot');
-          if (dot) dot.style.background = (status === 'SUBSCRIBED') ? '#22C55E' : '#F59E0B';
+  function startRealtime(){
+    if(!supa)return;
+    try{
+      if(_realtimeChannel)supa.removeChannel(_realtimeChannel);
+      _realtimeChannel=supa.channel('planning-rt')
+        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'planning',filter:'key=eq.main'},
+          function(payload){
+            try{
+              if(!payload.new||payload.new.session_id===SESSION_ID)return;
+              if(payload.new.updated_at===_lastUpdatedAt)return;
+              _lastUpdatedAt=payload.new.updated_at;
+              _applyRemote(JSON.parse(payload.new.data));
+            }catch(e){}
+          })
+        .subscribe(function(status){
+          var dot=document.getElementById('_rt_dot');
+          if(dot)dot.style.background=status==='SUBSCRIBED'?'#22C55E':'#F59E0B';
         });
-    } catch(e) {}
-    // Polling toutes les 3s
-    if (_pollInterval) clearInterval(_pollInterval);
-    _pollInterval = setInterval(function() {
-      if (!supa) return;
+    }catch(e){}
+    if(_pollInterval)clearInterval(_pollInterval);
+    _pollInterval=setInterval(function(){
+      if(!supa)return;
       supa.from('planning').select('data,updated_at,session_id').eq('key','main').single()
-        .then(function(res) {
-          if (!res || !res.data) return;
-          if (res.data.session_id === SESSION_ID) {
-            _lastUpdatedAt = res.data.updated_at; return;
-          }
-          if (_lastUpdatedAt && res.data.updated_at === _lastUpdatedAt) return;
-          _lastUpdatedAt = res.data.updated_at;
-          try { _applyRemote(JSON.parse(res.data.data)); } catch(e) {}
+        .then(function(res){
+          if(!res||!res.data)return;
+          if(res.data.session_id===SESSION_ID){_lastUpdatedAt=res.data.updated_at;return;}
+          if(_lastUpdatedAt&&res.data.updated_at===_lastUpdatedAt)return;
+          _lastUpdatedAt=res.data.updated_at;
+          try{_applyRemote(JSON.parse(res.data.data));}catch(e){}
         });
-    }, 3000);
+    },3000);
   }
 
-  function _applyRemote(remote) {
-    // Ignorer les donnees vides - NE PAS ecraser le store local
-    if (!_isValidStore(remote)) {
-      console.warn('_applyRemote: donnees invalides ignorees');
-      return;
-    }
-    // Ajouter mes affaires locales si pas dans le remote
-    if (STORE && STORE.projects) {
-      Object.keys(STORE.projects).forEach(function(aff) {
-        if (!remote.projects[aff]) remote.projects[aff] = STORE.projects[aff];
+  function _applyRemote(remote){
+    if(!_isValidStore(remote)){console.warn('donnees vides ignorees');return;}
+    if(STORE&&STORE.projects){
+      Object.keys(STORE.projects).forEach(function(aff){
+        if(!remote.projects[aff])remote.projects[aff]=STORE.projects[aff];
       });
     }
-    STORE = remote;
-    localStorage.setItem(SK, JSON.stringify(STORE));
+    STORE=remote;
+    localStorage.setItem(SK,JSON.stringify(STORE));
     applySync();
   }
 
-  function applySync() {
-    try {
-      renderProjSel(); updBudget(); renderGantt();
-      var t = document.querySelector('.nb.on');
-      if (t && t.dataset) {
-        var tab = t.dataset.tab;
-        if (tab === 'recap') { syncFichesToGantt(); renderRecap(); }
-        else if (tab === 'charges') renderCharges();
-        else if (tab === 'dashboard') renderDashboard();
+  function applySync(){
+    try{
+      renderProjSel();updBudget();renderGantt();
+      var t=document.querySelector('.nb.on');
+      if(t&&t.dataset){
+        var tab=t.dataset.tab;
+        if(tab==='recap'){syncFichesToGantt();renderRecap();}
+        else if(tab==='charges')renderCharges();
+        else if(tab==='dashboard')renderDashboard();
       }
-      var n = document.createElement('div');
-      n.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:10px 16px;border-radius:10px;font-size:12px;font-weight:700;z-index:9999';
-      n.textContent = 'Planning mis a jour par un collegue';
+      var n=document.createElement('div');
+      n.style.cssText='position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:10px 16px;border-radius:10px;font-size:12px;font-weight:700;z-index:9999';
+      n.textContent='Planning mis a jour par un collegue';
       document.body.appendChild(n);
-      setTimeout(function() { if(n.parentNode) n.remove(); }, 3000);
-    } catch(e) {}
+      setTimeout(function(){if(n.parentNode)n.remove();},3000);
+    }catch(e){}
   }
 </script>
 <style>
