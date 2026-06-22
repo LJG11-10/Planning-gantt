@@ -48,6 +48,9 @@
       if(error){
         _showMsg('Erreur sync: '+error.message,'#DC2626');
         console.error('supaSave storage error:',error);
+      } else {
+        try{var {data:_m}=await supa.storage.from(BUCKET).list('',{search:FILE});
+        if(_m&&_m[0])_lastEtag=_m[0].updated_at||_m[0].created_at;}catch(e2){}
       }
     }catch(e){
       _showMsg('Erreur sync: '+e.message,'#DC2626');
@@ -2917,7 +2920,7 @@ function downloadPlanning(mode){
   body+='<h2 style="font-size:15px;font-weight:800;color:#1F4E79;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #BFDBFE">📋 Activités ('+acts.length+')</h2>';
   body+='<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:28px">';
   body+='<thead><tr style="background:#EFF6FF">';
-  (mode==='client'?['Phase','Sous-phase','Activité','S.Début','S.Fin','Dur. (j)','Équipe','Statut']:['Phase','Sous-phase','Activité','S.Début','S.Fin','Dur. (j)','H Prév.','H Réel','Écart','Personnes','Statut']).forEach(function(h){
+  (mode==='client'?['Phase','Sous-phase','Activité','Début','Fin','Personnes','Statut']:['Phase','Sous-phase','Activité','Début','Fin','H Prév.','H Réel','Écart','Personnes','Statut']).forEach(function(h){
     body+='<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #BFDBFE;font-size:10px;font-weight:700;color:#1F4E79;white-space:nowrap">'+h+'</th>';
   });
   body+='</tr></thead><tbody>';
@@ -2938,7 +2941,7 @@ function downloadPlanning(mode){
       +'<td style="padding:7px 10px;font-weight:'+(r.done?700:400)+'">'+esc(r.lb)+(r.done?' ✓':'')+'</td>'
       +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.s||'—')+'</td>'
       +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.e||'—')+'</td>'
-      +'<td style="padding:7px 10px;text-align:center;color:#555">'+(r.dDur||'—')+'</td>'
+
       +(mode!=='client'
         ?('<td style="padding:7px 10px;text-align:center;font-weight:700;color:#D97706">'+hP+'H</td>'
           +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:#059669">'+hR+'H</td>'
@@ -2949,7 +2952,7 @@ function downloadPlanning(mode){
       +'</tr>';
   });
   if(mode!=='client'){
-    body+='<tr style="background:#EFF6FF;font-weight:700"><td colspan="6" style="padding:8px 10px;text-align:right;color:#1F4E79">TOTAL</td>'
+    body+='<tr style="background:#EFF6FF;font-weight:700"><td colspan="5" style="padding:8px 10px;text-align:right;color:#1F4E79">TOTAL</td>'
     +'<td style="padding:8px 10px;text-align:center;color:#D97706">'+Math.round(totP)+'H</td>'
     +'<td style="padding:8px 10px;text-align:center;color:#059669">'+Math.round(totR)+'H</td>'
     +'<td style="padding:8px 10px;text-align:center;color:'+(ecart>0?'#DC2626':'#059669')+'">'+(ecart>=0?'+':'')+ecart+'H</td>'
@@ -2959,7 +2962,7 @@ function downloadPlanning(mode){
 
   // ── Personnes impliquées ──────────────────────────
   var persMap={};
-  acts.forEach(function(a){(a.p||[]).forEach(function(pp){if(pp.name&&pp.name.trim())persMap[pp.name]=(persMap[pp.name]||0)+(+pp.heures||0);});});
+  acts.forEach(function(a){(a.p||[]).forEach(function(pp){if(pp.name&&pp.name.trim())persMap[pp.name]=(persMap[pp.name]||0)+1;});});
   var pers=Object.keys(persMap);
   if(pers.length){
     body+='<h2 style="font-size:15px;font-weight:800;color:#1F4E79;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #BFDBFE">👥 Équipe ('+pers.length+' personne'+(pers.length>1?'s':'')+')</h2>';
@@ -2970,12 +2973,35 @@ function downloadPlanning(mode){
       body+='<div style="background:#F0F4F8;border-radius:10px;padding:10px 16px;border:1px solid #DDE3EA">'
         +'<div style="font-weight:700;font-size:12px;color:#1F4E79">'+esc(nm)+'</div>'
         +(type?'<div style="font-size:10px;color:#7C3AED;margin-top:2px">'+esc(type)+'</div>':'')
-        +(mode!=='client'?'<div style="font-size:11px;color:#888;margin-top:4px">'+persMap[nm]+'H assignées</div>':'')+'</div>';
+        +(mode!=='client'?'<div style="font-size:11px;color:#888;margin-top:4px">'+persMap[nm]+' tâche'+(persMap[nm]>1?'s':'')+'</div>':'')+'</div>';
     });
     body+='</div>';
   }
 
-  // ── Fortuites ────────────────────────────────────
+    // ── Budget heures par phase ────────────────────────────────
+  var _phsWB=(p.data||[]).filter(function(r){return r.t==='ph'&&r.budgetH>0;});
+  if(_phsWB.length&&mode!=='client'){
+    body+='<h2 style="font-size:15px;font-weight:800;color:#1F4E79;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #BFDBFE">&#128176; Budget Heures par Phase</h2>';
+    body+='<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px">';
+    _phsWB.forEach(function(ph_r){
+      var _a=acts.filter(function(a){return a.pk===ph_r.pk;});
+      var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
+      var _rv=Math.round(_a.reduce(function(s,a){return s+(+a.hReel||0);},0)*10)/10;
+      var _bv=ph_r.budgetH||0;
+      var _df=_bv>0?Math.round((_pv-_bv)*10)/10:null;
+      var _cl=_df>0?'#DC2626':_df<0?'#059669':'#374151';
+      body+='<div style="background:#F8F9FA;border-radius:10px;padding:14px 18px;border-top:3px solid #1F4E79;min-width:180px">';
+      body+='<div style="font-weight:800;font-size:12px;color:#1F4E79;margin-bottom:8px">'+esc(ph_r.lb)+'</div>';
+      body+='<div style="display:flex;gap:12px;font-size:11px">';
+      body+='<div><div style="color:#888">Budget</div><div style="font-weight:800;color:#1F4E79">'+_bv+'H</div></div>';
+      body+='<div><div style="color:#888">Pr&eacute;vu</div><div style="font-weight:800;color:#D97706">'+_pv+'H</div></div>';
+      body+='<div><div style="color:#888">R&eacute;el</div><div style="font-weight:800;color:#059669">'+_rv+'H</div></div>';
+      if(_df!==null)body+='<div><div style="color:#888">&Eacute;cart</div><div style="font-weight:800;color:'+_cl+'">'+(_df>0?'+':'')+_df+'H</div></div>';
+      body+='</div></div>';
+    });
+    body+='</div>';
+  }
+// ── Fortuites ────────────────────────────────────
   if(forts.length){
     var totalFortH=forts.reduce(function(s,f){return s+Math.round((f.durDays||0)*8);},0);
     body+='<h2 style="font-size:15px;font-weight:800;color:#DC2626;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #FCA5A5">⚡ Fortuites ('+forts.length+' · +'+totalFortH+'H impact)</h2>';
@@ -3060,8 +3086,10 @@ function downloadPlanning(mode){
       var phC=getPHC(r.pk||curPk);
       var sP=r.s||1, eP=r.e||r.s||1;
       var sR=r.sReel||r.s||1, eR=r.eReel||r.e||r.s||1;
-      var prevS=(sP-1)*5, prevE=(eP-1)*5+4;
-      var reelS=(sR-1)*5, reelE=(eR-1)*5+4;
+      var d1P=r.dStart||0, d2P=r.dEnd!=null?r.dEnd:4;
+      var d1R=r.dStartR!=null?r.dStartR:d1P, d2R=r.dEndR!=null?r.dEndR:4;
+      var prevS=(sP-1)*5+d1P, prevE=(eP-1)*5+d2P;
+      var reelS=(sR-1)*5+d1R, reelE=(eR-1)*5+d2R;
       var hP=+r.hPrev||0;
       var nb=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim();}).length;
       var lbl=esc(r.lb);
@@ -3213,6 +3241,27 @@ function dbBuildPlanningGrid(){
   var wkLbl='S'+selWk+(dLun?' - du '+dLun.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'}):'');
   var persons=getAllPersons();
   var html='<div style="background:var(--bg2);border-radius:var(--r2);padding:20px 24px">';
+  var _activeTasks=[];
+  Object.keys(STORE.projects).forEach(function(affT){
+    var projT=STORE.projects[affT];if(!projT||projT.closed)return;
+    (projT.data||[]).filter(function(r){return r.t==='act'&&r.s&&r.s<=selWk&&(r.e||r.s)>=selWk;}).forEach(function(actT){
+      _activeTasks.push({aff:affT,act:actT,ph:PH_get(actT.pk)});
+    });
+  });
+  if(_activeTasks.length){
+    html+='<div style="margin-bottom:14px;padding:10px 14px;background:var(--bg2);border-radius:var(--r2);border:1px solid var(--bd)">';
+    html+='<div style="font-size:10px;font-weight:800;color:var(--tx2);letter-spacing:.5px;margin-bottom:8px">\uD83D\uDCCB T\u00C2CHES ACTIVES S'+selWk+'</div>';
+    html+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    _activeTasks.forEach(function(t){
+      var ph=t.ph;
+      var ps=(t.act.p||[]).filter(function(p){return p.name&&p.name.trim();}).map(function(p){return p.name;}).join(', ');
+      html+='<div style="background:'+ph.f+';border:1px solid '+ph.xl+';border-left:3px solid '+ph.h+';border-radius:6px;padding:5px 10px;font-size:11px">';
+      html+='<div style="font-weight:700;color:'+ph.xd+'">'+t.act.lb+'</div>';
+      html+='<div style="font-size:9px;color:'+ph.xd+';opacity:.8">'+t.aff+(ps?' \u00B7 \uD83D\uDC64 '+ps:'')+'</div>';
+      html+='</div>';
+    });
+    html+='</div></div>';
+  }
   html+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid var(--bd)">';
   html+='<span style="font-size:22px">&#128197;</span>';
   html+='<div><div style="font-size:15px;font-weight:800">Planning reunion</div>';
@@ -3268,7 +3317,19 @@ function dbBuildPlanningGrid(){
         var projG=STORE.projects[affG];if(!projG)return;
         (projG.data||[]).filter(function(r){return r.t==='act'&&r.s&&r.dDur!==0;}).forEach(function(actG){
           if((actG.s||0)>selWk||(actG.e||actG.s||0)<selWk)return;
-          if(!(actG.p||[]).some(function(p){return p.name===nm;}))return;
+          var pEntry=(actG.p||[]).find(function(p){return p.name===nm;});
+          if(!pEntry)return;
+          // Vérifier si la tâche est active CE jour précis
+          var _d5pr=(selWk-1)*5+di;
+          var _prevDaysPR=getTaskDays5(actG,'prev');
+          if(_prevDaysPR.length&&_prevDaysPR.indexOf(_d5pr)<0)return;
+          if(!_prevDaysPR.length&&((actG.s||0)>selWk||(actG.e||actG.s||0)<selWk))return;
+          // Vérifier jours personnels (p.days)
+          if(pEntry.days&&pEntry.days.length){
+            var _dt=_dayDate;
+            var _cellKey=_dt.getFullYear()+'-'+String(_dt.getMonth()+1).padStart(2,'0')+'-'+String(_dt.getDate()).padStart(2,'0');
+            if(pEntry.days.indexOf(_cellKey)<0)return;
+          }
           // Ne pas doubler si déjà dans weekPlan
           var already=_savedForCell.some(function(e){return e.aff===affG&&e.actId===actG.id;});
           if(already)return;
@@ -4516,10 +4577,13 @@ function renderGantt(){
       const _phPrev=_phActs.reduce(function(s,a){return s+(+a.hPrev||0);},0);
       const _phReel=_phActs.reduce(function(s,a){return s+(+a.hReel||0);},0);
       const _phDiff=_phReel-_phPrev;
-      const _phBadge=_phPrev>0
-        ?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:10px">P:${_phPrev}H</span>`
-         +(_phReel>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">R:${_phReel}H</span>`:'') 
-         +(_phPrev>0&&_phReel>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;opacity:.85">${_phDiff>0?'Δ+'+_phDiff:_phDiff<0?'Δ'+_phDiff:''}</span>`:''):''; 
+      const _phBudget=row.budgetH||0;
+      const _phBadge=
+        (_phBudget>0?`<span style="font-size:10px;font-weight:700;margin-left:10px;padding:0 6px;background:rgba(255,255,255,.25);border-radius:4px">Budget:${_phBudget}H</span>`:'')
+        +(_phPrev>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">P:${_phPrev}H</span>`:'')
+        +(_phReel>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">R:${_phReel}H</span>`:'')
+        +(_phBudget>0&&_phPrev>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 4px;background:rgba(0,0,0,.2);border-radius:3px">${_phPrev>_phBudget?'⚠+'+(_phPrev-_phBudget)+'H':(_phPrev<_phBudget?'✓-'+(_phBudget-_phPrev)+'H':'=')}</span>`:'')
+        +(!_phBudget&&_phPrev>0&&_phReel>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;opacity:.85">${_phDiff>0?'Δ+'+_phDiff:_phDiff<0?'Δ'+_phDiff:''}</span>`:'');
       html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.h};padding:0 12px;font-size:13px;font-weight:700;color:#fff;height:25px;letter-spacing:1px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.25);display:flex;align-items:center">▶ &nbsp;${row.lb||row.pk}${_phBadge}</td><td colspan="${2+NC}" style="background:${ph.h};height:25px"></td></tr>`;return;
     }
     if(row.t==='sb'){
@@ -4530,7 +4594,7 @@ function renderGantt(){
     const tH=row.p.reduce((s,p)=>s+(+p.heures||0),0);
     const diff=(row.hPrev&&row.hReel)?row.hReel-row.hPrev:null;
     // Tâche non planifiée (pas de semaine de début)
-    if(!row.s||row.dDur===0){
+    if(!row.s){
       const _nb2=isE?'var(--ac2)':ph.xl;
       html+='<tr class="ra'+(isE?' exp-open':'')+'" data-rid="'+row.id+'" onclick="toggleExp(\''+row.id+'\')" style="height:34px">';
       html+='<td class="al s1" style="background:'+_nb2+';font-size:11px;border-right:1px solid var(--bd);padding:4px 8px;vertical-align:middle;position:sticky;left:0;z-index:5">';
@@ -4569,16 +4633,12 @@ function renderGantt(){
     // Day cells — deux barres indépendantes : Prévue (haut, couleur claire) + Réelle (bas, couleur foncée)
     // Chaque barre est régie par ses propres semaines sPrev/ePrev et sReel/eReel
     let dc='';
-    const sp=row.sPrev||row.s, ep=row.ePrev||row.e;
-    const sr=row.sReel||row.s, er=row.eReel||row.e;
-    // Day-level precision using dStart, dEnd, dDur
-    const dStartP=row.dStart||0, dEndP=row.dEnd!=null?row.dEnd:(row.dDur!=null?Math.min(4,(row.dDur-1+dStartP)%5):4);
-    const prevStartDay=(sp-1)*5+dStartP;
-    const prevEndDay=row.dDur!=null?(sp-1)*5+dStartP+(row.dDur-1):(ep-1)*5+dEndP;
-    const dStartR=row.dStartR!=null?row.dStartR:(row.dStart||0);
-    const reelStartDay=(sr-1)*5+dStartR;
-    const dDurR_bar=row.dDurR!=null?row.dDurR:(row.dDur!=null?row.dDur:null);
-    const reelEndDay=dDurR_bar!=null?(sr-1)*5+(row.dStart||0)+(dDurR_bar-1):(er-1)*5+dEndP;
+    // Jours colorés : tableau individuel (nouveau) ou range (compat)
+    const _prevSet=getTaskDays5(row,'prev');
+    const _reelSet=getTaskDays5(row,'reel');
+    const prevStartDay=_prevSet.length?_prevSet[0]:0;
+    const reelStartDay=_reelSet.length?_reelSet[0]:0;
+    _reelSet.length?_reelSet[_reelSet.length-1]:0; // fin réelle
 
     for(let w=1;w<=52;w++){
       const sep=MG.some(m=>m.e===w);
@@ -4588,10 +4648,10 @@ function renderGantt(){
         const isWE=d>=5;
         const absDay=(w-1)*7+d;
         const d5=isWE?-1:(w-1)*5+d; // Equivalent 5-col pour les barres
-        const inPrev=!isWE&&d5>=prevStartDay&&d5<=prevEndDay;
-        const inReel=!isWE&&d5>=reelStartDay&&d5<=reelEndDay;
-        const isFirstPrev=inPrev&&d5===prevStartDay;
-        const isFirstReel=inReel&&d5===reelStartDay;
+        const inPrev=!isWE&&_prevSet.indexOf(d5)>=0;
+        const inReel=!isWE&&_reelSet.indexOf(d5)>=0;
+        const isFirstPrev=inPrev&&(_prevSet.indexOf(d5-1)<0);
+        const isFirstReel=inReel&&(_reelSet.indexOf(d5-1)<0);
         const inAny=inPrev||inReel;
         const isTD=isTW&&TODAY.di===d;
         const sepBdr=d===6?'border-right:2px solid #374151;':(d===4&&sep?'border-right:1px solid var(--bd2);':'');
@@ -4603,7 +4663,7 @@ function renderGantt(){
           continue;
         }
         if(!inAny){
-          dc+=`<td style="background:${isTD?'#FEF9C3':'var(--bg2)'};${sepBdr}${todBdr}"></td>`;
+          dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" style="background:${isTD?'#FEF9C3':'var(--bg2)'};${sepBdr}${todBdr};cursor:crosshair"></td>`;
           continue;
         }
 
@@ -4611,7 +4671,7 @@ function renderGantt(){
         const prevBg=inPrev?ph.xl:'transparent';
         const reelBg=inReel?ph.xd:'transparent';
 
-        dc+=`<td style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr}">
+        dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
           <div style="height:38px;background:${prevBg};display:flex;align-items:center;justify-content:center;overflow:hidden">
             ${isFirstPrev?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);padding-left:2px">P</span>`:''}
           </div>
@@ -4622,9 +4682,9 @@ function renderGantt(){
         </td>`;
       }
     }
-    html+=`<tr class="ra" data-rid="${row.id}" onclick="toggleExp('${row.id}')" style="height:79px">
+    html+=`<tr class="ra" data-rid="${row.id}" style="height:79px">
       
-      <td class="al s1" style="background:${isE?'var(--ac2)':done?'var(--gn2)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':'var(--tx)'};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
+      <td class="al s1" onclick="toggleExp('${row.id}')" style="cursor:pointer;" style="background:${isE?'var(--ac2)':done?'var(--gn2)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':'var(--tx)'};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
         <div style="display:flex;flex-direction:column;gap:1px;padding-left:2px;">
           <div style="display:flex;align-items:center;gap:3px;min-width:0;">
             <span onclick="event.stopPropagation();toggleDone('${row.id}')" title="${done?'Décocher':'Marquer terminé'}"
@@ -4908,6 +4968,22 @@ function buildPhaseList(container){
 
     var phTitle=document.createElement('span');
     phTitle.textContent='\u25B6 '+pk;
+    var _phRow=D().find(function(r){return r.pk===pk&&r.t==='ph';});
+    var _bWrap=document.createElement('span');
+    _bWrap.style.cssText='display:inline-flex;align-items:center;gap:4px;margin-left:10px;background:rgba(255,255,255,.2);border-radius:4px;padding:1px 6px';
+    _bWrap.innerHTML='<span style="font-size:9px;color:#fff;opacity:.9">Budget H:</span>';
+    var _bInp=document.createElement('input');
+    _bInp.type='number';_bInp.min='0';_bInp.step='1';
+    _bInp.value=(_phRow&&_phRow.budgetH)||'';
+    _bInp.placeholder='—';
+    _bInp.style.cssText='width:52px;border:none;border-radius:3px;padding:2px 4px;font-size:11px;font-weight:700;font-family:inherit;background:rgba(255,255,255,.9);color:#1C1810;outline:none';
+    (function(_p2){
+      _bInp.oninput=function(){
+        var _r2=D().find(function(x){return x.pk===_p2&&x.t==='ph';});
+        if(_r2){_r2.budgetH=+this.value||0;saveNow();renderGantt();}
+      };
+    })(pk);
+    _bWrap.appendChild(_bInp);
     var phCount=document.createElement('span');
     phCount.style.cssText='font-size:9px;font-weight:400;opacity:.8';
     phCount.textContent=actCount+' activit\u00E9(s)';
@@ -4949,6 +5025,7 @@ function buildPhaseList(container){
     })(pk,ph,isCustom);
 
     phHdr.appendChild(phTitle);
+    phHdr.appendChild(_bWrap);
     phHdr.appendChild(phCount);
     phHdr.appendChild(editPhBtn);
     phHdr.appendChild(delBtn);
@@ -5733,14 +5810,6 @@ function buildExpandPanel(row,ph,nd){
       <!-- PRÉVU -->
       <div style="flex:1;min-width:200px;background:#FFFDE7;border:2px solid ${ph.xl};border-radius:var(--r2);padding:8px 10px">
         <div style="font-size:9px;font-weight:700;color:${ph.xd};margin-bottom:6px;letter-spacing:.5px">▶ PRÉVU</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
-          <div style="flex:1;min-width:160px">
-            <div style="font-size:7px;color:var(--tx3);margin-bottom:2px;font-weight:700">📅 DATE & HEURE DÉBUT</div>
-            <input type="datetime-local" value="${row._isoP||isoDate(row.s,row.dStart||0,hStartP)}"
-              style="width:100%;border:2px solid ${ph.xl};border-radius:4px;padding:4px 7px;font-size:11px;font-family:inherit;background:var(--bg2);color:${ph.xd};outline:none;font-weight:600"
-              onchange="updActFromDate('${row.id}','prev',this.value)">
-          </div>
-        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <div>
             <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">H PRÉVUES</div>
@@ -5748,23 +5817,11 @@ function buildExpandPanel(row,ph,nd){
               style="width:60px;border:1px solid ${ph.xl};border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:var(--or);background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
               oninput="updActHSync('${row.id}','prev',+this.value)">
           </div>
-          <div>
-            <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">DURÉE (j)</div>
-            <input type="number" min="0" step="1" id="ep-dp-${row.id}" value="${dDurP}"
-              style="width:54px;border:1px solid ${ph.xl};border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:${ph.xd};background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
-              oninput="updActDurLive('${row.id}','prev',+this.value)">
-          </div>
-          <div>
-            <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">H/JOUR</div>
-            <input type="number" min="0.5" max="24" step="0.5" value="${hDurP}"
-              style="width:52px;border:1px solid ${ph.xl};border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:${ph.xd};background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
-              oninput="updActFull('${row.id}','hDur',+this.value)">
-          </div>
 
         </div>
 
         <div style="margin-top:6px;height:8px;background:${ph.xl};border-radius:4px" title="Barre prévue → S${row.s} J${(row.dStart||0)+1} ${String(Math.floor(hStartP)).padStart(2,'0')}h"></div>
-        <div style="font-size:8px;color:${ph.xd};margin-top:3px;opacity:.8">S${row.s} → S${row.e} · ${dDurP}j · ${hDurP}H/j</div>
+        <div style="font-size:8px;color:${ph.xd};margin-top:3px;opacity:.8">${row.s?'S'+row.s+' → S'+row.e:'Non placée — Cliquez sur le GANTT pour placer'}</div>
       </div>
 
       <!-- Bouton aligner -->
@@ -5775,14 +5832,6 @@ function buildExpandPanel(row,ph,nd){
       <!-- RÉEL -->
       <div style="flex:1;min-width:200px;background:#F0FDF4;border:2px solid var(--gn);border-radius:var(--r2);padding:8px 10px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:9px;font-weight:700;color:var(--gn);letter-spacing:.5px">▶ RÉEL</div><button onclick="event.stopPropagation();alignPrevToReel('${row.id}')" title="Copier les valeurs prévues dans les valeurs réelles" style="padding:3px 8px;border-radius:4px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">← Aligner prévu sur réel</button></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px">
-          <div style="flex:1;min-width:160px">
-            <div style="font-size:7px;color:var(--tx3);margin-bottom:2px;font-weight:700">📅 DATE & HEURE DÉBUT</div>
-            <input type="datetime-local" value="${row._isoR||isoDate(row.sReel||row.s,row.dStartR!=null?row.dStartR:(row.dStart||0),hStartR)}"
-              style="width:100%;border:2px solid var(--gn);border-radius:4px;padding:4px 7px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--gn);outline:none;font-weight:600"
-              onchange="updActFromDate('${row.id}','reel',this.value)">
-          </div>
-        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <div>
             <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">H RÉELLES</div>
@@ -5790,25 +5839,19 @@ function buildExpandPanel(row,ph,nd){
               style="width:60px;border:1px solid var(--gn3);border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:var(--gn);background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
               oninput="updActHSync('${row.id}','reel',+this.value)">
           </div>
-          <div>
-            <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">DURÉE (j)</div>
-            <input type="number" min="0" step="1" id="ep-dr-${row.id}" value="${dDurR}"
-              style="width:54px;border:1px solid var(--gn3);border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:var(--gn);background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
-              oninput="updActDurLive('${row.id}','reel',+this.value)">
-          </div>
-          <div>
-            <div style="font-size:7px;color:var(--tx3);margin-bottom:2px">H/JOUR</div>
-            <input type="number" min="0.5" max="24" step="0.5" value="${hDurR}"
-              style="width:52px;border:1px solid var(--gn3);border-radius:3px;padding:3px 5px;font-size:13px;font-weight:700;color:var(--gn);background:var(--bg2);outline:none;font-family:Courier New,monospace;text-align:center"
-              oninput="updActFull('${row.id}','hDurR',+this.value)">
-          </div>
         </div>
         <div style="margin-top:6px;height:8px;background:var(--gn);border-radius:4px;opacity:.7" title="Barre réelle"></div>
         ${diff2!==null?`<div style="margin-top:4px;font-size:9px;font-weight:700;color:${diff2>0?'var(--rd)':diff2<0?'var(--gn)':'var(--tx3)'}">Δ ${diff2>0?'+':''}${diff2} H</div>`:''}
-        <div style="font-size:8px;color:var(--gn);margin-top:3px;opacity:.8">S${row.sReel||row.s} → S${row.eReel||row.e} · ${dDurR}j · ${hDurR}H/j</div>
+        <div style="font-size:8px;color:var(--gn);margin-top:3px;opacity:.8">${(row.sReel||row.s)?'S'+(row.sReel||row.s)+' → S'+(row.eReel||row.e):'Non placée'}</div>
       </div>
     </div>
 
+    <!-- Mode placement barre GANTT -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:var(--r);border:1px solid var(--bd)" onclick="event.stopPropagation()">
+      <span style="font-size:10px;font-weight:700;color:var(--tx2)">🖱 Clic GANTT pour placer :</span>
+      <button id="gcm-p-${row.id}" onclick="setGanttMode('prev','${row.id}')" style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:2px solid ${ph.xl};background:${(window._ganttBarMode||'prev')==='prev'?ph.xl:'var(--bg2)'};color:${(window._ganttBarMode||'prev')==='prev'?'#fff':ph.xd}">PRÉVU</button>
+      <button id="gcm-r-${row.id}" onclick="setGanttMode('reel','${row.id}')" style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:2px solid var(--gn);background:${(window._ganttBarMode||'prev')==='reel'?'var(--gn)':'var(--bg2)'};color:${(window._ganttBarMode||'prev')==='reel'?'#fff':'var(--gn)'}">RÉEL</button>
+    </div>
     <!-- Personnes -->
     <div class="plist" onclick="event.stopPropagation()">
       ${row.p.map((p,i)=>{
@@ -5832,9 +5875,7 @@ function buildExpandPanel(row,ph,nd){
           </select>
           <span style="${entPillStyle}">${p.ent||''}</span>
           ${(()=>{if(!p.name)return '';var _ad=STORE.absences&&STORE.absences[p.name];if(!_ad||!_ad.school||!_ad.school.length)return '';var _sw=_ad.school;var _cf=[];for(var _cw=row.s;_cw<=(row.e||row.s);_cw++){if(_sw.indexOf(_cw)>=0)_cf.push(_cw);}if(weekHasCongesDays(p.name,row.s)){return '<span style="font-size:9px;padding:2px 7px;border-radius:10px;background:#FEE2E2;color:#DC2626;border:1px solid #EF4444;font-weight:700">&#127958; En cong&#233;s</span>';}if(!_cf.length)return '';return '<span style="font-size:9px;padding:2px 7px;border-radius:10px;background:#FEE2E2;color:#DC2626;border:1px solid #EF4444;font-weight:700">\uD83C\uDFEB S'+_cf.join(',S')+'</span>';})()}
-          <input type="number" min="0" value="${+p.heures||''}" placeholder="H"
-            style="width:54px;border:1px solid var(--bd);border-radius:var(--r);padding:4px 6px;font-size:12px;font-weight:700;font-family:Courier New,monospace;color:var(--ac);background:var(--bg2);outline:none;text-align:center"
-            oninput="updP('${row.id}',${i},'heures',+this.value||0)">
+          <button class="btn-dp" title="Jours d'affectation" onclick="pedDaysModal('${row.id}',${i})" style="background:${p.days&&p.days.length?'#EDE9FE':'var(--bg3)'};color:${p.days&&p.days.length?'#6D28D9':'var(--tx3)'}">📅${p.days&&p.days.length?' '+p.days.length+'j':''}</button>
           <button class="btn-dp" onclick="delP('${row.id}',${i})">×</button>
         </div>`;
       }).join('')}
@@ -6387,6 +6428,193 @@ function toggleInProgress(id){
   if(!r.inProgress)r.progress=0;
   saveNow();refreshAllTabs();
 }
+// ── Drag GANTT pour placer les barres ────────────────────────────────
+var _gc = {active:false, rid:null, w1:0, d1:0, w2:0, d2:0};
+window._ganttBarMode = 'prev';
+
+function setGanttMode(mode, rid){
+  window._ganttBarMode = mode;
+  // Mettre à jour le style des boutons
+  var bp=document.getElementById('gcm-p-'+rid);
+  var br=document.getElementById('gcm-r-'+rid);
+  if(bp&&br){
+    var ph=PH_get(D().find(function(r){return r.id===rid;})||{pk:'ETUDE'});
+    if(mode==='prev'){
+      bp.style.background=ph.xl;bp.style.color='#fff';
+      br.style.background='var(--bg2)';br.style.color='var(--gn)';
+    } else {
+      bp.style.background='var(--bg2)';bp.style.color=ph.xd;
+      br.style.background='var(--gn)';br.style.color='#fff';
+    }
+  }
+}
+
+// ── Helpers jours GANTT ──────────────────────────────────────────────
+// Retourne l'array des jours linéaires (0-based, 5j/sem) d'une barre
+function getTaskDays5(row, type){
+  var key=type==='reel'?'reelDays':'prevDays';
+  if(row[key])return row[key];
+  // Compat ancienne structure s/e/dStart/dEnd
+  var s=type==='reel'?(row.sReel||row.s):row.s;
+  var e=type==='reel'?(row.eReel||row.e):row.e;
+  var dS=type==='reel'?(row.dStartR!=null?row.dStartR:(row.dStart||0)):(row.dStart||0);
+  var dE=type==='reel'?(row.dEndR!=null?row.dEndR:(row.dEnd!=null?row.dEnd:4)):(row.dEnd!=null?row.dEnd:4);
+  if(!s)return [];
+  var days=[];
+  for(var i=(s-1)*5+dS;i<=(e-1)*5+dE;i++)days.push(i);
+  return days;
+}
+
+// Met à jour s/e/dStart/dEnd à partir de prevDays/reelDays
+function _syncTaskMeta(row){
+  if(row.prevDays&&row.prevDays.length){
+    row.prevDays.sort(function(a,b){return a-b;});
+    var mn=row.prevDays[0], mx=row.prevDays[row.prevDays.length-1];
+    row.s=Math.floor(mn/5)+1; row.dStart=mn%5;
+    row.e=Math.floor(mx/5)+1; row.dEnd=mx%5;
+    row.sPrev=row.s; row.ePrev=row.e;
+  } else if(row.prevDays){row.s=0;row.e=0;}
+  if(row.reelDays&&row.reelDays.length){
+    row.reelDays.sort(function(a,b){return a-b;});
+    var mnR=row.reelDays[0], mxR=row.reelDays[row.reelDays.length-1];
+    row.sReel=Math.floor(mnR/5)+1; row.dStartR=mnR%5;
+    row.eReel=Math.floor(mxR/5)+1; row.dEndR=mxR%5;
+  } else if(row.reelDays){row.sReel=0;row.eReel=0;}
+}
+
+function gcDown(rid, w, d, ev){
+  if(ev)ev.stopPropagation();
+  _gc.active=true; _gc.rid=rid;
+  _gc.w1=w; _gc.d1=d; _gc.w2=w; _gc.d2=d;
+  gcHighlight();
+}
+
+function gcEnter(rid, w, d){
+  if(!_gc.active||_gc.rid!==rid)return;
+  _gc.w2=w; _gc.d2=d;
+  gcHighlight();
+}
+
+function gcHighlight(){
+  // Calcul précis au jour
+  var w1b=Math.min(_gc.w1,_gc.w2), w2b=Math.max(_gc.w1,_gc.w2);
+  var d1b=(_gc.w1<_gc.w2)?_gc.d1:(_gc.w1>_gc.w2)?_gc.d2:Math.min(_gc.d1,_gc.d2);
+  var d2b=(_gc.w1<_gc.w2)?_gc.d2:(_gc.w1>_gc.w2)?_gc.d1:Math.max(_gc.d1,_gc.d2);
+  var startD5=(w1b-1)*5+d1b;
+  var endD5=(w2b-1)*5+d2b;
+  document.querySelectorAll('.gcell[data-rid="'+_gc.rid+'"]').forEach(function(td){
+    var tw=+td.dataset.w, td_d=+td.dataset.d;
+    if(td_d>=5){td.style.outline='';return;}
+    var td5=(tw-1)*5+td_d;
+    td.style.outline=(td5>=startD5&&td5<=endD5)?'2px inset rgba(124,58,237,.6)':'';
+  });
+}
+
+function gcCommit(){
+  if(!_gc.rid)return;
+  var r=D().find(function(x){return x.id===_gc.rid;});
+  if(!r)return;
+  var mode=window._ganttBarMode||'prev';
+  var key=mode==='reel'?'reelDays':'prevDays';
+  // Normaliser direction drag
+  var w1b=Math.min(_gc.w1,_gc.w2), w2b=Math.max(_gc.w1,_gc.w2);
+  var d1b=(_gc.w1<_gc.w2)?_gc.d1:(_gc.w1>_gc.w2)?_gc.d2:Math.min(_gc.d1,_gc.d2);
+  var d2b=(_gc.w1<_gc.w2)?_gc.d2:(_gc.w1>_gc.w2)?_gc.d1:Math.max(_gc.d1,_gc.d2);
+  var startD5=(w1b-1)*5+d1b;
+  var endD5=(w2b-1)*5+d2b;
+  var isSingleClick=(startD5===endD5);
+
+  // Initialiser le tableau si nécessaire (compat ancien format)
+  if(!r[key])r[key]=getTaskDays5(r, mode);
+
+  if(isSingleClick){
+    // Clic simple : toggle ce jour précis uniquement
+    var ix=r[key].indexOf(startD5);
+    if(ix>=0){
+      r[key].splice(ix,1); // déjà coloré → retirer
+    } else {
+      r[key].push(startD5); // vide → colorier
+    }
+  } else {
+    // Drag : ajouter tous les jours de la plage
+    for(var i=startD5;i<=endD5;i++){
+      if(r[key].indexOf(i)<0)r[key].push(i);
+    }
+  }
+  _syncTaskMeta(r);
+  saveNow();renderGantt();
+}
+
+document.addEventListener('mouseup', function(){
+  if(!_gc.active)return;
+  document.querySelectorAll('.gcell').forEach(function(td){td.style.outline='';});
+  gcCommit();
+  _gc.active=false; _gc.rid=null;
+});
+
+function pedDaysModal(actId, pIdx){
+  var r=D().find(function(x){return x.id===actId;});
+  if(!r||!r.p[pIdx])return;
+  var pp=r.p[pIdx];
+  if(!pp.days)pp.days=[];
+  var ex=document.getElementById('_daysModal');
+  if(ex)ex.remove();
+  var sS=r.s||1, sE=r.e||r.s||1;
+  var modal=document.createElement('div');
+  modal.id='_daysModal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  var inner=document.createElement('div');
+  inner.style.cssText='background:var(--bg2);border-radius:12px;padding:20px;min-width:320px;max-width:480px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)';
+  inner.innerHTML='<div style="font-size:14px;font-weight:900;color:var(--tx);margin-bottom:4px">\uD83D\uDCC5 Jours d\'affectation</div>'
+    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:14px">'+pp.name+' \u2014 '+r.lb+'</div>'
+    +'<div style="font-size:10px;color:var(--tx3);margin-bottom:10px">Cochez uniquement les jours o\u00F9 cette personne travaille sur la t\u00E2che. Si rien n\'est coch\u00E9, elle appara\u00EEt tous les jours.</div>';
+  var calDiv=document.createElement('div');
+  var DN5=['Lun','Mar','Mer','Jeu','Ven'];
+  for(var w=sS;w<=sE;w++){
+    var wDiv=document.createElement('div');
+    wDiv.style.cssText='margin-bottom:10px;padding:8px;background:var(--bg3);border-radius:8px';
+    var wLabel=document.createElement('div');
+    wLabel.style.cssText='font-size:10px;font-weight:700;color:var(--tx2);margin-bottom:6px';
+    var dLunW=weekDayToDate(w,0);
+    wLabel.textContent='Semaine S'+w+(dLunW?' ('+dLunW.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})+')':'');
+    wDiv.appendChild(wLabel);
+    var dRow=document.createElement('div');
+    dRow.style.cssText='display:flex;gap:5px;flex-wrap:wrap';
+    for(var d=0;d<5;d++){
+      var dt=weekDayToDate(w,d);
+      var dk=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+      var chk=pp.days.indexOf(dk)>=0;
+      var btn=document.createElement('button');
+      btn.dataset.key=dk;
+      btn.style.cssText='padding:4px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:2px solid '+(chk?'#7C3AED':'var(--bd)')+';background:'+(chk?'#EDE9FE':'var(--bg2)')+';color:'+(chk?'#6D28D9':'var(--tx2)');
+      btn.textContent=DN5[d]+' '+dt.getDate();
+      btn.onclick=function(){
+        var k=this.dataset.key;
+        var ix=pp.days.indexOf(k);
+        if(ix>=0){pp.days.splice(ix,1);this.style.background='var(--bg2)';this.style.borderColor='var(--bd)';this.style.color='var(--tx2)';}
+        else{pp.days.push(k);this.style.background='#EDE9FE';this.style.borderColor='#7C3AED';this.style.color='#6D28D9';}
+      };
+      dRow.appendChild(btn);
+    }
+    wDiv.appendChild(dRow);calDiv.appendChild(wDiv);
+  }
+  inner.appendChild(calDiv);
+  var bRow=document.createElement('div');
+  bRow.style.cssText='display:flex;gap:8px;margin-top:12px;justify-content:space-between';
+  var clrBtn=document.createElement('button');
+  clrBtn.textContent='Effacer (tous les jours)';
+  clrBtn.style.cssText='padding:6px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--bg3);font-family:inherit;font-size:11px;cursor:pointer;color:var(--tx3)';
+  clrBtn.onclick=function(){pp.days=[];modal.remove();saveNow();_refreshPanelInPlace(actId);};
+  var okBtn=document.createElement('button');
+  okBtn.textContent='\u2713 Valider';
+  okBtn.style.cssText='padding:6px 16px;border-radius:8px;border:none;background:#7C3AED;color:#fff;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer';
+  okBtn.onclick=function(){modal.remove();saveNow();_refreshPanelInPlace(actId);dbBuildPlanningGrid();};
+  bRow.appendChild(clrBtn);bRow.appendChild(okBtn);
+  inner.appendChild(bRow);
+  modal.appendChild(inner);document.body.appendChild(modal);
+  modal.onclick=function(e){if(e.target===modal){modal.remove();saveNow();_refreshPanelInPlace(actId);dbBuildPlanningGrid();}};
+}
+
 function toggleDone(id){const r=D().find(x=>x.id===id);if(!r)return;r.done=!r.done;saveNow();refreshAllTabs();}
 function updDate(id,f,v){
   const n=Math.min(52,Math.max(1,parseInt(v)||1));
@@ -7007,6 +7235,30 @@ function renderRecap(){
     </div>
   </div>`;
 
+  // Budget par phase
+  var _hBud=D().some(function(r){return r.t==='ph'&&r.budgetH>0;});
+  if(_hBud){
+    html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Budget Heures par Phase</h3>';
+    html+='<table class="rt"><thead><tr><th>Phase</th><th>Budget H</th><th>Pr&eacute;vu H</th><th>R&eacute;el H</th><th>Ecart Bud/Pr&eacute;vu</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
+    D().filter(function(r){return r.t==='ph';}).forEach(function(ph_r){
+      var _a=D().filter(function(r){return r.t==='act'&&r.pk===ph_r.pk;});
+      var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
+      var _rv=Math.round(_a.reduce(function(s,a){return s+(+a.hReel||0);},0)*10)/10;
+      var _bv=ph_r.budgetH||0;
+      var _dp=_bv>0?Math.round((_pv-_bv)*10)/10:null;
+      var _dr=_bv>0?Math.round((_rv-_bv)*10)/10:null;
+      var _cp=_dp>0?'#DC2626':_dp<0?'#059669':'var(--tx2)';
+      var _cr=_dr>0?'#DC2626':_dr<0?'#059669':'var(--tx2)';
+      html+='<tr>';
+      html+='<td style="font-weight:700">'+ph_r.lb+'</td>';
+      html+='<td style="font-weight:700">'+(_bv>0?_bv+'H':'&mdash;')+'</td>';
+      html+='<td>'+_pv+'H</td><td>'+_rv+'H</td>';
+      html+='<td style="font-weight:700;color:'+_cp+'">'+(_dp!==null?(_dp>0?'+':'')+_dp+'H':'&mdash;')+'</td>';
+      html+='<td style="font-weight:700;color:'+_cr+'">'+(_dr!==null?(_dr>0?'+':'')+_dr+'H':'&mdash;')+'</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table>';
+  }
   document.getElementById('rw').innerHTML=html;
 }
 
