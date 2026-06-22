@@ -23,13 +23,18 @@
     setTimeout(function(){if(el.parentNode)el.remove();},7000);
   }
 
+  // Utilise Supabase Storage (bucket 'planning') - pas de table, pas de permissions complexes
+  const BUCKET = 'planning';
+  const FILE = 'data.json';
+
   async function supaLoad(){
     if(!supa)return null;
     try{
-      const {data,error}=await supa.from('planning').select('data').eq('key','main').single();
-      if(error||!data||!data.data)return null;
-      const p=JSON.parse(data.data);
-      return _isValidStore(p)?p:null;
+      const {data,error}=await supa.storage.from(BUCKET).download(FILE);
+      if(error||!data)return null;
+      const text=await data.text();
+      const parsed=JSON.parse(text);
+      return _isValidStore(parsed)?parsed:null;
     }catch(e){return null;}
   }
 
@@ -38,16 +43,11 @@
     if(!_isValidStore(store)){console.warn('supaSave: store vide');return;}
     try{
       _lastSaveSid=SESSION_ID;
-      const ts=new Date().toISOString();
-      const d=JSON.stringify(store);
-      // Upsert = INSERT ou UPDATE selon existence
-      const {error}=await supa.from('planning').upsert(
-        {key:'main',data:d,session_id:SESSION_ID,updated_at:ts},
-        {onConflict:'key',ignoreDuplicates:false}
-      );
+      const blob=new Blob([JSON.stringify(store)],{type:'application/json'});
+      const {error}=await supa.storage.from(BUCKET).upload(FILE,blob,{upsert:true,cacheControl:'0'});
       if(error){
         _showMsg('Erreur sync: '+error.message,'#DC2626');
-        console.error('supaSave error:',error);
+        console.error('supaSave storage error:',error);
       }
     }catch(e){
       _showMsg('Erreur sync: '+e.message,'#DC2626');
@@ -60,43 +60,34 @@
     _syncTimeout=setTimeout(function(){supaSave(STORE);},800);
   }
 
-  var _realtimeChannel=null,_pollInterval=null,_lastUpdatedAt=null;
+  var _pollInterval=null,_lastEtag=null;
 
   function startRealtime(){
     if(!supa)return;
-    try{
-      if(_realtimeChannel)supa.removeChannel(_realtimeChannel);
-      _realtimeChannel=supa.channel('planning-rt')
-        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'planning',filter:'key=eq.main'},
-          function(payload){
-            try{
-              if(!payload.new||payload.new.session_id===SESSION_ID)return;
-              if(payload.new.updated_at===_lastUpdatedAt)return;
-              _lastUpdatedAt=payload.new.updated_at;
-              _applyRemote(JSON.parse(payload.new.data));
-            }catch(e){}
-          })
-        .subscribe(function(status){
-          var dot=document.getElementById('_rt_dot');
-          if(dot)dot.style.background=status==='SUBSCRIBED'?'#22C55E':'#F59E0B';
-        });
-    }catch(e){}
+    // Polling toutes les 3s : telecharger le fichier et comparer
     if(_pollInterval)clearInterval(_pollInterval);
     _pollInterval=setInterval(function(){
       if(!supa)return;
-      supa.from('planning').select('data,updated_at,session_id').eq('key','main').single()
+      // Verifier si le fichier a change via les metadonnees
+      supa.storage.from(BUCKET).list('',{search:FILE})
         .then(function(res){
-          if(!res||!res.data)return;
-          if(res.data.session_id===SESSION_ID){_lastUpdatedAt=res.data.updated_at;return;}
-          if(_lastUpdatedAt&&res.data.updated_at===_lastUpdatedAt)return;
-          _lastUpdatedAt=res.data.updated_at;
-          try{_applyRemote(JSON.parse(res.data.data));}catch(e){}
+          if(!res||!res.data||!res.data.length)return;
+          var meta=res.data.find(function(f){return f.name===FILE;});
+          if(!meta)return;
+          var etag=meta.updated_at||meta.created_at;
+          if(_lastEtag&&etag===_lastEtag)return; // pas change
+          _lastEtag=etag;
+          // Telecharger et appliquer
+          supaLoad().then(function(remote){
+            if(remote)_applyRemote(remote);
+          });
         });
     },3000);
   }
 
   function _applyRemote(remote){
     if(!_isValidStore(remote)){console.warn('donnees vides ignorees');return;}
+    // Garder mes affaires locales + ajouter celles du collegue
     if(STORE&&STORE.projects){
       Object.keys(STORE.projects).forEach(function(aff){
         if(!remote.projects[aff])remote.projects[aff]=STORE.projects[aff];
