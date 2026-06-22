@@ -4788,42 +4788,7 @@ function renderPlanEditor(){
   body.appendChild(formArea);
 
   // ── Personnes section ──────────────────────────────────────
-  var pedPersDiv=document.createElement('div');
-  pedPersDiv.style.cssText='margin-top:16px;border-top:2px solid var(--bd);padding-top:14px';
-  function renderPedPersons(){
-    var p=currP();
-    if(!p.persons)p.persons=[];
-    var rows='';
-    p.persons.forEach(function(person,pi){
-      var selEls=person.type===''?' selected':'';
-      var selAlt=person.type==='Alternant'?' selected':'';
-      var selSta=person.type==='Stagiaire'?' selected':'';
-      var selInt=person.type==='Interim'?' selected':'';
-      var selSt=person.type==='S-T'?' selected':'';
-      var selElsV=person.type==='ELS'?' selected':'';
-      rows+='<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">'
-        +'<input type="text" value="'+person.name+'" placeholder="Nom Pr\u00E9nom..." '
-        +'oninput="pedUpdPerson('+pi+',\'name\',this.value)" '
-        +'style="flex:2;min-width:80px;border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
-        +'<select onchange="pedUpdPerson('+pi+',\'type\',this.value)" '
-        +'style="flex:1;border:1px solid var(--bd);border-radius:var(--r);padding:5px 6px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
-        +'<option value=""'+selEls+'>— Statut —</option>'
-        +'<option value="ELS"'+selElsV+'>ELS</option>'
-        +'<option value="Interim"'+selInt+'>Int\u00E9rim</option>'
-        +'<option value="S-T"'+selSt+'>Sous-traitant</option>'
-        +'<option value="Alternant"'+selAlt+'>Alternant</option>'
-        +'<option value="Stagiaire"'+selSta+'>Stagiaire</option>'
-        +'</select>'
-        +'<button onclick="pedDelPerson('+pi+')" title="Supprimer" '
-        +'style="background:var(--rd2);border:1px solid var(--rd);border-radius:var(--r);color:var(--rd);width:26px;height:26px;cursor:pointer;font-size:14px;line-height:1;flex-shrink:0">\u00D7</button>'
-        +'</div>';
-    });
-    var title='<div style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.8px;margin-bottom:10px">PERSONNES SUR L\u2019AFFAIRE</div>';
-    var note='<div style="font-size:9px;color:var(--tx3);font-style:italic;margin-top:4px">Pour ajouter une personne, rendez-vous dans Personnel → Annuaire</div>';
-    pedPersDiv.innerHTML=title+rows+note;
-  }
-  renderPedPersons();
-  body.appendChild(pedPersDiv);
+
 
   // Custom phases section
   var custom=document.createElement('div');
@@ -5269,7 +5234,7 @@ function pedShowAddActForm(pk){
   // Default: today or S1 Mon 08h
   var defIso=isoDate(TODAY?TODAY.w:1,TODAY?TODAY.di:0,8);
   addDateDurField('DATE & HEURE DÉBUT','pf-act-date','datetime-local',defIso);
-  var durInput=addDateDurField('DURÉE (jours)','pf-act-dur','number',5,{min:1,step:1});
+  var durInput=addDateDurField('DURÉE (jours)','pf-act-dur','number',0,{min:0,step:1});
   var hjInput=addDateDurField('H/JOUR','pf-act-hj','number',8,{min:0.5,max:24,step:0.5});
   d.appendChild(row2);
 
@@ -5292,7 +5257,7 @@ function pedShowAddActForm(pk){
     var durEl=document.getElementById('pf-act-dur');
     var hjEl=document.getElementById('pf-act-hj');
     if(!durEl||!hjEl)return;
-    var dur=Math.max(1,parseFloat(durEl.value)||1);
+    var dur=Math.max(0,parseFloat(durEl.value)||0);
     var hj=Math.max(0.5,parseFloat(hjEl.value)||8);
     var tot=Math.round(dur*hj*10)/10;
     if(!hpInp.dataset.manual){hpInp.value=tot;}
@@ -5318,12 +5283,12 @@ function pedConfirmAddAct(pk){
   var lb=(document.getElementById('pf-act-lb')||{value:''}).value.trim();
   if(!lb)return;
   var iso=(document.getElementById('pf-act-date')||{value:''}).value;
-  var dur=Math.max(1,+(document.getElementById('pf-act-dur')||{value:5}).value||5);
+  var _durEl=document.getElementById('pf-act-dur');var dur=_durEl?Math.max(0,parseFloat(_durEl.value)||0):0;
   var hj=+(document.getElementById('pf-act-hj')||{value:8}).value||8;
   var hp=+(document.getElementById('pf-act-hp')||{value:0}).value||0;
   var hr=+(document.getElementById('pf-act-hr')||{value:0}).value||0;
   // Auto-calc hPrev from dur×hj if hp=0
-  if(!hp&&dur&&hj)hp=dur*hj;
+  if(dur===0){hp=0;hr=0;}else if(!hp&&dur&&hj)hp=dur*hj;
   var grpEl=document.getElementById('pf-act-grp');
   var grp=grpEl&&grpEl.value.trim()?grpEl.value.trim():pk;
   var subSel=document.getElementById('pf-act-sub');
@@ -5334,9 +5299,10 @@ function pedConfirmAddAct(pk){
   var s=wdh?wdh.w:1;
   var dStart=wdh?wdh.d:0;
   var hStart=wdh?Math.round(wdh.h*2)/2:8;
-  var total=dStart+(dur-1);
-  var e=Math.min(52,s+Math.floor(total/7));
-  var dEnd=total%7;
+  var total=dur>0?dStart+(dur-1):0;
+  var e=dur>0?Math.min(52,s+Math.floor(total/7)):0;
+  var dEnd=dur>0?total%7:0;
+  if(dur===0){s=0;e=0;dStart=0;}
 
   var data=D();
   var insertAt=data.reduce(function(last,r,i){return r.pk===pk?i:last;},-1)+1;
@@ -5348,10 +5314,13 @@ function pedConfirmAddAct(pk){
       insertAt=ii;
     }
   }
-  var newAct={id:'act_'+Date.now(),t:'act',pk:pk,grp:grp,lb:lb,
-    s:s,e:e,sPrev:s,ePrev:e,sReel:s,eReel:e,
-    dStart:dStart,dEnd:dEnd,dDur:dur,hDur:hj,hStart:hStart,
-    _isoP:iso,hPrev:hp,hReel:hr,done:false,p:[mkP()]};
+  var newAct=dur===0
+    ?{id:'act_'+Date.now(),t:'act',pk:pk,grp:grp,lb:lb,
+      s:0,e:0,dDur:0,hDur:hj,hPrev:0,hReel:0,done:false,p:[mkP()]}
+    :{id:'act_'+Date.now(),t:'act',pk:pk,grp:grp,lb:lb,
+      s:s,e:e,sPrev:s,ePrev:e,sReel:s,eReel:e,
+      dStart:dStart,dEnd:dEnd,dDur:dur,hDur:hj,hStart:hStart,
+      _isoP:iso,hPrev:hp,hReel:hr,done:false,p:[mkP()]};
   data.splice(insertAt,0,newAct);
   saveNow();clearFormArea();renderPlanEditor();refreshAllTabs();
 }
@@ -5395,7 +5364,7 @@ function pedShowEditForm(id){
   var dDurP=r.dDur!=null?r.dDur:((r.e-r.s)*5+5);
   var isoP=r._isoP||isoDate(r.s,r.dStart||0,hStartP);
   var wDateP=mkField('DATE & HEURE DE DÉBUT','datetime-local','pf-date-p',isoP);
-  var wDurP=mkField('DURÉE (jours)','number','pf-dur-p',dDurP,{min:1,step:1});
+  var wDurP=mkField('DURÉE (jours)','number','pf-dur-p',dDurP,{min:0,step:1});
   var wHjP=mkField('H/JOUR','number','pf-hj-p',r.hDur||8,{min:0.5,max:24,step:0.5});
   var wHpP=mkField('H PRÉVUES TOTAL','number','pf-hp',r.hPrev||0,{min:0});
   r1.appendChild(wDateP);r1.appendChild(wDurP);r1.appendChild(wHjP);r1.appendChild(wHpP);
@@ -5423,7 +5392,7 @@ function pedShowEditForm(id){
   var dDurR=r.dDurR!=null?r.dDurR:dDurP;
   var isoR=r._isoR||isoDate(r.sReel||r.s,r.dStartR!=null?r.dStartR:(r.dStart||0),hStartR);
   var wDateR=mkField('DATE & HEURE DE DÉBUT','datetime-local','pf-date-r',isoR);
-  var wDurR=mkField('DURÉE RÉELLE (jours)','number','pf-dur-r',dDurR,{min:1,step:1});
+  var wDurR=mkField('DURÉE RÉELLE (jours)','number','pf-dur-r',dDurR,{min:0,step:1});
   var wHjR=mkField('H/JOUR RÉEL','number','pf-hj-r',r.hDurR||r.hDur||8,{min:0.5,max:24,step:0.5});
   var wHrR=mkField('H RÉELLES TOTAL','number','pf-hr',r.hReel||0,{min:0});
   r2.appendChild(wDateR);r2.appendChild(wDurR);r2.appendChild(wHjR);r2.appendChild(wHrR);
