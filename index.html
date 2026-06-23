@@ -2000,7 +2000,8 @@ function dbRecap(){
     var reel=acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
     var delta=reel-prev;
     var done=acts.filter(function(a){return a.done;}).length;
-    var pct=prev?Math.min(100,reel/prev*100):0;
+    // Avancement pondéré par H Prévues sur les % de tâches saisis
+    var pct=calcWeightedProgress(acts);
     var budPct=bud?Math.min(100,reel/bud*100):0;
     var isCurrent=aff===STORE.current;
 
@@ -2038,10 +2039,10 @@ function dbRecap(){
       +'</div></div>'
       // Progress bars
       +'<div style="margin-bottom:10px">'
-      +'<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--tx3);margin-bottom:2px"><span>Avancement heures ('+reel+'H/'+prev+'H)</span><span>'+pct.toFixed(0)+'%</span></div>'
-      +'<div style="height:7px;background:var(--bg4);border-radius:4px;overflow:hidden;margin-bottom:5px"><div style="height:100%;width:'+pct+'%;background:'+(pct>90?'var(--rd)':pct>70?'var(--or)':'var(--gn)')+';border-radius:4px"></div></div>'
-      +'<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--tx3);margin-bottom:2px"><span>Activités terminées ('+done+'/'+acts.length+')</span><span>'+(acts.length?Math.round(done/acts.length*100):0)+'%</span></div>'
-      +'<div style="height:7px;background:var(--bg4);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+(acts.length?done/acts.length*100:0)+'%;background:var(--gn);border-radius:4px"></div></div>'
+      +'<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--tx3);margin-bottom:2px"><span>Avancement (% tâches pondéré H Prévues)</span><span style="font-weight:800;color:'+(pct>90?'var(--gn)':pct>50?'var(--or)':'var(--ac)')+'">'+pct+'%</span></div>'
+      +'<div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:'+pct+'%;background:'+(pct>=80?'var(--gn)':pct>=40?'var(--or)':'var(--ac)')+';border-radius:4px;transition:width .4s"></div></div>'
+      +'<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--tx3);margin-bottom:2px"><span>Activités terminées</span><span>'+done+'/'+acts.length+'</span></div>'
+      +'<div style="height:6px;background:var(--bg4);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+(acts.length?done/acts.length*100:0)+'%;background:var(--gn);border-radius:4px"></div></div>'
       +'</div>'
       // Persons
       +(Object.keys(pm).length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">'
@@ -2418,9 +2419,11 @@ function addRappel(actId){
   var r=D().find(function(x){return x.id===actId;});if(!r)return;
   if(!r.rappels)r.rappels=[];
   var inp=document.getElementById('rappel-inp-'+actId);
+  var sel=document.getElementById('rappel-wb-'+actId);
   var txt=inp?inp.value.trim():'';
   if(!txt)return;
-  r.rappels.push({text:txt});
+  var wb=sel?+sel.value:1;
+  r.rappels.push({text:txt,weeksBefore:wb});
   inp.value='';
   saveNow();_refreshPanelInPlace(actId);
 }
@@ -2875,7 +2878,7 @@ function downloadPlanning(mode){
   var totP=acts.reduce(function(s,a){return s+(+a.hPrev||0);},0);
   var totR=acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
   var done=acts.filter(function(a){return a.done;}).length;
-  var pct=acts.length?Math.round(done/acts.length*100):0;
+  var pct=calcWeightedProgress(acts.filter(function(a){return a.hPrev>0||a.progress>0||a.done;}));
   var bud=p.budget||0;
   var ecart=Math.round((totR-totP)*10)/10;
 
@@ -4149,9 +4152,8 @@ function refreshAllTabs(){
   const activeTab=document.querySelector('.nb.on');
   if(activeTab){
     const t=activeTab.dataset.tab;
-    if(t==='recap'){syncFichesToGantt();renderRecap();}
+    if(t==='recap'){syncFichesToGantt();switchTdbTab(window._tdbTab||'recap-current');}
     else if(t==='planning-reunion')renderPlanningReunionTab();
-    else if(t==='recap')switchTdbTab(window._tdbTab||'recap-current');
     else if(t==='charges')renderCharges();
     else if(t==='fortuites')renderFortuitesTab();
     else if(t==='personnel')switchPersonnelTab(window._personnelTab||'equipe');
@@ -4260,6 +4262,20 @@ function updDateBudget(){
   saveNow();updBudget();
 }
 function updSettings(){saveNow();}
+// ── Calcul % avancement pondéré par H Prévues ────────────────────────
+// Paramètre : tableau de rows de type 'act'
+// Retourne : % pondéré (0-100)
+function calcWeightedProgress(acts){
+  if(!acts||!acts.length)return 0;
+  var getP=function(a){return a.done?100:(a.progress||0);};
+  // Poids = hPrev si défini, sinon 1 (pour que toutes les tâches comptent)
+  // Evite le bug : une tâche à 200H/0% écrase les tâches à 0H/58%
+  var w=function(a){return Math.max(1,+a.hPrev||1);};
+  var totalW=acts.reduce(function(s,a){return s+w(a);},0);
+  var ws=acts.reduce(function(s,a){return s+getP(a)*w(a);},0);
+  return totalW>0?Math.round(ws/totalW):0;
+}
+
 function updBudget(){
   // Budget auto = somme des hPrev de toutes les tâches
   var autoBud=D().filter(function(r){return r.t==='act';}).reduce(function(s,a){return s+(+a.hPrev||0);},0);
@@ -4670,8 +4686,10 @@ function renderGantt(){
       const _phReel=_phActs.reduce(function(s,a){return s+(+a.hReel||0);},0);
       const _phDiff=_phReel-_phPrev;
       const _phBudget=row.budgetH||0;
+      const _phProgress=calcWeightedProgress(_phActs);
       const _phBadge=
-        (_phBudget>0?`<span style="font-size:10px;font-weight:700;margin-left:10px;padding:0 6px;background:rgba(255,255,255,.25);border-radius:4px">Budget:${_phBudget}H</span>`:'')
+        (_phProgress>0?`<span style="font-size:10px;font-weight:900;margin-left:10px;padding:1px 8px;background:rgba(255,255,255,.9);color:${ph.h};border-radius:10px">${_phProgress}%</span>`:'')
+        +(_phBudget>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:rgba(255,255,255,.25);border-radius:4px">Budget:${_phBudget}H</span>`:'')
         +(_phPrev>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">P:${_phPrev}H</span>`:'')
         +(_phReel>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">R:${_phReel}H</span>`:'')
         +(_phBudget>0&&_phPrev>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 4px;background:rgba(0,0,0,.2);border-radius:3px">${_phPrev>_phBudget?'⚠+'+(_phPrev-_phBudget)+'H':(_phPrev<_phBudget?'✓-'+(_phBudget-_phPrev)+'H':'=')}</span>`:'')
@@ -4679,48 +4697,23 @@ function renderGantt(){
       html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.h};padding:0 12px;font-size:13px;font-weight:700;color:#fff;height:25px;letter-spacing:1px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.25);display:flex;align-items:center">▶ &nbsp;${row.lb||row.pk}${_phBadge}</td><td colspan="${2+NC}" style="background:${ph.h};height:25px"></td></tr>`;return;
     }
     if(row.t==='sb'){
-      html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};padding:0 12px 0 20px;font-size:12px;font-weight:600;height:21px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.1)">◆ &nbsp;${row.lb}</td><td colspan="${2+NC}" style="background:${ph.s};height:21px"></td></tr>`;return;
+      // Calcul % sous-phase = tâches qui suivent jusqu'au prochain sb/ph
+      const _sbIdx=D().indexOf(row);
+      const _sbActs=[];
+      for(let _si=_sbIdx+1;_si<D().length;_si++){
+        const _sr=D()[_si];
+        if(_sr.t==='ph'||_sr.t==='sb')break;
+        if(_sr.t==='act')_sbActs.push(_sr);
+      }
+      const _sbPct=calcWeightedProgress(_sbActs);
+      const _sbPctBadge=_sbPct>0?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.15);color:${ph.t}">${_sbPct}%</span>`:'';
+      html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};padding:0 12px 0 20px;font-size:12px;font-weight:600;height:21px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.1)">◆ &nbsp;${row.lb}${_sbPctBadge}</td><td colspan="${2+NC}" style="background:${ph.s};height:21px"></td></tr>`;return;
     }
     const nb=row.p.filter(p=>p.name.trim()).length;
     const isE=EXP===row.id,done=!!row.done;
     const tH=row.p.reduce((s,p)=>s+(+p.heures||0),0);
     const diff=(row.hPrev&&row.hReel)?row.hReel-row.hPrev:null;
     // Tâche non planifiée (pas de semaine de début)
-    if(!row.s){
-      const _nb2=isE?'var(--ac2)':ph.xl;
-      html+='<tr class="ra'+(isE?' exp-open':'')+'" data-rid="'+row.id+'" onclick="toggleExp(\''+row.id+'\')" style="height:34px">';
-      html+='<td class="al s1" style="background:'+_nb2+';font-size:11px;border-right:1px solid var(--bd);padding:4px 8px;vertical-align:middle;position:sticky;left:0;z-index:5">';
-      html+='<span style="font-weight:600">'+row.lb+'</span> ';
-      if(!row.s){
-        html+='<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E">Non planifi\u00e9e</span>';
-      } else {
-        // 0h avec date : badge "À prévoir"
-        var _dLabel=weekDayToDate(row.s,row.dStart||0).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
-        html+='<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#EDE9FE;color:#6D28D9">\uD83D\uDCCC '+_dLabel+'</span>';
-      }
-      html+='</td>';
-      if(!row.s){
-        html+='<td colspan="'+(2+NC)+'" style="background:repeating-linear-gradient(90deg,var(--bg3) 0,var(--bg3) 2px,transparent 2px,transparent 10px);opacity:.3"></td>';
-      } else {
-        // Construire les cellules avec un losange à la semaine prévue
-        var _mc='';
-        for(var _mw=1;_mw<=52;_mw++){
-          var _md=row.dStart||0;
-          var _showMark=_mw===row.s;
-          var _sepM=MG.some(function(m){return m.e===_mw;})?'border-right:1px solid var(--bd2);':'';
-          for(var _dd=0;_dd<7;_dd++){
-            var _isMark=_showMark&&_dd===_md;
-            _mc+='<td style="width:'+DW+'px;min-width:'+DW+'px;padding:0;position:relative;'+(_dd===6?_sepM:'')+'">'
-              +(_isMark?'<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><div style="width:8px;height:8px;background:'+ph.x+';transform:rotate(45deg);border-radius:1px"></div></div>':'')
-              +'</td>';
-          }
-        }
-        html+='<td style="width:20px"></td><td style="width:20px"></td>'+_mc;
-      }
-      html+='</tr>';
-      if(isE)html+='<tr id="exp-panel-row"><td colspan="'+(3+NC)+'" style="padding:0;background:var(--bg2)">'+buildExpandPanel(row,ph,0)+'</td></tr>';
-      return;
-    }
 
     // Day cells — deux barres indépendantes : Prévue (haut, couleur claire) + Réelle (bas, couleur foncée)
     // Chaque barre est régie par ses propres semaines sPrev/ePrev et sReel/eReel
@@ -4755,7 +4748,7 @@ function renderGantt(){
           continue;
         }
         if(!inAny){
-          dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" style="background:${isTD?'#FEF9C3':'var(--bg2)'};${sepBdr}${todBdr};cursor:crosshair"></td>`;
+          dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" title="Clic haut=Prévu / Clic bas=Réel" style="background:${isTD?'#FEF9C3':'var(--bg2)'};${sepBdr}${todBdr};cursor:crosshair"></td>`;
           continue;
         }
 
@@ -4763,7 +4756,7 @@ function renderGantt(){
         const prevBg=inPrev?ph.xl:'transparent';
         const reelBg=inReel?ph.xd:'transparent';
 
-        dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
+        dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" title="Clic haut=Prévu / Clic bas=Réel" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
           <div style="height:38px;background:${prevBg};display:flex;align-items:center;justify-content:center;overflow:hidden">
             ${isFirstPrev?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);padding-left:2px">P</span>`:''}
           </div>
@@ -4791,11 +4784,12 @@ function renderGantt(){
             </span>
             ${(row.inProgress&&!row.done)?`
             <input type="number" min="0" max="100" value="${row.progress||0}" onclick="event.stopPropagation()"
-              oninput="event.stopPropagation();setProgress('${row.id}',+this.value||0);this.nextElementSibling.textContent=this.value+'%'"
-              style="width:44px;border:1px solid #FDE68A;border-radius:4px;padding:2px 4px;font-size:9px;font-family:inherit;background:#FFFBEB;color:#D97706;outline:none;text-align:center">
-            <span style="font-size:9px;font-weight:700;color:#D97706">${row.progress||0}%</span>
+              oninput="event.stopPropagation();setProgress('${row.id}',+this.value||0)"
+              style="width:48px;border:1px solid #FDE68A;border-radius:4px;padding:2px 4px;font-size:9px;font-family:inherit;background:#FFFBEB;color:#D97706;outline:none;text-align:center"
+              placeholder="%">
             `:''}          </div>
           <div style="display:flex;flex-wrap:wrap;gap:2px;padding-left:19px;">
+            ${!row.s?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-weight:700">📌 Non planifiée</span>':''}
             ${(row.hPrev>0)?'<span style="font-size:10px;color:var(--or);font-weight:600;padding:1px 4px;border-radius:3px;background:rgba(237,137,0,.1)">P:'+row.hPrev+'H</span>':''}
             ${row.hReel?`<span style="font-size:10px;color:var(--gn);font-weight:600;background:rgba(22,163,74,.1);padding:1px 4px;border-radius:3px">R:${row.hReel}H</span>`:''}
             ${diff!==null?`<span style="font-size:10px;font-weight:700;color:${diff>0?'var(--rd)':'var(--gn)'};padding:1px 3px;border-radius:3px">Δ${diff>0?'-':'+'}${Math.abs(diff)}H</span>`:''}
@@ -5949,12 +5943,6 @@ function buildExpandPanel(row,ph,nd){
       </div>
     </div>
 
-    <!-- Mode placement barre GANTT -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:6px 10px;background:var(--bg3);border-radius:var(--r);border:1px solid var(--bd)" onclick="event.stopPropagation()">
-      <span style="font-size:10px;font-weight:700;color:var(--tx2)">🖱 Clic GANTT pour placer :</span>
-      <button id="gcm-p-${row.id}" onclick="setGanttMode('prev','${row.id}')" style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:2px solid ${ph.xl};background:${(window._ganttBarMode||'prev')==='prev'?ph.xl:'var(--bg2)'};color:${(window._ganttBarMode||'prev')==='prev'?'#fff':ph.xd}">PRÉVU</button>
-      <button id="gcm-r-${row.id}" onclick="setGanttMode('reel','${row.id}')" style="padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:2px solid var(--gn);background:${(window._ganttBarMode||'prev')==='reel'?'var(--gn)':'var(--bg2)'};color:${(window._ganttBarMode||'prev')==='reel'?'#fff':'var(--gn)'}">RÉEL</button>
-    </div>
     <!-- Personnes -->
     <div class="plist" onclick="event.stopPropagation()">
       ${row.p.map((p,i)=>{
@@ -5990,10 +5978,17 @@ function buildExpandPanel(row,ph,nd){
       ${(row.rappels||[]).map((rp,ri)=>`
         <div style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--bd);border-radius:var(--r);padding:4px 8px;margin-bottom:3px;font-size:11px;">
           <span style="flex:1">${rp.text}</span>
+          <span style="font-size:9px;background:#EDE9FE;color:#7C3AED;border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">${rp.weeksBefore||1}sem avant</span>
           <button onclick="event.stopPropagation();delRappel('${row.id}',${ri})" style="background:none;border:none;cursor:pointer;color:var(--tx3);font-size:13px;padding:0 2px">×</button>
         </div>`).join('')}
-      <div style="display:flex;gap:4px;margin-top:4px" onclick="event.stopPropagation()">
-        <input id="rappel-inp-${row.id}" type="text" placeholder="Ajouter un rappel..."
+      <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap" onclick="event.stopPropagation()">
+        <select id="rappel-wb-${row.id}" style="border:1px solid var(--bd);border-radius:var(--r);padding:4px 6px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">
+          <option value="1">1 sem. avant</option>
+          <option value="2">2 sem. avant</option>
+          <option value="3">3 sem. avant</option>
+          <option value="4">4 sem. avant</option>
+        </select>
+        <input id="rappel-inp-${row.id}" type="text" placeholder="Commentaire de rappel..."
           onkeydown="if(event.key==='Enter'){event.stopPropagation();addRappel('${row.id}')}"
           style="flex:1;border:1px solid var(--bd);border-radius:var(--r);padding:4px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">
         <button onclick="event.stopPropagation();addRappel('${row.id}')" style="padding:4px 10px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+</button>
@@ -6241,28 +6236,37 @@ function saveRappelsEmails(){
 }
 
 function getNextWeekRappels(){
-  var nextWk=(TODAY?TODAY.w:1)+1;
-  var dLun=weekDayToDate(nextWk,0);
-  var dVen=weekDayToDate(nextWk,4);
+  var curWk=(TODAY?TODAY.w:1);
+  var nextWk=curWk+1;
   var fmt=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'});};
-  var label='Semaine S'+nextWk+' \u2014 du '+fmt(dLun)+' au '+fmt(dVen);
   var results=[];
   Object.keys(STORE.projects).forEach(function(aff){
     var proj=STORE.projects[aff];if(proj.closed)return;
     (proj.data||[]).filter(function(r){return r.t==='act';}).forEach(function(act){
       var s=act.sReel||act.s, e=act.eReel||act.e||s;
-      if(!s)return;
-      if(s<=nextWk&&e>=nextWk){
-        var persons=(act.p||[]).filter(function(p){return p.name&&p.name.trim();}).map(function(p){return p.name;});
-        var rappelsTxt=(act.rappels||[]).map(function(rap){return rap.text;});
-        results.push({aff:aff,actLb:act.lb,actPk:act.pk||'',wk:nextWk,weekLabel:label,
-          hPrev:act.hPrev||0,hReel:act.hReel||0,persons:persons,rappels:rappelsTxt,done:!!act.done});
-      }
+      if(!s||(act.rappels||[]).length===0)return;
+      var matchingRappels=[];
+      (act.rappels||[]).forEach(function(rap){
+        var wb=rap.weeksBefore||null;
+        var weeksUntilStart=s-curWk;
+        if(wb&&weeksUntilStart===wb){
+          // Rappel planifié : wb semaines avant la tâche
+          matchingRappels.push(rap.text+' (⏰ rappel '+wb+' sem. avant S'+s+')');
+        } else if(!wb){
+          // Compat ancien format : tâche active semaine prochaine
+          if(s<=nextWk&&e>=nextWk)matchingRappels.push(rap.text);
+        }
+      });
+      if(!matchingRappels.length)return;
+      var dLunS=weekDayToDate(s,0);
+      var label='S'+s+(dLunS?' — début '+fmt(dLunS):'');
+      var persons=(act.p||[]).filter(function(p){return p.name&&p.name.trim();}).map(function(p){return p.name;});
+      results.push({aff:aff,actLb:act.lb,actPk:act.pk||'',wk:s,weekLabel:label,
+        hPrev:act.hPrev||0,hReel:act.hReel||0,persons:persons,rappels:matchingRappels,done:!!act.done});
     });
   });
   return results;
 }
-
 function loadRappelsPreview(){
   var preview=document.getElementById('rm-preview');if(!preview)return;
   var nextWk=(TODAY?TODAY.w:1)+1;
@@ -6589,6 +6593,12 @@ function _syncTaskMeta(row){
 
 function gcDown(rid, w, d, ev){
   if(ev)ev.stopPropagation();
+  // Utiliser getBoundingClientRect sur la <td> pour éviter le décalage
+  // causé par les divs internes (barre prévu/réel)
+  var rect=ev&&ev.currentTarget?ev.currentTarget.getBoundingClientRect():null;
+  var relY=rect?(ev.clientY-rect.top):40;
+  var cellH=rect?rect.height:80;
+  window._ganttBarMode=(relY<cellH/2)?'prev':'reel';
   _gc.active=true; _gc.rid=rid;
   _gc.w1=w; _gc.d1=d; _gc.w2=w; _gc.d2=d;
   gcHighlight();
@@ -6611,7 +6621,8 @@ function gcHighlight(){
     var tw=+td.dataset.w, td_d=+td.dataset.d;
     if(td_d>=5){td.style.outline='';return;}
     var td5=(tw-1)*5+td_d;
-    td.style.outline=(td5>=startD5&&td5<=endD5)?'2px inset rgba(124,58,237,.6)':'';
+    var _hlColor=(window._ganttBarMode==='reel')?'rgba(22,163,74,.7)':'rgba(124,58,237,.6)';
+    td.style.outline=(td5>=startD5&&td5<=endD5)?'2px inset '+_hlColor:'';
   });
 }
 
@@ -7255,9 +7266,10 @@ function renderRecap(){
     </tr>`;
   }
 
-  function subRow(lb,phColor){
+  function subRow(lb,phColor,pct){
     const cols=1+maxP*3+6; // activité + personnes + totaux
-    return `<tr><td colspan="${cols}" style="background:${phColor}22;padding:4px 12px;font-size:10px;font-weight:700;color:${phColor};letter-spacing:.5px;border-top:1px solid ${phColor}44">◆ &nbsp;${lb}</td></tr>`;
+    const pctBadge=pct>0?`<span style="margin-left:8px;font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:${phColor};color:#fff">${pct}%</span>`:'';
+    return `<tr><td colspan="${cols}" style="background:${phColor}22;padding:4px 12px;font-size:10px;font-weight:700;color:${phColor};letter-spacing:.5px;border-top:1px solid ${phColor}44">◆ &nbsp;${lb}${pctBadge}</td></tr>`;
   }
 
   function buildPhaseBlock(phKey){
@@ -7266,9 +7278,18 @@ function renderRecap(){
     const rows=D().filter(r=>r.pk===phKey);
     let html='';
     let totH=0,totPrev=0,totReel=0;
+    const _phActsR=rows.filter(r=>r.t==='act');
+    const _phPctR=calcWeightedProgress(_phActsR);
     rows.forEach(r=>{
       if(r.t==='sb'){
-        html+=subRow(r.lb,ph.h);
+        // Calcul % sous-phase dans le recap
+        const _sbIdxR=rows.indexOf(r);
+        const _sbActsR=[];
+        for(let _sj=_sbIdxR+1;_sj<rows.length;_sj++){
+          const _rr=rows[_sj];if(_rr.t==='sb'||_rr.t==='ph')break;
+          if(_rr.t==='act')_sbActsR.push(_rr);
+        }
+        html+=subRow(r.lb,ph.h,calcWeightedProgress(_sbActsR));
       } else if(r.t==='act'){
         html+=aRow(r);
         totH+=r.p.reduce((s,p)=>s+(+p.heures||0),0);
@@ -7278,8 +7299,9 @@ function renderRecap(){
     });
     // Phase total row
     const emptyPc=Array.from({length:maxP*3},()=>'<td></td>').join('');
+    const _phPctBadge=_phPctR>0?`<span style="margin-left:8px;font-size:10px;padding:1px 8px;border-radius:10px;background:${ph.h};color:#fff;font-weight:800">${_phPctR}%</span>`:'';
     html+=`<tr style="background:${ph.h}22;border-top:2px solid ${ph.h}44;font-weight:700">
-      <td style="padding:4px 8px;color:${ph.h}">Total ${phKey}</td>${emptyPc}
+      <td style="padding:4px 8px;color:${ph.h}">Total ${phKey}${_phPctBadge}</td>${emptyPc}
       <td style="text-align:right;color:var(--ac);font-weight:700">${totH||'—'}</td>
       <td style="text-align:center;color:var(--or);font-weight:700">${totPrev||'—'}</td>
       <td style="text-align:center;color:var(--gn);font-weight:700">${totReel||'—'}</td>
@@ -7330,7 +7352,8 @@ function renderRecap(){
   const affTotH=allActs.reduce((s,a)=>s+a.p.reduce((s2,p)=>s2+(+p.heures||0),0),0);
   const affDelta=Math.round((affTotReel-affTotPrev)*10)/10;
   const affDone=allActs.filter(a=>a.done).length;
-  const affPct=allActs.length?Math.round(affDone/allActs.length*100):0;
+  // Avancement pondéré par H Prévues sur les % saisis manuellement
+  const affPct=calcWeightedProgress(allActs);
 
   html+=`<div style="background:var(--bg2);border:2px solid var(--ac);border-radius:var(--r2);padding:14px 18px;margin-top:8px">
     <div style="font-size:10px;font-weight:800;color:var(--ac);letter-spacing:.8px;margin-bottom:12px">TOTAL AFFAIRE — ${STORE.current}</div>
