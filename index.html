@@ -4822,7 +4822,11 @@ function renderGantt(){
         const inPrev=!isWE&&_prevSet.indexOf(d5)>=0;
         const inReel=!isWE&&_reelSet.indexOf(d5)>=0;
         const isFirstPrev=inPrev&&(_prevSet.indexOf(d5-1)<0);
+        const isLastPrev=inPrev&&(_prevSet.indexOf(d5+1)<0);
         const isFirstReel=inReel&&(_reelSet.indexOf(d5-1)<0);
+        const isLastReel=inReel&&(_reelSet.indexOf(d5+1)<0);
+        const prevRad=`${isFirstPrev?'8px':'0'} ${isLastPrev?'8px':'0'} ${isLastPrev?'8px':'0'} ${isFirstPrev?'8px':'0'}`;
+        const reelRad=`${isFirstReel?'8px':'0'} ${isLastReel?'8px':'0'} ${isLastReel?'8px':'0'} ${isFirstReel?'8px':'0'}`;
         const inAny=inPrev||inReel;
         const isTD=isTW&&TODAY.di===d;
         const sepBdr=d===6?'border-right:2px solid #374151;':(d===4&&sep?'border-right:1px solid var(--bd2);':'');
@@ -4843,12 +4847,12 @@ function renderGantt(){
         const reelBg=inReel?ph.xd:'transparent';
 
         dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" title="Clic haut=Prévu / Clic bas=Réel" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
-          <div style="height:38px;background:${prevBg};display:flex;align-items:center;justify-content:center;overflow:hidden">
-            ${isFirstPrev?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);padding-left:2px">P</span>`:''}
+          <div style="height:32px;margin:3px 0 2px;background:${prevBg};border-radius:${prevRad};${inPrev?'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
+            ${isFirstPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55);padding-left:2px">P</span>`:''}
           </div>
           <div style="height:3px;background:rgba(255,255,255,.9)"></div>
-          <div style="height:38px;background:${reelBg};display:flex;align-items:center;justify-content:center;overflow:hidden">
-            ${isFirstReel?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);padding-left:2px">R</span>`:''}
+          <div style="height:32px;margin:2px 0 3px;background:${reelBg};border-radius:${reelRad};${inReel?'box-shadow:inset 0 1px 0 rgba(255,255,255,.18);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
+            ${isFirstReel?`<span style="font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);padding-left:2px">R</span>`:''}
           </div>
         </td>`;
       }
