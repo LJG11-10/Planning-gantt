@@ -1,6 +1,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Planning Pétrole</title>
 <!-- SUPABASE -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
@@ -120,24 +121,47 @@
   }
 </script>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F5F4F1;--bg2:#fff;--bg3:#EDEBE6;--bg4:#E3E0D8;
-  --bd:#D0CCc4;--bd2:#B8B4AB;--tx:#1A1917;--tx2:#5A574F;--tx3:#9A978F;
-  --ac:#2563EB;--ac2:#EFF6FF;--ac3:#DBEAFE;
-  --gn:#16A34A;--gn2:#F0FDF4;--gn3:#BBF7D0;
-  --rd:#DC2626;--rd2:#FEF2F2;
-  --or:#D97706;--or2:#FFFBEB;
-  --E1:#1F4E79;--E2:#2E75B6;--E3:#EBF2FB;--E4:#D0E4F5;
-  --T1:#375623;--T2:#538135;--T3:#EDF5E6;--T4:#C6EFCE;
-  --A1:#7B2C2C;--A2:#C00000;--A3:#FCEAEA;--A4:#FFCCCC;
-  --C1:#7B4A00;--C2:#ED7D31;--C3:#FDF4E6;--C4:#FCE4D6;
-  --els-bg:#DBEAFE;--els-c:#1D4ED8;
-  --int-bg:#FEF9C3;--int-c:#92400E;
-  --st-bg:#FFE4E6;--st-c:#9F1239;
-  --r:5px;--r2:9px;
+  /* Neutres tintés lilas — clair & doux (esprit Skello) */
+  --bg:#F6F5FB;--bg2:#FFFFFF;--bg3:#EFEDF8;--bg4:#E5E2F2;
+  --bd:#E4E1F0;--bd2:#C7C2E0;--tx:#1C1A33;--tx2:#5A5675;--tx3:#9A96B3;
+  /* Accent violet — marque */
+  --ac:#6457F4;--ac2:#EFEDFE;--ac3:#DCD8FB;
+  --gn:#13B98A;--gn2:#E6F8F2;--gn3:#B7ECDC;
+  --rd:#F2585B;--rd2:#FDECEC;
+  --or:#F5A524;--or2:#FEF6E7;
+  /* Phases — pastel amical (E violet / T menthe / A corail / C ambre) */
+  --E1:#4A3FC0;--E2:#7C6FF0;--E3:#F0EEFD;--E4:#DAD5FA;
+  --T1:#0E7C63;--T2:#27C39A;--T3:#E6F8F2;--T4:#C2EFE2;
+  --A1:#B83A4A;--A2:#F2585B;--A3:#FDECEC;--A4:#FBD5D6;
+  --C1:#9A6410;--C2:#F5A524;--C3:#FEF6E7;--C4:#FBE7BE;
+  --els-bg:#E3DFFB;--els-c:#5447D6;
+  --int-bg:#FDF0D6;--int-c:#9A6410;
+  --st-bg:#FBDFE6;--st-c:#C03060;
+  --r:10px;--r2:16px;
 }
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--tx);height:100vh;display:flex;flex-direction:column;overflow:hidden;font-size:13px}
+body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);height:100vh;display:flex;flex-direction:column;overflow:hidden;font-size:13px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+/* ── SKELLO-INSPIRED — formes arrondies & raffinements (n'affecte ni la logique ni les largeurs GANTT) ── */
+#nav{height:52px;box-shadow:0 1px 0 rgba(60,40,160,.05)}
+.nb{padding:6px 13px;border-radius:9px;font-weight:600;letter-spacing:.1px}
+.nb.on{background:var(--ac2);color:var(--ac)}
+.nb.on::after{display:none}
+#sbar{padding:8px 16px;box-shadow:0 1px 2px rgba(60,40,160,.04)}
+.btn,.btn-a,.btn-g{border-radius:9px;font-weight:700}
+.btn-a{box-shadow:0 2px 8px rgba(100,87,244,.30)}.btn-a:hover{background:#5346E8}
+.btn-np,.btn-da{border-radius:8px}
+.card,.p-card,.rcard,.fh,.ftbl,.stat{box-shadow:0 2px 10px rgba(60,40,160,.06);border-color:var(--bd)}
+.pill{border-radius:20px}
+/* Champs numériques : Jakarta tabulaire au lieu de Courier — look data doux */
+.hi,.ph-inp,.dt-i,.fdi{font-family:'Plus Jakarta Sans',system-ui,sans-serif!important;font-variant-numeric:tabular-nums;letter-spacing:-.2px;font-weight:700}
+/* Écran de connexion (styles inline → surcharge CSS, palette violette) */
+#login-screen{background:linear-gradient(140deg,#3A2EAE 0%,#6457F4 55%,#8A7BFF 100%)!important;font-family:'Plus Jakarta Sans',system-ui,sans-serif!important}
+#login-screen>div{border-radius:24px!important}
+#login-screen div[style*="border-radius:14px"]{background:linear-gradient(135deg,#6457F4,#8A7BFF)!important;border-radius:18px!important}
+#btn-login,#btn-send-reset,#btn-update-pwd,#btn-signup{background:linear-gradient(135deg,#6457F4,#5346E8)!important;box-shadow:0 6px 18px rgba(100,87,244,.34)!important;border-radius:14px!important;font-family:'Plus Jakarta Sans',system-ui,sans-serif!important}
 
 /* ── NAV ── */
 #nav{background:var(--bg2);border-bottom:1px solid var(--bd);height:44px;display:flex;align-items:center;padding:0 14px;gap:3px;flex-shrink:0}
@@ -338,6 +362,40 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   .fh{break-inside:avoid}
   @page{size:A4 landscape;margin:10mm}
 }
+
+/* ── RESPONSIVE ── */
+:root {
+  --label-col: 255px;   /* largeur colonne nom tâche */
+  --sbar-h: auto;
+}
+
+/* Laptop / petit écran (< 1400px) */
+@media (max-width: 1400px) {
+  body { font-size: 12px; }
+  .nb  { padding: 4px 7px; font-size: 12px; }
+  #sbar { padding: 4px 8px; gap: 6px; }
+  .lbl  { font-size: 8px; letter-spacing: .4px; }
+  .bud-bw { width: 60px; }
+  .sk-inp { width: 42px; }
+  #sbar select, #sbar input[type=number] { padding: 2px 5px; font-size: 10px; }
+}
+
+/* Très petit écran (< 1200px) : sbar scrollable horizontalement */
+@media (max-width: 1200px) {
+  #sbar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+  #sbar::-webkit-scrollbar { height: 3px; }
+  #sbar::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 2px; }
+  #nav  { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  #nav::-webkit-scrollbar { display: none; }
+  .bud-box { flex-shrink: 0; }
+}
+
+/* Nav très compacte sur petit laptop */
+@media (max-width: 1100px) {
+  .nb { padding: 3px 6px; font-size: 11px; }
+  .brand .bname { display: none; }
+  .brand .bdots { display: none; }
+}
 </style>
 </head>
 <body>
@@ -346,7 +404,33 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <div id="login-screen" style="position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#1e3a5f 0%,#2563EB 60%,#1D4ED8 100%);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif">
   <div style="background:#fff;border-radius:20px;padding:40px 44px;width:400px;box-shadow:0 24px 80px rgba(0,0,0,.35)">
     <div style="text-align:center;margin-bottom:28px">
-      <div style="width:60px;height:60px;background:linear-gradient(135deg,#2563EB,#1D4ED8);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:28px">📊</div>
+      <div style="width:60px;height:60px;background:linear-gradient(135deg,#6457F4,#4A3FC0);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px"><svg width="36" height="36" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sol / base -->
+  <rect x="8" y="68" width="64" height="5" rx="2.5" fill="white" opacity=".9"/>
+  <!-- Structure verticale (châssis A) -->
+  <line x1="34" y1="68" x2="26" y2="38" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <line x1="46" y1="68" x2="54" y2="38" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <!-- Traverse diagonale de renfort -->
+  <line x1="30" y1="54" x2="50" y2="47" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
+  <!-- Pivot / axe central -->
+  <circle cx="40" cy="36" r="4" fill="white"/>
+  <!-- Balancier (bras oscillant) — incliné légèrement -->
+  <!-- Côté avant (horsehead) -->
+  <line x1="40" y1="36" x2="18" y2="28" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <!-- Horsehead (tête en forme de cheval) -->
+  <path d="M18 28 Q14 24 12 28 Q14 33 18 31 Z" fill="white"/>
+  <!-- Côté arrière (contrepoids) -->
+  <line x1="40" y1="36" x2="64" y2="44" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <!-- Contrepoids (roue rouge) -->
+  <circle cx="66" cy="46" r="9" fill="#F5A524"/>
+  <circle cx="66" cy="46" r="5" fill="white" opacity=".3"/>
+  <line x1="61" y1="41" x2="71" y2="51" stroke="white" stroke-width="2" stroke-linecap="round" opacity=".6"/>
+  <line x1="71" y1="41" x2="61" y2="51" stroke="white" stroke-width="2" stroke-linecap="round" opacity=".6"/>
+  <!-- Tige de pompage verticale -->
+  <line x1="14" y1="31" x2="14" y2="68" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="4 3" opacity=".7"/>
+  <!-- Tête de puits (wellhead) -->
+  <rect x="10" y="63" width="8" height="6" rx="1.5" fill="white" opacity=".9"/>
+</svg></div>
       <div id="login-title" style="font-size:20px;font-weight:900;color:#1A1917">Planning Pétrole</div>
       <div style="font-size:12px;color:#9A978F;margin-top:4px">Connectez-vous pour accéder au planning</div>
     </div>
@@ -758,10 +842,10 @@ async function doLogout() {
 // CONSTANTES
 // ═══════════════════════════════
 const PH_BASE={
-  ETUDE:       {h:'var(--E1)',b:'var(--E2)',f:'var(--E3)',s:'var(--E4)',t:'#0C2E4A',x:'#2E75B6',xl:'#BDD7EE',xd:'#1F4E79'},
-  TABLEAUTERIE:{h:'var(--T1)',b:'var(--T2)',f:'var(--T3)',s:'var(--T4)',t:'#1E3312',x:'#538135',xl:'#C6EFCE',xd:'#375623'},
-  AUTOMATISME: {h:'var(--A1)',b:'var(--A2)',f:'var(--A3)',s:'var(--A4)',t:'#4A1111',x:'#C00000',xl:'#FFCCCC',xd:'#9B0000'},
-  CHANTIER:    {h:'var(--C1)',b:'var(--C2)',f:'var(--C3)',s:'var(--C4)',t:'#4A3600',x:'#ED7D31',xl:'#FCE4D6',xd:'#C05A00'},
+  ETUDE:       {h:'var(--E1)',b:'var(--E2)',f:'var(--E3)',s:'var(--E4)',t:'#4A3FC0',x:'#7C6FF0',xl:'#DAD5FA',xd:'#4A3FC0'},
+  TABLEAUTERIE:{h:'var(--T1)',b:'var(--T2)',f:'var(--T3)',s:'var(--T4)',t:'#0E7C63',x:'#27C39A',xl:'#C2EFE2',xd:'#0E7C63'},
+  AUTOMATISME: {h:'var(--A1)',b:'var(--A2)',f:'var(--A3)',s:'var(--A4)',t:'#B83A4A',x:'#F2585B',xl:'#FBD5D6',xd:'#B83A4A'},
+  CHANTIER:    {h:'var(--C1)',b:'var(--C2)',f:'var(--C3)',s:'var(--C4)',t:'#9A6410',x:'#F5A524',xl:'#FBE7BE',xd:'#9A6410'},
 };
 // Palette pour les phases personnalisées
 const PH_EXTRA_PALETTE=[
@@ -4361,6 +4445,8 @@ function switchProjet(k){
   saveNow();renderProjSel();renderGantt();navRefreshArchBtn();
   // Marquer : scroller vers aujourd'hui au prochain renderGantt
   window._scrollToToday = true;
+  // Ajuster le zoom GANTT à la résolution de l'écran
+  if(!window._zoomInitialized){setZoom('auto');window._zoomInitialized=true;}
   // Re-render active tab
   const activeTab=document.querySelector('.nb.on');
   if(activeTab){const t=activeTab.dataset.tab;
@@ -4740,7 +4826,7 @@ function renderGantt(){
         const inAny=inPrev||inReel;
         const isTD=isTW&&TODAY.di===d;
         const sepBdr=d===6?'border-right:2px solid #374151;':(d===4&&sep?'border-right:1px solid var(--bd2);':'');
-        const todBdr=isTD?'outline:2px solid #D97706;outline-offset:-2px;position:relative;z-index:1;':'';
+        const todBdr=isTD?'box-shadow:inset 0 0 0 2px #D97706;':'';
 
         // Cellule week-end
         if(isWE){
@@ -4748,7 +4834,7 @@ function renderGantt(){
           continue;
         }
         if(!inAny){
-          dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" title="Clic haut=Prévu / Clic bas=Réel" style="background:${isTD?'#FEF9C3':'var(--bg2)'};${sepBdr}${todBdr};cursor:crosshair"></td>`;
+          dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" title="Clic haut=Prévu / Clic bas=Réel" style="background:var(--bg2);${sepBdr}${todBdr};cursor:crosshair"></td>`;
           continue;
         }
 
@@ -4842,8 +4928,16 @@ function setZoom(mode){
     ZOOM_DW=Math.max(2,Math.floor(available/(52*5)));
   }
   else if(mode==='reset'){ZOOM_DW=13;}
+  else if(mode==='auto'){
+    // Ajuste automatiquement à la résolution de l'écran
+    const _w=window.innerWidth;
+    if(_w>=1920)ZOOM_DW=36;
+    else if(_w>=1600)ZOOM_DW=28;
+    else if(_w>=1366)ZOOM_DW=22;
+    else ZOOM_DW=16;
+  }
   const lbl=document.getElementById('zoom-lbl');
-  if(lbl)lbl.textContent=ZOOM_DW+'px';
+  if(lbl){lbl.textContent=ZOOM_DW+'px';lbl.dataset.mode=mode||'manual';}
   renderGantt();
 }
 // ═══════════════════════════════
@@ -6557,6 +6651,21 @@ function setGanttMode(mode, rid){
     }
   }
 }
+
+// ── Adaptation automatique au redimensionnement ──────────────────────
+(function(){
+  var _rzt=null;
+  window.addEventListener('resize',function(){
+    clearTimeout(_rzt);
+    _rzt=setTimeout(function(){
+      // Recalculer le zoom si on était en mode 'fit'
+      var lbl=document.getElementById('zoom-lbl');
+      if(lbl&&lbl.dataset.mode==='fit'){setZoom('fit');}
+      // Sinon ajuster auto si premier chargement
+      // (ne pas forcer si l'utilisateur a zoomé manuellement)
+    },250);
+  });
+})();
 
 // ── Helpers jours GANTT ──────────────────────────────────────────────
 // Retourne l'array des jours linéaires (0-based, 5j/sem) d'une barre
