@@ -4729,7 +4729,9 @@ function renderGantt(){
     const bg=hasFerie?'#FEE2E2':isTW?'#FEF3C7':'var(--ac2)';
     const clr=hasFerie?'#DC2626':isTW?'#D97706':'var(--ac)';
     const fw=isTW||hasFerie?'700':'600';
-    wH+=`<th colspan="7" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;border-bottom:1px solid var(--bd2);${sep}${hasFerie?';border-top:2px solid #DC2626':''}">S${w}${hasFerie?'<br><span style="font-size:7px">🎌</span>':isTW?'<br><span style="font-size:7px">auj.</span>':''}</th>`;
+    const _wkDate=weekDayToDate(w,0);
+    const _wkFmt=_wkDate?(_wkDate.getDate()).toString().padStart(2,'0')+'/'+((_wkDate.getMonth()+1)).toString().padStart(2,'0'):'';
+    wH+=`<th colspan="7" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;border-bottom:1px solid var(--bd2);overflow:hidden;white-space:nowrap;${sep}${hasFerie?';border-top:2px solid #DC2626':''}">S${w}<span style="font-size:8px;opacity:.75;margin-left:3px">${_wkFmt}</span>${hasFerie?'<span style="font-size:7px"> 🎌</span>':isTW?'<span style="font-size:7px;font-weight:900"> ●</span>':''}</th>`;
   }
   // Jours
   let dH='';
@@ -4742,7 +4744,7 @@ function renderGantt(){
       const clr=isFerieCol?'#DC2626':isTD?'#D97706':'var(--tx3)';
       const fw=isTD||isFerieCol?'700':'400';
       const bot=isFerieCol?'border-bottom:2px solid #DC2626;border-top:2px solid #DC2626':isTD?'border-bottom:2px solid #D97706':'border-bottom:2px solid var(--bd2)';
-      dH+=`<th title="${fmt(ddD(w,di))}" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;width:${DW}px;min-width:${DW}px;max-width:${DW}px;padding:3px 1px;line-height:1.4;vertical-align:middle;${bot};${d===6?'border-right:2px solid #374151':d>=5?'background:var(--bg3);opacity:.7':(d===4&&sep?'border-right:1px solid var(--bd)':'border-right:none')}">${d}${isTD?'<span style="color:#D97706">•</span>':''}<br><span style="font-size:10px;font-weight:700">${fmt(ddD(w,di))}</span></th>`;
+      dH+=`<th title="${fmt(ddD(w,di))}" style="background:${bg};font-weight:${fw};color:${clr};text-align:center;width:${DW}px;min-width:${DW}px;max-width:${DW}px;padding:1px 0;vertical-align:bottom;overflow:hidden;${bot};${d===6?'border-right:2px solid #374151':d>=5?'background:var(--bg3);opacity:.7':(d===4&&sep?'border-right:1px solid var(--bd)':'border-right:none')}"><div style="display:flex;flex-direction:column;align-items:center;gap:1px;padding-bottom:2px"><span style="font-size:8px;font-weight:700;line-height:1">${d}${isTD?'<span style=\"color:#D97706\">●</span>':''}</span><span style="font-size:7px;font-weight:600;opacity:.85;writing-mode:vertical-rl;transform:rotate(180deg);line-height:1;letter-spacing:.5px">${fmt(ddD(w,di))}</span></div></th>`;
     });
   }
   let html=`<table class="gt" style="min-width:${255+38+NC*DW}px">
@@ -4753,11 +4755,11 @@ function renderGantt(){
       <th colspan="2" style="background:var(--bg2);border-bottom:1px solid var(--bd);position:sticky;left:0;z-index:23"></th>
       ${mH}
     </tr>
-    <tr style="height:17px;position:sticky;top:19px;z-index:22">
+    <tr style="height:22px;position:sticky;top:19px;z-index:22">
       <th colspan="2" style="background:var(--ac2);border-bottom:1px solid var(--bd2);position:sticky;left:0;z-index:23;font-size:9px;font-weight:700;color:var(--ac);padding:0 8px">SEMAINE</th>
       ${wH}
     </tr>
-    <tr style="height:18px;position:sticky;top:36px;z-index:22">
+    <tr style="height:36px;position:sticky;top:41px;z-index:22">
       <th style="background:var(--bg3);text-align:left;padding:0 8px;font-size:9px;font-weight:700;color:var(--tx2);border-bottom:2px solid var(--bd2);position:sticky;left:0;z-index:30;min-width:255px;max-width:255px">ACTIVITÉS</th>
       <th style="background:var(--bg3);font-size:8px;font-weight:700;color:var(--tx2);text-align:center;border-bottom:2px solid var(--bd2);position:sticky;left:255px;z-index:30;min-width:38px;max-width:38px">NB</th>
       ${dH}
