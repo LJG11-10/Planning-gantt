@@ -1416,6 +1416,9 @@ function deleteGlobalPerson(nm){
       if(key.split('::')[0]===nm)delete wk[key];
     });
   });
+  // 5. Supprimer des congés et absences
+  if(STORE.absences&&STORE.absences[nm])delete STORE.absences[nm];
+  if(STORE.conges&&STORE.conges[nm])delete STORE.conges[nm];
   localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
   window._editingPerson=undefined;
   renderPersonnelSearch();
