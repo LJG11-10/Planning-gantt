@@ -1145,8 +1145,23 @@ function loadStore(){
       STORE.projects=Object.assign({},remote.projects,localProjs);
       // Pour le reste (weekPlan, absences, etc.) : remote a la priorité
       if(remote.weekPlan)STORE.weekPlan=Object.assign({},remote.weekPlan,STORE.weekPlan||{});
-      if(remote.absences)STORE.absences=Object.assign({},remote.absences,STORE.absences||{});
-      if(remote.globalPersons)STORE.globalPersons=Object.assign({},remote.globalPersons,STORE.globalPersons||{});
+      if(remote.absences){
+        var _del=STORE._deletedPersons||{};
+        // Ne pas réimporter les entrées des personnes supprimées
+        var _filtAbs={};
+        Object.keys(remote.absences).forEach(function(k){if(!_del[k])_filtAbs[k]=remote.absences[k];});
+        STORE.absences=Object.assign({},_filtAbs,STORE.absences||{});
+        // S'assurer que les supprimées localement ne reviennent pas
+        Object.keys(_del).forEach(function(k){delete STORE.absences[k];});
+      }
+      if(remote.globalPersons){
+        var _del2=STORE._deletedPersons||{};
+        var _filtGP={};
+        Object.keys(remote.globalPersons).forEach(function(k){if(!_del2[k])_filtGP[k]=remote.globalPersons[k];});
+        STORE.globalPersons=Object.assign({},_filtGP,STORE.globalPersons||{});
+        // S'assurer que les supprimées localement ne reviennent pas
+        Object.keys(_del2).forEach(function(k){delete STORE.globalPersons[k];});
+      }
       if(remote.conges)STORE.conges=Object.assign({},remote.conges,STORE.conges||{});
     }
     // Uploader immédiatement sur Supabase (fusion des données de tout le monde)
@@ -1448,7 +1463,12 @@ function deleteGlobalPerson(nm){
   // 5. Supprimer des congés et absences
   if(STORE.absences&&STORE.absences[nm])delete STORE.absences[nm];
   if(STORE.conges&&STORE.conges[nm])delete STORE.conges[nm];
-  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  // 6. Marquer comme supprimée (résiste au merge Supabase)
+  if(!STORE._deletedPersons)STORE._deletedPersons={};
+  STORE._deletedPersons[nm]=Date.now();
+  // Sauvegarde IMMÉDIATE (pas debounce) pour éviter le retour via polling
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));
+  supaSave(STORE); // async immédiat
   window._editingPerson=undefined;
   renderPersonnelSearch();
   refreshAllTabs();
@@ -3341,10 +3361,11 @@ function dbBuildPlanningGrid(){
   var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
   var affs=Object.keys(STORE.projects).sort().filter(function(a){return !STORE.projects[a].closed;});
   function getAllPersons(){
+  var _del=STORE._deletedPersons||{};
   // L'annuaire globalPersons est la seule source de vérité
-  // Les personnes supprimées de l'annuaire disparaissent partout
+  // Les personnes supprimées (dans _deletedPersons) sont exclues partout
   if(STORE.globalPersons&&Object.keys(STORE.globalPersons).length)
-    return Object.keys(STORE.globalPersons).filter(function(nm){return nm&&nm.trim();}).sort();
+    return Object.keys(STORE.globalPersons).filter(function(nm){return nm&&nm.trim()&&!_del[nm];}).sort();
   // Fallback si globalPersons vide : chercher dans les tâches
   var ps={};
   Object.values(STORE.projects).forEach(function(p){
@@ -3859,7 +3880,9 @@ function renderAbsences(){
   window._absTab=absTab;
 
   // ── Toutes les personnes (pour les congés)
-  var allNames=getAllPersons();
+  // Filtre strict : seulement les personnes de l'annuaire actuel
+  var _delP=STORE._deletedPersons||{};
+  var allNames=getAllPersons().filter(function(nm){return !_delP[nm];});
 
   // ── Alternants/Stagiaires (pour école/entreprise)
   var altMap={};
