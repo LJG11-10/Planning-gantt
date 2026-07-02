@@ -548,6 +548,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
   <span class="lbl">AFFAIRE</span>
   <select id="sel-aff" onchange="switchProjet(this.value)"></select>
   <button class="btn-np" onclick="openModal('new')">+ Nouvelle</button>
+  <button class="btn-da" onclick="openRenameModal()" title="Renommer l'affaire courante">✏️</button>
   <button class="btn-da" onclick="openModal('del')">🗑</button>
   <div class="sep"></div>
   <span class="lbl">BUDGET</span>
@@ -813,6 +814,32 @@ function applyRoleRestrictions() {
     }, 500);
     // Ajouter badge utilisateur
     addUserBadge();
+  } else if (CURRENT_ROLE === 'automatisme') {
+    // Rôle Automatisme : GANTT (édition), Planning Réunion, Annuaire, Congés, Récap
+    // Masquer les onglets non autorisés
+    document.querySelectorAll('.nb[data-tab]').forEach(function(btn) {
+      var tab = btn.getAttribute('data-tab');
+      var allowed=['gantt','planning-reunion','personnel','recap','absences'];
+      if(allowed.indexOf(tab)<0) btn.style.display='none';
+    });
+    // Masquer les boutons de gestion d'affaires (créer, supprimer, renommer)
+    document.querySelectorAll('.btn-np,.btn-da,[onclick*="openModal"],[onclick="openRenameModal()"]').forEach(function(b){b.style.display='none';});
+    // Masquer l'éditeur de planning (structure phases/tâches)
+    document.querySelectorAll('[onclick="openPlanEditor()"]').forEach(function(b){b.style.display='none';});
+    // Masquer les téléchargements et exports
+    document.querySelectorAll('[onclick*="downloadPlanning"],[onclick*="exportData"],[onclick*="showClientDownload"]').forEach(function(b){b.style.display='none';});
+    // Masquer Fortuit et Rappels
+    document.querySelectorAll('[onclick*="openFortuitModal"],[onclick*="openRappelsSett"]').forEach(function(b){b.style.display='none';});
+    // Garder la sbar visible mais masquer les inputs budget/dates
+    document.querySelectorAll('#inp-bud,#inp-dstart,#inp-dend,.bud-bw,label[for=inp-bud]').forEach(function(el){el.style.display='none';});
+    // GANTT : édition autorisée (pas de readOnly)
+    window._ganttReadOnly = false;
+    // Sous-onglets personnel : masquer équipe/heures, garder annuaire + habilitations
+    setTimeout(function(){
+      document.querySelectorAll('[onclick*="switchPersonnelTab\'equipe"]').forEach(function(b){b.style.display='none';});
+      document.querySelectorAll('[data-subtab="equipe"],[data-subtab="heures"]').forEach(function(b){b.style.display='none';});
+    },300);
+    addUserBadge();
   } else if (CURRENT_ROLE === 'admin') {
     addUserBadge();
   }
@@ -823,7 +850,9 @@ function addUserBadge() {
   if (!navR || !CURRENT_USER) return;
   var badge = document.createElement('div');
   badge.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 10px;background:var(--bg3);border-radius:20px;border:1px solid var(--bd);font-size:10px;font-weight:600;color:var(--tx2)';
-  var roleLabel = CURRENT_ROLE === 'admin' ? '👑 Admin' : '👷 Chef de chantier';
+  var roleLabel = CURRENT_ROLE === 'admin' ? '👑 Admin' 
+    : CURRENT_ROLE === 'automatisme' ? '⚙️ Automatisme'
+    : '👷 Chef de chantier';
   badge.innerHTML = '<span>' + CURRENT_USER.email.split('@')[0] + '</span>'
     + '<span style="color:var(--tx3)">|</span>'
     + '<span>' + roleLabel + '</span>'
@@ -2591,12 +2620,20 @@ function confirmFortuit(){
       // Décaler prevDays : offset = newStart - oldStart
       var oldPrev=actObj.prevDays?actObj.prevDays.slice():getTaskDays5(actObj,'prev');
       var oldReel=actObj.reelDays?actObj.reelDays.slice():getTaskDays5(actObj,'reel');
-      var prevOffset=oldPrev.length?newStart5-oldPrev[0]:0;
-      var reelOffset=oldReel.length?(oldPrev.length?prevOffset:newStart5-oldReel[0]):prevOffset;
-      actObj.prevDays=oldPrev.map(function(d){return Math.max(0,d+prevOffset);});
-      actObj.reelDays=oldReel.map(function(d){return Math.max(0,d+reelOffset);});
-      // Si pas de jours définis, créer un marqueur simple
-      if(!actObj.prevDays.length)actObj.prevDays=[newStart5];
+      // Décalage : UNIQUEMENT le réel se déplace, le prévu reste en place
+      var reelOffset=oldReel.length?newStart5-oldReel[0]:0;
+      // prevDays inchangé
+      actObj.prevDays=oldPrev.slice();
+      // Décaler reelDays vers la nouvelle date
+      if(oldReel.length){
+        actObj.reelDays=oldReel.map(function(d){return Math.max(0,d+reelOffset);});
+      } else if(oldPrev.length){
+        // Pas de réel défini → créer à partir du prévu décalé
+        var prevOff=oldPrev.length?newStart5-oldPrev[0]:0;
+        actObj.reelDays=oldPrev.map(function(d){return Math.max(0,d+prevOff);});
+      } else {
+        actObj.reelDays=[newStart5];
+      }
       _syncTaskMeta(actObj);
     }
 
@@ -4461,6 +4498,47 @@ function switchProjet(k){
     else if(t==='dashboard')renderDashboard();
   }
 }
+// ── Renommer une affaire ──────────────────────────────────────────────
+function openRenameModal(){
+  var old=STORE.current;
+  if(!old)return;
+  var newName=prompt('Nouveau nom pour l\'affaire "'+old+'" :',old);
+  if(!newName||!newName.trim())return;
+  newName=newName.trim();
+  if(newName===old)return;
+  if(STORE.projects[newName]){alert('Une affaire avec ce nom existe déjà.');return;}
+  renameProjet(old,newName);
+}
+
+function renameProjet(oldName,newName){
+  if(!STORE.projects[oldName])return;
+  // Renommer dans projects
+  STORE.projects[newName]=STORE.projects[oldName];
+  delete STORE.projects[oldName];
+  // Mettre à jour current
+  if(STORE.current===oldName)STORE.current=newName;
+  // Mettre à jour weekPlan (clés affaire dans les entrées)
+  Object.values(STORE.weekPlan||{}).forEach(function(wk){
+    Object.keys(wk).forEach(function(key){
+      var entries=wk[key];if(!Array.isArray(entries))return;
+      entries.forEach(function(e){if(e&&e.aff===oldName)e.aff=newName;});
+    });
+    // Renommer la clé __persons__ ou affKey
+    if(wk[oldName]){wk[newName]=wk[oldName];delete wk[oldName];}
+  });
+  // Mettre à jour absences
+  if(STORE.absences&&STORE.absences[oldName]){
+    STORE.absences[newName]=STORE.absences[oldName];
+    delete STORE.absences[oldName];
+  }
+  // Sauvegarder et re-render
+  saveNow();
+  renderProjSel();
+  renderGantt();
+  navRefreshArchBtn();
+  alert('Affaire renommée en "'+newName+'".');
+}
+
 function openModal(type){
   const mb=document.getElementById('mb');
   if(type==='new'){
@@ -4538,8 +4616,11 @@ function confirmNew(){
           delete nr.dStart; delete nr.dEnd;
           delete nr.dStartR; delete nr.dDurR;
           delete nr._isoP; delete nr._isoR;
-          // Garder les personnes mais sans heures
-          nr.p=(r.p||[]).map(function(pp){return {name:pp.name,ent:pp.ent||'',heures:0};});
+          // Supprimer les personnes (à réassigner sur le nouveau projet)
+          nr.p=[];
+          // Supprimer les barres GANTT (prevDays / reelDays)
+          delete nr.prevDays; delete nr.reelDays;
+          delete nr.rappels;
         } else if(nr.t==='sb'){
           nr.id='sb_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
         } else if(nr.t==='ph'){
@@ -4968,10 +5049,7 @@ function closePlanEditor(){
   var el=document.getElementById('plan-editor');
   if(el)el.classList.remove('open');
 }
-document.addEventListener('click',function(e){
-  var el=document.getElementById('plan-editor');
-  if(el&&el.classList.contains('open')&&e.target===el)closePlanEditor();
-});
+// Éditeur fermé uniquement via la croix (pas au clic extérieur)
 
 function pedToggleArchive(aff, archive){
   // Use STORE.current as fallback in case aff has special chars
@@ -5495,55 +5573,7 @@ function pedShowAddActForm(pk){
     d.appendChild(sl);d.appendChild(ss);
   }
 
-  // Date + durée
-  var sep=document.createElement('div');sep.style.cssText='font-size:9px;font-weight:700;color:var(--or);margin:10px 0 4px';sep.textContent='▶ PLANIFICATION';d.appendChild(sep);
-  var row2=document.createElement('div');row2.className='row';
-
-  function addDateDurField(lbl,id,type,val,opts){
-    var wrap=document.createElement('div');
-    var l=document.createElement('label');l.textContent=lbl;l.style.fontSize='9px';
-    var i=document.createElement('input');i.type=type;i.id=id;i.value=val||'';
-    i.style.cssText='border:1px solid var(--bd);border-radius:var(--r);padding:5px 7px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%';
-    if(opts)Object.keys(opts).forEach(function(k){i[k]=opts[k];});
-    wrap.appendChild(l);wrap.appendChild(i);row2.appendChild(wrap);
-    return i;
-  }
-  // Default: today or S1 Mon 08h
-  var defIso=isoDate(TODAY?TODAY.w:1,TODAY?TODAY.di:0,8);
-  addDateDurField('DATE & HEURE DÉBUT','pf-act-date','datetime-local',defIso);
-  var durInput=addDateDurField('DURÉE (jours)','pf-act-dur','number',0,{min:0,step:1});
-  var hjInput=addDateDurField('H/JOUR','pf-act-hj','number',8,{min:0.5,max:24,step:0.5});
-  d.appendChild(row2);
-
-  var row3=document.createElement('div');row3.className='row';
-  function addH(lbl,id){
-    var wrap=document.createElement('div');
-    var l=document.createElement('label');l.textContent=lbl;l.style.fontSize='9px';
-    var inp=document.createElement('input');inp.type='number';inp.id=id;inp.min='0';inp.step='0.5';inp.value='0';
-    inp.style.cssText='border:1px solid var(--bd);border-radius:var(--r);padding:5px 7px;font-size:11px;font-family:Courier New,monospace;font-weight:700;color:var(--ac);background:var(--bg2);outline:none;width:100%';
-    inp.oninput=function(){this.dataset.manual='1';};
-    wrap.appendChild(l);wrap.appendChild(inp);row3.appendChild(wrap);
-    return inp;
-  }
-  var hpInp=addH('H PR\u00C9VUES TOTAL','pf-act-hp');
-  var hrInp=addH('H R\u00C9ELLES TOTAL','pf-act-hr');
-  d.appendChild(row3);
-
-  // Sync hours from dur × hj whenever dur or hj changes
-  function syncH(){
-    var durEl=document.getElementById('pf-act-dur');
-    var hjEl=document.getElementById('pf-act-hj');
-    if(!durEl||!hjEl)return;
-    var dur=Math.max(0,parseFloat(durEl.value)||0);
-    var hj=Math.max(0.5,parseFloat(hjEl.value)||8);
-    var tot=Math.round(dur*hj*10)/10;
-    if(!hpInp.dataset.manual){hpInp.value=tot;}
-    if(!hrInp.dataset.manual){hrInp.value=tot;}
-  }
-  // Wire sync directly to input references (no getElementById needed)
-  durInput.oninput=syncH;durInput.onchange=syncH;
-  hjInput.oninput=syncH;hjInput.onchange=syncH;
-  syncH(); // initial calc
+  // Tâche créée non planifiée (barre GANTT à placer soi-même)
 
   var btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:8px;margin-top:8px';
   var ok=document.createElement('button');ok.className='btn btn-a';ok.textContent='✓ Ajouter';
@@ -5559,27 +5589,12 @@ function pedShowAddActForm(pk){
 function pedConfirmAddAct(pk){
   var lb=(document.getElementById('pf-act-lb')||{value:''}).value.trim();
   if(!lb)return;
-  var iso=(document.getElementById('pf-act-date')||{value:''}).value;
-  var _durEl=document.getElementById('pf-act-dur');var dur=_durEl?Math.max(0,parseFloat(_durEl.value)||0):0;
-  var hj=+(document.getElementById('pf-act-hj')||{value:8}).value||8;
-  var hp=+(document.getElementById('pf-act-hp')||{value:0}).value||0;
-  var hr=+(document.getElementById('pf-act-hr')||{value:0}).value||0;
-  // Auto-calc hPrev from dur×hj if hp=0
-  if(dur===0){hp=0;hr=0;}else if(!hp&&dur&&hj)hp=dur*hj;
   var grpEl=document.getElementById('pf-act-grp');
   var grp=grpEl&&grpEl.value.trim()?grpEl.value.trim():pk;
   var subSel=document.getElementById('pf-act-sub');
   var subId=subSel?subSel.value:'';
-
-  // Convert date to week+day
-  var wdh=iso?dateToWkDay(iso):null;
-  var s=wdh?wdh.w:1;
-  var dStart=wdh?wdh.d:0;
-  var hStart=wdh?Math.round(wdh.h*2)/2:8;
-  var total=dur>0?dStart+(dur-1):0;
-  var e=dur>0?Math.min(52,s+Math.floor(total/7)):0;
-  var dEnd=dur>0?total%7:0;
-  if(dur===0){s=0;e=0;dStart=0;}
+  // Tâche toujours non planifiée à la création (barre à poser sur le GANTT)
+  var hp=0,hr=0,dur=0,s=0,e=0;
 
   var data=D();
   var insertAt=data.reduce(function(last,r,i){return r.pk===pk?i:last;},-1)+1;
@@ -5591,13 +5606,8 @@ function pedConfirmAddAct(pk){
       insertAt=ii;
     }
   }
-  var newAct=dur===0
-    ?{id:'act_'+Date.now(),t:'act',pk:pk,grp:grp,lb:lb,
-      s:0,e:0,dDur:0,hDur:hj,hPrev:0,hReel:0,done:false,p:[mkP()]}
-    :{id:'act_'+Date.now(),t:'act',pk:pk,grp:grp,lb:lb,
-      s:s,e:e,sPrev:s,ePrev:e,sReel:s,eReel:e,
-      dStart:dStart,dEnd:dEnd,dDur:dur,hDur:hj,hStart:hStart,
-      _isoP:iso,hPrev:hp,hReel:hr,done:false,p:[mkP()]};
+  var newAct={id:'act_'+Date.now(),t:'act',pk:pk,grp:grp,lb:lb,
+    s:0,e:0,dDur:0,hPrev:0,hReel:0,done:false,p:[]};
   data.splice(insertAt,0,newAct);
   saveNow();clearFormArea();renderPlanEditor();refreshAllTabs();
 }
@@ -6594,14 +6604,12 @@ function toggleExp(id){
     _reRenderGanttKeepScroll();
   }
   EXP=id;
+  // Sync personnes Planning Réunion → tâche avant affichage
+  syncFichesToGantt();
   // Find the activity data
   const row=D().find(x=>x.id===id);
   if(!row)return;
-  // Auto-set hPrev if still 0 and we have dDur*hDur
-  if((!row.hPrev||row.hPrev===0)&&row.dDur&&row.hDur){
-    row.hPrev=Math.round(row.dDur*row.hDur*10)/10;
-    saveNow();
-  }
+  // hPrev : saisie manuelle uniquement, pas de calcul auto
   const ph=PH_get(row.pk);
   const nd=(row.e-row.s+1)*5;
   // Find the <tr> element for this row
@@ -6711,12 +6719,16 @@ function _syncTaskMeta(row){
 
 function gcDown(rid, w, d, ev){
   if(ev)ev.stopPropagation();
-  // Utiliser getBoundingClientRect sur la <td> pour éviter le décalage
-  // causé par les divs internes (barre prévu/réel)
   var rect=ev&&ev.currentTarget?ev.currentTarget.getBoundingClientRect():null;
   var relY=rect?(ev.clientY-rect.top):40;
   var cellH=rect?rect.height:80;
   window._ganttBarMode=(relY<cellH/2)?'prev':'reel';
+  // Détecter si on commence sur une cellule déjà colorée → mode suppression
+  var _r=D().find(function(x){return x.id===rid;});
+  var _key=window._ganttBarMode==='reel'?'reelDays':'prevDays';
+  var _days=_r?getTaskDays5(_r,window._ganttBarMode):[];
+  var _d5=(w-1)*5+d;
+  _gc.removeMode=(_days.indexOf(_d5)>=0); // true = on efface, false = on colorie
   _gc.active=true; _gc.rid=rid;
   _gc.w1=w; _gc.d1=d; _gc.w2=w; _gc.d2=d;
   gcHighlight();
@@ -6739,7 +6751,9 @@ function gcHighlight(){
     var tw=+td.dataset.w, td_d=+td.dataset.d;
     if(td_d>=5){td.style.outline='';return;}
     var td5=(tw-1)*5+td_d;
-    var _hlColor=(window._ganttBarMode==='reel')?'rgba(22,163,74,.7)':'rgba(124,58,237,.6)';
+    var _hlColor=_gc.removeMode
+      ?'rgba(220,38,38,.7)'  // rouge = suppression
+      :(window._ganttBarMode==='reel')?'rgba(22,163,74,.7)':'rgba(124,58,237,.6)';
     td.style.outline=(td5>=startD5&&td5<=endD5)?'2px inset '+_hlColor:'';
   });
 }
@@ -6769,8 +6783,14 @@ function gcCommit(){
     } else {
       r[key].push(startD5); // vide → colorier
     }
+  } else if(_gc.removeMode){
+    // Drag sur cellules colorées → retirer tous les jours de la plage
+    for(var i=startD5;i<=endD5;i++){
+      var _ri=r[key].indexOf(i);
+      if(_ri>=0)r[key].splice(_ri,1);
+    }
   } else {
-    // Drag : ajouter tous les jours de la plage
+    // Drag sur cellules vides → ajouter tous les jours de la plage
     for(var i=startD5;i<=endD5;i++){
       if(r[key].indexOf(i)<0)r[key].push(i);
     }
@@ -6783,7 +6803,7 @@ document.addEventListener('mouseup', function(){
   if(!_gc.active)return;
   document.querySelectorAll('.gcell').forEach(function(td){td.style.outline='';});
   gcCommit();
-  _gc.active=false; _gc.rid=null;
+  _gc.active=false; _gc.rid=null; _gc.removeMode=false;
 });
 
 // ── Commentaires sur badges GANTT→PR ────────────────────────────────
