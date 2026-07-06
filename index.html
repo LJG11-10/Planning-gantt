@@ -4640,16 +4640,22 @@ function sendModif(actId,doSend){
               '<p style="margin-top:20px;font-size:12px;color:#888">Planning Pétrole — ELS/Génesienne</p>';
     fetch('https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels',{
       method:'POST',
-      headers:{'Content-Type':'application/json','apikey':'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU'},
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU',
+        'apikey':'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU'
+      },
       body:JSON.stringify({emails:emails,subject:sujet,html:corps})
     }).then(function(res){
-      return res.json().then(function(data){
-        if(res.ok&&data.ok){
+      var status=res.status;
+      return res.text().then(function(txt){
+        var data={};try{data=JSON.parse(txt);}catch(e){}
+        if(status===200&&data.ok){
           _save(true);
           alert('✅ Mail envoyé à : '+emails.join(', '));
         } else {
           _save(false);
-          alert('⚠️ Modification enregistrée.\nErreur envoi mail : '+(data.error||data.reason||JSON.stringify(data))+'\n\nVérifiez que l\'Edge Function a bien été mise à jour sur Supabase.');
+          alert('⚠️ Modification enregistrée sans envoi.\n\nRéponse Supabase (status '+status+') :\n'+txt.slice(0,300)+'\n\nSi le statut est 200 mais "skipped:true", l\'Edge Function n\'est pas à jour.');
         }
       });
     }).catch(function(e){_save(false);alert('❌ Erreur réseau : '+String(e));});
@@ -4682,15 +4688,15 @@ function openAffaireInfos(){
   }).join('');
   ov.innerHTML='<div style="background:var(--bg2);border-radius:14px;padding:28px 32px;width:640px;max-width:100%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit">'+
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
-    '<h2 style="font-size:17px;font-weight:900;color:var(--tx);margin:0">ℹ️ Infos — '+esc(STORE.current)+'</h2>'+
+    '<h2 style="font-size:17px;font-weight:900;color:var(--tx);margin:0">ℹ️ Infos — '+escHtml(STORE.current)+'</h2>'+
     '<button onclick="document.getElementById(\'_affInfoModal\').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--tx3)">×</button></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
     '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">N° D\'AFFAIRE</label>'+
-    '<input id="aif-num" value="'+esc(infos.numero||STORE.current)+'" style="width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
+    '<input id="aif-num" value="'+escHtml(infos.numero||STORE.current)+'" style="width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
     '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">DATE DE CRÉATION</label>'+
     '<input id="aif-date" type="date" value="'+(infos.dateCreation||'')+'" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div></div>'+
     '<div style="margin-bottom:18px"><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">LIBELLÉ</label>'+
-    '<input id="aif-lib" value="'+esc(infos.libelle||'')+'" placeholder="Libellé" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
+    '<input id="aif-lib" value="'+escHtml(infos.libelle||'')+'" placeholder="Libellé" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
     '<div style="font-size:11px;font-weight:800;color:var(--tx2);margin-bottom:10px">👥 RESPONSABLES</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">'+respHtml+'</div>'+
     '<div style="display:flex;gap:10px;justify-content:flex-end">'+
