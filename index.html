@@ -4533,6 +4533,9 @@ function switchProjet(k){
   }
 }
 // ── Renommer une affaire ──────────────────────────────────────────────
+// Fonction escape globale (utilisée dans buildModifPanel et ailleurs)
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
 function buildModifPanel(row){
   var p=currP()||{};
   var infos=(p&&p.infos)||{},resps=infos.responsables||{};
@@ -4550,7 +4553,7 @@ function buildModifPanel(row){
       var destLbl=(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Automatisme',be:'BE'}[d]||d;}).join(', ');
       h+='<div style="background:var(--bg3);border-radius:var(--r2);padding:10px 12px;margin-bottom:8px;border-left:4px solid '+col+'">';
       h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">';
-      h+='<div style="font-weight:700;color:var(--tx);font-size:13px;flex:1;word-break:break-word">'+esc(m.texte)+'</div>';
+      h+='<div style="font-weight:700;color:var(--tx);font-size:13px;flex:1;word-break:break-word">'+escHtml(m.texte)+'</div>';
       var delBtn='<button onclick="delModif(\''+row.id+'\','+i+')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 0 0 4px">\u00D7</button>';
       h+=delBtn+'</div>';
       h+='<div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">';
@@ -4636,12 +4639,20 @@ function sendModif(actId,doSend){
               '</table>'+
               '<p style="margin-top:20px;font-size:12px;color:#888">Planning Pétrole — ELS/Génesienne</p>';
     fetch('https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels',{
-      method:'POST',headers:{'Content-Type':'application/json'},
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU'},
       body:JSON.stringify({emails:emails,subject:sujet,html:corps})
     }).then(function(res){
-      if(res.ok){_save(true);alert('Mail envoyé à : '+emails.join(', '));}
-      else{_save(false);alert('Erreur envoi. Modification sauvegardée sans envoi.');}
-    }).catch(function(){_save(false);alert('Erreur réseau.');});
+      return res.json().then(function(data){
+        if(res.ok&&data.ok){
+          _save(true);
+          alert('✅ Mail envoyé à : '+emails.join(', '));
+        } else {
+          _save(false);
+          alert('⚠️ Modification enregistrée.\nErreur envoi mail : '+(data.error||data.reason||JSON.stringify(data))+'\n\nVérifiez que l\'Edge Function a bien été mise à jour sur Supabase.');
+        }
+      });
+    }).catch(function(e){_save(false);alert('❌ Erreur réseau : '+String(e));});
     return;
   }
   _save(false);
