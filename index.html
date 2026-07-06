@@ -404,32 +404,34 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
 <div id="login-screen" style="position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#1e3a5f 0%,#2563EB 60%,#1D4ED8 100%);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif">
   <div style="background:#fff;border-radius:20px;padding:40px 44px;width:400px;box-shadow:0 24px 80px rgba(0,0,0,.35)">
     <div style="text-align:center;margin-bottom:28px">
-      <div style="width:60px;height:60px;background:linear-gradient(135deg,#6457F4,#4A3FC0);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px"><svg width="36" height="36" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Sol / base -->
-  <rect x="8" y="68" width="64" height="5" rx="2.5" fill="white" opacity=".9"/>
-  <!-- Structure verticale (châssis A) -->
-  <line x1="34" y1="68" x2="26" y2="38" stroke="white" stroke-width="4" stroke-linecap="round"/>
-  <line x1="46" y1="68" x2="54" y2="38" stroke="white" stroke-width="4" stroke-linecap="round"/>
-  <!-- Traverse diagonale de renfort -->
-  <line x1="30" y1="54" x2="50" y2="47" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
-  <!-- Pivot / axe central -->
-  <circle cx="40" cy="36" r="4" fill="white"/>
-  <!-- Balancier (bras oscillant) — incliné légèrement -->
-  <!-- Côté avant (horsehead) -->
-  <line x1="40" y1="36" x2="18" y2="28" stroke="white" stroke-width="5" stroke-linecap="round"/>
-  <!-- Horsehead (tête en forme de cheval) -->
-  <path d="M18 28 Q14 24 12 28 Q14 33 18 31 Z" fill="white"/>
-  <!-- Côté arrière (contrepoids) -->
-  <line x1="40" y1="36" x2="64" y2="44" stroke="white" stroke-width="5" stroke-linecap="round"/>
-  <!-- Contrepoids (roue rouge) -->
-  <circle cx="66" cy="46" r="9" fill="#F5A524"/>
-  <circle cx="66" cy="46" r="5" fill="white" opacity=".3"/>
-  <line x1="61" y1="41" x2="71" y2="51" stroke="white" stroke-width="2" stroke-linecap="round" opacity=".6"/>
-  <line x1="71" y1="41" x2="61" y2="51" stroke="white" stroke-width="2" stroke-linecap="round" opacity=".6"/>
-  <!-- Tige de pompage verticale -->
-  <line x1="14" y1="31" x2="14" y2="68" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="4 3" opacity=".7"/>
-  <!-- Tête de puits (wellhead) -->
-  <rect x="10" y="63" width="8" height="6" rx="1.5" fill="white" opacity=".9"/>
+      <div style="width:72px;height:72px;background:linear-gradient(135deg,#92400E,#B45309);border-radius:18px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;box-shadow:0 8px 30px rgba(180,83,9,.5)"><svg width="40" height="40" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fond soleil dégradé -->
+  <circle cx="60" cy="40" r="28" fill="#F59E0B" opacity=".9"/>
+  <circle cx="60" cy="40" r="20" fill="#FBBF24"/>
+  <!-- Sol -->
+  <ellipse cx="50" cy="86" rx="44" ry="12" fill="white" opacity=".9"/>
+  <!-- Base mécanique -->
+  <rect x="26" y="68" width="24" height="14" rx="2" fill="white"/>
+  <!-- Vanne -->
+  <rect x="18" y="71" width="12" height="5" rx="1" fill="white"/>
+  <circle cx="20" cy="73" r="3.5" fill="#F59E0B" stroke="white" stroke-width="1.5"/>
+  <!-- Châssis A -->
+  <line x1="38" y1="68" x2="44" y2="44" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <line x1="50" y1="68" x2="56" y2="44" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <line x1="40" y1="59" x2="54" y2="59" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="42" y1="51" x2="52" y2="51" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <!-- Pivot -->
+  <circle cx="50" cy="43" r="3" fill="#F59E0B" stroke="white" stroke-width="2"/>
+  <!-- Balancier vers contrepoids (haut droite) -->
+  <line x1="50" y1="43" x2="76" y2="30" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <!-- Contrepoids -->
+  <rect x="72" y="22" width="11" height="10" rx="2" fill="white"/>
+  <!-- Balancier vers horsehead (gauche bas) -->
+  <line x1="50" y1="43" x2="28" y2="33" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <!-- Horsehead -->
+  <path d="M23 29 Q19 26 22 34 Q26 37 30 34 Z" fill="white"/>
+  <!-- Tige de pompage -->
+  <line x1="25" y1="33" x2="25" y2="68" stroke="white" stroke-width="2.5" stroke-dasharray="4 3" stroke-linecap="round" opacity=".7"/>
 </svg></div>
       <div id="login-title" style="font-size:20px;font-weight:900;color:#1A1917">Planning Pétrole</div>
       <div style="font-size:12px;color:#9A978F;margin-top:4px">Connectez-vous pour accéder au planning</div>
@@ -539,8 +541,6 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
     <button onclick="showClientDownloadModal()" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" title="Télécharger le planning simplifié (version client sans heures ni budget)">📄 Planning client</button>
     <button style="background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" onclick="openRappelsSettings()">&#128276; Rappels</button>
     <button style="background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 12px;cursor:pointer;font-family:inherit" onclick="openFortuitModal()" title="Ajouter un événement fortuit sur une activité">⚡ Fortuit</button>
-    <button class="btn btn-a" onclick="exportData()">↓ Export</button>
-    <label class="btn btn-g" style="cursor:pointer">↑ Import<input type="file" accept=".json" style="display:none" onchange="importData(event)"></label>
   </div>
 </div>
 
@@ -4209,56 +4209,52 @@ function renderFiche(){
       var linesHtml='';
       for(var li=0;li<lines.length;li++){
         var ln=lines[li];
-        var actAff=ln.affId||selAff;
-        var actSrc=(STORE.projects[actAff]||{data:[]}).data;
-        var actSrcById={};actSrc.forEach(function(a){actSrcById[a.id]=a;});
-        var act=ln.actId?(actSrcById[ln.actId]||actById[ln.actId]):null;
-        var ph=act?PH_get(act.pk):null;
-        var pill=act?'<span style="display:block;padding:1px 5px;border-radius:20px;background:'+ph.h+';color:#fff;font-size:8px;font-weight:700;text-align:center;margin-bottom:2px">'+(ln.affId&&ln.affId!==selAff?'['+ln.affId+'] ':'')+act.lb+'</span>':'';
-        // Build opts from ALL affaires, grouped by affaire > phase > sub-phase
-        var selOpts='';
-        Object.keys(STORE.projects).sort().filter(function(aff){
-          return !(STORE.projects[aff]&&STORE.projects[aff].closed);
-        }).forEach(function(aff){
-          var aData=(STORE.projects[aff].data||[]);
-          var aActs=aData.filter(function(r){return r.t==='act';});
-          if(!aActs.length)return;
-          // Group by phase with colored optgroups
-          var phases=[...new Set(aActs.map(function(a){return a.pk;}))];
-          phases.forEach(function(pk){
-            var ph2=PH_get(pk);
-            var pkActs=aActs.filter(function(a){return a.pk===pk;});
-            if(!pkActs.length)return;
-            selOpts+='<optgroup label="'+aff+' — '+pk+'" style="background:'+ph2.h+';color:#fff">';
-            var curSub2='';
-            aData.filter(function(r){return r.pk===pk;}).forEach(function(r){
-            if(r.t==='sb'){curSub2=r.lb;return;}
-            if(r.t!=='act')return;
-            var lbl2='  '+(curSub2?curSub2+' › ':'')+r.lb;
-            var val2=aff+'::'+r.id;
-            var prevVal=ln.affId?ln.affId+'::'+ln.actId:ln.actId;
-            var ph3=PH_get(r.pk);
-            selOpts+='<option value="'+val2+'"'+(prevVal===val2||(!ln.affId&&ln.actId===r.id)?' selected':'')
-              +' style="background:'+ph3.xl+';color:'+ph3.t+'">'
-              +lbl2+'</option>';
-          });
-          selOpts+='</optgroup>';
-          });
+        // ── Dropdown 1 : Affaire ──────────────────────────────────────
+        var affOpts='<option value="">— Choisir une affaire —</option>';
+        Object.keys(STORE.projects).sort().filter(function(a2){
+          return !(STORE.projects[a2]&&STORE.projects[a2].closed);
+        }).forEach(function(a2){
+          affOpts+='<option value="'+a2+'"'+(ln.affId===a2?' selected':'')+'>'+a2+'</option>';
         });
-        linesHtml+='<div style="background:'+(li%2?'var(--bg3)':'var(--bg2)')+';border:1px solid var(--bd);border-radius:3px;padding:4px;margin-bottom:3px">'
-          +pill
-          +'<select onchange="fhLineSet(window._fhAff,window._fhNm,'+w+','+di+','+li+',\'actId\',this.value)" '
-          +'style="width:100%;border:1px solid var(--bd);border-radius:3px;padding:2px 4px;font-size:9px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;margin-bottom:3px">'
-          +'<option value="">— Activité —</option>'+selOpts
-          +'</select>'
-          +'<div style="display:flex;align-items:center;gap:3px">'
-          +'<input type="number" min="0" max="24" step="0.5" value="'+(ln.hours===''?'':ln.hours)+'" placeholder="0 H" '
-          +'style="flex:1;border:1px solid var(--bd);border-radius:3px;padding:3px 4px;font-size:12px;font-weight:700;font-family:\'Courier New\',monospace;color:var(--ac);background:'+(isTD?'#FEF9C3':'var(--bg2)')+';outline:none;text-align:center;-moz-appearance:textfield;min-width:0" '
+        // ── Dropdown 2 : Activité (si affaire sélectionnée) ──────────
+        var selAff2=ln.affId||'';
+        var actOpts='<option value="">— Choisir une activit\u00E9 —</option>';
+        if(selAff2){
+          var aData2=(STORE.projects[selAff2]&&STORE.projects[selAff2].data)||[];
+          var _curPk3b='';
+          aData2.forEach(function(r2){
+            if(r2.t==='ph'){_curPk3b=r2.pk;return;}
+            if(r2.t!=='sb')return;
+            var _ph3b=PH_get(_curPk3b);
+            actOpts+='<option value="sb::'+r2.id+'"'+(ln.actId===('sb::'+r2.id)?' selected':'')
+              +' style="background:'+_ph3b.f+';color:'+_ph3b.xd+';font-weight:700">'
+              +r2.lb+'</option>';
+          });
+        }
+        // ── Ligne HTML ────────────────────────────────────────────────
+        linesHtml+='<div style="background:'+(li%2?'var(--bg3)':'var(--bg2)')+';border:1px solid var(--bd);border-radius:4px;padding:5px;margin-bottom:4px">'
+          // Dropdown affaire
+          +'<div style="font-size:8px;font-weight:700;color:var(--tx3);margin-bottom:2px">AFFAIRE</div>'
+          +'<select onchange="fhLineSetAff(window._fhAff,window._fhNm,'+w+','+di+','+li+',this.value)" '
+          +'style="width:100%;border:1px solid var(--bd);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;margin-bottom:5px">'
+          +affOpts+'</select>'
+          // Dropdown activité (si affaire choisie)
+          +(selAff2
+            ?'<div style="font-size:8px;font-weight:700;color:var(--ac);margin-bottom:2px">ACTIVIT\u00C9</div>'
+             +'<select onchange="fhLineSet(window._fhAff,window._fhNm,'+w+','+di+','+li+',\'actId\',this.value)" '
+             +'style="width:100%;border:1px solid var(--ac);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;margin-bottom:5px">'
+             +actOpts+'</select>'
+            :'')
+          // Heures + supprimer
+          +'<div style="display:flex;align-items:center;gap:4px">'
+          +'<span style="font-size:8px;color:var(--tx3);font-weight:700">HEURES</span>'
+          +'<input type="number" min="0" max="24" step="0.5" value="'+(ln.hours===''?'':ln.hours)+'" placeholder="0" '
+          +'style="flex:1;border:1px solid var(--bd);border-radius:3px;padding:3px 4px;font-size:12px;font-weight:700;font-family:\'Courier New\',monospace;color:var(--ac);background:'+(isTD?'#FEF9C3':'var(--bg2)')+';outline:none;text-align:center;min-width:0" '
           +'oninput="fhLineSet(window._fhAff,window._fhNm,'+w+','+di+','+li+',\'hours\',this.value)" '
           +'onblur="fhLineSet(window._fhAff,window._fhNm,'+w+','+di+','+li+',\'hours\',this.value)">'
           +'<span style="font-size:9px;color:var(--tx3)">H</span>'
           +'<button onclick="fhLineDel(window._fhAff,window._fhNm,'+w+','+di+','+li+')" '
-          +'style="background:none;border:1px solid var(--bd);border-radius:3px;cursor:pointer;color:var(--tx3);font-size:10px;padding:1px 4px;flex-shrink:0">✕</button>'
+          +'style="background:none;border:1px solid var(--rd);border-radius:3px;cursor:pointer;color:var(--rd);font-size:10px;padding:1px 5px">\u2715</button>'
           +'</div></div>';
       }
       dayCellsHtml+='<td style="vertical-align:top;padding:4px;border-left:1px solid var(--bd);background:'+(isTD?'#FFFBEB':'inherit')+'">'
@@ -4496,7 +4492,18 @@ function renderProjSel(){
     var opt=document.createElement('option');
     opt.value=k;  // .value property handles any chars correctly
     opt.selected=(k===STORE.current);
-    opt.textContent=k+(STORE.projects[k]&&STORE.projects[k].closed?' ✓ archivée':'');
+    var _pinf=(STORE.projects[k]&&STORE.projects[k].infos)||{};
+    var _plbl='';
+    if(_pinf.libelle){
+      // Nouvelle affaire : N°client | N°ELS | Libellé
+      if(_pinf.numeroClient)_plbl+=_pinf.numeroClient+' | ';
+      _plbl+=(_pinf.numero||k);
+      _plbl+=' | '+_pinf.libelle.substring(0,30);
+    } else {
+      // Ancienne affaire : juste la clé
+      _plbl=k;
+    }
+    opt.textContent=_plbl+(STORE.projects[k]&&STORE.projects[k].closed?' ✓ archivée':'');
     _opts.push(opt.outerHTML);
   });
   el.innerHTML=_opts.join('');
@@ -4702,10 +4709,10 @@ function openAffaireInfos(){
     '<h2 style="font-size:17px;font-weight:900;color:var(--tx);margin:0">'+
     '\u2139\uFE0F Infos \u2014 '+escHtml(STORE.current)+'</h2>'+
     '<button id="_aif_close" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--tx3)">\u00D7</button></div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">'+
     '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">'+
     'N\u00B0 D\u2019AFFAIRE</label>'+
-    '<input id="aif-num" value="'+escHtml(infos.numero||STORE.current)+'" style="width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
+    '<input id="aif-num" value="'+escHtml(infos.numero||STORE.current)+'" style="width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+'<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">N° AFFAIRE CLIENT</label>'+'<input id="aif-num-client" value="'+escHtml(infos.numeroClient||'')+'" placeholder="Ex: OGDCL-2025" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
     '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">'+
     'DATE DE CR\u00C9ATION</label>'+
     '<input id="aif-date" type="date" value="'+(infos.dateCreation||'')+'" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div></div>'+
@@ -4745,7 +4752,8 @@ function saveAffaireInfos(){
     resps[k]={nom:nom,emails:emails};
   });
   if(!p.infos)p.infos={};
-  p.infos.numero=num;p.infos.libelle=lib;p.infos.dateCreation=dateC;p.infos.responsables=resps;
+  var numCli=((document.getElementById('aif-num-client')||{}).value||'').trim();
+  p.infos.numero=num;p.infos.numeroClient=numCli;p.infos.libelle=lib;p.infos.dateCreation=dateC;p.infos.responsables=resps;
   saveNow();document.getElementById('_affInfoModal').remove();renderProjSel();
 }
 
@@ -4829,10 +4837,9 @@ function showNewAffaireForm(){
     '<div style="margin-bottom:16px;padding:12px 16px;background:var(--bg3);border-radius:var(--r2);border:1px solid var(--bd)">'+
     '<label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:6px">📋 COPIER DEPUIS (optionnel)</label>'+
     '<select id="naf-copy" style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+affOpts+'</select></div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
-    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">N° D\'AFFAIRE *</label>'+
-    '<input id="naf-num" placeholder="ELS2601051" style="width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
-    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">DATE DE CRÉATION</label>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">'+
+    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">N° AFFAIRE ELS *</label>'+'<input id="naf-num" placeholder="ELS2601051" style="width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+'<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">N° AFFAIRE CLIENT</label>'+'<input id="naf-num-client" placeholder="Ex: OGDCL-2025" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
+    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">N° AFFAIRE CLIENT</label>'+'<input id="aif-num-client" value="'+escHtml(infos.numeroClient||'')+'" placeholder="Ex: OGDCL-2025" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+'<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">DATE DE CRÉATION</label>'+
     '<input id="naf-date" type="date" value="'+new Date().toISOString().slice(0,10)+'" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div></div>'+
     '<div style="margin-bottom:18px"><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">LIBELLÉ *</label>'+
     '<input id="naf-lib" placeholder="OGDCL Kunnar — MCC 7-1" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
@@ -4871,7 +4878,8 @@ function confirmNewAffaire(){
       if(row.t==='act'){row.p=[];delete row.prevDays;delete row.reelDays;delete row.rappels;row.s=0;row.e=0;row.hPrev=0;row.hReel=0;}
     });
   }
-  base.infos={numero:num,libelle:lib,dateCreation:dateC,responsables:resps};
+  var numClient=(document.getElementById('naf-num-client')||{}).value||'';
+  base.infos={numero:num,numeroClient:numClient,libelle:lib,dateCreation:dateC,responsables:resps};
   STORE.projects[num]=base;STORE.current=num;
   document.getElementById('_nafModal').remove();
   saveNow();renderProjSel();switchProjet(num);
@@ -5159,7 +5167,15 @@ function renderGantt(){
         +(_phReel>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">R:${_phReel}H</span>`:'')
         +(_phBudget>0&&_phPrev>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 4px;background:rgba(0,0,0,.2);border-radius:3px">${_phPrev>_phBudget?'⚠+'+(_phPrev-_phBudget)+'H':(_phPrev<_phBudget?'✓-'+(_phBudget-_phPrev)+'H':'=')}</span>`:'')
         +(!_phBudget&&_phPrev>0&&_phReel>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;opacity:.85">${_phDiff>0?'Δ+'+_phDiff:_phDiff<0?'Δ'+_phDiff:''}</span>`:'');
-      html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.h};padding:0 12px;font-size:13px;font-weight:700;color:#fff;height:25px;letter-spacing:1px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.25);display:flex;align-items:center">▶ &nbsp;${row.lb||row.pk}${_phBadge}</td><td colspan="${2+NC}" style="background:${ph.h};height:25px"></td></tr>`;return;
+      // Couleur selon statut de la phase
+      const _phBg=row.phStatus==='done'?'#059669':row.phStatus==='inprogress'?'#D97706':ph.h;
+      const _phStatusBadge=row.phStatus==='done'
+        ?`<span style="margin-left:10px;font-size:10px;font-weight:800;background:rgba(255,255,255,.25);padding:1px 8px;border-radius:10px">✓ Terminée</span>`
+        :row.phStatus==='inprogress'
+        ?`<span style="margin-left:10px;font-size:10px;font-weight:800;background:rgba(255,255,255,.25);padding:1px 8px;border-radius:10px">⚡ En cours</span>`
+        :'';
+      const _phStatusBtn=`<button onclick="event.stopPropagation();togglePhStatus('${row.id}')" title="Changer le statut de la phase" style="margin-left:auto;background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;padding:1px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">${row.phStatus==='done'?'✓':row.phStatus==='inprogress'?'⚡':'○'}</button>`;
+      html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${_phBg};padding:0 12px;font-size:13px;font-weight:700;color:#fff;height:25px;letter-spacing:1px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.25);display:flex;align-items:center">▶ &nbsp;${row.lb||row.pk}${_phStatusBadge}${_phBadge}${_phStatusBtn}</td><td colspan="${2+NC}" style="background:${_phBg};height:25px"></td></tr>`;return;
     }
     if(row.t==='sb'){
       // Calcul % sous-phase = tâches qui suivent jusqu'au prochain sb/ph
@@ -5236,9 +5252,15 @@ function renderGantt(){
         </td>`;
       }
     }
-    html+=`<tr class="ra" data-rid="${row.id}" style="height:79px">
+    // Statut visuel de la ligne
+    const todayD5=TODAY?(TODAY.w-1)*5+(TODAY.di||0):0;
+    const rowEndD5=row.e>0?(row.e-1)*5+(row.dEnd!=null?row.dEnd:4):0;
+    const isOverdue=!done&&!row.inProgress&&row.e>0&&todayD5>rowEndD5;
+    const rowBgColor=done?'rgba(209,250,229,.35)':row.inProgress?'rgba(254,243,199,.35)':isOverdue?'rgba(254,226,226,.35)':'transparent';
+    const rowBorderLeft=done?'3px solid var(--gn)':row.inProgress?'3px solid #D97706':isOverdue?'3px solid #DC2626':'none';
+    html+=`<tr class="ra" data-rid="${row.id}" style="height:79px;background:${rowBgColor}">
       
-      <td class="al s1" onclick="toggleExp('${row.id}')" style="cursor:pointer;" style="background:${isE?'var(--ac2)':done?'var(--gn2)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':'var(--tx)'};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
+      <td class="al s1" onclick="toggleExp('${row.id}')" style="cursor:pointer;background:${isE?'var(--ac2)':done?'rgba(209,250,229,.5)':row.inProgress?'rgba(254,243,199,.5)':isOverdue?'rgba(254,226,226,.5)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':row.inProgress?'#D97706':isOverdue?'#DC2626':'var(--tx)'};border-left:${rowBorderLeft};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
         <div style="display:flex;flex-direction:column;gap:1px;padding-left:2px;">
           <div style="display:flex;align-items:center;gap:3px;min-width:0;">
             <span onclick="event.stopPropagation();toggleDone('${row.id}')" title="${done?'Décocher':'Marquer terminé'}"
@@ -5258,7 +5280,7 @@ function renderGantt(){
               placeholder="%">
             `:''}          </div>
           <div style="display:flex;flex-wrap:wrap;gap:2px;padding-left:19px;">
-            ${!row.s?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-weight:700">📌 Non planifiée</span>':''}
+            ${(!row.s&&(!row.reelDays||!row.reelDays.length))?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-weight:700">📌 Non planifiée</span>':''}
             ${(row.hPrev>0)?'<span style="font-size:10px;color:var(--or);font-weight:600;padding:1px 4px;border-radius:3px;background:rgba(237,137,0,.1)">P:'+row.hPrev+'H</span>':''}
             ${row.hReel?`<span style="font-size:10px;color:var(--gn);font-weight:600;background:rgba(22,163,74,.1);padding:1px 4px;border-radius:3px">R:${row.hReel}H</span>`:''}
             ${diff!==null?`<span style="font-size:10px;font-weight:700;color:${diff<0?'var(--rd)':'var(--gn)'};padding:1px 3px;border-radius:3px">${diff>0?'+'+diff:diff}H</span>`:''}
@@ -5355,7 +5377,13 @@ function pedToggleArchive(aff, archive){
   // Update selector label
   var selEl=document.getElementById('sel-aff');
   if(selEl){for(var i=0;i<selEl.options.length;i++){
-    if(selEl.options[i].value===realAff){selEl.options[i].text=realAff+(archive?' ✓ archivée':'');break;}
+    if(selEl.options[i].value===realAff){var _pi3=(STORE.projects[realAff]&&STORE.projects[realAff].infos)||{};
+        var _lbl3='';
+        if(_pi3.libelle){
+          if(_pi3.numeroClient)_lbl3+=_pi3.numeroClient+' | ';
+          _lbl3+=(_pi3.numero||realAff)+' | '+_pi3.libelle.substring(0,30);
+        } else { _lbl3=realAff; }
+        selEl.options[i].text=_lbl3+(archive?' ✓ archivée':'');break;}
   }}
   // Re-render the editor
   renderPlanEditor();
@@ -5913,83 +5941,61 @@ function pedShowEditForm(id){
   if(!fa)return;
   fa.innerHTML='';
   var d=document.createElement('div');d.className='pf-box';
-
-  // Title
-  var ttl=document.createElement('div');ttl.className='pf-ttl';ttl.textContent='Modifier l\'activité';
+  var ttl=document.createElement('div');ttl.className='pf-ttl';
+  ttl.textContent='Modifier l\u2019activit\u00E9';
   d.appendChild(ttl);
 
-  function mkField(label,type,id,val,opts){
+  function mkF(lbl,type,eid,val,opts){
     var wrap=document.createElement('div');wrap.style.cssText='display:flex;flex-direction:column;gap:3px;min-width:120px';
-    var lbl=document.createElement('label');lbl.style.cssText='font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px';lbl.textContent=label;
-    var inp=document.createElement('input');inp.type=type;inp.id=id;inp.value=val||'';
+    var l=document.createElement('label');l.style.cssText='font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px';l.textContent=lbl;
+    var inp=document.createElement('input');inp.type=type;inp.id=eid;inp.value=val||'';
     inp.style.cssText='border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none';
-    if(opts){Object.keys(opts).forEach(function(k){inp[k]=opts[k];});}
-    wrap.appendChild(lbl);wrap.appendChild(inp);
-    return wrap;
+    if(opts)Object.keys(opts).forEach(function(k){inp[k]=opts[k];});
+    wrap.appendChild(l);wrap.appendChild(inp);return wrap;
   }
 
-  // Row 0: Nom + Groupe
-  var r0=document.createElement('div');r0.className='row';
-  var wNom=mkField('NOM DE L\'ACTIVITÉ','text','pf-lb',r.lb);
-  wNom.querySelector('input').style.flex='1';
-  var wGrp=mkField('GROUPE / SKID','text','pf-grp',r.grp||'');
-  r0.appendChild(wNom);r0.appendChild(wGrp);d.appendChild(r0);
+  // Nom + Groupe
+  var row0=document.createElement('div');row0.className='row';
+  row0.appendChild(mkF('NOM DE L\u2019ACTIVIT\u00C9','text','pf-lb',r.lb));
+  row0.appendChild(mkF('GROUPE / SKID','text','pf-grp',r.grp||''));
+  d.appendChild(row0);
 
-  // Separator
-  var sep1=document.createElement('div');sep1.style.cssText='font-size:9px;font-weight:700;color:var(--or);margin:10px 0 4px;letter-spacing:.5px';sep1.textContent='▶ PRÉVU';d.appendChild(sep1);
+  // H Prévues + H Réelles uniquement
+  var row1=document.createElement('div');row1.className='row';
+  row1.appendChild(mkF('H PR\u00C9VUES TOTAL','number','pf-hp',r.hPrev||0,{min:0,step:0.5}));
+  row1.appendChild(mkF('H R\u00C9ELLES TOTAL','number','pf-hr',r.hReel||0,{min:0,step:0.5}));
+  d.appendChild(row1);
 
-  // Row 1: Date début prévu + durée jours
-  var r1=document.createElement('div');r1.className='row';
-  var hStartP=r.hStart!=null?r.hStart:8;
-  var dDurP=r.dDur!=null?r.dDur:((r.e-r.s)*5+5);
-  var isoP=r._isoP||isoDate(r.s,r.dStart||0,hStartP);
-  var wDateP=mkField('DATE & HEURE DE DÉBUT','datetime-local','pf-date-p',isoP);
-  var wDurP=mkField('DURÉE (jours)','number','pf-dur-p',dDurP,{min:0,step:1});
-  var wHjP=mkField('H/JOUR','number','pf-hj-p',r.hDur||8,{min:0.5,max:24,step:0.5});
-  var wHpP=mkField('H PRÉVUES TOTAL','number','pf-hp',r.hPrev||0,{min:0});
-  r1.appendChild(wDateP);r1.appendChild(wDurP);r1.appendChild(wHjP);r1.appendChild(wHpP);
-  d.appendChild(r1);
-  // Live sync hours in edit form
-  var _durPInp=wDurP.querySelector('input');
-  var _hjPInp=wHjP.querySelector('input');
-  var _hpInp=wHpP.querySelector('input');
-  function _syncEditH(){
-    if(!_durPInp||!_hjPInp||!_hpInp)return;
-    var dur=Math.max(1,parseFloat(_durPInp.value)||1);
-    var hj=Math.max(0.5,parseFloat(_hjPInp.value)||8);
-    if(!_hpInp.dataset.manual)_hpInp.value=Math.round(dur*hj*10)/10;
-  }
-  _durPInp.oninput=function(){_syncEditH();};
-  _hjPInp.oninput=function(){_syncEditH();};
-  _hpInp.oninput=function(){_hpInp.dataset.manual='1';};
+  // Info barres GANTT
+  var prevLen=(r.prevDays&&r.prevDays.length)||0;
+  var reelLen=(r.reelDays&&r.reelDays.length)||0;
+  var info=document.createElement('div');
+  info.style.cssText='font-size:10px;color:var(--tx3);margin:8px 0;padding:6px 10px;background:var(--bg3);border-radius:var(--r);border-left:3px solid var(--ac)';
+  info.textContent=prevLen||reelLen
+    ?('\uD83D\uDCCC Barres GANTT\u00A0: Pr\u00E9vu '+prevLen+' j | R\u00E9el '+reelLen+' j \u2014 \u00E0 modifier sur le GANTT')
+    :('\uD83D\uDCCC Aucune barre pos\u00E9e \u2014 cliquez sur le GANTT pour placer');
+  d.appendChild(info);
 
-  // Separator
-  var sep2=document.createElement('div');sep2.style.cssText='font-size:9px;font-weight:700;color:var(--gn);margin:10px 0 4px;letter-spacing:.5px';sep2.textContent='▶ RÉEL';d.appendChild(sep2);
-
-  // Row 2: Date début réel + durée jours réel
-  var r2=document.createElement('div');r2.className='row';
-  var hStartR=r.hStartR!=null?r.hStartR:(r.hStart||8);
-  var dDurR=r.dDurR!=null?r.dDurR:dDurP;
-  var isoR=r._isoR||isoDate(r.sReel||r.s,r.dStartR!=null?r.dStartR:(r.dStart||0),hStartR);
-  var wDateR=mkField('DATE & HEURE DE DÉBUT','datetime-local','pf-date-r',isoR);
-  var wDurR=mkField('DURÉE RÉELLE (jours)','number','pf-dur-r',dDurR,{min:0,step:1});
-  var wHjR=mkField('H/JOUR RÉEL','number','pf-hj-r',r.hDurR||r.hDur||8,{min:0.5,max:24,step:0.5});
-  var wHrR=mkField('H RÉELLES TOTAL','number','pf-hr',r.hReel||0,{min:0});
-  r2.appendChild(wDateR);r2.appendChild(wDurR);r2.appendChild(wHjR);r2.appendChild(wHrR);
-  d.appendChild(r2);
-
-  // Buttons
+  // Boutons
   var btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:8px;margin-top:14px';
-  var ok=document.createElement('button');ok.className='btn btn-a';ok.textContent='✓ Sauvegarder';
-  ok.onclick=function(){pedSaveEdit(id);};
+  var ok=document.createElement('button');ok.className='btn btn-a';ok.textContent='\u2713 Sauvegarder';
+  ok.onclick=function(){
+    var get=function(eid){var el=document.getElementById(eid);return el?el.value:'';};
+    if(get('pf-lb').trim())r.lb=get('pf-lb').trim();
+    if(get('pf-grp').trim())r.grp=get('pf-grp').trim();
+    r.hPrev=parseFloat(get('pf-hp'))||0;
+    r.hReel=parseFloat(get('pf-hr'))||0;
+    if(r.hPrev===0){r.s=0;r.e=0;r.prevDays=[];}
+    if(r.hReel===0){r.sReel=0;r.eReel=0;r.reelDays=[];}
+    saveNow();clearFormArea();renderPlanEditor();refreshAllTabs();
+  };
   var cancel=document.createElement('button');cancel.className='btn btn-g';cancel.textContent='Annuler';
   cancel.onclick=clearFormArea;
-  btnRow.appendChild(ok);btnRow.appendChild(cancel);d.appendChild(btnRow);
-
+  btnRow.appendChild(ok);btnRow.appendChild(cancel);
+  d.appendChild(btnRow);
   fa.appendChild(d);
   fa.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
-
 
 function pedSaveEdit(id){
   var r=D().find(function(x){return x.id===id;});if(!r)return;
@@ -5997,10 +6003,16 @@ function pedSaveEdit(id){
   if(get('pf-lb').trim())r.lb=get('pf-lb').trim();
   if(get('pf-grp').trim())r.grp=get('pf-grp').trim();
   // H totals
-  r.hPrev=+get('pf-hp')||0;r.hReel=+get('pf-hr')||0;
-  // PRÉVU: date + durée jours
-  var isoP=get('pf-date-p');var durP=Math.max(1,+get('pf-dur-p')||1);var hjP=+get('pf-hj-p')||8;
-  if(isoP){
+  var hPrevVal=parseFloat(get('pf-hp'))||0;
+  var hReelVal=parseFloat(get('pf-hr'))||0;
+  r.hPrev=hPrevVal; r.hReel=hReelVal;
+  // PRÉVU: si hPrev=0 → non planifié (vider barres + semaines)
+  var isoP=get('pf-date-p');var durP=Math.max(0,+get('pf-dur-p')||0);var hjP=+get('pf-hj-p')||8;
+  if(hPrevVal===0||durP===0){
+    // Non planifié : effacer les barres prévu
+    r.s=0;r.e=0;r.sPrev=0;r.ePrev=0;r.dDur=0;
+    r.prevDays=[];
+  } else if(isoP){
     r._isoP=isoP;
     var wdhP=dateToWkDay(isoP);
     if(wdhP){
@@ -6008,11 +6020,18 @@ function pedSaveEdit(id){
       r.dDur=durP;r.hDur=hjP;
       var totalP=wdhP.d+(durP-1);
       r.e=Math.min(52,wdhP.w+Math.floor(totalP/7));r.ePrev=r.e;r.dEnd=totalP%7;
+      // Générer prevDays depuis la plage date+durée
+      var _startD5P=(r.s-1)*5+r.dStart;
+      var _endD5P=(r.e-1)*5+r.dEnd;
+      r.prevDays=[];for(var _pi=_startD5P;_pi<=_endD5P;_pi++)r.prevDays.push(_pi);
     }
   }
-  // RÉEL: date + durée jours
-  var isoR=get('pf-date-r');var durR=Math.max(1,+get('pf-dur-r')||1);var hjR=+get('pf-hj-r')||hjP;
-  if(isoR){
+  // RÉEL: si hReel=0 → effacer barres réel
+  var isoR=get('pf-date-r');var durR=Math.max(0,+get('pf-dur-r')||0);var hjR=+get('pf-hj-r')||hjP;
+  if(hReelVal===0||durR===0){
+    r.sReel=0;r.eReel=0;r.dDurR=0;
+    r.reelDays=[];
+  } else if(isoR){
     r._isoR=isoR;
     var wdhR=dateToWkDay(isoR);
     if(wdhR){
@@ -6020,6 +6039,10 @@ function pedSaveEdit(id){
       r.dDurR=durR;r.hDurR=hjR;
       var totalR=wdhR.d+(durR-1);
       r.eReel=Math.min(52,wdhR.w+Math.floor(totalR/7));
+      // Générer reelDays
+      var _startD5R=(r.sReel-1)*5+r.dStartR;
+      var _endD5R=(r.eReel-1)*5+(r.dEndR!=null?r.dEndR:4);
+      r.reelDays=[];for(var _ri=_startD5R;_ri<=_endD5R;_ri++)r.reelDays.push(_ri);
     }
   }
   saveNow();clearFormArea();renderPlanEditor();refreshAllTabs();
@@ -6443,6 +6466,17 @@ function fhPut(aff,nm,w,d,lines){
   // Auto-sync to GANTT on every fiche save
   syncFichesToGantt();
 }
+function fhLineSetAff(aff,nm,wk,d,ei,newAff){
+  // Utiliser fhGet/fhPut (same as fhLineSet) pour écrire au bon endroit
+  var a=window._fhAff||aff;
+  var lines=fhGet(a,nm,wk,d).slice();
+  while(lines.length<=ei)lines.push({actId:'',hours:''});
+  lines[ei].affId=newAff;
+  lines[ei].actId=''; // réinitialiser l'activité
+  fhPut(a,nm,wk,d,lines);
+  renderFiche();
+}
+
 function fhLineSet(aff,nm,w,d,li,field,val){
   var lines=fhGet(aff,nm,w,d).slice();
   while(lines.length<=li)lines.push({actId:'',hours:''});
@@ -6960,6 +6994,15 @@ function toggleInProgress(id){
 var _gc = {active:false, rid:null, w1:0, d1:0, w2:0, d2:0};
 window._ganttBarMode = 'prev';
 
+// ── Statut des phases (terminé/en cours) ─────────────────────────────
+function togglePhStatus(rowId){
+  var r=D().find(function(x){return x.id===rowId;});
+  if(!r||r.t!=='ph')return;
+  var cur=r.phStatus||'';
+  r.phStatus=cur===''?'done':cur==='done'?'inprogress':'';
+  saveNow();renderGantt();
+}
+
 function setGanttMode(mode, rid){
   window._ganttBarMode = mode;
   // Mettre à jour le style des boutons
@@ -7245,7 +7288,13 @@ function updActFull(id,f,v){
   const r=D().find(x=>x.id===id);if(!r)return;
   if(f==='s'){r.s=Math.min(52,Math.max(1,+v||1));if(r.e<r.s)r.e=r.s;r.sPrev=r.s;r.sReel=r.s;}
   else if(f==='e'){r.e=Math.min(52,Math.max(1,+v||1));if(r.s>r.e)r.s=r.e;r.ePrev=r.e;r.eReel=r.e;}
-  else r[f]=v;
+  else {
+    r[f]=v;
+    // Si hPrev=0 → effacer barres prévu et mettre non planifié
+    if(f==='hPrev'&&(+v||0)===0){r.s=0;r.e=0;r.sPrev=0;r.ePrev=0;r.dDur=0;r.prevDays=[];}
+    // Si hReel=0 → effacer barres réel
+    if(f==='hReel'&&(+v||0)===0){r.sReel=0;r.eReel=0;r.dDurR=0;r.reelDays=[];}
+  }
   updBudget();
   clearTimeout(updActFull._t);
   updActFull._t=setTimeout(function(){saveNow();},300);
@@ -7793,6 +7842,21 @@ function renderRecap(){
 
   const phases=Object.keys(getPH()).filter(function(pk){return D().some(function(r){return r.pk===pk&&r.t==='act';});});
 
+  // ── Infos affaire ──────────────────────────────────────────────────
+  const _pi=currP()&&currP().infos?currP().infos:{};
+  const _pr=_pi.responsables||{};
+  const _respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'Études"}];
+  const _respCards=_respDefs.map(function(rd){
+    const resp=_pr[rd.k]||{};
+    if(!resp.nom&&!(resp.emails&&resp.emails.length))return '';
+    const emails=(resp.emails||[]).filter(function(e){return e&&e.trim();});
+    return '<div style="background:var(--bg2);border-radius:var(--r2);padding:10px 14px;border:1px solid var(--bd);border-top:3px solid var(--ac)">'+
+      '<div style="font-size:9px;font-weight:800;color:var(--ac);margin-bottom:4px;letter-spacing:.5px">'+rd.l+'</div>'+
+      (resp.nom?'<div style="font-weight:700;color:var(--tx);font-size:12px;margin-bottom:3px">'+resp.nom+'</div>':'')+
+      (emails.length?emails.map(function(e){return '<div style="font-size:10px;color:var(--tx3)">📧 '+e+'</div>';}).join(''):'')+
+      '</div>';
+  }).filter(Boolean).join('');
+
   let html=`<div class="pg-ttl" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
     <span>RÉCAPITULATIF — <span style="color:var(--ac)">${STORE.current}</span></span>
     <div style="display:flex;gap:8px">
@@ -7800,6 +7864,21 @@ function renderRecap(){
       <button class="btn btn-g" onclick="exportRecapHTML()" style="font-size:11px">↓ Export HTML</button>
     </div>
   </div>`;
+
+  // Carte infos affaire (si infos renseignées)
+  if(_pi.numero||_pi.libelle||_respCards){
+    html+=`<div style="background:var(--bg3);border-radius:var(--r2);border:1px solid var(--bd);padding:14px 18px;margin-bottom:18px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:12px;flex-wrap:wrap">
+        <div>
+          ${_pi.numero?`<div style="font-size:18px;font-weight:900;color:var(--tx);letter-spacing:.5px">${_pi.numero}${_pi.numeroClient?` <span style="font-size:13px;font-weight:600;color:var(--tx3);margin-left:8px">(Client: ${_pi.numeroClient})</span>`:''}</div>`:''}
+          ${_pi.libelle?`<div style="font-size:13px;color:var(--tx2);font-weight:600;margin-top:2px">${_pi.libelle}</div>`:''}
+          ${_pi.dateCreation?`<div style="font-size:10px;color:var(--tx3);margin-top:4px">📅 Créé le ${new Date(_pi.dateCreation).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'})}</div>`:''}
+        </div>
+        <button onclick="openAffaireInfos()" style="padding:5px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;color:var(--tx2);white-space:nowrap;flex-shrink:0">✏️ Modifier</button>
+      </div>
+      ${_respCards?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">${_respCards}</div>`:''}
+    </div>`;
+  }
 
   phases.forEach(pk=>{
     const ph=PH_get(pk);
