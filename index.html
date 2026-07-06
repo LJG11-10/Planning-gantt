@@ -224,7 +224,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
 
 /* ── EXPAND PANEL ── */
 .ep{background:transparent!important}.ep td{padding:0;background:transparent}
-.ei{padding:8px 14px 10px;border-bottom:2px solid var(--ei-c,#ccc);position:sticky;left:0;width:min(97vw,880px);background:inherit}
+.ei{padding:8px 14px 10px;border-bottom:2px solid var(--ei-c,#ccc);position:sticky;left:0;width:min(97vw,880px);background:inherit;display:inline-block;vertical-align:top;box-sizing:border-box}
 .ei-x{position:absolute;top:6px;right:7px;width:18px;height:18px;border-radius:50%;background:var(--bg4);border:1px solid var(--bd);cursor:pointer;font-size:12px;color:var(--tx2);display:flex;align-items:center;justify-content:center}
 .ei-x:hover{background:var(--rd2);color:var(--rd)}
 .ei-ttl{font-size:11px;font-weight:700;letter-spacing:.8px;color:var(--tx2);margin-bottom:7px;padding-right:22px}
@@ -548,7 +548,8 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
   <span class="lbl">AFFAIRE</span>
   <select id="sel-aff" onchange="switchProjet(this.value)"></select>
   <button class="btn-np" onclick="openModal('new')">+ Nouvelle</button>
-  <button class="btn-da" onclick="openRenameModal()" title="Renommer l'affaire courante">✏️</button>
+  <button class="btn-da" onclick="openAffaireInfos()" title="Infos affaire">ℹ️</button>
+  <button class="btn-da" onclick="openRenameModal()" title="Renommer">✏️</button>
   <button class="btn-da" onclick="openModal('del')">🗑</button>
   <div class="sep"></div>
   <span class="lbl">BUDGET</span>
@@ -1000,11 +1001,11 @@ function updActFromDate(id,field,isoVal){
         const etd=document.createElement('tr');etd.id='exp-panel-row';
         const td2=document.createElement('td');td2.setAttribute('colspan','999');td2.style.padding='0';
         td2.onclick=function(e){e.stopPropagation();};
-        td2.innerHTML=buildExpandPanel(r2,ph,(r2.e-r2.s+1)*5);
+        td2.innerHTML=buildFullExpPanel(r2,ph,(r2.e-r2.s+1)*5);
         etd.appendChild(td2);tr.after(etd);
       }
     } else {
-      try{if(document.body.contains(pr)){const r2=D().find(x=>x.id===id);const ph=PH_get(r2.pk);pr.querySelector('td').innerHTML=buildExpandPanel(r2,ph,(r2.e-r2.s+1)*5);}}catch(e){}
+      try{if(document.body.contains(pr)){const r2=D().find(x=>x.id===id);const ph=PH_get(r2.pk);pr.querySelector('td').innerHTML=buildFullExpPanel(r2,ph,(r2.e-r2.s+1)*5);}}catch(e){}
     }
   });
 }
@@ -1143,26 +1144,36 @@ function loadStore(){
       // prendre l'union de local + remote pour ne rien perdre
       var localProjs=STORE.projects||{};
       STORE.projects=Object.assign({},remote.projects,localProjs);
-      // Pour le reste (weekPlan, absences, etc.) : remote a la priorité
+      // !! IMPORTANT : charger _deletedPersons EN PREMIER pour filtrer correctement
+      if(remote._deletedPersons)
+        STORE._deletedPersons=Object.assign({},remote._deletedPersons,STORE._deletedPersons||{});
+      var _delAll=STORE._deletedPersons||{};
+
       if(remote.weekPlan)STORE.weekPlan=Object.assign({},remote.weekPlan,STORE.weekPlan||{});
+
+      // Absences : filtrer les personnes supprimées
       if(remote.absences){
-        var _del=STORE._deletedPersons||{};
-        // Ne pas réimporter les entrées des personnes supprimées
         var _filtAbs={};
-        Object.keys(remote.absences).forEach(function(k){if(!_del[k])_filtAbs[k]=remote.absences[k];});
+        Object.keys(remote.absences).forEach(function(k){if(!_delAll[k])_filtAbs[k]=remote.absences[k];});
         STORE.absences=Object.assign({},_filtAbs,STORE.absences||{});
-        // S'assurer que les supprimées localement ne reviennent pas
-        Object.keys(_del).forEach(function(k){delete STORE.absences[k];});
+        Object.keys(_delAll).forEach(function(k){delete STORE.absences[k];});
       }
+
+      // globalPersons : filtrer les personnes supprimées
       if(remote.globalPersons){
-        var _del2=STORE._deletedPersons||{};
         var _filtGP={};
-        Object.keys(remote.globalPersons).forEach(function(k){if(!_del2[k])_filtGP[k]=remote.globalPersons[k];});
+        Object.keys(remote.globalPersons).forEach(function(k){if(!_delAll[k])_filtGP[k]=remote.globalPersons[k];});
         STORE.globalPersons=Object.assign({},_filtGP,STORE.globalPersons||{});
-        // S'assurer que les supprimées localement ne reviennent pas
-        Object.keys(_del2).forEach(function(k){delete STORE.globalPersons[k];});
+        Object.keys(_delAll).forEach(function(k){delete STORE.globalPersons[k];});
       }
-      if(remote.conges)STORE.conges=Object.assign({},remote.conges,STORE.conges||{});
+
+      // conges : filtrer les personnes supprimées
+      if(remote.conges){
+        var _filtConges={};
+        Object.keys(remote.conges).forEach(function(k){if(!_delAll[k])_filtConges[k]=remote.conges[k];});
+        STORE.conges=Object.assign({},_filtConges,STORE.conges||{});
+        Object.keys(_delAll).forEach(function(k){delete STORE.conges[k];});
+      }
     }
     // Uploader immédiatement sur Supabase (fusion des données de tout le monde)
     supaSave(STORE);
@@ -3879,10 +3890,10 @@ function renderAbsences(){
   var absTab=window._absTab||'conges';
   window._absTab=absTab;
 
-  // ── Toutes les personnes (pour les congés)
-  // Filtre strict : seulement les personnes de l'annuaire actuel
+  // ── Personnes : directement depuis globalPersons (source de vérité)
   var _delP=STORE._deletedPersons||{};
-  var allNames=getAllPersons().filter(function(nm){return !_delP[nm];});
+  var _gp=STORE.globalPersons||{};
+  var allNames=Object.keys(_gp).filter(function(nm){return nm&&nm.trim()&&!_delP[nm];}).sort();
 
   // ── Alternants/Stagiaires (pour école/entreprise)
   var altMap={};
@@ -4522,6 +4533,165 @@ function switchProjet(k){
   }
 }
 // ── Renommer une affaire ──────────────────────────────────────────────
+function buildModifPanel(row){
+  var p=currP()||{};
+  var infos=(p&&p.infos)||{},resps=infos.responsables||{};
+  var mods=row.modifications||[];
+  var num=infos.numero||STORE.current||'',lib=infos.libelle||'';
+  var h='<div style="padding:14px 16px;font-family:inherit">';
+  h+='<div style="font-size:13px;font-weight:900;color:var(--tx);margin-bottom:12px;border-bottom:1px solid var(--bd);padding-bottom:8px">🔧 Modifications</div>';
+  if(mods.length){
+    h+='<div style="margin-bottom:12px">';
+    mods.slice().reverse().forEach(function(m,ri){
+      var i=mods.length-1-ri;
+      var col=m.envoye?'var(--gn)':'var(--or)';
+      var destLbl=(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Auto',be:'BE'}[d]||d;}).join(', ');
+      h+='<div style="background:var(--bg3);border-radius:var(--r2);padding:9px 11px;margin-bottom:5px;border-left:3px solid '+col+'">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:flex-start">';
+      h+='<div style="font-weight:600;color:var(--tx);font-size:11px;flex:1">'+esc(m.texte)+'</div>';
+      h+='<button onclick="delModif(\''+row.id+'\','+i+')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:13px;padding:0 0 0 6px">×</button>';
+      h+='</div>';
+      h+='<div style="font-size:9px;color:var(--tx3);margin-top:3px">'+m.date+(destLbl?' · '+destLbl:'')+(m.envoye?' · <span style="color:var(--gn)">✓ Envoyé</span>':' · <span style="color:var(--or)">⏳ Non envoyé</span>')+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+  } else {
+    h+='<div style="color:var(--tx3);font-size:11px;margin-bottom:12px;font-style:italic">Aucune modification.</div>';
+  }
+  h+='<div style="background:var(--bg3);border-radius:var(--r2);padding:12px;border:1px solid var(--bd)">';
+  h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:8px">+ NOUVELLE MODIFICATION</div>';
+  h+='<textarea id="modif-txt-'+row.id+'" placeholder="Ex : Changement de plan iss0.1" rows="3" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:7px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;resize:vertical;margin-bottom:10px"></textarea>';
+  h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:6px">📧 ENVOYER À</div>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">';
+  [{k:'els',l:'ELS',always:true},{k:'client',l:'Client',always:false},{k:'auto',l:'Automatisme',always:false},{k:'be',l:'BE',always:false}].forEach(function(rd){
+    var resp=resps[rd.k]||{};
+    var hasEmails=(resp.emails||[]).filter(function(e){return e&&e.trim();}).length>0;
+    var ok=rd.always||hasEmails;
+    var chk=rd.always||hasEmails?'checked':'';
+    var dis=rd.always?'disabled':'';
+    h+='<label style="display:flex;align-items:center;gap:5px;cursor:'+(ok?'pointer':'default')+';opacity:'+(ok?1:.45)+'">'+
+       '<input type="checkbox" id="modif-dest-'+rd.k+'-'+row.id+'" '+chk+' '+dis+'>'+
+       '<span style="font-size:11px;font-weight:600;color:var(--tx2)">'+rd.l+
+       (resp.nom?' <span style="color:var(--tx3);font-weight:400">('+resp.nom+')</span>':'')+
+       '</span></label>';
+  });
+  h+='</div>';
+  h+='<button onclick="sendModif(\''+row.id+'\',true)" style="width:100%;padding:9px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;margin-bottom:6px">📧 Enregistrer & Envoyer</button>';
+  h+='<button onclick="sendModif(\''+row.id+'\',false)" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);color:var(--tx2);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">💾 Enregistrer sans envoyer</button>';
+  h+='</div></div>';
+  return h;
+}
+function sendModif(actId,doSend){
+  var r=D().find(function(x){return x.id===actId;});if(!r)return;
+  var txt=(document.getElementById('modif-txt-'+actId)||{value:''}).value.trim();
+  if(!txt){alert('Entrez une description.');return;}
+  var p=currP(),infos=p.infos||{},resps=infos.responsables||{};
+  var num=infos.numero||STORE.current||'',lib=infos.libelle||STORE.current||'';
+  var dest=[],emails=[];
+  ['els','client','auto','be'].forEach(function(k){
+    var cb=document.getElementById('modif-dest-'+k+'-'+actId);
+    if(cb&&cb.checked){
+      dest.push(k);
+      var resp=resps[k]||{};
+      (resp.emails||[]).forEach(function(e){if(e&&e.trim()&&e.includes('@'))emails.push(e.trim());});
+    }
+  });
+  emails=emails.filter(function(e,i,a){return a.indexOf(e)===i;});
+  var now=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  var mod={texte:txt,date:now,dest:dest,envoye:false};
+  function _save(envoye){
+    mod.envoye=envoye;
+    if(!r.modifications)r.modifications=[];
+    r.modifications.push(mod);
+    saveNow();
+    var mp=document.getElementById('modif-panel-'+actId);
+    if(mp)mp.innerHTML=buildModifPanel(r);
+  }
+  if(doSend&&emails.length===0){alert('Aucun email configuré. Vérifiez les infos affaire (ℹ️).');_save(false);return;}
+  if(doSend){
+    var sujet='[ELS - '+num+'] Modification : '+r.lb;
+    var corps='<h2 style="color:#1F4E79">Notification de modification</h2>'+
+              '<table style="font-size:14px;border-collapse:collapse;width:100%">'+
+              '<tr><td style="padding:6px 12px;font-weight:700;width:160px">Affaire</td><td style="padding:6px 12px"><strong>'+num+'</strong> — '+lib+'</td></tr>'+
+              '<tr style="background:#F8F9FA"><td style="padding:6px 12px;font-weight:700">Tâche</td><td style="padding:6px 12px">'+r.lb+'</td></tr>'+
+              '<tr><td style="padding:6px 12px;font-weight:700">Date</td><td style="padding:6px 12px">'+now+'</td></tr>'+
+              '<tr style="background:#F8F9FA"><td style="padding:6px 12px;font-weight:700;vertical-align:top">Modification</td>'+
+              '<td style="padding:6px 12px;font-size:15px;color:#1F4E79;font-weight:700">'+txt+'</td></tr>'+
+              '</table>'+
+              '<p style="margin-top:20px;font-size:12px;color:#888">Planning Pétrole — ELS/Génesienne</p>';
+    fetch('https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({emails:emails,subject:sujet,html:corps})
+    }).then(function(res){
+      if(res.ok){_save(true);alert('Mail envoyé à : '+emails.join(', '));}
+      else{_save(false);alert('Erreur envoi. Modification sauvegardée sans envoi.');}
+    }).catch(function(){_save(false);alert('Erreur réseau.');});
+    return;
+  }
+  _save(false);
+}
+function delModif(actId,idx){
+  var r=D().find(function(x){return x.id===actId;});
+  if(!r||!r.modifications)return;
+  if(!confirm('Supprimer cette modification ?'))return;
+  r.modifications.splice(idx,1);saveNow();
+  var mp=document.getElementById('modif-panel-'+actId);
+  if(mp)mp.innerHTML=buildModifPanel(r);
+}
+function openAffaireInfos(){
+  if(!STORE.current)return;
+  var p=currP(),infos=p.infos||{},resps=infos.responsables||{};
+  var ex=document.getElementById('_affInfoModal');if(ex)ex.remove();
+  var ov=document.createElement('div');
+  ov.id='_affInfoModal';
+  ov.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:30px 20px;overflow-y:auto';
+  var respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'Études"}];
+  var respHtml=respDefs.map(function(rd){
+    var resp=resps[rd.k]||{nom:'',emails:[]};
+    return _nafRespBlock(rd.k,rd.l,resp.nom,resp.emails,'aif','aifAddEmail');
+  }).join('');
+  ov.innerHTML='<div style="background:var(--bg2);border-radius:14px;padding:28px 32px;width:640px;max-width:100%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
+    '<h2 style="font-size:17px;font-weight:900;color:var(--tx);margin:0">ℹ️ Infos — '+esc(STORE.current)+'</h2>'+
+    '<button onclick="document.getElementById(\'_affInfoModal\').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--tx3)">×</button></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
+    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">N° D\'AFFAIRE</label>'+
+    '<input id="aif-num" value="'+esc(infos.numero||STORE.current)+'" style="width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
+    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">DATE DE CRÉATION</label>'+
+    '<input id="aif-date" type="date" value="'+(infos.dateCreation||'')+'" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div></div>'+
+    '<div style="margin-bottom:18px"><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">LIBELLÉ</label>'+
+    '<input id="aif-lib" value="'+esc(infos.libelle||'')+'" placeholder="Libellé" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
+    '<div style="font-size:11px;font-weight:800;color:var(--tx2);margin-bottom:10px">👥 RESPONSABLES</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">'+respHtml+'</div>'+
+    '<div style="display:flex;gap:10px;justify-content:flex-end">'+
+    '<button onclick="document.getElementById(\'_affInfoModal\').remove()" style="padding:9px 20px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);cursor:pointer;font-size:12px;font-family:inherit;color:var(--tx2)">Annuler</button>'+
+    '<button onclick="saveAffaireInfos()" style="padding:9px 22px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">💾 Sauvegarder</button></div></div>';
+  document.body.appendChild(ov);
+}
+function aifAddEmail(resp){
+  var ct=document.getElementById('aif-emails-'+resp);if(!ct)return;
+  ct.insertAdjacentHTML('beforeend',_nafEmailField(resp,'','aif-email-inp'));
+  ct.lastElementChild.focus();
+}
+function saveAffaireInfos(){
+  var p=currP();if(!p)return;
+  var num=((document.getElementById('aif-num')||{}).value||'').trim();
+  var lib=((document.getElementById('aif-lib')||{}).value||'').trim();
+  var dateC=((document.getElementById('aif-date')||{}).value||'');
+  var resps={};
+  ['els','client','auto','be'].forEach(function(k){
+    var nom=((document.getElementById('aif-resp-'+k)||{}).value||'').trim();
+    var emails=[];
+    document.querySelectorAll('.aif-email-inp[data-resp="'+k+'"]').forEach(function(i){
+      var v=(i.value||'').trim();if(v&&v.includes('@'))emails.push(v);
+    });
+    resps[k]={nom:nom,emails:emails};
+  });
+  if(!p.infos)p.infos={};
+  p.infos.numero=num;p.infos.libelle=lib;p.infos.dateCreation=dateC;p.infos.responsables=resps;
+  saveNow();document.getElementById('_affInfoModal').remove();renderProjSel();
+}
+
 function openRenameModal(){
   var old=STORE.current;
   if(!old)return;
@@ -4563,50 +4733,93 @@ function renameProjet(oldName,newName){
 }
 
 function openModal(type){
-  const mb=document.getElementById('mb');
-  if(type==='new'){
-    // Build modal with DOM to avoid escaped-quote issues
-    mb.innerHTML='';
-    const h=document.createElement('h3');h.textContent='Nouvelle affaire';mb.appendChild(h);
-    const p=document.createElement('p');p.textContent='Nom de la nouvelle affaire';mb.appendChild(p);
-    const inp=document.createElement('input');
-    inp.id='m-inp';inp.type='text';inp.placeholder='Ex : EX-2026-001';inp.maxLength=60;
-    inp.style.cssText='width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 11px;font-size:13px;font-weight:600;font-family:inherit;color:var(--tx);background:var(--bg2);outline:none;margin-bottom:6px';
-    inp.onkeydown=function(e){if(e.key==='Enter')confirmNew();if(e.key==='Escape')closeModal();};
-    mb.appendChild(inp);
-    const copyDiv=document.createElement('div');copyDiv.style.marginBottom='10px';
-    const copyLbl=document.createElement('label');
-    copyLbl.textContent='COPIER DEPUIS (optionnel)';
-    copyLbl.style.cssText='font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px';
-    const sel=document.createElement('select');
-    sel.id='m-copy';
-    sel.style.cssText='width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:6px 9px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx)';
-    const opt0=document.createElement('option');opt0.value='';opt0.textContent='— Nouvelle affaire vide —';
-    sel.appendChild(opt0);
-    Object.keys(STORE.projects).forEach(function(a){
-      const o=document.createElement('option');o.value=a;o.textContent=a;sel.appendChild(o);
-    });
-    copyDiv.appendChild(copyLbl);copyDiv.appendChild(sel);mb.appendChild(copyDiv);
-    const err=document.createElement('div');err.id='m-err';
-    err.style.cssText='font-size:11px;color:var(--rd);min-height:16px;margin-bottom:8px';
-    mb.appendChild(err);
-    const btns=document.createElement('div');btns.className='m-btns';
-    const bCancel=document.createElement('button');bCancel.className='btn btn-g';bCancel.textContent='Annuler';bCancel.onclick=closeModal;
-    const bOk=document.createElement('button');bOk.className='btn btn-a';bOk.textContent='Créer';bOk.onclick=confirmNew;
-    btns.appendChild(bCancel);btns.appendChild(bOk);mb.appendChild(btns);
-    document.getElementById('mo').classList.add('open');
-    setTimeout(function(){inp.focus();},60);
-  }else if(type==='del'){
-    const aff=STORE.current;
-    if(Object.keys(STORE.projects).length<=1){
-      mb.innerHTML=`<h3>Impossible</h3><p>Vous ne pouvez pas supprimer la seule affaire.</p><div class="m-btns"><button class="btn btn-g" onclick="closeModal()">OK</button></div>`;
-    }else{
-      mb.innerHTML=`<h3>Supprimer l'affaire</h3><p style="color:var(--rd);font-weight:600">"${aff}"</p><p>Toutes les données seront perdues définitivement.</p>
-        <div class="m-btns"><button class="btn btn-g" onclick="closeModal()">Annuler</button>&nbsp;<button class="btn" style="background:var(--rd);color:#fff" onclick="confirmDel()">Supprimer</button></div>`;
-    }
-    document.getElementById('mo').classList.add('open');
+  if(type==='new'){showNewAffaireForm();}
+  else if(type==='del'){
+    if(!STORE.current){alert('Aucune affaire sélectionnée.');return;}
+    if(!confirm('Supprimer "'+STORE.current+'" ?'))return;
+    delete STORE.projects[STORE.current];
+    STORE.current=Object.keys(STORE.projects)[0]||'';
+    saveNow();renderProjSel();
+    if(STORE.current)switchProjet(STORE.current);
+    else document.getElementById('gw').innerHTML='';
   }
 }
+function _nafEmailField(resp,val,cls){
+  return '<input placeholder="email@exemple.com" class="'+cls+'" data-resp="'+resp+'" value="'+(val||'')+'" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;margin-bottom:4px">';
+}
+function _nafRespBlock(k,label,nom,emails,cls,addFn){
+  var em=(emails&&emails.length)?emails:[''];
+  return '<div style="background:var(--bg3);border-radius:var(--r2);padding:12px;border:1px solid var(--bd)">'+
+    '<div style="font-size:9px;font-weight:800;color:var(--ac);margin-bottom:6px">'+label+'</div>'+
+    '<input id="'+cls+'-resp-'+k+'" placeholder="Nom" value="'+(nom||'')+'" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:6px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;margin-bottom:6px">'+
+    '<div id="'+cls+'-emails-'+k+'">'+em.map(function(e){return _nafEmailField(k,e,cls+'-email-inp');}).join('')+'</div>'+
+    '<button onclick="'+addFn+'(\''+k+'\')" style="font-size:10px;color:var(--ac);background:none;border:none;cursor:pointer;padding:0;font-family:inherit">+ Email</button>'+
+    '</div>';
+}
+function showNewAffaireForm(){
+  var ex=document.getElementById('_nafModal');if(ex)ex.remove();
+  var ov=document.createElement('div');
+  ov.id='_nafModal';
+  ov.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:30px 20px;overflow-y:auto';
+  var affOpts='<option value="">— Nouvelle affaire vide —</option>';
+  Object.keys(STORE.projects).forEach(function(k){affOpts+='<option value="'+k+'">'+k+'</option>';});
+  var respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'Études"}];
+  var respHtml=respDefs.map(function(rd){return _nafRespBlock(rd.k,rd.l,'',[],'naf','nafAddEmail');}).join('');
+  ov.innerHTML='<div style="background:var(--bg2);border-radius:14px;padding:28px 32px;width:640px;max-width:100%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px">'+
+    '<h2 style="font-size:17px;font-weight:900;color:var(--tx);margin:0">📁 Nouvelle affaire</h2>'+
+    '<button onclick="document.getElementById(\'_nafModal\').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--tx3)">×</button></div>'+
+    '<div style="margin-bottom:16px;padding:12px 16px;background:var(--bg3);border-radius:var(--r2);border:1px solid var(--bd)">'+
+    '<label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:6px">📋 COPIER DEPUIS (optionnel)</label>'+
+    '<select id="naf-copy" style="width:100%;border:1px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+affOpts+'</select></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
+    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">N° D\'AFFAIRE *</label>'+
+    '<input id="naf-num" placeholder="ELS2601051" style="width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
+    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">DATE DE CRÉATION</label>'+
+    '<input id="naf-date" type="date" value="'+new Date().toISOString().slice(0,10)+'" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div></div>'+
+    '<div style="margin-bottom:18px"><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">LIBELLÉ *</label>'+
+    '<input id="naf-lib" placeholder="OGDCL Kunnar — MCC 7-1" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
+    '<div style="font-size:11px;font-weight:800;color:var(--tx2);margin-bottom:10px;letter-spacing:.5px">👥 RESPONSABLES</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">'+respHtml+'</div>'+
+    '<div style="display:flex;gap:10px;justify-content:flex-end">'+
+    '<button onclick="document.getElementById(\'_nafModal\').remove()" style="padding:9px 20px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);cursor:pointer;font-size:12px;font-family:inherit;color:var(--tx2)">Annuler</button>'+
+    '<button onclick="confirmNewAffaire()" style="padding:9px 22px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">✅ Créer</button></div></div>';
+  document.body.appendChild(ov);
+}
+function nafAddEmail(resp){
+  var ct=document.getElementById('naf-emails-'+resp);if(!ct)return;
+  ct.insertAdjacentHTML('beforeend',_nafEmailField(resp,'','naf-email-inp'));
+  ct.lastElementChild.focus();
+}
+function confirmNewAffaire(){
+  var num=(document.getElementById('naf-num').value||'').trim();
+  var lib=(document.getElementById('naf-lib').value||'').trim();
+  var dateC=document.getElementById('naf-date').value||'';
+  var copyFrom=(document.getElementById('naf-copy').value||'').trim();
+  if(!num){alert("N° d'affaire obligatoire.");return;}
+  if(!lib){alert('Libellé obligatoire.');return;}
+  if(STORE.projects[num]){alert('Affaire déjà existante.');return;}
+  var resps={};
+  ['els','client','auto','be'].forEach(function(k){
+    var nom=((document.getElementById('naf-resp-'+k)||{}).value||'').trim();
+    var emails=[];
+    document.querySelectorAll('.naf-email-inp[data-resp="'+k+'"]').forEach(function(i){
+      var v=(i.value||'').trim();if(v&&v.includes('@'))emails.push(v);
+    });
+    resps[k]={nom:nom,emails:emails};
+  });
+  var base=copyFrom&&STORE.projects[copyFrom]?JSON.parse(JSON.stringify(STORE.projects[copyFrom])):{data:[],budget:500};
+  if(copyFrom&&base.data){
+    base.data.forEach(function(row){
+      if(row.t==='act'){row.p=[];delete row.prevDays;delete row.reelDays;delete row.rappels;row.s=0;row.e=0;row.hPrev=0;row.hReel=0;}
+    });
+  }
+  base.infos={numero:num,libelle:lib,dateCreation:dateC,responsables:resps};
+  STORE.projects[num]=base;STORE.current=num;
+  document.getElementById('_nafModal').remove();
+  saveNow();renderProjSel();switchProjet(num);
+}
+
 function closeModal(){document.getElementById('mo').classList.remove('open');}
 document.addEventListener('click',e=>{if(e.target===document.getElementById('mo'))closeModal();});
 function confirmNew(){
@@ -6025,6 +6238,21 @@ function pedConfirmAddPhase(){
 
 
 
+function buildFullExpPanel(row,ph,nd){
+  // .ei a position:sticky;left:0 — le panneau modif doit être en dehors du flow sticky
+  // On retourne les deux panneaux comme siblings dans le TD (pas de wrapper grid)
+  var leftPanel=buildExpandPanel(row,ph,nd);
+  var rightPanel='';
+  try{ rightPanel=buildModifPanel(row); }
+  catch(e){ rightPanel='<div style="padding:16px;color:var(--rd);font-size:11px">Erreur: '+String(e)+'</div>'; }
+  // Le panneau modif est sticky à left:min(97vw,880px) — juste à droite du .ei
+  return leftPanel+
+    '<div id="modif-panel-'+row.id+'" '+
+    'style="position:sticky;left:min(97vw,880px);top:0;width:320px;max-height:580px;overflow-y:auto;'+
+    'background:var(--bg2);border-left:2px solid var(--bd);display:inline-block;vertical-align:top;box-sizing:border-box">'+
+    rightPanel+'</div>';
+}
+
 function buildExpandPanel(row,ph,nd){
   const ES2=ES;
   const hStartP=row.hStart!=null?row.hStart:8;
@@ -6650,7 +6878,7 @@ function toggleExp(id){
   expandTd.style.padding='0';
   expandTd.style.background='transparent';
   expandTd.onclick=function(e){e.stopPropagation();};
-  expandTd.innerHTML=buildExpandPanel(row,ph,nd);
+  expandTd.innerHTML=buildFullExpPanel(row,ph,nd);
   expandTr.appendChild(expandTd);
   tr.after(expandTr);
   // Scroll panel into view without jumping page
@@ -6965,7 +7193,7 @@ function updActFull(id,f,v){
   clearTimeout(updActFull._t);
   updActFull._t=setTimeout(function(){saveNow();},300);
 }
-function _refreshPanelInPlace(id){var r2=D().find(function(x){return x.id===id;});if(!r2)return;var ph=PH_get(r2.pk);var nd=(r2.e-r2.s+1)*5;var pr=document.getElementById('exp-panel-row');if(pr&&document.body.contains(pr)){try{pr.querySelector('td').innerHTML=buildExpandPanel(r2,ph,nd);}catch(e){}}}
+function _refreshPanelInPlace(id){var r2=D().find(function(x){return x.id===id;});if(!r2)return;var ph=PH_get(r2.pk);var nd=(r2.e-r2.s+1)*5;var pr=document.getElementById('exp-panel-row');if(pr&&document.body.contains(pr)){try{pr.querySelector('td').innerHTML=buildFullExpPanel(r2,ph,nd);}catch(e){}}}
 
 function updActDurNoFlicker(id,val){if(window._rendering)return;const r=D().find(x=>x.id===id);if(!r)return;const days=Math.max(1,+val||1);const dStart=r.dStart||0;const totalDayOffset=dStart+(days-1);r.dDur=days;r.e=Math.min(52,r.s+Math.floor(totalDayOffset/5));r.dEnd=totalDayOffset%5;r.ePrev=r.e;r.eReel=r.e;saveNow();_refreshPanelInPlace(id);}
 
@@ -7099,7 +7327,7 @@ function updActDuration(id,unit,val){
 }
 function _refreshActBars(id){
   _reRenderGanttKeepScroll();
-  if(EXP===id){requestAnimationFrame(function(){requestAnimationFrame(function(){try{var r2=D().find(function(x){return x.id===id;});if(!r2)return;var ph=PH_get(r2.pk);var nd=(r2.e-r2.s+1)*5;var old2=document.getElementById('exp-panel-row');if(old2&&document.body.contains(old2)){try{old2.querySelector('td').innerHTML=buildExpandPanel(r2,ph,nd);}catch(e){}}else{var tr2=document.querySelector('[data-rid="'+id+'"]');if(tr2){var etd=document.createElement('tr');etd.id='exp-panel-row';var td2=document.createElement('td');td2.setAttribute('colspan','999');td2.style.padding='0';td2.style.background='transparent';td2.onclick=function(e){e.stopPropagation();};td2.innerHTML=buildExpandPanel(r2,ph,nd);etd.appendChild(td2);tr2.after(etd);}}}catch(e){}});});}
+  if(EXP===id){requestAnimationFrame(function(){requestAnimationFrame(function(){try{var r2=D().find(function(x){return x.id===id;});if(!r2)return;var ph=PH_get(r2.pk);var nd=(r2.e-r2.s+1)*5;var old2=document.getElementById('exp-panel-row');if(old2&&document.body.contains(old2)){try{old2.querySelector('td').innerHTML=buildFullExpPanel(r2,ph,nd);}catch(e){}}else{var tr2=document.querySelector('[data-rid="'+id+'"]');if(tr2){var etd=document.createElement('tr');etd.id='exp-panel-row';var td2=document.createElement('td');td2.setAttribute('colspan','999');td2.style.padding='0';td2.style.background='transparent';td2.onclick=function(e){e.stopPropagation();};td2.innerHTML=buildFullExpPanel(r2,ph,nd);etd.appendChild(td2);tr2.after(etd);}}}catch(e){}});});}
 }
 function updAct(id,f,v){
   const r=D().find(x=>x.id===id);if(!r)return;
