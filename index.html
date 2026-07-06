@@ -4681,29 +4681,50 @@ function openAffaireInfos(){
   var ov=document.createElement('div');
   ov.id='_affInfoModal';
   ov.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:30px 20px;overflow-y:auto';
-  var respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'Études"}];
+
+  // Construire les blocs responsables
+  var respDefs=[
+    {k:'els',l:'ELS'},
+    {k:'client',l:'Client'},
+    {k:'auto',l:'Automatisme'},
+    {k:'be',l:'Bureau d\u2019\u00C9tudes'}
+  ];
   var respHtml=respDefs.map(function(rd){
     var resp=resps[rd.k]||{nom:'',emails:[]};
     return _nafRespBlock(rd.k,rd.l,resp.nom,resp.emails,'aif','aifAddEmail');
   }).join('');
-  ov.innerHTML='<div style="background:var(--bg2);border-radius:14px;padding:28px 32px;width:640px;max-width:100%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit">'+
+
+  // Construire le HTML du modal
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--bg2);border-radius:14px;padding:28px 32px;width:640px;max-width:100%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit';
+  box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
-    '<h2 style="font-size:17px;font-weight:900;color:var(--tx);margin:0">ℹ️ Infos — '+escHtml(STORE.current)+'</h2>'+
-    '<button onclick="document.getElementById(\'_affInfoModal\').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--tx3)">×</button></div>'+
+    '<h2 style="font-size:17px;font-weight:900;color:var(--tx);margin:0">'+
+    '\u2139\uFE0F Infos \u2014 '+escHtml(STORE.current)+'</h2>'+
+    '<button id="_aif_close" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--tx3)">\u00D7</button></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
-    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">N° D\'AFFAIRE</label>'+
+    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">'+
+    'N\u00B0 D\u2019AFFAIRE</label>'+
     '<input id="aif-num" value="'+escHtml(infos.numero||STORE.current)+'" style="width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:8px 10px;font-size:13px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
-    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">DATE DE CRÉATION</label>'+
+    '<div><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">'+
+    'DATE DE CR\u00C9ATION</label>'+
     '<input id="aif-date" type="date" value="'+(infos.dateCreation||'')+'" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div></div>'+
-    '<div style="margin-bottom:18px"><label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">LIBELLÉ</label>'+
-    '<input id="aif-lib" value="'+escHtml(infos.libelle||'')+'" placeholder="Libellé" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
-    '<div style="font-size:11px;font-weight:800;color:var(--tx2);margin-bottom:10px">👥 RESPONSABLES</div>'+
+    '<div style="margin-bottom:18px">'+
+    '<label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:4px">LIB\u00C9LL\u00C9</label>'+
+    '<input id="aif-lib" value="'+escHtml(infos.libelle||'')+'" placeholder="Libell\u00E9 de l\u2019affaire" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>'+
+    '<div style="font-size:11px;font-weight:800;color:var(--tx2);margin-bottom:10px">\uD83D\uDC65 RESPONSABLES</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">'+respHtml+'</div>'+
     '<div style="display:flex;gap:10px;justify-content:flex-end">'+
-    '<button onclick="document.getElementById(\'_affInfoModal\').remove()" style="padding:9px 20px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);cursor:pointer;font-size:12px;font-family:inherit;color:var(--tx2)">Annuler</button>'+
-    '<button onclick="saveAffaireInfos()" style="padding:9px 22px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">💾 Sauvegarder</button></div></div>';
+    '<button id="_aif_cancel" style="padding:9px 20px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);cursor:pointer;font-size:12px;font-family:inherit;color:var(--tx2)">Annuler</button>'+
+    '<button onclick="saveAffaireInfos()" style="padding:9px 22px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">\uD83D\uDCBE Sauvegarder</button></div>';
+
+  ov.appendChild(box);
   document.body.appendChild(ov);
+  // Fermeture
+  document.getElementById('_aif_close').onclick=function(){ov.remove();};
+  document.getElementById('_aif_cancel').onclick=function(){ov.remove();};
 }
+
 function aifAddEmail(resp){
   var ct=document.getElementById('aif-emails-'+resp);if(!ct)return;
   ct.insertAdjacentHTML('beforeend',_nafEmailField(resp,'','aif-email-inp'));
