@@ -4537,50 +4537,57 @@ function buildModifPanel(row){
   var p=currP()||{};
   var infos=(p&&p.infos)||{},resps=infos.responsables||{};
   var mods=row.modifications||[];
-  var num=infos.numero||STORE.current||'',lib=infos.libelle||'';
-  var h='<div style="padding:14px 16px;font-family:inherit">';
-  h+='<div style="font-size:13px;font-weight:900;color:var(--tx);margin-bottom:12px;border-bottom:1px solid var(--bd);padding-bottom:8px">🔧 Modifications</div>';
+  var h='<div style="display:flex;flex-direction:column;height:100%;font-family:inherit">';
+  // Titre
+  h+='<div style="padding:12px 16px 10px;font-size:13px;font-weight:900;color:var(--tx);border-bottom:2px solid var(--ac);flex-shrink:0;background:var(--bg2)">'+
+     '\uD83D\uDD27 Modifications'+(mods.length?' <span style="font-size:11px;background:var(--ac);color:#fff;border-radius:10px;padding:1px 8px">'+mods.length+'</span>':'')+'</div>';
+  // Historique scrollable
+  h+='<div style="flex:1;overflow-y:auto;padding:10px 14px;min-height:0">';
   if(mods.length){
-    h+='<div style="margin-bottom:12px">';
     mods.slice().reverse().forEach(function(m,ri){
       var i=mods.length-1-ri;
       var col=m.envoye?'var(--gn)':'var(--or)';
-      var destLbl=(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Auto',be:'BE'}[d]||d;}).join(', ');
-      h+='<div style="background:var(--bg3);border-radius:var(--r2);padding:9px 11px;margin-bottom:5px;border-left:3px solid '+col+'">';
-      h+='<div style="display:flex;justify-content:space-between;align-items:flex-start">';
-      h+='<div style="font-weight:600;color:var(--tx);font-size:11px;flex:1">'+esc(m.texte)+'</div>';
-      h+='<button onclick="delModif(\''+row.id+'\','+i+')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:13px;padding:0 0 0 6px">×</button>';
-      h+='</div>';
-      h+='<div style="font-size:9px;color:var(--tx3);margin-top:3px">'+m.date+(destLbl?' · '+destLbl:'')+(m.envoye?' · <span style="color:var(--gn)">✓ Envoyé</span>':' · <span style="color:var(--or)">⏳ Non envoyé</span>')+'</div>';
-      h+='</div>';
+      var destLbl=(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Automatisme',be:'BE'}[d]||d;}).join(', ');
+      h+='<div style="background:var(--bg3);border-radius:var(--r2);padding:10px 12px;margin-bottom:8px;border-left:4px solid '+col+'">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">';
+      h+='<div style="font-weight:700;color:var(--tx);font-size:13px;flex:1;word-break:break-word">'+esc(m.texte)+'</div>';
+      var delBtn='<button onclick="delModif(\''+row.id+'\','+i+')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 0 0 4px">\u00D7</button>';
+      h+=delBtn+'</div>';
+      h+='<div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">';
+      h+='<span style="font-size:10px;font-weight:700;color:var(--tx3)">\uD83D\uDCC5 '+m.date+'</span>';
+      if(destLbl)h+='<span style="font-size:10px;color:var(--tx3)">\u2192 '+destLbl+'</span>';
+      h+=m.envoye
+        ?'<span style="font-size:10px;font-weight:700;color:var(--gn);background:#D1FAE5;padding:1px 7px;border-radius:8px">\u2713 Envoy\u00E9</span>'
+        :'<span style="font-size:10px;font-weight:700;color:var(--or);background:#FEF3C7;padding:1px 7px;border-radius:8px">\u23F3 Non envoy\u00E9</span>';
+      h+='</div></div>';
     });
-    h+='</div>';
   } else {
-    h+='<div style="color:var(--tx3);font-size:11px;margin-bottom:12px;font-style:italic">Aucune modification.</div>';
+    h+='<div style="color:var(--tx3);font-size:11px;font-style:italic;text-align:center;padding:20px 0">Aucune modification</div>';
   }
-  h+='<div style="background:var(--bg3);border-radius:var(--r2);padding:12px;border:1px solid var(--bd)">';
-  h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:8px">+ NOUVELLE MODIFICATION</div>';
-  h+='<textarea id="modif-txt-'+row.id+'" placeholder="Ex : Changement de plan iss0.1" rows="3" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:7px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;resize:vertical;margin-bottom:10px"></textarea>';
-  h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:6px">📧 ENVOYER À</div>';
-  h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">';
+  h+='</div>';
+  // Formulaire fixe en bas
+  h+='<div style="flex-shrink:0;border-top:1px solid var(--bd);padding:12px 14px;background:var(--bg2)">';
+  h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:6px">+ NOUVELLE MODIFICATION</div>';
+  h+='<textarea id="modif-txt-'+row.id+'" placeholder="Ex : Changement de plan iss0.1" rows="2" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:7px;font-size:12px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;resize:none;margin-bottom:8px"></textarea>';
+  h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:5px">\uD83D\uDCE7 ENVOYER \u00C0</div>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
   [{k:'els',l:'ELS',always:true},{k:'client',l:'Client',always:false},{k:'auto',l:'Automatisme',always:false},{k:'be',l:'BE',always:false}].forEach(function(rd){
     var resp=resps[rd.k]||{};
     var hasEmails=(resp.emails||[]).filter(function(e){return e&&e.trim();}).length>0;
     var ok=rd.always||hasEmails;
-    var chk=rd.always||hasEmails?'checked':'';
+    var chk=(rd.always||hasEmails)?'checked':'';
     var dis=rd.always?'disabled':'';
-    h+='<label style="display:flex;align-items:center;gap:5px;cursor:'+(ok?'pointer':'default')+';opacity:'+(ok?1:.45)+'">'+
-       '<input type="checkbox" id="modif-dest-'+rd.k+'-'+row.id+'" '+chk+' '+dis+'>'+
-       '<span style="font-size:11px;font-weight:600;color:var(--tx2)">'+rd.l+
-       (resp.nom?' <span style="color:var(--tx3);font-weight:400">('+resp.nom+')</span>':'')+
-       '</span></label>';
+    h+='<label style="display:flex;align-items:center;gap:4px;cursor:'+(ok?'pointer':'default')+';opacity:'+(ok?1:.45)+'">';
+    h+='<input type="checkbox" id="modif-dest-'+rd.k+'-'+row.id+'" '+chk+' '+dis+'>';
+    h+='<span style="font-size:11px;font-weight:600;color:var(--tx2)">'+rd.l+(resp.nom?' <span style="color:var(--tx3);font-weight:400">('+resp.nom+')</span>':'')+'</span></label>';
   });
   h+='</div>';
-  h+='<button onclick="sendModif(\''+row.id+'\',true)" style="width:100%;padding:9px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;margin-bottom:6px">📧 Enregistrer & Envoyer</button>';
-  h+='<button onclick="sendModif(\''+row.id+'\',false)" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);color:var(--tx2);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">💾 Enregistrer sans envoyer</button>';
+  h+='<button onclick="sendModif(\''+row.id+'\',true)" style="width:100%;padding:9px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;margin-bottom:5px">\uD83D\uDCE7 Enregistrer & Envoyer</button>';
+  h+='<button onclick="sendModif(\''+row.id+'\',false)" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);color:var(--tx2);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">\uD83D\uDCBE Enregistrer sans envoyer</button>';
   h+='</div></div>';
   return h;
 }
+
 function sendModif(actId,doSend){
   var r=D().find(function(x){return x.id===actId;});if(!r)return;
   var txt=(document.getElementById('modif-txt-'+actId)||{value:''}).value.trim();
@@ -4603,11 +4610,20 @@ function sendModif(actId,doSend){
     mod.envoye=envoye;
     if(!r.modifications)r.modifications=[];
     r.modifications.push(mod);
-    saveNow();
-    var mp=document.getElementById('modif-panel-'+actId);
-    if(mp)mp.innerHTML=buildModifPanel(r);
+    // Sauvegarde IMMÉDIATE (pas debounce) pour éviter écrasement par polling Supabase
+    localStorage.setItem('plan26v5',JSON.stringify(STORE));
+    supaSave(STORE);
+    // Rafraîchir le panneau avec try/catch
+    try{
+      var mp=document.getElementById('modif-panel-'+actId);
+      if(mp)mp.innerHTML=buildModifPanel(r);
+    }catch(e){console.error('buildModifPanel error:',e);}
   }
-  if(doSend&&emails.length===0){alert('Aucun email configuré. Vérifiez les infos affaire (ℹ️).');_save(false);return;}
+  if(doSend&&emails.length===0){
+    alert('Aucun email configuré pour les responsables sélectionnés.\nAllez dans ℹ️ Infos affaire pour ajouter des emails.');
+    _save(false);
+    return;
+  }
   if(doSend){
     var sujet='[ELS - '+num+'] Modification : '+r.lb;
     var corps='<h2 style="color:#1F4E79">Notification de modification</h2>'+
@@ -4629,6 +4645,9 @@ function sendModif(actId,doSend){
     return;
   }
   _save(false);
+  // Feedback visuel
+  var btn=document.querySelector('#modif-panel-'+actId+' button:last-child');
+  if(btn){var orig=btn.textContent;btn.textContent='✅ Enregistré !';btn.style.color='var(--gn)';setTimeout(function(){btn.textContent=orig;btn.style.color='';},2000);}
 }
 function delModif(actId,idx){
   var r=D().find(function(x){return x.id===actId;});
@@ -6248,7 +6267,7 @@ function buildFullExpPanel(row,ph,nd){
   // Le panneau modif est sticky à left:min(97vw,880px) — juste à droite du .ei
   return leftPanel+
     '<div id="modif-panel-'+row.id+'" '+
-    'style="position:sticky;left:min(97vw,880px);top:0;width:320px;max-height:580px;overflow-y:auto;'+
+    'style="position:sticky;left:min(97vw,880px);top:0;width:420px;max-height:580px;overflow-y:auto;'+
     'background:var(--bg2);border-left:2px solid var(--bd);display:inline-block;vertical-align:top;box-sizing:border-box">'+
     rightPanel+'</div>';
 }
