@@ -395,6 +395,13 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
   .brand .bname { display: none; }
   .brand .bdots { display: none; }
 }
+
+/* Combobox affaire */
+#sel-aff-wrap{position:relative;display:inline-block;min-width:220px;max-width:340px}
+#sel-aff-input{width:100%;box-sizing:border-box;border:2px solid var(--ac);border-radius:var(--r);padding:4px 28px 4px 8px;font-size:11px;font-weight:700;font-family:inherit;background:var(--ac2);color:var(--ac);outline:none;cursor:pointer}
+#sel-aff-dropdown{display:none;position:absolute;top:calc(100% + 2px);left:0;min-width:100%;max-width:460px;max-height:300px;overflow-y:auto;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:600}
+.aff-opt{padding:7px 14px;cursor:pointer;font-size:11px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--bd2)}
+.aff-opt:hover,.aff-opt.selected{background:var(--ac2);color:var(--ac);font-weight:700}
 </style>
 </head>
 <body>
@@ -515,7 +522,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
 
 <div id="sbar">
   <span class="lbl">AFFAIRE</span>
-  <select id="sel-aff" onchange="switchProjet(this.value)"></select>
+  <div style="display:flex;align-items:center;gap:4px"><div style="display:flex;flex-direction:column;gap:2px"><input id="sel-aff-search" type="text" placeholder="🔍 Rechercher..." autocomplete="off" style="border:1px solid var(--bd);border-radius:var(--r);padding:2px 6px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;width:100%"><select id="sel-aff" onchange="switchProjet(this.value)" style="border:2px solid var(--ac);border-radius:var(--r);padding:3px 6px;font-size:11px;font-weight:700;font-family:inherit;background:var(--ac2);color:var(--ac);outline:none;min-width:200px;max-width:350px"></select></div></div>
   <button class="btn-np" onclick="openModal('new')">+ Nouvelle</button>
   <button class="btn-da" onclick="openAffaireInfos()" title="Infos affaire">ℹ️</button>
   <button class="btn-da" onclick="openRenameModal()" title="Renommer">✏️</button>
@@ -1159,6 +1166,7 @@ function loadStore(){
     var first=STORE.current||Object.keys(STORE.projects)[0];
     if(first)switchProjet(first);
     startRealtime();
+  setTimeout(_initSelAffSearch,300);
   }).catch(function(){startRealtime();});
   // Check envoi rappels lundi 8h
   setTimeout(checkAndSendMondayRappel,5000);
@@ -4411,6 +4419,45 @@ function calcWeightedProgress(acts){
 }
 
 // ── Label complet d'une affaire : N°client | N°ELS | Libellé ─────────
+function _initSelAffSearch(){
+  var inp=document.getElementById('sel-aff-search');
+  var sel=document.getElementById('sel-aff');
+  if(!inp||!sel){setTimeout(_initSelAffSearch,300);return;}
+  // Sauvegarder toutes les options
+  var _allOpts=[];
+  inp.oninput=function(){
+    var q=this.value.toLowerCase().trim();
+    var cur=sel.value;
+    // Reconstruire les options filtrées
+    sel.innerHTML='';
+    var keys=Object.keys(STORE.projects).sort();
+    keys.forEach(function(k){
+      var lbl=getAffLabel(k)+(STORE.projects[k].closed?' ✓ archivée':'');
+      if(q&&lbl.toLowerCase().indexOf(q)<0&&k.toLowerCase().indexOf(q)<0)return;
+      var opt=document.createElement('option');
+      opt.value=k;opt.textContent=lbl;
+      opt.selected=(k===cur);
+      sel.appendChild(opt);
+    });
+    if(sel.options.length>0&&!sel.value)sel.selectedIndex=0;
+  };
+  inp.onkeydown=function(e){
+    if(e.key==='Enter'&&sel.options.length>0){
+      switchProjet(sel.options[0].value);
+      this.value='';
+      renderProjSel();
+    }
+    if(e.key==='Escape'){this.value='';renderProjSel();}
+  };
+}function affComboOpen(){
+  var dd=document.getElementById('sel-aff-dropdown');
+  var inp=document.getElementById('sel-aff-input');
+  if(!dd)return;
+  affComboRender(inp?inp.value:'');
+  dd.style.display='block';
+  var sel=dd.querySelector('.selected');
+  if(sel)setTimeout(function(){sel.scrollIntoView({block:'nearest'});},0);
+}
 function getAffLabel(k){
   var inf=(STORE.projects[k]&&STORE.projects[k].infos)||{};
   if(!inf.libelle)return k; // ancienne affaire sans infos
@@ -4536,40 +4583,29 @@ function toggleAffaireClosed(val){
 }
 
 function renderProjSel(){
-  const el=document.getElementById('sel-aff');
-  // Also refresh date inputs for current project
-  var pp=currP();
+  var el=document.getElementById('sel-aff');
+  var pp=currP()||{};
   var dsEl=document.getElementById('inp-dstart');if(dsEl)dsEl.value=pp.dstart||'';
   var deEl=document.getElementById('inp-dend');if(deEl)deEl.value=pp.dend||'';
   var dlEl=document.getElementById('inp-deadline');
-  if(dlEl&&pp.dstart&&pp.dend){var d1r=new Date(pp.dstart),d2r=new Date(pp.dend);var daysR=0,curR=new Date(d1r);while(curR<=d2r){var wdR=curR.getDay();if(wdR>=1&&wdR<=5)daysR++;curR.setDate(curR.getDate()+1);}dlEl.textContent='→ '+d2r.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' ('+daysR+'j / '+(daysR*8)+'H)';}else if(dlEl)dlEl.textContent='';
-  // Disable onchange temporarily to prevent auto-switch during rebuild
-  var prevOnchange=el.onchange;
-  el.onchange=null;
-  // Build options properly escaping special chars in affaire names
-  var _opts=[];
-  Object.keys(STORE.projects).forEach(function(k){
+  if(dlEl&&pp.dstart&&pp.dend){
+    var d1r=new Date(pp.dstart),d2r=new Date(pp.dend),daysR=0,curR=new Date(d1r);
+    while(curR<=d2r){if(curR.getDay()>=1&&curR.getDay()<=5)daysR++;curR.setDate(curR.getDate()+1);}
+    dlEl.textContent='→ '+d2r.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' ('+daysR+'j / '+(daysR*8)+'H)';
+  } else if(dlEl)dlEl.textContent='';
+  if(!el)return;
+  var prevVal=el.value||STORE.current;
+  el.innerHTML='';
+  Object.keys(STORE.projects).sort().forEach(function(k){
     var opt=document.createElement('option');
-    opt.value=k;  // .value property handles any chars correctly
-    opt.selected=(k===STORE.current);
-    var _pinf=(STORE.projects[k]&&STORE.projects[k].infos)||{};
-    var _plbl='';
-    if(_pinf.libelle){
-      // Nouvelle affaire : N°client | N°ELS | Libellé
-      if(_pinf.numeroClient)_plbl+=_pinf.numeroClient+' | ';
-      _plbl+=(_pinf.numero||k);
-      _plbl+=' | '+_pinf.libelle.substring(0,30);
-    } else {
-      // Ancienne affaire : juste la clé
-      _plbl=k;
-    }
-    opt.textContent=_plbl+(STORE.projects[k]&&STORE.projects[k].closed?' ✓ archivée':'');
-    _opts.push(opt.outerHTML);
+    opt.value=k;
+    opt.textContent=getAffLabel(k)+(STORE.projects[k].closed?' ✓ archivée':'');
+    opt.selected=(k===(STORE.current||prevVal));
+    el.appendChild(opt);
   });
-  el.innerHTML=_opts.join('');
-  el.value=STORE.current;
-  el.onchange=prevOnchange;
+  if(STORE.current)el.value=STORE.current;
 }
+
 function switchProjet(k){
   if(!STORE.projects[k])return;
   if(k===STORE.current&&document.getElementById('plan-editor')&&document.getElementById('plan-editor').classList.contains('open'))return;
