@@ -4448,6 +4448,61 @@ function sbSetBudget(sbId,current){
   if(r){r.budgetH=Math.max(0,parseFloat(val)||0);saveNow();renderGantt();}
 }
 
+function phSetNotifResps(pk){
+  var phRow=D().find(function(x){return x.pk===pk&&x.t==='ph';});
+  if(!phRow)return;
+  var p=currP(),infos=p.infos||{},resps=infos.responsables||{};
+  var current=phRow.notifResps||[];
+  var defs=[{k:'els',l:'ELS'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'Études"}];
+
+  // Construire un modal de sélection
+  var ex=document.getElementById('_notifModal');if(ex)ex.remove();
+  var ov=document.createElement('div');
+  ov.id='_notifModal';
+  ov.style.cssText='position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--bg2);border-radius:14px;padding:24px 28px;width:380px;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit';
+
+  var html='<div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:4px">\uD83D\uDD14 Alertes retard</div>';
+  html+='<div style="font-size:11px;color:var(--tx3);margin-bottom:16px">Phase : <strong>'+pk+'</strong></div>';
+  html+='<div style="font-size:11px;color:var(--tx2);margin-bottom:12px">Cochez les responsables qui recevront un mail quand une t\u00E2che de cette phase est en retard :</div>';
+
+  defs.forEach(function(rd){
+    var resp=resps[rd.k]||{};
+    var cts=_getContacts(resp);
+    var emails=cts.map(function(ct){return ct.email;}).filter(Boolean);
+    var names=cts.map(function(ct){return ct.nom;}).filter(Boolean).join(', ');
+    var checked=current.indexOf(rd.k)>=0;
+    var hasEmails=emails.length>0;
+    html+='<label style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:var(--r2);margin-bottom:6px;background:var(--bg3);cursor:'+(hasEmails?'pointer':'default')+';opacity:'+(hasEmails?1:.45)+'">';
+    html+='<input type="checkbox" id="notif-cb-'+rd.k+'" '+(checked?'checked':'')+' '+(hasEmails?'':'disabled')+' style="margin-top:2px">';
+    html+='<div><div style="font-size:12px;font-weight:700;color:var(--tx)">'+rd.l+(names?' \u2014 '+names:'')+'</div>';
+    if(emails.length)html+='<div style="font-size:10px;color:var(--tx3)">\uD83D\uDCE7 '+emails.join(', ')+'</div>';
+    else html+='<div style="font-size:10px;color:var(--rd)">Aucun email configur\u00E9 (renseigner dans \u2139\uFE0F Infos affaire)</div>';
+    html+='</div></label>';
+  });
+
+  html+='<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">';
+  html+='<button id="_notif_cancel" style="padding:8px 18px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);cursor:pointer;font-size:12px;font-family:inherit;color:var(--tx2)">Annuler</button>';
+  html+='<button id="_notif_ok" style="padding:8px 20px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">\u2713 Sauvegarder</button>';
+  html+='</div>';
+  box.innerHTML=html;
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+
+  document.getElementById('_notif_cancel').onclick=function(){ov.remove();};
+  document.getElementById('_notif_ok').onclick=function(){
+    var sel=[];
+    defs.forEach(function(rd){
+      var cb=document.getElementById('notif-cb-'+rd.k);
+      if(cb&&cb.checked)sel.push(rd.k);
+    });
+    phRow.notifResps=sel;
+    saveNow();ov.remove();renderGantt();
+  };
+}
+
 function phSetBudget(pk, current){
   var val=prompt('Budget heures pour cette phase (0 = pas de budget) :', current||0);
   if(val===null)return;
@@ -4606,7 +4661,7 @@ function buildModifPanel(row){
   h+='<textarea id="modif-txt-'+row.id+'" placeholder="Ex : Changement de plan iss0.1" rows="2" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:7px;font-size:12px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;resize:none;margin-bottom:8px"></textarea>';
   h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:5px">\uD83D\uDCE7 ENVOYER \u00C0</div>';
   h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
-  [{k:'els',l:'ELS',always:true},{k:'client',l:'Client',always:false},{k:'auto',l:'Automatisme',always:false},{k:'be',l:'BE',always:false}].forEach(function(rd){
+  [{k:'els',l:'ELS',always:true},{k:'auto',l:'Automatisme',always:false},{k:'be',l:'BE',always:false}].forEach(function(rd){
     var resp=resps[rd.k]||{};
     var hasEmails=(resp.contacts?resp.contacts.some(function(ct){return ct.email&&ct.email.trim();}):(resp.emails||[]).filter(function(e){return e&&e.trim();}).length>0);
     var mainNom=resp.contacts&&resp.contacts[0]?resp.contacts[0].nom:(resp.nom||'');
@@ -5194,7 +5249,8 @@ function renderGantt(){
       const _phProgress=calcWeightedProgress(_phActs);
       const _phBadge=
         (_phProgress>0?`<span style="font-size:10px;font-weight:900;margin-left:10px;padding:1px 8px;background:rgba(255,255,255,.9);color:${ph.h};border-radius:10px">${_phProgress}%</span>`:'')
-        +`<span onclick="event.stopPropagation();phSetBudget('${row.pk}',${_phBudget})" style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:rgba(255,255,255,.25);border-radius:4px;cursor:pointer" title="Cliquer pour modifier le budget">${_phBudget>0?'Budget:'+_phBudget+'H':'+ Budget'}</span>`
+        +`<span onclick="event.stopPropagation();phSetBudget('${row.pk}',${_phBudget})" style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:rgba(255,255,255,.25);border-radius:4px;cursor:pointer" title="Budget heures">${_phBudget>0?'Budget:'+_phBudget+'H':'+ Budget'}</span>`
+        +`<span onclick="event.stopPropagation();phSetNotifResps('${row.pk}')" style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:${row.notifResps&&row.notifResps.length?'rgba(255,255,255,.4)':'rgba(255,255,255,.15)'};border-radius:4px;cursor:pointer" title="Responsables alertes retard">${row.notifResps&&row.notifResps.length?'\uD83D\uDD14 '+row.notifResps.length+' resp.':'\uD83D\uDD14 Alertes'}</span>`
         +(_phPrev>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">P:${_phPrev}H</span>`:'')
         +(_phReel>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">R:${_phReel}H</span>`:'')
         +(_phBudget>0&&_phPrev>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 4px;background:rgba(0,0,0,.2);border-radius:3px">${_phPrev>_phBudget?'⚠+'+(_phPrev-_phBudget)+'H':(_phPrev<_phBudget?'✓-'+(_phBudget-_phPrev)+'H':'=')}</span>`:'')
@@ -5227,7 +5283,7 @@ function renderGantt(){
     const nb=row.p.filter(p=>p.name.trim()).length;
     const isE=EXP===row.id,done=!!row.done;
     const tH=row.p.reduce((s,p)=>s+(+p.heures||0),0);
-    const diff=(row.hPrev&&row.hReel)?row.hPrev-row.hReel:null; // positif=économie, négatif=dépassement
+    const diff=(row.hPrev&&row.hReel)?row.hReel-row.hPrev:null; // positif=dépassement(rouge), négatif=économie(vert)
     // Tâche non planifiée (pas de semaine de début)
 
     // Day cells — deux barres indépendantes : Prévue (haut, couleur claire) + Réelle (bas, couleur foncée)
@@ -5288,10 +5344,14 @@ function renderGantt(){
     }
     // Statut visuel de la ligne
     const todayD5=TODAY?(TODAY.w-1)*5+(TODAY.di||0):0;
-    const rowEndD5=row.e>0?(row.e-1)*5+(row.dEnd!=null?row.dEnd:4):0;
-    const isOverdue=!done&&!row.inProgress&&row.e>0&&todayD5>rowEndD5;
-    const rowBgColor=done?'rgba(209,250,229,.35)':row.inProgress?'rgba(254,243,199,.35)':isOverdue?'rgba(254,226,226,.35)':'transparent';
-    const rowBorderLeft=done?'3px solid var(--gn)':row.inProgress?'3px solid #D97706':isOverdue?'3px solid #DC2626':'none';
+    // Rouge UNIQUEMENT si la fin de la barre RÉEL est dépassée
+    const _reelDays2=row.reelDays&&row.reelDays.length?row.reelDays:[];
+    const _reelEnd=_reelDays2.length?Math.max.apply(null,_reelDays2):-1;
+    const isOverdue=!done&&!row.inProgress&&_reelEnd>=0&&todayD5>_reelEnd;
+    // Non planifié = pas de barres du tout → blanc/transparent
+    const _hasBars=(_reelDays2.length>0)||(row.prevDays&&row.prevDays.length>0)||row.s>0;
+    const rowBgColor=!_hasBars?'transparent':done?'rgba(209,250,229,.35)':row.inProgress?'rgba(254,243,199,.35)':isOverdue?'rgba(254,226,226,.35)':'transparent';
+    const rowBorderLeft=!_hasBars?'none':done?'3px solid var(--gn)':row.inProgress?'3px solid #D97706':isOverdue?'3px solid #DC2626':'none';
     html+=`<tr class="ra" data-rid="${row.id}" style="height:79px;background:${rowBgColor}">
       
       <td class="al s1" onclick="toggleExp('${row.id}')" style="cursor:pointer;background:${isE?'var(--ac2)':done?'rgba(209,250,229,.5)':row.inProgress?'rgba(254,243,199,.5)':isOverdue?'rgba(254,226,226,.5)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':row.inProgress?'#D97706':isOverdue?'#DC2626':'var(--tx)'};border-left:${rowBorderLeft};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
@@ -5317,7 +5377,7 @@ function renderGantt(){
             ${(!row.s&&(!row.reelDays||!row.reelDays.length))?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-weight:700">📌 Non planifiée</span>':''}
             ${(row.hPrev>0)?'<span style="font-size:10px;color:var(--or);font-weight:600;padding:1px 4px;border-radius:3px;background:rgba(237,137,0,.1)">P:'+row.hPrev+'H</span>':''}
             ${row.hReel?`<span style="font-size:10px;color:var(--gn);font-weight:600;background:rgba(22,163,74,.1);padding:1px 4px;border-radius:3px">R:${row.hReel}H</span>`:''}
-            ${diff!==null?`<span style="font-size:10px;font-weight:700;color:${diff<0?'var(--rd)':'var(--gn)'};padding:1px 3px;border-radius:3px">${diff>0?'+'+diff:diff}H</span>`:''}
+            ${diff!==null?`<span style="font-size:10px;font-weight:700;color:${diff>0?'var(--rd)':'var(--gn)'};padding:1px 3px;border-radius:3px">${diff>0?'+'+diff:diff}H</span>`:''}
             ${tH?`<span style="font-size:10px;color:var(--tx3);padding:1px 3px;">👥${tH}H</span>`:''}
           </div>
         </div>
