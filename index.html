@@ -516,7 +516,6 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
     <button onclick="downloadPlanning('interne')" style="background:var(--ac);color:#fff;border:none;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" title="Télécharger le planning complet (version interne avec heures et budget)">📥 Planning interne</button>
     <button onclick="showClientDownloadModal()" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" title="Télécharger le planning simplifié (version client sans heures ni budget)">📄 Planning client</button>
     <button style="background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" onclick="openRappelsSettings()">&#128276; Rappels</button>
-    <button style="background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 12px;cursor:pointer;font-family:inherit" onclick="openFortuitModal()" title="Ajouter un événement fortuit sur une activité">⚡ Fortuit</button>
   </div>
 </div>
 
@@ -550,7 +549,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
   <div class="sep" id="gantt-view-sep"></div>
   <div id="gantt-view-btns" style="display:flex;align-items:center;gap:4px">
   <span class="lbl">VUE</span>
-  <div style="display:flex;gap:3px;margin-bottom:4px">
+  <div style="display:flex;gap:3px">
     <button id="gv-week" onclick="setGanttView('week')" style="padding:3px 9px;border:1px solid var(--bd);border-radius:var(--r);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📅 Semaines</button>
     <button id="gv-day" onclick="setGanttView('day')" style="padding:3px 9px;border:1px solid var(--bd);border-radius:var(--r);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">🕐 Jours</button>
     <button id="gv-global" onclick="setGanttView('global')" style="padding:3px 9px;border:1px solid var(--bd);border-radius:var(--r);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">&#127760; Vue Globale</button>
