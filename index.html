@@ -3516,8 +3516,12 @@ function dbBuildPlanningGrid(){
           // Vérifier si la tâche est active CE jour précis
           var _d5pr=(selWk-1)*5+di;
           var _prevDaysPR=getTaskDays5(actG,'prev');
-          if(_prevDaysPR.length&&_prevDaysPR.indexOf(_d5pr)<0)return;
-          if(!_prevDaysPR.length&&((actG.s||0)>selWk||(actG.e||actG.s||0)<selWk))return;
+          var _reelDaysPR=(actG.reelDays&&actG.reelDays.length)?actG.reelDays:[];
+          // Planifiée si prevDays OU reelDays couvre ce jour
+          var _inPrev=_prevDaysPR.length&&_prevDaysPR.indexOf(_d5pr)>=0;
+          var _inReel=_reelDaysPR.length&&_reelDaysPR.indexOf(_d5pr)>=0;
+          var _inRange=!_prevDaysPR.length&&!_reelDaysPR.length&&(actG.s||0)<=selWk&&(actG.e||actG.s||0)>=selWk;
+          if(!_inPrev&&!_inReel&&!_inRange)return;
           // Vérifier jours personnels (p.days)
           if(pEntry.days&&pEntry.days.length){
             var _dt=_dayDate;
@@ -6048,6 +6052,7 @@ function buildPhaseList(container){
         handle.textContent='\u2630';
         handle.title='Glisser pour déplacer';
         handle.style.cssText='cursor:grab;color:var(--tx3);font-size:13px;margin-right:4px;flex-shrink:0;user-select:none';
+        handle.addEventListener('mousedown',function(e){e.stopPropagation();});
         item.insertBefore(handle,item.firstChild);
         item.appendChild(lbl);
         item.appendChild(info);
@@ -7437,7 +7442,9 @@ function toggleExp(id){
   if(EXP){
     const pr=document.querySelector('[data-rid="'+EXP+'"]');
     if(pr)pr.classList.remove('exp-open');
-    _reRenderGanttKeepScroll();
+    // Fermer le panneau précédent sans re-render complet
+    const oldPanel=document.getElementById('exp-panel-row');
+    if(oldPanel)oldPanel.remove();
   }
   EXP=id;
   // Sync personnes Planning Réunion → tâche avant affichage
