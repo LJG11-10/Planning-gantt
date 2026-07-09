@@ -525,6 +525,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
   <div style="display:flex;align-items:center;gap:4px"><div style="display:flex;flex-direction:column;gap:2px"><input id="sel-aff-search" type="text" placeholder="🔍 Rechercher..." autocomplete="off" style="border:1px solid var(--bd);border-radius:var(--r);padding:2px 6px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;width:100%"><select id="sel-aff" onchange="switchProjet(this.value)" style="border:2px solid var(--ac);border-radius:var(--r);padding:3px 6px;font-size:11px;font-weight:700;font-family:inherit;background:var(--ac2);color:var(--ac);outline:none;min-width:200px;max-width:350px"></select></div></div>
   <button class="btn-np" onclick="openModal('new')">+ Nouvelle</button>
   <button class="btn-da" onclick="openAffaireInfos()" title="Infos affaire">ℹ️</button>
+  <button class="btn-da" onclick="openBaremeAuto()" title="Appliquer le barème automatisme" style="background:#7C3AED22;border-color:#7C3AED;color:#7C3AED">⚙️ Barème</button>
   <button class="btn-da" onclick="openRenameModal()" title="Renommer">✏️</button>
   <button class="btn-da" onclick="openModal('del')">🗑</button>
   <div class="sep"></div>
@@ -546,7 +547,8 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
     <span style="font-weight:700;font-size:11px" id="bud-r">500 H</span>
   </div>
 
-  <div class="sep"></div>
+  <div class="sep" id="gantt-view-sep"></div>
+  <div id="gantt-view-btns" style="display:flex;align-items:center;gap:4px">
   <span class="lbl">VUE</span>
   <div style="display:flex;gap:3px;margin-bottom:4px">
     <button id="gv-week" onclick="setGanttView('week')" style="padding:3px 9px;border:1px solid var(--bd);border-radius:var(--r);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📅 Semaines</button>
@@ -565,6 +567,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
     <button onclick="setZoom('reset')" title="Zoom par défaut"
       style="padding:3px 9px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg3);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--tx2)">↺</button>
   </div>
+  </div><!-- /gantt-view-btns -->
 </div>
 
 <div id="tab-planning-reunion" class="tab"><div id="db-grid-main" style="height:100%;overflow:auto"></div></div>
@@ -1299,8 +1302,12 @@ function switchTab(t){
   if(t==='gantt'){renderGantt();}
   else if(t==='planning-reunion'){renderPlanningReunionTab();}
   else if(t==='recap'){switchTdbTab(window._tdbTab||'recap-current');}
-
-
+  // Masquer/afficher les boutons Vue+Zoom selon onglet
+  var _gvb=document.getElementById('gantt-view-btns');
+  var _gvs=document.getElementById('gantt-view-sep');
+  var _isGantt=(t==='gantt');
+  if(_gvb)_gvb.style.display=_isGantt?'flex':'none';
+  if(_gvs)_gvs.style.display=_isGantt?'':'none';
 }
 function switchPersonnelTab(sub){
   window._personnelTab=sub;
@@ -4783,6 +4790,169 @@ function delModif(actId,idx){
   var mp=document.getElementById('modif-panel-'+actId);
   if(mp)mp.innerHTML=buildModifPanel(r);
 }
+// ══════════════════════════════════════════════════════════════════
+// BARÈME AUTOMATISME
+// ══════════════════════════════════════════════════════════════════
+var BAREME_AUTO = {
+  phases: [
+    // { phase, sousPhase, tache, pct: [<75H, 75-150H, >150H] }
+    {ph:'Autom', sb:'Appro',          lb:'PC',                                      pct:[2,  1,  1 ]},
+    {ph:'Autom', sb:'Appro',          lb:'Licences',                                pct:[2,  1,  1 ]},
+    {ph:'Autom', sb:'Programmation',  lb:'Configuration mat\u00E9rielle + d\u00E9claration I/O', pct:[5,  4,  3 ]},
+    {ph:'Autom', sb:'Programmation',  lb:'Cr\u00E9ation DB',                        pct:[5,  4,  3 ]},
+    {ph:'Autom', sb:'Programmation',  lb:'Cr\u00E9ation FB',                        pct:[3,  3,  3 ]},
+    {ph:'Autom', sb:'Programmation',  lb:'Cr\u00E9ation S\u00E9quences',            pct:[35, 44, 50]},
+    {ph:'Autom', sb:'Programmation',  lb:'C&E',                                     pct:[6,  6,  5 ]},
+    {ph:'Autom', sb:'Programmation',  lb:'Communication Client',                    pct:[4,  3,  3 ]},
+    {ph:'Autom', sb:'Programmation',  lb:'Communication Package',                   pct:[6,  3,  3 ]},
+    {ph:'Autom', sb:'Programmation',  lb:'IoT',                                     pct:[4,  3,  3 ]},
+    {ph:'Autom', sb:'Informatique',   lb:'Installation PC + rapport',               pct:[8,  6,  4 ]},
+    {ph:'Autom', sb:'Documentation',  lb:'Rapport de FAT',                          pct:[10, 12, 11]},
+    {ph:'Autom', sb:'Documentation',  lb:'Divers',                                  pct:[10, 10, 10]}
+  ]
+};
+
+function openBaremeAuto(forcePk){
+  var ex=document.getElementById('_baremeModal');if(ex)ex.remove();
+  // Vérifier qu'il y a une phase AUTOMATISME dans le projet courant
+  var data=D();
+  var phAuto=forcePk
+    ?data.find(function(r){return r.t==='ph'&&r.pk===forcePk;})
+    :data.find(function(r){
+        return r.t==='ph'&&(r.pk==='AUTOMATISME'||r.pk==='Automatisme'||
+               r.pk==='autom'||(r.lb&&r.lb.toUpperCase().indexOf('AUTO')>=0));
+      });
+  if(!phAuto){
+    alert('Aucune phase Automatisme trouvée dans ce projet.\nCr\u00E9ez d\'abord une phase nomm\u00E9e "Automatisme" dans l\'\u00E9diteur de planning.');
+    return;
+  }
+  var ov=document.createElement('div');
+  ov.id='_baremeModal';
+  ov.style.cssText='position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center';
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--bg2);border-radius:14px;padding:28px 32px;width:520px;max-width:95%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:900;color:var(--tx);margin-bottom:6px">\u2699\uFE0F Bar\u00E8me Automatisme</div>'+
+    '<div style="font-size:12px;color:var(--tx3);margin-bottom:20px">Phase d\u00E9tect\u00E9e : <strong>'+phAuto.pk+'</strong></div>'+
+    '<div style="margin-bottom:18px">'+
+    '<label style="font-size:10px;font-weight:700;color:var(--tx3);display:block;margin-bottom:6px">BUDGET TOTAL HEURES AUTOMATISME</label>'+
+    '<div style="display:flex;align-items:center;gap:10px">'+
+    '<input id="bareme-h" type="number" min="1" step="1" placeholder="Ex: 120" '+
+    'style="flex:1;border:2px solid var(--ac);border-radius:var(--r);padding:10px 12px;font-size:18px;font-weight:900;font-family:inherit;background:var(--bg2);color:var(--ac);outline:none;text-align:center">'+
+    '<span style="font-size:16px;font-weight:700;color:var(--tx3)">H</span></div></div>'+
+    '<div id="bareme-preview" style="margin-bottom:20px"></div>'+
+    '<div style="display:flex;gap:10px;justify-content:flex-end">'+
+    '<button id="_bar_cancel" style="padding:9px 20px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);cursor:pointer;font-size:12px;font-family:inherit;color:var(--tx2)">Annuler</button>'+
+    '<button id="_bar_ok" style="padding:9px 22px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">\u2705 Appliquer</button></div>';
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  document.getElementById('_bar_cancel').onclick=function(){ov.remove();};
+  document.getElementById('_bar_ok').onclick=function(){_applyBareme(phAuto.pk);ov.remove();};
+
+  // Aperçu en temps réel
+  var inp=document.getElementById('bareme-h');
+  inp.oninput=function(){_baremePreview(+this.value||0);};
+  inp.onchange=function(){_baremePreview(+this.value||0);};
+  inp.focus();
+}
+
+function _getBaremeTranche(h){
+  if(h<75)return 0;   // < 75H
+  if(h<150)return 1;  // 75H à 150H
+  return 2;            // > 150H
+}
+
+function _baremePreview(totalH){
+  var prev=document.getElementById('bareme-preview');
+  if(!prev)return;
+  if(!totalH){prev.innerHTML='';return;}
+  var tr=_getBaremeTranche(totalH);
+  var labels=['Projet < 75H','Projet 75\u2013150H','Projet > 150H'];
+  var html='<div style="font-size:10px;font-weight:700;color:var(--ac);margin-bottom:8px">'+
+    'Tranche : '+labels[tr]+' \u2014 Aperçu des heures</div>';
+  html+='<div style="max-height:220px;overflow-y:auto;border:1px solid var(--bd);border-radius:var(--r2)">';
+  var curSb='';
+  BAREME_AUTO.phases.forEach(function(row,i){
+    if(row.sb!==curSb){
+      curSb=row.sb;
+      html+='<div style="background:var(--ac2);color:var(--ac);padding:4px 10px;font-size:10px;font-weight:800">'+curSb+'</div>';
+    }
+    var h=Math.round(totalH*row.pct[tr]/100*10)/10;
+    html+='<div style="display:flex;justify-content:space-between;padding:4px 10px;font-size:11px;'+(i%2?'background:var(--bg3)':'background:var(--bg2)')+'">'+
+      '<span>'+row.lb+'</span>'+
+      '<span style="font-weight:700;color:var(--ac)">'+h+'H <span style="color:var(--tx3);font-weight:400">('+row.pct[tr]+'%)</span></span>'+
+      '</div>';
+  });
+  html+='</div>';
+  prev.innerHTML=html;
+}
+
+function _applyBareme(phPk){
+  var totalH=+(document.getElementById('bareme-h').value)||0;
+  if(!totalH){alert('Entrez un nombre d\'heures.');return;}
+  var tr=_getBaremeTranche(totalH);
+  var data=D();
+  var p=currP();
+
+  // Trouver ou créer les sous-phases et tâches
+  var curSbs={};BAREME_AUTO.phases.forEach(function(row){curSbs[row.sb]=null;});
+
+  // Scanner les sous-phases existantes de la phase AUTO
+  data.forEach(function(r){
+    if(r.t==='sb'&&r.pk===phPk)curSbs[r.lb]=r.id;
+  });
+
+  // Créer les sous-phases manquantes
+  Object.keys(curSbs).forEach(function(sbLb){
+    if(!curSbs[sbLb]){
+      var newSb={id:'sb_'+Date.now()+'_'+Math.random().toString(36).slice(2),
+        t:'sb',pk:phPk,lb:sbLb};
+      // Insérer après la phase
+      var phIdx=data.findIndex(function(r){return r.pk===phPk&&r.t==='ph';});
+      if(phIdx>=0)data.splice(phIdx+1,0,newSb);
+      else data.push(newSb);
+      curSbs[sbLb]=newSb.id;
+    }
+  });
+
+  // Pour chaque tâche du barème : trouver ou créer
+  var sbOrder=[];
+  BAREME_AUTO.phases.forEach(function(row){
+    if(sbOrder.indexOf(row.sb)<0)sbOrder.push(row.sb);
+  });
+
+  sbOrder.forEach(function(sbLb){
+    var sbId=curSbs[sbLb];
+    var sbIdx=data.findIndex(function(r){return r.id===sbId;});
+    var tasks=BAREME_AUTO.phases.filter(function(r){return r.sb===sbLb;});
+
+    tasks.forEach(function(row){
+      var hPrev=Math.round(totalH*row.pct[tr]/100*10)/10;
+      // Chercher tâche existante avec ce nom dans cette sous-phase
+      var exist=data.find(function(r){
+        return r.t==='act'&&r.pk===phPk&&r.lb===row.lb;
+      });
+      if(exist){
+        exist.hPrev=hPrev;
+      } else {
+        var newAct={id:'act_'+Date.now()+'_'+Math.random().toString(36).slice(2),
+          t:'act',pk:phPk,grp:phPk,lb:row.lb,
+          s:0,e:0,hPrev:hPrev,hReel:0,prevDays:[],reelDays:[],done:false,p:[]};
+        // Insérer après la sous-phase (ou à la fin du groupe)
+        data.splice(sbIdx+1,0,newAct);
+        sbIdx++; // décaler pour les suivantes
+      }
+    });
+  });
+
+  p.data=data;
+  saveNow();
+  renderGantt();
+  if(typeof renderPlanEditor==='function')renderPlanEditor();
+  alert('\u2705 Bar\u00E8me appliqu\u00E9 ! '+(tr===0?'Tranche < 75H':tr===1?'Tranche 75\u2013150H':'Tranche > 150H')+
+    '\nTotal : '+totalH+'H r\u00E9parti sur '+BAREME_AUTO.phases.length+' t\u00E2ches.');
+}
+
 function openAffaireInfos(){
   if(!STORE.current)return;
   var p=currP(),infos=p.infos||{},resps=infos.responsables||{};
@@ -5795,6 +5965,16 @@ function buildPhaseList(container){
     phHdr.appendChild(phCount);
     phHdr.appendChild(editPhBtn);
     phHdr.appendChild(delBtn);
+    // Bouton Barème uniquement pour la phase Automatisme
+    if(pk==='AUTOMATISME'||pk==='Automatisme'||pk.toUpperCase()==='AUTOMATISME'){
+      var barBtn=document.createElement('button');
+      barBtn.textContent='⚙️ Barème';
+      barBtn.title='Appliquer le barème automatisme (répartition des heures)';
+      barBtn.style.cssText='margin-left:8px;padding:3px 10px;border-radius:var(--r);border:1px solid rgba(255,255,255,.5);'
+        +'background:rgba(255,255,255,.2);color:#fff;cursor:pointer;font-size:10px;font-weight:700;font-family:inherit';
+      (function(_pk){barBtn.onclick=function(e){e.stopPropagation();openBaremeAuto(_pk);};}(pk));
+      phHdr.appendChild(barBtn);
+    }
 
     // Phase body
     var phBody=document.createElement('div');
