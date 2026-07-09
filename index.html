@@ -4361,7 +4361,7 @@ function undoAction(){
     var sv=document.getElementById('sv');
     if(sv){sv.textContent='↩ Annulé';sv.style.display='inline';
       clearTimeout(_undoNotifT);_undoNotifT=setTimeout(function(){sv.textContent='✓ Sauvegardé';sv.style.display='none';},2000);}
-  }catch(e){alert('Erreur lors de l\'annulation.');}
+  }catch(e){console.warn('Undo:',e);}
 }
 
 // Raccourci clavier Ctrl+Z
