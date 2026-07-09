@@ -1481,6 +1481,14 @@ function openPersonEditor(nm){
   renderPersonnelSearch();
 }
 
+function renderPersonnelFilter(){
+  var q=document.getElementById('si-ann');
+  var val=q?q.value:'';
+  renderPersonnelSearch();
+  var q2=document.getElementById('si-ann');
+  if(q2){q2.value=val;q2.focus();q2.setSelectionRange(val.length,val.length);}
+}
+
 function renderPersonnelSearch(){
   var el=document.getElementById('pers-search');
   if(!el)return;
@@ -1490,6 +1498,13 @@ function renderPersonnelSearch(){
   var ES2=ES||{};
   var typeOpts=['','ELS','Interim','S-T','Alternant','Stagiaire'];
 
+  var _q2=(document.getElementById('si-ann')||{}).value||'';
+  var _ql=_q2.trim().toLowerCase();
+  if(_ql)persons=persons.filter(function(p){
+    return p.name.toLowerCase().indexOf(_ql)>=0
+      ||(p.type&&p.type.toLowerCase().indexOf(_ql)>=0)
+      ||((p.habilitations||[]).some(function(h){return h.toLowerCase().indexOf(_ql)>=0;}));
+  });
   var html='<div style="padding:20px">';
 
   // ── Header
@@ -1563,6 +1578,39 @@ function renderPersonnelSearch(){
         });
         html+='</div>';
       }
+      // ── Tâches assignées, triées par affaire (non archivées) ──────
+      var _tasksByAff={};
+      Object.keys(STORE.projects).sort().forEach(function(aff){
+        if(STORE.projects[aff].closed)return; // exclure archivées
+        var _acts=(STORE.projects[aff].data||[]).filter(function(r){return r.t==='act';});
+        _acts.forEach(function(a){
+          if((a.p||[]).some(function(pp){return pp.name===p2.name;})){
+            if(!_tasksByAff[aff])_tasksByAff[aff]=[];
+            _tasksByAff[aff].push(a);
+          }
+        });
+      });
+      var _affKeys=Object.keys(_tasksByAff);
+      if(_affKeys.length&&_ql){
+        html+='<div style="margin-top:6px">';
+        _affKeys.forEach(function(aff){
+          var _inf=(STORE.projects[aff].infos)||{};
+          var _affLbl=_inf.libelle?(_inf.numeroClient?_inf.numeroClient+' · ':'')+(aff):aff;
+          var _ph=PH_get(_tasksByAff[aff][0].pk);
+          html+='<div style="margin-bottom:5px">';
+          html+='<div style="font-size:9px;font-weight:800;color:var(--ac);margin-bottom:3px;display:flex;align-items:center;gap:4px">';
+          html+='<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ac)"></span>'+_affLbl+'</div>';
+          html+='<div style="display:flex;flex-wrap:wrap;gap:3px">';
+          _tasksByAff[aff].forEach(function(a){
+            var _ph2=PH_get(a.pk);
+            var _done=a.done?'opacity:.5;text-decoration:line-through;':'';
+            html+='<span style="font-size:9px;padding:2px 7px;border-radius:8px;background:'+_ph2.f+';color:'+_ph2.xd+';border:1px solid '+_ph2.xl+';'+_done+'">';
+            html+=a.lb+(a.done?' ✓':'')+'</span>';
+          });
+          html+='</div></div>';
+        });
+        html+='</div>';
+      }
       html+='</div>';
       if(p2.type)html+='<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+ec.bg+';color:'+ec.tc+'">'+p2.type+'</span>';
       html+='<button class="_edit_btn" data-pname="'+p2.name.replace(/"/g,'&quot;')+'" style="padding:4px 10px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:var(--tx3);font-size:11px;cursor:pointer;font-family:inherit">✏️</button>';
@@ -1574,7 +1622,7 @@ function renderPersonnelSearch(){
 
   // Recherche
   html+='<div style="margin-top:24px"><div style="font-size:12px;font-weight:700;color:var(--tx2);margin-bottom:8px">🔍 Recherche par activité</div>';
-  html+='<div class="srb" style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="sri">⌕</span><input id="si" type="text" placeholder="Chercher..." oninput="renderSearch()" style="flex:1;border:2px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>';
+  html+='<div class="srb" style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="sri">⌕</span><input id="si-ann" type="text" placeholder="Rechercher..." oninput="renderPersonnelFilter()" style="flex:1;border:2px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>';
   html+='<div id="sr"></div></div></div>';
 
   el.innerHTML=html;
