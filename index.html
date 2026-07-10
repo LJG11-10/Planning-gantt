@@ -585,7 +585,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
   <!-- Sous-onglets Personnel -->
   <div id="personnel-subnav" style="display:flex;gap:4px;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--bd);flex-shrink:0">
     <button class="pers-tab on" data-pt="equipe" onclick="switchPersonnelTab('equipe')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">👥 Vue Équipe</button>
-    <button class="pers-tab" data-pt="fiche" onclick="switchPersonnelTab('fiche')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">🗂 Fiches d'heure</button>
+    <button class="pers-tab" data-pt="fiche" onclick="switchPersonnelTab('fiche')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">🗂 Feuille d'heure</button>
     <button class="pers-tab" data-pt="absences" onclick="switchPersonnelTab('absences')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">🗓 Absences</button>
     <button class="pers-tab" data-pt="heures" onclick="switchPersonnelTab('heures')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">⏱ Heures</button>
     <button class="pers-tab" data-pt="search" onclick="switchPersonnelTab('search')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">🔍 Annuaire & Recherche</button>
@@ -1828,7 +1828,7 @@ function fhPrintFiche(nm){
   var body='';
 
   if(!wks.length){
-    alert('Aucune fiche trouvée pour '+nm+'.\nSaisissez des heures dans l\'onglet Fiches d\'heure d\'abord.');
+    alert('Aucune feuille trouvée pour '+nm+'.\nSaisissez des heures dans l\'onglet Feuille d\'heure d\'abord.');
     return;
   }
 
@@ -1883,7 +1883,7 @@ function fhPrintFiche(nm){
     +'<div class="sig-box"><div class="sig-lbl">Visa du responsable</div></div></div>';
 
   var dateStr=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Fiche heure '+esc(nm)+'</title>'
+  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Feuille d\'heure '+esc(nm)+'</title>'
     +'<style>'
     +'*{box-sizing:border-box;margin:0;padding:0}'
     +'body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}'
@@ -1919,7 +1919,7 @@ function fhPrintFiche(nm){
     +'.week{page-break-inside:avoid}'
     +'}'
     +'</style></head><body>'
-    +'<h1>Fiche d\'heure</h1>'
+    +'<h1>Feuille d\'heure</h1>'
     +'<div class="meta"><strong>'+esc(nm)+'</strong> &nbsp;·&nbsp; '+esc(aff)+' &nbsp;·&nbsp; Édité le '+dateStr+'</div>'
     +'<div class="kpi">'
     +'<div class="kpi-box"><div class="kpi-h">'+grandTotal+'H</div><div class="kpi-l">TOTAL GÉNÉRAL</div></div>'
@@ -4824,7 +4824,19 @@ function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt
 function buildModifPanel(row){
   var p=currP()||{};
   var infos=(p&&p.infos)||{},resps=infos.responsables||{};
-  var mods=row.modifications||[];
+  // Collecter les modifs de cette tâche + celles qui la citent dans affTasks
+  var mods=(row.modifications||[]).slice();
+  D().forEach(function(r2){
+    if(r2.id===row.id)return;
+    (r2.modifications||[]).forEach(function(m){
+      if(m.affTasks&&m.affTasks.indexOf(row.id)>=0){
+        // Ajouter avec indicateur de source
+        var copy=Object.assign({},m,{_fromTask:r2.lb,_linked:true});
+        if(!mods.some(function(ex){return ex.date===m.date&&ex.text===m.text;}))mods.push(copy);
+      }
+    });
+  });
+  mods.sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
   var h='<div style="display:flex;flex-direction:column;height:100%;font-family:inherit">';
   // Titre
   h+='<div style="padding:12px 16px 10px;font-size:13px;font-weight:900;color:var(--tx);border-bottom:2px solid var(--ac);flex-shrink:0;background:var(--bg2)">'+
@@ -4839,6 +4851,11 @@ function buildModifPanel(row){
       h+='<div style="background:var(--bg3);border-radius:var(--r2);padding:10px 12px;margin-bottom:8px;border-left:4px solid '+col+'">';
       h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">';
       h+='<div style="font-weight:700;color:var(--tx);font-size:13px;flex:1;word-break:break-word">'+escHtml(m.texte)+'</div>';
+      if(m._linked&&m._fromTask)h+='<div style="font-size:9px;color:var(--ac);margin-top:2px;font-style:italic">↪ Via : '+escHtml(m._fromTask)+'</div>';
+      if(m.affTasks&&m.affTasks.length>1){
+        var _taskNames=m.affTasks.map(function(tid){var tr2=D().find(function(x){return x.id===tid;});return tr2?escHtml(tr2.lb):'?';});
+        h+='<div style="font-size:8px;color:var(--tx3);margin-top:2px">Tâches concernées: '+_taskNames.join(', ')+'</div>';
+      }
       var delBtn='<button onclick="delModif(\''+row.id+'\','+i+')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 0 0 4px">\u00D7</button>';
       h+=delBtn+'</div>';
       h+='<div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">';
@@ -4857,6 +4874,25 @@ function buildModifPanel(row){
   h+='<div style="flex-shrink:0;border-top:1px solid var(--bd);padding:12px 14px;background:var(--bg2)">';
   h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:6px">+ NOUVELLE MODIFICATION</div>';
   h+='<textarea id="modif-txt-'+row.id+'" placeholder="Ex : Changement de plan iss0.1" rows="2" style="width:100%;box-sizing:border-box;border:1px solid var(--bd);border-radius:var(--r);padding:7px;font-size:12px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;resize:none;margin-bottom:8px"></textarea>';
+  // ── Sélection tâches affectées ────────────────────────────────
+  h+='<div style="margin-bottom:8px">';
+  h+='<div style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;margin-bottom:4px">TÂCHES CONCERNÉES PAR CETTE MODIFICATION</div>';
+  h+='<div id="modif-tasks-'+row.id+'" style="max-height:120px;overflow-y:auto;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg3);padding:4px">';
+  var _curPkM='',_curSbM='';
+  D().forEach(function(tr){
+    if(tr.t==='ph'){_curPkM=tr.pk;_curSbM='';return;}
+    if(tr.t==='sb'){_curSbM=tr.lb;return;}
+    if(tr.t!=='act')return;
+    var _phM=PH_get(_curPkM);
+    var _lbM=(_curSbM?_curSbM+' › ':'')+tr.lb;
+    var _isSelf=tr.id===row.id;
+    h+='<label style="display:flex;align-items:center;gap:5px;padding:2px 4px;border-radius:3px;cursor:pointer;font-size:10px;color:var(--tx);hover:background:var(--bg2)">';
+    h+='<input type="checkbox" class="modif-task-cb" data-tid="'+tr.id+'"'+(_isSelf?' checked disabled':'')+'>';
+    h+='<span style="display:inline-block;width:6px;height:6px;border-radius:2px;background:'+_phM.h+';flex-shrink:0"></span>';
+    h+='<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+_lbM+'</span>';
+    h+='</label>';
+  });
+  h+='</div></div>';
   h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:5px">\uD83D\uDCE7 ENVOYER \u00C0</div>';
   h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
   [{k:'els',l:'ELS',always:true},{k:'auto',l:'Automatisme',always:false},{k:'be',l:'BE',always:false}].forEach(function(rd){
@@ -4899,7 +4935,12 @@ function sendModif(actId,doSend){
   });
   emails=emails.filter(function(e,i,a){return a.indexOf(e)===i;});
   var now=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
-  var mod={texte:txt,date:now,dest:dest,envoye:false};
+  // Tâches affectées cochées
+  var affTasks=[];
+  document.querySelectorAll('#modif-tasks-'+actId+' .modif-task-cb').forEach(function(cb){
+    if(cb.checked)affTasks.push(cb.dataset.tid);
+  });
+  var mod={texte:txt,date:now,dest:dest,envoye:false,affTasks:affTasks};
   function _save(envoye){
     mod.envoye=envoye;
     if(!r.modifications)r.modifications=[];
@@ -7065,7 +7106,7 @@ function buildFullExpPanel(row,ph,nd){
   // Le panneau modif est sticky à left:min(97vw,880px) — juste à droite du .ei
   return leftPanel+
     '<div id="modif-panel-'+row.id+'" '+
-    'style="position:sticky;left:min(97vw,880px);top:0;width:420px;max-height:580px;overflow-y:auto;'+
+    'style="position:sticky;left:min(97vw,880px);top:0;width:560px;max-height:580px;overflow-y:auto;'+
     'background:var(--bg2);border-left:2px solid var(--bd);display:inline-block;vertical-align:top;box-sizing:border-box">'+
     rightPanel+'</div>';
 }
@@ -7428,8 +7469,8 @@ function fhGenerateHTML(nm,cb){
   });
   body+='<div class="sig"><div class="sig-box"><div class="sig-lbl">Signature du salarié</div><div class="sig-name">'+esc(nm)+'</div></div><div class="sig-box"><div class="sig-lbl">Visa du responsable</div></div></div>';
   var dateStr=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Fiche heure '+esc(nm)+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}h1{font-size:20px;font-weight:900;color:#1F4E79}.meta{font-size:11px;color:#666;margin:4px 0 20px}.kpi{display:flex;gap:20px;margin-bottom:24px}.kpi-box{background:#1F4E79;color:#fff;padding:10px 20px;border-radius:8px;text-align:center}.kpi-h{font-size:26px;font-weight:900}.kpi-l{font-size:9px;opacity:.8;font-weight:700}.week{margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #CBD5E1}.week-hdr{background:#1F4E79;color:#fff;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12px}.week-tot{background:rgba(255,255,255,.2);padding:2px 12px;border-radius:20px;font-size:13px;font-weight:900}table{width:100%;border-collapse:collapse}th{background:#EFF6FF;color:#1F4E79;padding:6px 10px;text-align:left;font-size:10px;border-bottom:2px solid #BFDBFE}.th-h,.th-tot{text-align:center;width:60px}td{padding:6px 10px;border-bottom:1px solid #E5E7EB;vertical-align:middle}.day{font-weight:700;color:#1F4E79;background:#F8FAFF;width:140px;font-size:11px}.pk{background:#DBEAFE;color:#1E40AF;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px}.h{text-align:center;color:#666;width:60px}.tot{text-align:center;width:60px}.day-tot{font-weight:900;color:#1F4E79;background:#EFF6FF}tfoot td{background:#1F4E79;color:#fff;padding:7px 10px;font-weight:700}.tf-lbl{text-align:right}.tf-h{text-align:center;font-size:15px;font-weight:900;color:#FDE047}.sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:32px}.sig-box{border-top:2px solid #1F4E79;padding-top:8px}.sig-lbl{font-size:10px;color:#999;margin-bottom:36px}.sig-name{font-size:12px;font-weight:700}@media print{@page{size:A4 portrait;margin:12mm}body{padding:0}.week{page-break-inside:avoid}}</style></head><body>'
-    +'<h1>Fiche d\'heure</h1><div class="meta"><strong>'+esc(nm)+'</strong> &nbsp;·&nbsp; '+esc(aff)+' &nbsp;·&nbsp; Édité le '+dateStr+'</div>'
+  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Feuille d\'heure '+esc(nm)+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}h1{font-size:20px;font-weight:900;color:#1F4E79}.meta{font-size:11px;color:#666;margin:4px 0 20px}.kpi{display:flex;gap:20px;margin-bottom:24px}.kpi-box{background:#1F4E79;color:#fff;padding:10px 20px;border-radius:8px;text-align:center}.kpi-h{font-size:26px;font-weight:900}.kpi-l{font-size:9px;opacity:.8;font-weight:700}.week{margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #CBD5E1}.week-hdr{background:#1F4E79;color:#fff;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12px}.week-tot{background:rgba(255,255,255,.2);padding:2px 12px;border-radius:20px;font-size:13px;font-weight:900}table{width:100%;border-collapse:collapse}th{background:#EFF6FF;color:#1F4E79;padding:6px 10px;text-align:left;font-size:10px;border-bottom:2px solid #BFDBFE}.th-h,.th-tot{text-align:center;width:60px}td{padding:6px 10px;border-bottom:1px solid #E5E7EB;vertical-align:middle}.day{font-weight:700;color:#1F4E79;background:#F8FAFF;width:140px;font-size:11px}.pk{background:#DBEAFE;color:#1E40AF;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px}.h{text-align:center;color:#666;width:60px}.tot{text-align:center;width:60px}.day-tot{font-weight:900;color:#1F4E79;background:#EFF6FF}tfoot td{background:#1F4E79;color:#fff;padding:7px 10px;font-weight:700}.tf-lbl{text-align:right}.tf-h{text-align:center;font-size:15px;font-weight:900;color:#FDE047}.sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:32px}.sig-box{border-top:2px solid #1F4E79;padding-top:8px}.sig-lbl{font-size:10px;color:#999;margin-bottom:36px}.sig-name{font-size:12px;font-weight:700}@media print{@page{size:A4 portrait;margin:12mm}body{padding:0}.week{page-break-inside:avoid}}</style></head><body>'
+    +'<h1>Feuille d\'heure</h1><div class="meta"><strong>'+esc(nm)+'</strong> &nbsp;·&nbsp; '+esc(aff)+' &nbsp;·&nbsp; Édité le '+dateStr+'</div>'
     +'<div class="kpi"><div class="kpi-box"><div class="kpi-h">'+grandTotal+'H</div><div class="kpi-l">TOTAL GÉNÉRAL</div></div><div class="kpi-box" style="background:#374151"><div class="kpi-h">'+wks.length+'</div><div class="kpi-l">SEMAINE'+(wks.length>1?'S':'')+'</div></div></div>'
     +body+'</body></html>';
   cb(html);
@@ -8506,10 +8547,23 @@ function renderRecap(){
 
   function aRow(r){
     const ph=PH_get(r.pk),tot=r.p.reduce((s,p)=>s+(+p.heures||0),0);
-    const done=r.done?'<span style="color:var(--gn);font-size:10px;margin-right:3px">✓</span>':'';
-    const progBadge=(r.inProgress&&!r.done&&r.progress>0)
-      ?'<span style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;font-size:9px;font-weight:700;color:#D97706;padding:1px 6px;margin-right:3px">⚡'+r.progress+'%</span>'
-      :'';
+    // Statut depuis le GANTT : done > retard réel > en cours > non planifié
+    const _reelDays=r.reelDays&&r.reelDays.length?r.reelDays:[];
+    const _prevDays=r.prevDays&&r.prevDays.length?r.prevDays:[];
+    const _hasBars=_reelDays.length>0||_prevDays.length>0||r.s>0;
+    const _todayD5=TODAY?(TODAY.w-1)*5+(TODAY.di||0):0;
+    const _reelEnd=_reelDays.length?Math.max.apply(null,_reelDays):-1;
+    const _isOverdue=!r.done&&_reelEnd>=0&&_todayD5>_reelEnd;
+    const _isNonPlan=!_hasBars;
+    // Badges statut
+    const done=r.done?'<span style="background:#D1FAE5;color:#059669;font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;margin-right:4px">✓ Terminée</span>':'';
+    const progBadge=_isNonPlan
+      ?'<span style="background:#FEF3C7;color:#92400E;font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;margin-right:4px">📌 Non plan.</span>'
+      :_isOverdue
+        ?'<span style="background:#FEE2E2;color:#DC2626;font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;margin-right:4px">🔴 Retard</span>'
+        :(r.inProgress&&!r.done&&r.progress>0)
+          ?'<span style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;font-size:9px;font-weight:700;color:#D97706;padding:1px 6px;margin-right:3px">⚡'+r.progress+'%</span>'
+          :'';
     const pc=r.p.map((p,i)=>{const es=p.ent?ES[p.ent]:null;
       return `<td style="white-space:nowrap">${p.name||'—'}</td>`+
              `<td>${p.ent?`<span class="pill" style="background:${es.bg};color:${es.tc}">${p.ent}</span>`:'—'}</td>`+
@@ -8520,13 +8574,21 @@ function renderRecap(){
     const deltaCell=delta!==null
       ?`<td style="text-align:center;font-weight:700;font-size:10px;color:${delta>0?'var(--rd)':delta<0?'var(--gn)':'var(--tx3)'}">${delta>0?'+':''}${delta}H</td>`
       :'<td style="text-align:center;color:var(--tx3)">—</td>';
-    return `<tr style="border-bottom:1px solid var(--bd)">
+    // Plage dates depuis prevDays/reelDays (cohérent avec GANTT)
+    let _dateStr='—';
+    if(_isNonPlan){_dateStr='<span style="color:var(--tx3);font-style:italic">Non planifiée</span>';}
+    else if(_prevDays.length){
+      const wS=Math.floor(Math.min.apply(null,_prevDays)/5)+1;
+      const wE=Math.floor(Math.max.apply(null,_prevDays)/5)+1;
+      _dateStr='S'+wS+(wS!==wE?'→S'+wE:'');
+    } else if(r.s>0){_dateStr='S'+r.s+(r.e&&r.e!==r.s?'→S'+r.e:'');}
+    return `<tr style="border-bottom:1px solid var(--bd);background:${_isOverdue?'rgba(254,226,226,.2)':r.done?'rgba(209,250,229,.1)':''}">
       <td style="padding:4px 8px;white-space:nowrap">${progBadge}${done}${r.lb}</td>${pc}
       <td style="text-align:right;font-weight:700;color:${tot?'var(--ac)':'var(--tx3)'};">${tot||'—'}</td>
-      <td style="text-align:center;font-weight:700;color:var(--or)">${r.hPrev!=null?r.hPrev+'H':'—'}</td>
-      <td style="text-align:center;font-weight:700;color:var(--gn)">${r.hReel!=null?r.hReel+'H':'—'}</td>
+      <td style="text-align:center;font-weight:700;color:var(--or)">${r.hPrev!=null&&r.hPrev>0?r.hPrev+'H':'—'}</td>
+      <td style="text-align:center;font-weight:700;color:var(--gn)">${r.hReel!=null&&r.hReel>0?r.hReel+'H':'—'}</td>
       ${deltaCell}
-      <td style="font-size:10px;color:var(--tx3);text-align:center">${r.dDur!=null?r.dDur+'j':'S'+r.s+'→S'+r.e}</td>
+      <td style="font-size:10px;color:var(--tx3);text-align:center">${_dateStr}</td>
     </tr>`;
   }
 
