@@ -829,7 +829,11 @@ function applyRoleRestrictions() {
 function addUserBadge() {
   var navR = document.querySelector('.nav-r');
   if (!navR || !CURRENT_USER) return;
+  // Supprimer badge existant pour éviter les doublons
+  var existing = navR.querySelector('[data-user-badge]');
+  if (existing) existing.remove();
   var badge = document.createElement('div');
+  badge.setAttribute('data-user-badge', '1');
   badge.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 10px;background:var(--bg3);border-radius:20px;border:1px solid var(--bd);font-size:10px;font-weight:600;color:var(--tx2)';
   var roleLabel = CURRENT_ROLE === 'admin' ? '👑 Admin' 
     : CURRENT_ROLE === 'automatisme' ? '⚙️ Automatisme'
@@ -1103,9 +1107,11 @@ function loadStore(){
   checkPasswordReset();
   window.addEventListener('hashchange', checkPasswordReset);
   // ── Restaurer session existante automatiquement ──────────────────
+  var _appStarted=false;
   if(supa){
     supa.auth.getSession().then(function(res){
-      if(res.data&&res.data.session&&res.data.session.user){
+      if(res.data&&res.data.session&&res.data.session.user&&!_appStarted){
+        _appStarted=true;
         CURRENT_USER=res.data.session.user;
         loadRoleAndStart();
       }
