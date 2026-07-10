@@ -2672,8 +2672,21 @@ function confirmFortuit(){
             if(oldF.origE!=null)oldAct.e=oldF.origE;
           }
         } else {
-          oldAct.dDurR=Math.max(0,(oldAct.dDurR||oldAct.dDur||0)-Math.ceil(oldF.dur/(oldF.unit==='hours'?8:1)));
-          oldAct.hReel=Math.max(0,(oldAct.hReel||0)-(oldF.durDays||0)*((oldAct.hDurR||oldAct.hDur||8)));
+          // Restaurer reelDays originaux sauvegardés
+          if(oldF.origReelDays!==undefined){
+            oldAct.reelDays=oldF.origReelDays.slice();
+          } else {
+            // Compat ancien format : retirer durDays de la fin
+            var _oldDays=oldF.durDays||Math.ceil((oldF.dur||0)/(oldF.unit==='hours'?8:1));
+            if(oldAct.reelDays&&oldAct.reelDays.length>_oldDays){
+              oldAct.reelDays=oldAct.reelDays.slice(0,-_oldDays);
+            } else {
+              oldAct.reelDays=[];
+            }
+          }
+          var _hjU=oldAct.hDur||8;
+          oldAct.hReel=Math.round((oldAct.reelDays||[]).length*_hjU*10)/10;
+          _syncTaskMeta(oldAct);
         }
       }
       oldFt.splice(editIdx,1);
@@ -2739,36 +2752,38 @@ function confirmFortuit(){
     var durDays=unit==='hours'?Math.ceil(dur/8):dur;
 
     if(actObj){
-      // Récupérer les reelDays existants (ou construire depuis prevDays)
-      var existReel=actObj.reelDays&&actObj.reelDays.length
-        ?actObj.reelDays.slice()
-        :getTaskDays5(actObj,'reel').slice();
-      if(!existReel.length){
-        // Pas de réel → partir du prévu
-        var prevD=actObj.prevDays&&actObj.prevDays.length
-          ?actObj.prevDays.slice():getTaskDays5(actObj,'prev').slice();
-        existReel=prevD.slice();
-      }
-      if(existReel.length){
-        // Ajouter durDays jours ouvrés APRÈS la fin actuelle du réel
-        var lastD5=Math.max.apply(null,existReel);
-        for(var _rd=1;_rd<=durDays;_rd++)existReel.push(lastD5+_rd);
-        // Dédoublonner et trier
-        var seen={};existReel=existReel.filter(function(d){if(seen[d])return false;seen[d]=true;return true;}).sort(function(a,b){return a-b;});
+      // Trouver la date de fin actuelle du réel (ou du prévu si pas de réel)
+      var _curReel=actObj.reelDays&&actObj.reelDays.length?actObj.reelDays.slice():[];
+      var _curPrev=actObj.prevDays&&actObj.prevDays.length?actObj.prevDays.slice():[];
+      var _lastD5=-1;
+      if(_curReel.length){
+        _lastD5=Math.max.apply(null,_curReel);
+      } else if(_curPrev.length){
+        _lastD5=Math.max.apply(null,_curPrev);
+      } else if(actObj.e>0){
+        // Fallback sur e/dEnd (ancien format)
+        _lastD5=(actObj.e-1)*5+(actObj.dEnd!=null?actObj.dEnd:4);
       } else {
-        // Aucune barre → créer durDays jours à partir de la semaine courante
         var cw=TODAY?TODAY.w:1;
-        var sd=(cw-1)*5;
-        for(var _rd2=0;_rd2<durDays;_rd2++)existReel.push(sd+_rd2);
+        _lastD5=(cw-1)*5+4; // Vendredi de la semaine courante
       }
-      actObj.reelDays=existReel;
-      // Mettre à jour hReel en conséquence
+      // Créer/étendre reelDays : copier le réel existant + ajouter durDays jours après
+      var newReel=_curReel.slice();
+      // Si pas de réel existant, partir du prévu (jours explicites seulement, pas fallback)
+      if(!newReel.length&&_curPrev.length)newReel=_curPrev.slice();
+      // Ajouter exactement durDays jours APRÈS la fin
+      for(var _rd=1;_rd<=durDays;_rd++)newReel.push(_lastD5+_rd);
+      // Trier et dédoublonner
+      var _seen={};newReel=newReel.filter(function(d){if(_seen[d])return false;_seen[d]=true;return true;}).sort(function(a,b){return a-b;});
+      actObj.reelDays=newReel;
       var hj=actObj.hDur||8;
-      actObj.hReel=Math.round(existReel.length*hj*10)/10;
+      actObj.hReel=Math.round(newReel.length*hj*10)/10;
       _syncTaskMeta(actObj);
     }
 
-    ftRecord={actId:actId,obj:obj,ftType:'retard',dur:dur,unit:unit,date:date,durDays:durDays};
+    ftRecord={actId:actId,obj:obj,ftType:'retard',dur:dur,unit:unit,date:date,durDays:durDays,
+      // Sauvegarder l'état AVANT retard pour pouvoir annuler proprement
+      origReelDays:actObj?(actObj.reelDays?actObj.reelDays.slice():[]):undefined};
   }
 
   STORE.projects[aff].fortuites.push(ftRecord);
@@ -3339,8 +3354,15 @@ function downloadPlanning(mode){
 
       for(var w=fromW;w<=toW;w++){
         var absS=(w-1)*5, absE=(w-1)*5+4;
-        var inP=absE>=prevS&&absS<=prevE;
-        var inR=absE>=reelS&&absS<=reelE;
+        // Non planifié = pas de barres (ni prevDays ni reelDays ni s)
+        var _hasBar=r.s>0||(r.prevDays&&r.prevDays.length)||(r.reelDays&&r.reelDays.length);
+        // Calcul des plages depuis prevDays/reelDays si disponibles
+        var _ps2=r.prevDays&&r.prevDays.length?Math.min.apply(null,r.prevDays):prevS;
+        var _pe2=r.prevDays&&r.prevDays.length?Math.max.apply(null,r.prevDays):prevE;
+        var _rs2=r.reelDays&&r.reelDays.length?Math.min.apply(null,r.reelDays):reelS;
+        var _re2=r.reelDays&&r.reelDays.length?Math.max.apply(null,r.reelDays):reelE;
+        var inP=_hasBar&&_ps2>=0&&absE>=_ps2&&absS<=_pe2;
+        var inR=_hasBar&&_rs2>=0&&absE>=_rs2&&absS<=_re2;
         var isTW=TODAY&&TODAY.w===w;
 
         if(!inP&&!inR){
@@ -6101,8 +6123,9 @@ function renderPlanEditor(){
     if(act==='up'){pedMove(id,-1);return;}
     if(act==='dn'){pedMove(id,1);return;}
     if(act==='rename'){pedRename(id);return;}
-    if(act==='edit'){pedShowEditForm(id);return;}
     if(act==='dup'){pedDup(id);return;}
+    if(act==='dup-sb'){pedDupSb(id);return;}
+    if(act==='edit'){pedShowEditForm(id);return;}
   };
 }
 
@@ -6221,6 +6244,7 @@ function buildPhaseList(container){
         sbHandle.style.cssText='cursor:grab;color:var(--tx3);font-size:13px;margin-right:6px;flex-shrink:0;user-select:none';
         item.insertBefore(sbHandle,item.firstChild);
         item.appendChild(lbl);
+        item.appendChild(makeBtn('\u29C9','dup-sb','Dupliquer (avec tâches)',row.id,'ped-ico'));
         item.appendChild(makeBtn('\u270E','rename','Renommer',row.id,'ped-ico'));
         item.appendChild(makeBtn('\u2715','del','Supprimer',row.id,'ped-ico'));
       } else if(row.t==='act'){
@@ -6247,7 +6271,7 @@ function buildPhaseList(container){
         item.appendChild(lbl);
         item.appendChild(info);
         item.appendChild(makeBtn('\u270E','edit','Modifier',row.id,'ped-ico'));
-        item.appendChild(makeBtn('\u29C9','dup','Dupliquer',row.id,'ped-ico'));
+        item.appendChild(makeBtn('\u29C9','dup-sb','Dupliquer (avec tâches)',row.id,'ped-ico'));
         item.appendChild(makeBtn('\u2715','del','Supprimer',row.id,'ped-ico'));
       }
       phBody.appendChild(item);
@@ -6284,7 +6308,8 @@ function makeBtn(text,action,title,id,cls){
   else if(action==='dn'){btn.onclick=function(e){e.stopPropagation();pedMove(id,1);};}
   else if(action==='rename'){btn.onclick=function(e){e.stopPropagation();pedRename(id);};}
   else if(action==='edit'){btn.onclick=function(e){e.stopPropagation();pedShowEditForm(id);};}
-  else if(action==='dup'){btn.onclick=function(e){e.stopPropagation();pedDup(id);};}
+  else if(action==='dup'){btn.onclick=function(e){e.stopPropagation();pedDup(id);};}  
+  else if(action==='dup-sb'){btn.onclick=function(e){e.stopPropagation();pedDupSb(id);}; }
   return btn;
 }
 
@@ -6379,6 +6404,48 @@ function _pedInitDrag(container){
   });
 }
 
+function pedDupSb(sbId){
+  var data=D();
+  // Trouver la sous-phase
+  var sbIdx=data.findIndex(function(r){return r.id===sbId;});
+  if(sbIdx<0)return;
+  var sb=data[sbIdx];
+  // Collecter les tâches de cette sous-phase (jusqu'à la prochaine sb ou ph)
+  var tasks=[];
+  var j=sbIdx+1;
+  while(j<data.length&&data[j].t!=='sb'&&data[j].t!=='ph'){
+    if(data[j].t==='act')tasks.push(data[j]);
+    j++;
+  }
+  // Créer une copie de la sous-phase
+  var newSb={
+    id:'sb_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    t:'sb',pk:sb.pk,lb:sb.lb+' (copie)'
+  };
+  // Créer des copies des tâches (non planifiées)
+  var newTasks=tasks.map(function(t){
+    return {
+      id:'act_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+      t:'act',pk:t.pk,grp:t.grp||t.pk,lb:t.lb,
+      hPrev:0,hReel:0,
+      prevDays:[],reelDays:[],
+      s:0,e:0,sPrev:0,ePrev:0,sReel:0,eReel:0,
+      dDur:0,dDurR:0,
+      done:false,inProgress:false,
+      p:[],budgetH:t.budgetH||0
+    };
+  });
+  // Insérer après la fin du bloc original (position j)
+  var insertAt=j;
+  var block=[newSb].concat(newTasks);
+  data.splice.apply(data,[insertAt,0].concat(block));
+  saveNow();renderPlanEditor();
+  // Feedback visuel
+  var sv=document.getElementById('sv');
+  if(sv){sv.textContent='⬡ Sous-phase dupliquée ('+newTasks.length+' tâche'+(newTasks.length!==1?'s':'')+')';sv.style.display='inline';
+    clearTimeout(pedDupSb._t);pedDupSb._t=setTimeout(function(){sv.style.display='none';},2500);}
+}
+
 function pedMove(id,dir){
   var data=D();
   var idx=data.findIndex(function(r){return r.id===id;});
@@ -6431,6 +6498,8 @@ function pedShowEditSubForm(id){
   ok.onclick=function(){var nv=document.getElementById('pf-sub-lb').value.trim();if(!nv)return;r.lb=nv;saveNow();clearFormArea();renderPlanEditor();refreshAllTabs();};
   var cn=document.createElement('button');cn.className='btn btn-g';cn.textContent='Annuler';cn.onclick=clearFormArea;
   br.appendChild(ok);br.appendChild(cn);d.appendChild(br);fa.appendChild(d);
+  fa.scrollIntoView({behavior:'smooth',block:'nearest'});
+  inp.focus();
 }
 function pedShowEditPhaseForm(pk,ph,isCustom){
   var fa=document.getElementById('ped-form-area');if(!fa)return;fa.innerHTML='';
