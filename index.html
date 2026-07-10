@@ -4645,7 +4645,7 @@ function phSetNotifResps(pk){
   if(!phRow)return;
   var p=currP(),infos=p.infos||{},resps=infos.responsables||{};
   var current=phRow.notifResps||[];
-  var defs=[{k:'els',l:'ELS'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'Études"}];
+  var defs=[{k:'els',l:'ELS'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
 
   // Construire un modal de sélection
   var ex=document.getElementById('_notifModal');if(ex)ex.remove();
@@ -4847,7 +4847,7 @@ function buildModifPanel(row){
     mods.slice().reverse().forEach(function(m,ri){
       var i=mods.length-1-ri;
       var col=m.envoye?'var(--gn)':'var(--or)';
-      var destLbl=(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Automatisme',be:'BE'}[d]||d;}).join(', ');
+      var destLbl=(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Automatisme',be:'BE',chantier:'Chantier',tableauterie:'Tableauterie'}[d]||d;}).join(', ');
       h+='<div style="background:var(--bg3);border-radius:var(--r2);padding:10px 12px;margin-bottom:8px;border-left:4px solid '+col+'">';
       h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">';
       h+='<div style="font-weight:700;color:var(--tx);font-size:13px;flex:1;word-break:break-word">'+escHtml(m.texte)+'</div>';
@@ -4895,7 +4895,7 @@ function buildModifPanel(row){
   h+='</div></div>';
   h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:5px">\uD83D\uDCE7 ENVOYER \u00C0</div>';
   h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
-  [{k:'els',l:'ELS',always:true},{k:'auto',l:'Automatisme',always:false},{k:'be',l:'BE',always:false}].forEach(function(rd){
+  [{k:'els',l:'ELS',always:true},{k:'auto',l:'Automatisme',always:false},{k:'be',l:'BE',always:false},{k:'chantier',l:'Chantier',always:false},{k:'tableauterie',l:'Tableauterie',always:false}].forEach(function(rd){
     var resp=resps[rd.k]||{};
     var hasEmails=(resp.contacts?resp.contacts.some(function(ct){return ct.email&&ct.email.trim();}):(resp.emails||[]).filter(function(e){return e&&e.trim();}).length>0);
     var mainNom=resp.contacts&&resp.contacts[0]?resp.contacts[0].nom:(resp.nom||'');
@@ -4920,7 +4920,7 @@ function sendModif(actId,doSend){
   var p=currP(),infos=p.infos||{},resps=infos.responsables||{};
   var num=infos.numero||STORE.current||'',lib=infos.libelle||STORE.current||'';
   var dest=[],emails=[];
-  ['els','client','auto','be'].forEach(function(k){
+  ['els','client','auto','be','chantier','tableauterie'].forEach(function(k){
     var cb=document.getElementById('modif-dest-'+k+'-'+actId);
     if(cb&&cb.checked){
       dest.push(k);
@@ -5182,7 +5182,9 @@ function openAffaireInfos(){
     {k:'els',l:'ELS'},
     {k:'client',l:'Client'},
     {k:'auto',l:'Automatisme'},
-    {k:'be',l:'Bureau d\u2019\u00C9tudes'}
+    {k:'be',l:'Bureau d\u2019\u00C9tudes'},
+    {k:'chantier',l:'Chantier'},
+    {k:'tableauterie',l:'Tableauterie'}
   ];
   var respHtml=respDefs.map(function(rd){
     var resp=resps[rd.k]||{nom:'',emails:[]};
@@ -5234,7 +5236,7 @@ function saveAffaireInfos(){
   var lib=((document.getElementById('aif-lib')||{}).value||'').trim();
   var dateC=((document.getElementById('aif-date')||{}).value||'');
   var resps={};
-  ['els','client','auto','be'].forEach(function(k){
+  ['els','client','auto','be','chantier','tableauterie'].forEach(function(k){
     var contacts=[];
     document.querySelectorAll('#aif-contacts-'+k+' .aif-contact-row').forEach(function(row){
       var nomI=row.querySelector('.aif-nom-inp');
@@ -5348,7 +5350,7 @@ function showNewAffaireForm(){
   ov.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:30px 20px;overflow-y:auto';
   var copyOpts='<option value="">— Nouvelle affaire vide —</option>';
   Object.keys(STORE.projects).sort().forEach(function(k){copyOpts+='<option value="'+k+'">'+getAffLabel(k)+'</option>';});
-  var respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'Études"}];
+  var respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
   var respHtml=respDefs.map(function(rd){return _nafRespBlock(rd.k,rd.l,'',[],'naf','nafAddEmail');}).join('');
   var box=document.createElement('div');
   box.style.cssText='background:var(--bg2);border-radius:14px;padding:28px 32px;width:660px;max-width:100%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit';
@@ -5393,7 +5395,7 @@ function confirmNewAffaire(){
   if(!lib){alert('Libellé obligatoire.');return;}
   if(STORE.projects[num]){alert('Affaire déjà existante.');return;}
   var resps={};
-  ['els','client','auto','be'].forEach(function(k){
+  ['els','client','auto','be','chantier','tableauterie'].forEach(function(k){
     var contacts=[];
     document.querySelectorAll('#naf-contacts-'+k+' .naf-contact-row').forEach(function(row){
       var nomI=row.querySelector('.naf-nom-inp');
@@ -8627,7 +8629,7 @@ function renderRecap(){
     var _phModifs=rows.filter(function(r){return r.t==='act';}).reduce(function(arr,act){
       (act.modifications||[]).forEach(function(m){
         arr.push({actLb:act.lb,texte:m.texte,date:m.date,envoye:m.envoye,
-          dest:(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Automatisme',be:'BE'}[d]||d;}).join(', ')});
+          dest:(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Automatisme',be:'BE',chantier:'Chantier',tableauterie:'Tableauterie'}[d]||d;}).join(', ')});
       });return arr;
     },[]);
     if(_phModifs.length){
@@ -8677,10 +8679,12 @@ function renderRecap(){
   const _pi=currP()&&currP().infos?currP().infos:{};
   const _pr=_pi.responsables||{};
   const _respDefs=[
-    {k:'els',   l:'ELS',               color:'#6366F1',bg:'#EEF2FF'},
-    {k:'auto',  l:'Automatisme',        color:'#7C3AED',bg:'#F5F3FF'},
-    {k:'be',    l:"Bureau d'\u00C9tudes", color:'#0891B2',bg:'#ECFEFF'},
-    {k:'client',l:'Client',             color:'#059669',bg:'#ECFDF5'}
+    {k:'els',           l:'ELS',              color:'#6366F1',bg:'#EEF2FF'},
+    {k:'auto',          l:'Automatisme',       color:'#7C3AED',bg:'#F5F3FF'},
+    {k:'be',            l:"Bureau d'\u00C9tudes", color:'#0891B2',bg:'#ECFEFF'},
+    {k:'client',        l:'Client',            color:'#059669',bg:'#ECFDF5'},
+    {k:'chantier',      l:'Chantier',          color:'#D97706',bg:'#FFFBEB'},
+    {k:'tableauterie',  l:'Tableauterie',      color:'#DC2626',bg:'#FEF2F2'}
   ];
   const _respCards=_respDefs.map(function(rd){
     const resp=_pr[rd.k]||{};
