@@ -524,14 +524,16 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
   <div style="display:flex;align-items:center;gap:4px"><div style="display:flex;flex-direction:column;gap:2px"><input id="sel-aff-search" type="text" placeholder="🔍 Rechercher..." autocomplete="off" style="border:1px solid var(--bd);border-radius:var(--r);padding:2px 6px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;width:100%"><select id="sel-aff" onchange="switchProjet(this.value)" style="border:2px solid var(--ac);border-radius:var(--r);padding:3px 6px;font-size:11px;font-weight:700;font-family:inherit;background:var(--ac2);color:var(--ac);outline:none;min-width:200px;max-width:350px"></select></div></div>
   <button class="btn-np" onclick="openModal('new')">+ Nouvelle</button>
   <button class="btn-da" onclick="openAffaireInfos()" title="Infos affaire">ℹ️</button>
-  <button class="btn-da" onclick="openBaremeAuto()" title="Appliquer le barème automatisme" style="background:#7C3AED22;border-color:#7C3AED;color:#7C3AED">⚙️ Barème</button>
   <button class="btn-da" onclick="openRenameModal()" title="Renommer">✏️</button>
   <button class="btn-da" onclick="openModal('del')">🗑</button>
   <div class="sep"></div>
-  <span class="lbl">BUDGET</span>
-  <span id="inp-bud-auto" style="font-size:13px;font-weight:800;color:var(--ac);min-width:50px;text-align:right">—</span>
-  <span style="font-size:10px;font-weight:700;color:var(--tx2)">H <span style="font-size:9px;font-weight:500;color:var(--tx3)">(auto)</span></span>
-  <input type="number" id="inp-bud" value="500" min="0" style="display:none" oninput="updSettings()">
+  <span class="lbl">H VENDUES</span>
+  <input type="number" id="inp-bud" value="0" min="0" step="0.5" placeholder="0"
+    title="Heures vendues au client (budget contractuel)"
+    style="width:90px;border:2px solid var(--ac);border-radius:var(--r);padding:3px 8px;font-size:12px;font-weight:800;font-family:inherit;background:var(--ac2);color:var(--ac);outline:none;text-align:center"
+    oninput="updBudgetManuel()">
+  <span style="font-size:10px;color:var(--tx3)">H</span>
+
   <div class="sep"></div>
   <span class="lbl">DÉBUT</span>
   <input type="date" id="inp-dstart" style="font-size:10px;padding:3px 5px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg2);color:var(--tx);outline:none" onchange="updDateBudget()">
@@ -4432,7 +4434,8 @@ function saveNow(){
   _undoPush();
   // sync sbar inputs
   const p=currP();
-  p.budget=+document.getElementById('inp-bud').value||0;
+  // Budget manuel : ne pas recalculer automatiquement
+  // p.budget conservé tel quel
 
 
   localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
@@ -4444,11 +4447,38 @@ function currP(){return STORE.projects[STORE.current]||{data:[],budget:500,sk1:2
 function D(){return (currP()||{}).data||[];}
 function acts(){return D().filter(r=>r.t==='act');}
 function totalUsed(){
-  // Use hReel if available, fallback to person p.heures
-  return acts().reduce(function(s,a){
-    if(a.hReel&&a.hReel>0)return s+a.hReel;
-    return s+a.p.reduce(function(s2,p){return s2+(+p.heures||0);},0);
-  },0);
+  // Heures pointées = somme des fiches d'heure de l'affaire courante
+  var aff=STORE.current;
+  var p=STORE.projects[aff];
+  if(!p)return 0;
+  var total=0;
+  var fh=p.fh||{};
+  // Parcourir toutes les personnes → semaines → jours → lignes
+  Object.keys(fh).forEach(function(nm){
+    Object.keys(fh[nm]||{}).forEach(function(wk){
+      Object.keys(fh[nm][wk]||{}).forEach(function(di){
+        (fh[nm][wk][di]||[]).forEach(function(ln){
+          // Inclure les lignes de cette affaire ET les lignes d'autres affaires
+          // pointées par une personne sur cette affaire
+          total+=(parseFloat(ln.hours)||parseFloat(ln.h)||0);
+        });
+      });
+    });
+  });
+  // Aussi chercher dans les fiches d'heure globales (STORE.fh)
+  var gfh=STORE.fh||{};
+  Object.keys(gfh).forEach(function(nm){
+    Object.keys(gfh[nm]||{}).forEach(function(wk){
+      Object.keys(gfh[nm][wk]||{}).forEach(function(di){
+        (gfh[nm][wk][di]||[]).forEach(function(ln){
+          if(!ln.affId||ln.affId===aff){
+            total+=(parseFloat(ln.hours)||parseFloat(ln.h)||0);
+          }
+        });
+      });
+    });
+  });
+  return Math.round(total*10)/10;
 }
 
 function updDateBudget(){
@@ -4463,9 +4493,8 @@ function updDateBudget(){
     if(d2>=d1){
       var days=0,cur=new Date(d1);
       while(cur<=d2){var wd=cur.getDay();if(wd>=1&&wd<=5&&!isFerie(cur))days++;cur.setDate(cur.getDate()+1);}
-      p.budget=days*8;
-      var bud=document.getElementById('inp-bud');if(bud)bud.value=p.budget;
-      if(dl)dl.textContent='→ '+d2.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' ('+days+'j / '+p.budget+'H)';
+      // Ne plus calculer le budget depuis les dates (budget manuel)
+      if(dl)dl.textContent='→ '+d2.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' ('+days+'j / '+(days*8)+'H cap. max)';
     }
   } else if(dl)dl.textContent='';
   saveNow();updBudget();
@@ -4625,17 +4654,31 @@ function phSetBudget(pk, current){
   if(r){r.budgetH=Math.max(0,parseFloat(val)||0);saveNow();renderGantt();}
 }
 
+function updBudgetManuel(){
+  // Sauvegarder les H vendues saisies manuellement
+  var inp=document.getElementById('inp-bud');
+  if(inp)currP().budget=parseFloat(inp.value)||0;
+  saveNow();
+  updBudget();
+}
 function updBudget(){
-  // Budget auto = somme des hPrev de toutes les tâches
+  // H Prévues = somme des hPrev (calcul auto)
   var autoBud=D().filter(function(r){return r.t==='act';}).reduce(function(s,a){return s+(+a.hPrev||0);},0);
-  currP().budget=autoBud;
   var el=document.getElementById('inp-bud-auto');
-  if(el)el.textContent=autoBud+'H';
-  var inp=document.getElementById('inp-bud');if(inp)inp.value=autoBud;
-  const bud=autoBud,used=totalUsed(),rem=bud-used,pct=bud?Math.min(100,used/bud*100):0;
+  if(el)el.textContent=autoBud;
+  // H Vendues = budget manuel de l'affaire
+  var inp=document.getElementById('inp-bud');
+  var manBud=currP().budget||0;
+  if(inp&&document.activeElement!==inp)inp.value=manBud||'';
+  // Barre de progression sur H Vendues vs H Réelles utilisées
+  const bud=manBud||autoBud,used=totalUsed(),rem=bud-used,pct=bud?Math.min(100,used/bud*100):0;
   document.getElementById('bud-u').textContent=used+' H';
-  document.getElementById('bud-r').textContent=Math.max(0,rem)+' H';
+  var remVal=Math.round((bud-used)*10)/10;
+  document.getElementById('bud-r').textContent=(remVal>=0?remVal:0)+' H';
   document.getElementById('bud-r').style.color=rem<0?'var(--rd)':rem<bud*.1?'var(--or)':'var(--gn)';
+  // Tooltip sur la barre
+  var bf=document.getElementById('bud-f');
+  if(bf)bf.title=used+'H pointées / '+bud+'H vendues';
   document.getElementById('bud-f').style.width=pct+'%';
   document.getElementById('bud-f').style.background=pct>90?'var(--rd)':pct>70?'var(--or)':'var(--gn)';
 }
@@ -4692,6 +4735,9 @@ function renderProjSel(){
     el.appendChild(opt);
   });
   if(STORE.current)el.value=STORE.current;
+  // Charger H Vendues manuelles
+  var _bi=document.getElementById('inp-bud');
+  if(_bi){var _mb=currP().budget||0;_bi.value=_mb||'';}
 }
 
 function switchProjet(k){
@@ -7061,6 +7107,8 @@ function fhPut(aff,nm,w,d,lines){
   localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   // Auto-sync to GANTT on every fiche save
   syncFichesToGantt();
+  // Mettre à jour la barre budget
+  if(typeof updBudget==='function')updBudget();
 }
 function fhLineSetAff(aff,nm,wk,d,ei,newAff){
   // Utiliser fhGet/fhPut (same as fhLineSet) pour écrire au bon endroit
@@ -7089,7 +7137,12 @@ function fhLineSet(aff,nm,w,d,li,field,val){
   fhPut(aff,nm,w,d,lines);
   fhTotals(aff,nm,w);
   if(field==='actId')renderFiche();
-  if(field==='hours'){clearTimeout(fhLineSet._t);fhLineSet._t=setTimeout(function(){syncFichesToGantt();},800);}
+  if(field==='hours'){
+    clearTimeout(fhLineSet._t);
+    fhLineSet._t=setTimeout(function(){syncFichesToGantt();if(typeof updBudget==='function')updBudget();},800);
+    // Mise à jour immédiate du budget
+    if(typeof updBudget==='function')updBudget();
+  }
 }
 function fhLineAdd(aff,nm,w,d){
   var absData=STORE.absences&&STORE.absences[nm];
@@ -7100,6 +7153,7 @@ function fhLineAdd(aff,nm,w,d){
   lines.push({actId:'',hours:''});
   fhPut(aff,nm,w,d,lines);
   renderFiche();
+  if(typeof updBudget==='function')updBudget();
 }
 
 function fhLineDel(aff,nm,w,d,li){
@@ -7107,6 +7161,7 @@ function fhLineDel(aff,nm,w,d,li){
   lines.splice(li,1);
   fhPut(aff,nm,w,d,lines);
   renderFiche();
+  if(typeof updBudget==='function')updBudget();
 }
 function fhWeekAdd(aff,nm,w){
   var p=STORE.projects[aff];if(!p)return;
