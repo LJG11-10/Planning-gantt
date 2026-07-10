@@ -3509,7 +3509,13 @@ function dbBuildPlanningGrid(){
       var tasks=_taskByAff[aff];
       var ph0=tasks[0].ph;
       html+='<div style="margin-bottom:10px">';
-      html+='<div style="font-size:10px;font-weight:800;color:var(--tx);margin-bottom:5px;padding:3px 8px;background:'+ph0.xl+';border-radius:4px;display:inline-block">'+aff+'</div>';
+      var _affInf2=(STORE.projects[aff]&&STORE.projects[aff].infos)||{};
+      var _affNum=(_affInf2.numeroClient?_affInf2.numeroClient+' | ':'')+aff;
+      var _affLib=_affInf2.libelle?_affInf2.libelle:'';
+      html+='<div style="margin-bottom:5px">';
+      html+='<span style="font-size:10px;font-weight:800;color:var(--tx);padding:2px 8px;background:'+ph0.xl+';border-radius:4px;display:inline-block">'+_affNum+'</span>';
+      if(_affLib)html+='<span style="font-size:9px;color:var(--tx3);margin-left:6px;font-weight:600">'+_affLib+'</span>';
+      html+='</div>';
       html+='<div style="display:flex;flex-wrap:wrap;gap:5px">';
       tasks.forEach(function(t){
         var ph=t.ph;
