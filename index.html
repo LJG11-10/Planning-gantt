@@ -2014,7 +2014,7 @@ function renderSearch(){
     srAff.innerHTML+='<option value="'+a+'"'+(_savedSrAff===a?' selected':'')+'>'+getAffLabel(a)+'</option>';
   });
     Object.keys(STORE.projects).sort().forEach(function(a){
-      const o=document.createElement('option');o.value=a;o.textContent=a;
+      const o=document.createElement('option');o.value=a;o.textContent=getAffLabel(a);
       if(a===curVal)o.selected=true;
       srAff.appendChild(o);
     });
@@ -2456,7 +2456,7 @@ function navDesarchiver(){
     Object.keys(STORE.projects).forEach(function(k){
       var _o=document.createElement('option');
       _o.value=k;_o.selected=(k===STORE.current);
-      _o.textContent=k+(STORE.projects[k]&&STORE.projects[k].closed?' ✓ archivée':'');
+      _o.textContent=getAffLabel(k)+(STORE.projects[k]&&STORE.projects[k].closed?' ✓ archivée':'');
       _newopts.push(_o.outerHTML);
     });
     sel.innerHTML=_newopts.join('');
@@ -2541,7 +2541,7 @@ function openFortuitModal(){
   var ftAff=document.getElementById('ft-aff');
   ftAff.innerHTML='';
   Object.keys(STORE.projects).sort().filter(function(a){return !STORE.projects[a].closed;}).forEach(function(a){
-    var o=document.createElement('option');o.value=a;o.textContent=a;
+    var o=document.createElement('option');o.value=a;o.textContent=getAffLabel(a);
     if(a===STORE.current)o.selected=true;
     ftAff.appendChild(o);
   });
@@ -2700,23 +2700,23 @@ function confirmFortuit(){
 
     if(actObj){
       var newStart5=(wdh.w-1)*5+wdh.d;
-      // Décaler prevDays : offset = newStart - oldStart
-      var oldPrev=actObj.prevDays?actObj.prevDays.slice():getTaskDays5(actObj,'prev');
-      var oldReel=actObj.reelDays?actObj.reelDays.slice():getTaskDays5(actObj,'reel');
-      // Décalage : UNIQUEMENT le réel se déplace, le prévu reste en place
-      var reelOffset=oldReel.length?newStart5-oldReel[0]:0;
-      // prevDays inchangé
-      actObj.prevDays=oldPrev.slice();
-      // Décaler reelDays vers la nouvelle date
+      // Utiliser getTaskDays5 pour avoir le fallback s/e si prevDays est vide
+      var oldPrev=getTaskDays5(actObj,'prev').slice();
+      var oldReel=getTaskDays5(actObj,'reel').slice();
+      // Décalage : le RÉEL se déplace à la nouvelle date, le PRÉVU reste
       if(oldReel.length){
-        actObj.reelDays=oldReel.map(function(d){return Math.max(0,d+reelOffset);});
+        // Décaler les jours réel vers la nouvelle date
+        var reelOff=newStart5-oldReel[0];
+        actObj.reelDays=oldReel.map(function(d){return Math.max(0,d+reelOff);});
       } else if(oldPrev.length){
-        // Pas de réel défini → créer à partir du prévu décalé
-        var prevOff=oldPrev.length?newStart5-oldPrev[0]:0;
-        actObj.reelDays=oldPrev.map(function(d){return Math.max(0,d+prevOff);});
+        // Pas de réel → créer réel = prévu décalé à la nouvelle date
+        var prevOff2=newStart5-oldPrev[0];
+        actObj.reelDays=oldPrev.map(function(d){return Math.max(0,d+prevOff2);});
       } else {
+        // Aucune barre → créer un seul jour réel à la date choisie
         actObj.reelDays=[newStart5];
       }
+      // prevDays inchangé (le prévu reste en place)
       _syncTaskMeta(actObj);
     }
 
@@ -2729,7 +2729,7 @@ function confirmFortuit(){
     };
 
   } else {
-    // ── RETARD : ajouter durée au réel ────────────────────────────────
+    // ── RETARD : étendre les barres RÉEL de durDays jours ────────────
     var ftDur=document.getElementById('ft-dur');
     var ftUnit=document.getElementById('ft-unit');
     var ftDate=document.getElementById('ft-date');
@@ -2739,13 +2739,33 @@ function confirmFortuit(){
     var durDays=unit==='hours'?Math.ceil(dur/8):dur;
 
     if(actObj){
-      actObj.dDurR=(actObj.dDurR!=null?actObj.dDurR:(actObj.dDur||0))+durDays;
-      var hj=actObj.hDurR||actObj.hDur||8;
-      actObj.hReel=Math.round(((actObj.hReel||0)+durDays*hj)*10)/10;
-      if(actObj.sReel||actObj.s){
-        var sR=actObj.sReel||actObj.s;
-        actObj.eReel=Math.min(52,sR+Math.floor(((actObj.dDurR||1)-1)/5));
+      // Récupérer les reelDays existants (ou construire depuis prevDays)
+      var existReel=actObj.reelDays&&actObj.reelDays.length
+        ?actObj.reelDays.slice()
+        :getTaskDays5(actObj,'reel').slice();
+      if(!existReel.length){
+        // Pas de réel → partir du prévu
+        var prevD=actObj.prevDays&&actObj.prevDays.length
+          ?actObj.prevDays.slice():getTaskDays5(actObj,'prev').slice();
+        existReel=prevD.slice();
       }
+      if(existReel.length){
+        // Ajouter durDays jours ouvrés APRÈS la fin actuelle du réel
+        var lastD5=Math.max.apply(null,existReel);
+        for(var _rd=1;_rd<=durDays;_rd++)existReel.push(lastD5+_rd);
+        // Dédoublonner et trier
+        var seen={};existReel=existReel.filter(function(d){if(seen[d])return false;seen[d]=true;return true;}).sort(function(a,b){return a-b;});
+      } else {
+        // Aucune barre → créer durDays jours à partir de la semaine courante
+        var cw=TODAY?TODAY.w:1;
+        var sd=(cw-1)*5;
+        for(var _rd2=0;_rd2<durDays;_rd2++)existReel.push(sd+_rd2);
+      }
+      actObj.reelDays=existReel;
+      // Mettre à jour hReel en conséquence
+      var hj=actObj.hDur||8;
+      actObj.hReel=Math.round(existReel.length*hj*10)/10;
+      _syncTaskMeta(actObj);
     }
 
     ftRecord={actId:actId,obj:obj,ftType:'retard',dur:dur,unit:unit,date:date,durDays:durDays};
@@ -8519,19 +8539,31 @@ function renderRecap(){
   // ── Infos affaire ──────────────────────────────────────────────────
   const _pi=currP()&&currP().infos?currP().infos:{};
   const _pr=_pi.responsables||{};
-  const _respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'Études"}];
+  const _respDefs=[
+    {k:'els',   l:'ELS',               color:'#6366F1',bg:'#EEF2FF'},
+    {k:'auto',  l:'Automatisme',        color:'#7C3AED',bg:'#F5F3FF'},
+    {k:'be',    l:"Bureau d'\u00C9tudes", color:'#0891B2',bg:'#ECFEFF'},
+    {k:'client',l:'Client',             color:'#059669',bg:'#ECFDF5'}
+  ];
   const _respCards=_respDefs.map(function(rd){
     const resp=_pr[rd.k]||{};
-    if(!resp.nom&&!(resp.emails&&resp.emails.length))return '';
-    var _cts3=_getContacts(resp);
-    return '<div style="background:var(--bg2);border-radius:var(--r2);padding:10px 14px;border:1px solid var(--bd);border-top:3px solid var(--ac)">'+
-      '<div style="font-size:9px;font-weight:800;color:var(--ac);margin-bottom:4px;letter-spacing:.5px">'+rd.l+'</div>'+
-      _cts3.map(function(ct){
-        return (ct.nom?'<div style="font-weight:700;color:var(--tx);font-size:12px;margin-bottom:1px">'+ct.nom+'</div>':'')+
-               (ct.email?'<div style="font-size:10px;color:var(--tx3);margin-bottom:3px">📧 '+ct.email+'</div>':'');
-      }).join('')+
-      '</div>';
-  }).filter(Boolean).join('');
+    var _cts=_getContacts(resp).filter(function(ct){return ct.nom||ct.email;});
+    if(!_cts.length)return '';
+    return '<div style="background:'+rd.bg+';border-radius:10px;padding:14px 16px;border:1px solid '+rd.color+'33;border-left:4px solid '+rd.color+'">'
+      +'<div style="font-size:9px;font-weight:900;color:'+rd.color+';letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">'+rd.l+'</div>'
+      +_cts.map(function(ct,i){
+          var sep=i>0?'border-top:1px solid '+rd.color+'22;margin-top:7px;padding-top:7px;':'';
+          var ini=ct.nom?ct.nom.trim().charAt(0).toUpperCase():'';
+          return '<div style="'+sep+'">'
+            +(ct.nom?'<div style="font-weight:700;color:#1F2937;font-size:12px;display:flex;align-items:center;gap:5px;margin-bottom:2px">'
+              +'<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:'+rd.color+';color:#fff;font-size:9px;font-weight:800;flex-shrink:0">'+ini+'</span>'
+              +ct.nom+'</div>':'')
+            +(ct.email?'<div style="font-size:10px;color:#6B7280;margin-left:25px">'
+              +'<a href="mailto:'+ct.email+'" style="color:'+rd.color+';text-decoration:none;font-weight:500">'+ct.email+'</a></div>':'')
+            +'</div>';
+        }).join('')
+      +'</div>';
+  }).filter(Boolean).join('')
 
   let html=`<div class="pg-ttl" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
     <span>RÉCAPITULATIF — <span style="color:var(--ac)">${STORE.current}</span></span>
@@ -8552,7 +8584,7 @@ function renderRecap(){
         </div>
         <button onclick="openAffaireInfos()" style="padding:5px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;color:var(--tx2);white-space:nowrap;flex-shrink:0">✏️ Modifier</button>
       </div>
-      ${_respCards?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">${_respCards}</div>`:''}
+      ${_respCards?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px">${_respCards}</div>`:''}
     </div>`;
   }
 
