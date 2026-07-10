@@ -1102,6 +1102,15 @@ function loadStore(){
   // Charge depuis Supabase en arrière-plan et met à jour si plus récent
   checkPasswordReset();
   window.addEventListener('hashchange', checkPasswordReset);
+  // ── Restaurer session existante automatiquement ──────────────────
+  if(supa){
+    supa.auth.getSession().then(function(res){
+      if(res.data&&res.data.session&&res.data.session.user){
+        CURRENT_USER=res.data.session.user;
+        loadRoleAndStart();
+      }
+    });
+  }
   // Gérer la récupération de mot de passe
   if(supa){
     supa.auth.onAuthStateChange(function(event, session){
@@ -1394,7 +1403,10 @@ function _mergePersonsFromProjects(){
   });
 }
 
-function saveGlobalPerson(origNm, newNm, type, habsArr){
+var SERVICES=[{k:'els_projet',l:'ELS Projet',color:'#6366F1',bg:'#EEF2FF'},{k:'els_auto',l:'ELS Automatisme',color:'#7C3AED',bg:'#F5F3FF'},{k:'els_chantier',l:'ELS Chantier',color:'#D97706',bg:'#FFFBEB'},{k:'tableauterie',l:'Tableauterie',color:'#DC2626',bg:'#FEF2F2'},{k:'client',l:'Client',color:'#059669',bg:'#ECFDF5'},{k:'bureau_etude',l:'Bureau d\'\u00E9tude',color:'#0891B2',bg:'#ECFEFF'}];
+function getSvc(k){return SERVICES.find(function(s){return s.k===k;})||{k:k,l:k,color:'#6B7280',bg:'#F9FAFB'};}
+
+function saveGlobalPerson(origNm, newNm, type, habsArr, service, email){
   var gp=_getGlobalPersons();
   newNm=(newNm||'').trim();
   origNm=(origNm||'').trim();
@@ -1430,6 +1442,8 @@ function saveGlobalPerson(origNm, newNm, type, habsArr){
   gp[newNm].name=newNm;
   gp[newNm].type=type||'';
   gp[newNm].habilitations=habsArr||[];
+  if(service!==undefined)gp[newNm].service=service||'';
+  if(email!==undefined)gp[newNm].email=(email||'').trim();
   // Ajouter dans l'affaire courante si pas déjà présent
   var aff=STORE.current;
   if(aff&&STORE.projects[aff]){
@@ -1490,193 +1504,254 @@ function renderPersonnelFilter(){
   var q2=document.getElementById('si-ann');
   if(q2){q2.value=val;q2.focus();q2.setSelectionRange(val.length,val.length);}
 }
+function _annEdit(nm){window._editingPerson=nm;renderPersonnelSearch();}
+
+function _annEdit(nm){window._editingPerson=nm;renderPersonnelSearch();}
+function _annCancel(){window._editingPerson=undefined;renderPersonnelSearch();}
+function _savePersonForm2(){
+  var nm=document.getElementById('_pe_name');
+  var em=document.getElementById('_pe_email');
+  var svc=document.getElementById('_pe_svc');
+  var tp=document.getElementById('_pe_type');
+  if(!nm||!nm.value.trim()){alert('Le nom ne peut pas être vide.');return;}
+  var habs=[];
+  document.querySelectorAll('._pe_hab_cb:checked').forEach(function(cb){habs.push(cb.value);});
+  var orig=window._editingPerson===null||window._editingPerson===''?'':window._editingPerson;
+  saveGlobalPerson(orig, nm.value.trim(), tp?tp.value:'', habs, svc?svc.value:'', em?em.value.trim():'');
+  window._editingPerson=undefined;
+  renderPersonnelSearch();
+}
+
 
 function renderPersonnelSearch(){
   var el=document.getElementById('pers-search');
   if(!el)return;
   var gp=_getGlobalPersons();
-  var persons=Object.values(gp).sort(function(a,b){return a.name.localeCompare(b.name);});
-  var editingNm=window._editingPerson; // undefined = pas d'édition, ''=new, 'nom'=edit
-  var ES2=ES||{};
+  var _delP=STORE._deletedPersons||{};
+  var persons=Object.values(gp).filter(function(p){return p&&p.name&&!_delP[p.name];}).sort(function(a,b){return a.name.localeCompare(b.name);});
+  var editingNm=window._editingPerson;
   var typeOpts=['','ELS','Interim','S-T','Alternant','Stagiaire'];
-
   var _q2=(document.getElementById('si-ann')||{}).value||'';
   var _ql=_q2.trim().toLowerCase();
   if(_ql)persons=persons.filter(function(p){
     return p.name.toLowerCase().indexOf(_ql)>=0
       ||(p.type&&p.type.toLowerCase().indexOf(_ql)>=0)
+      ||(p.service&&p.service.toLowerCase().indexOf(_ql)>=0)
+      ||(p.email&&p.email.toLowerCase().indexOf(_ql)>=0)
       ||((p.habilitations||[]).some(function(h){return h.toLowerCase().indexOf(_ql)>=0;}));
   });
-  var html='<div style="padding:20px">';
 
-  // ── Header
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
-  html+='<div><div style="font-size:18px;font-weight:900;color:var(--tx)">📋 Annuaire du personnel</div>';
-  html+='<div style="font-size:12px;color:var(--tx3);margin-top:2px">'+persons.length+' personne'+(persons.length!==1?'s':'')+' • Inter-affaires</div></div>';
-  html+='<button onclick="openPersonEditor(\'\')" style="padding:8px 16px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">+ Ajouter une personne</button>';
+  function getSvcInfo(k){return SERVICES.find(function(s){return s.k===k;})||{k:'__autre__',l:'Autre',color:'#6B7280',bg:'#F9FAFB'};}
+
+  // Grouper par service
+  var bySvc={};
+  persons.forEach(function(p){
+    var svcK=p.service||'__autre__';
+    if(!bySvc[svcK])bySvc[svcK]=[];
+    bySvc[svcK].push(p);
+  });
+  var svcOrder=SERVICES.map(function(s){return s.k;}).concat(['__autre__']);
+
+  var html='<div style="padding:16px">';
+
+  // Header
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+  html+='<div><div style="font-size:16px;font-weight:900;color:var(--tx)">📋 Annuaire du personnel</div>';
+  html+='<div style="font-size:11px;color:var(--tx3);margin-top:1px">'+persons.length+' personne'+(persons.length!==1?'s':'')+' · Base inter-affaires</div></div>';
+  html+='<button onclick="_annEdit(null)" style="padding:6px 14px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Ajouter</button>';
   html+='</div>';
 
-  // ── Formulaire d'ajout / édition
+  // Search
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;background:var(--bg3);border-radius:var(--r2);padding:6px 10px">';
+  html+='<span style="color:var(--tx3)">⌕</span>';
+  html+='<input id="si-ann" type="text" placeholder="Rechercher..." oninput="renderPersonnelFilter()" style="flex:1;border:none;background:transparent;font-size:12px;font-family:inherit;color:var(--tx);outline:none">';
+  html+='</div>';
+
+  // Formulaire ajout/édition
   if(editingNm!==undefined){
-    var origNm=editingNm;
-    var ep=origNm&&gp[origNm]?gp[origNm]:{name:'',type:'',habilitations:[]};
-    var curHabs=ep.habilitations||[];
-    var isNew=!origNm;
-    html+='<div style="background:var(--bg2);border:2px solid var(--ac);border-radius:var(--r2);padding:20px;margin-bottom:20px">';
-    html+='<div style="font-size:13px;font-weight:800;color:var(--tx);margin-bottom:14px">'+(isNew?'➕ Nouvelle personne':'✏️ Modifier — '+origNm)+'</div>';
-
-    // Nom + Type
-    html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">';
-    html+='<div style="flex:2;min-width:180px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">NOM COMPLET</div>';
-    html+='<input id="_pe_name" type="text" value="'+ep.name.replace(/"/g,'&quot;')+'" placeholder="Prénom Nom" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box"></div>';
-    html+='<div style="flex:1;min-width:140px"><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">STATUT</div>';
-    html+='<select id="_pe_type" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">';
-    typeOpts.forEach(function(t){html+='<option value="'+t+'"'+(ep.type===t?' selected':'')+'>'+( t||'— Statut —')+'</option>';});
-    html+='</select></div></div>';
-
-    // Habilitations — checkboxes groupées
-    html+='<div style="margin-bottom:14px">';
-    html+='<div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:10px">🏅 HABILITATIONS</div>';
+    var ep=(editingNm===null||editingNm==='')
+      ?{name:'',type:'',habilitations:[],service:'',email:''}
+      :(gp[editingNm]||{name:editingNm,type:'',habilitations:[],service:'',email:''});
+    var isNew=(editingNm===null||editingNm==='');
+    var habStr=(ep.habilitations||[]).join(', ');
+    var svcOptsHtml='<option value="">— Choisir —</option>';
+    SERVICES.forEach(function(s){
+      svcOptsHtml+='<option value="'+s.k+'"'+(ep.service===s.k?' selected':'')+'>'+s.l+'</option>';
+    });
+    var typeOptsHtml='';
+    typeOpts.forEach(function(t){
+      typeOptsHtml+='<option value="'+t+'"'+(ep.type===t?' selected':'')+'>'+t+'</option>';
+    });
+    html+='<div style="background:var(--ac2);border:2px solid var(--ac);border-radius:12px;padding:14px;margin-bottom:14px">';
+    html+='<div style="font-size:12px;font-weight:800;color:var(--ac);margin-bottom:12px">'+(isNew?'✚ Nouvelle personne':'✎ Modifier — '+escHtml(ep.name))+'</div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+    html+='<div><label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;display:block;margin-bottom:3px">NOM PRÉNOM *</label>';
+    html+='<input id="_pe_name" type="text" value="'+escHtml(ep.name||'')+'" placeholder="Prénom Nom" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box"></div>';
+    html+='<div><label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;display:block;margin-bottom:3px">EMAIL</label>';
+    html+='<input id="_pe_email" type="email" value="'+escHtml(ep.email||'')+'" placeholder="prenom.nom@entreprise.fr" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box"></div>';
+    html+='</div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
+    html+='<div><label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;display:block;margin-bottom:3px">SERVICE</label>';
+    html+='<select id="_pe_svc" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box">'+svcOptsHtml+'</select></div>';
+    html+='<div><label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;display:block;margin-bottom:3px">TYPE CONTRAT</label>';
+    html+='<select id="_pe_type" style="width:100%;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;box-sizing:border-box">'+typeOptsHtml+'</select></div>';
+    html+='</div>';
+    html+='<div style="margin-bottom:10px"><label style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;display:block;margin-bottom:6px">HABILITATIONS</label>';
     HAB_GROUPS.forEach(function(grp){
-      html+='<div style="margin-bottom:10px">';
-      html+='<div style="font-size:9px;font-weight:800;color:var(--tx2);letter-spacing:.6px;margin-bottom:6px">'+grp.label+'</div>';
-      html+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
-      grp.items.forEach(function(h){
-        var checked=curHabs.indexOf(h)>=0;
-        var safeId='_hab_'+h.replace(/[^a-z0-9]/gi,'_');
-        html+='<label style="display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;cursor:pointer;border:2px solid '+(checked?'#1D4ED8':'var(--bd)')+';background:'+(checked?'#DBEAFE':'var(--bg3)')+'">';
-        html+='<input type="checkbox" id="'+safeId+'" value="'+h+'" '+(checked?'checked':'')+' style="accent-color:#1D4ED8;width:13px;height:13px">';
-        html+='<span style="font-size:12px;font-weight:700;color:'+(checked?'#1D4ED8':'var(--tx2)')+'">'+h+'</span></label>';
+      html+='<div style="margin-bottom:6px">';
+      html+='<div style="font-size:9px;font-weight:700;color:var(--tx2);margin-bottom:3px">'+grp.label+'</div>';
+      html+='<div style="display:flex;flex-wrap:wrap;gap:4px">';
+      grp.items.forEach(function(hab){
+        var chk=(ep.habilitations||[]).indexOf(hab)>=0;
+        html+='<label style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;border:1px solid var(--bd);background:'+(chk?'var(--ac2)':'var(--bg3)')+';cursor:pointer;font-size:10px;font-weight:600;color:'+(chk?'var(--ac)':'var(--tx2)')+'">';
+        html+='<input type="checkbox" class="_pe_hab_cb" value="'+escHtml(hab)+'"'+(chk?' checked':'')+' style="accent-color:var(--ac);margin:0"> '+escHtml(hab)+'</label>';
       });
       html+='</div></div>';
     });
     html+='</div>';
-
-    // Boutons
     html+='<div style="display:flex;gap:8px">';
-    html+='<button id="_pe_save" style="padding:8px 20px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sauvegarder</button>';
-    html+='<button onclick="window._editingPerson=undefined;renderPersonnelSearch()" style="padding:8px 16px;border-radius:var(--r);background:var(--bg3);border:1px solid var(--bd);color:var(--tx2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Annuler</button>';
+    html+='<button onclick="_savePersonForm2()" style="flex:1;padding:7px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sauvegarder</button>';
+    html+='<button onclick="_annCancel()" style="padding:7px 14px;border-radius:var(--r);background:var(--bg3);border:1px solid var(--bd);color:var(--tx2);font-size:11px;cursor:pointer;font-family:inherit">Annuler</button>';
     html+='</div></div>';
   }
 
-  // ── Liste des personnes
+  // Personnes groupées par service
   if(!persons.length){
-    html+='<div style="text-align:center;padding:48px 24px;background:var(--bg2);border-radius:var(--r2);border:2px dashed var(--bd)">';
-    html+='<div style="font-size:40px;margin-bottom:12px">👤</div>';
-    html+='<div style="font-size:14px;font-weight:700;color:var(--tx)">Aucune personne dans l\'annuaire</div>';
-    html+='<div style="font-size:12px;color:var(--tx3);margin-top:6px">Cliquez "+ Ajouter une personne" pour commencer</div></div>';
+    html+='<div style="text-align:center;padding:40px;color:var(--tx3);font-size:12px">Aucune personne'+(_ql?' trouvée pour "'+escHtml(_q2)+'"':'')+'</div>';
   } else {
-    html+='<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);overflow:hidden">';
-    persons.forEach(function(p2,pi){
-      var habs=p2.habilitations||[];
-      var ec=p2.type&&ES2[p2.type]?ES2[p2.type]:{bg:'var(--bg3)',tc:'var(--tx2)'};
-      html+='<div data-pname="'+p2.name.replace(/"/g,'&quot;')+'" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--bd);background:'+(pi%2===0?'var(--bg2)':'var(--bg3)')+'">';
-      html+='<div style="flex:1">';
-      html+='<div style="font-weight:700;font-size:13px;color:var(--tx)">'+p2.name+'</div>';
-      if(habs.length){
-        html+='<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">';
-        habs.forEach(function(h){
-          html+='<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;background:#DBEAFE;color:#1D4ED8;border:1px solid #BFDBFE">'+h+'</span>';
-        });
-        html+='</div>';
-      }
-      // ── Tâches assignées, triées par affaire (non archivées) ──────
-      var _tasksByAff={};
-      Object.keys(STORE.projects).sort().forEach(function(aff){
-        if(STORE.projects[aff].closed)return; // exclure archivées
-        var _acts=(STORE.projects[aff].data||[]).filter(function(r){return r.t==='act';});
-        _acts.forEach(function(a){
-          if((a.p||[]).some(function(pp){return pp.name===p2.name;})){
-            if(!_tasksByAff[aff])_tasksByAff[aff]=[];
-            _tasksByAff[aff].push(a);
-          }
-        });
-      });
-      var _affKeys=Object.keys(_tasksByAff);
-      if(_affKeys.length&&_ql){
-        html+='<div style="margin-top:6px">';
-        _affKeys.forEach(function(aff){
-          var _inf=(STORE.projects[aff].infos)||{};
-          var _affLbl=_inf.libelle?(_inf.numeroClient?_inf.numeroClient+' · ':'')+(aff):aff;
-          var _ph=PH_get(_tasksByAff[aff][0].pk);
-          html+='<div style="margin-bottom:5px">';
-          html+='<div style="font-size:9px;font-weight:800;color:var(--ac);margin-bottom:3px;display:flex;align-items:center;gap:4px">';
-          html+='<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ac)"></span>'+_affLbl+'</div>';
-          html+='<div style="display:flex;flex-wrap:wrap;gap:3px">';
-          _tasksByAff[aff].forEach(function(a){
-            var _ph2=PH_get(a.pk);
-            var _done=a.done?'opacity:.5;text-decoration:line-through;':'';
-            html+='<span style="font-size:9px;padding:2px 7px;border-radius:8px;background:'+_ph2.f+';color:'+_ph2.xd+';border:1px solid '+_ph2.xl+';'+_done+'">';
-            html+=a.lb+(a.done?' ✓':'')+'</span>';
+    svcOrder.forEach(function(svcK){
+      var grp=bySvc[svcK];
+      if(!grp||!grp.length)return;
+      var svc=getSvcInfo(svcK);
+      html+='<div style="margin-bottom:16px">';
+      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:6px 12px;background:'+svc.bg+';border-radius:8px;border-left:4px solid '+svc.color+'">';
+      html+='<span style="font-size:11px;font-weight:800;color:'+svc.color+';letter-spacing:.5px">'+svc.l.toUpperCase()+'</span>';
+      html+='<span style="font-size:10px;color:'+svc.color+';opacity:.7">'+grp.length+' personne'+(grp.length>1?'s':'')+'</span>';
+      html+='</div>';
+      html+='<div style="display:flex;flex-direction:column;gap:3px">';
+      grp.forEach(function(p2){
+        var habs=p2.habilitations||[];
+        var ini=p2.name.trim().charAt(0).toUpperCase();
+        var safeName=p2.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg2);border-radius:8px;border:1px solid var(--bd);cursor:pointer" onclick="openPersonProfile(\''+safeName+'\')">';
+        html+='<div style="width:36px;height:36px;border-radius:50%;background:'+svc.color+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0">'+ini+'</div>';
+        html+='<div style="flex:1;min-width:0">';
+        html+='<div style="font-weight:700;font-size:12px;color:var(--tx)">'+escHtml(p2.name)+'</div>';
+        if(p2.email)html+='<div style="font-size:10px;color:var(--tx3)">'+escHtml(p2.email)+'</div>';
+        if(habs.length)html+='<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:2px">'+habs.map(function(h){return '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;background:'+svc.bg+';color:'+svc.color+'">'+escHtml(h)+'</span>';}).join('')+'</div>';
+        if(_ql){
+          // Tâches sur affaires actives si recherche
+          var tByA={};
+          Object.keys(STORE.projects).sort().forEach(function(aff){
+            if(STORE.projects[aff].closed)return;
+            (STORE.projects[aff].data||[]).filter(function(r){return r.t==='act';}).forEach(function(a){
+              if((a.p||[]).some(function(pp){return pp.name===p2.name;})){
+                if(!tByA[aff])tByA[aff]=[];
+                tByA[aff].push(a);
+              }
+            });
           });
-          html+='</div></div>';
-        });
+          Object.keys(tByA).forEach(function(aff){
+            var _inf=(STORE.projects[aff].infos)||{};
+            var _al=(_inf.numeroClient?_inf.numeroClient+' · ':'')+aff;
+            html+='<div style="font-size:8px;color:var(--ac);margin-top:2px">● '+escHtml(_al)+': '+tByA[aff].map(function(a){return escHtml(a.lb);}).join(', ')+'</div>';
+          });
+        }
         html+='</div>';
-      }
-      html+='</div>';
-      if(p2.type)html+='<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+ec.bg+';color:'+ec.tc+'">'+p2.type+'</span>';
-      html+='<button class="_edit_btn" data-pname="'+p2.name.replace(/"/g,'&quot;')+'" style="padding:4px 10px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:var(--tx3);font-size:11px;cursor:pointer;font-family:inherit">✏️</button>';
-      html+='<button class="_del_btn" data-pname="'+p2.name.replace(/"/g,'&quot;')+'" style="padding:4px 8px;border-radius:var(--r);background:none;border:1px solid var(--bd);color:#DC2626;font-size:11px;cursor:pointer;font-family:inherit">🗑</button>';
-      html+='</div>';
+        html+='<div style="display:flex;gap:4px;flex-shrink:0">';
+        html+='<button onclick="event.stopPropagation();_annEdit(\''+safeName+'\')" style="background:none;border:1px solid var(--bd);border-radius:var(--r);padding:3px 8px;font-size:10px;cursor:pointer;color:var(--tx2)" title="Modifier">✎</button>';
+        html+='<button onclick="event.stopPropagation();deleteGlobalPerson(\''+safeName+'\')" style="background:none;border:1px solid #FCA5A5;border-radius:var(--r);padding:3px 8px;font-size:10px;cursor:pointer;color:var(--rd)" title="Supprimer">✕</button>';
+        html+='</div></div>';
+      });
+      html+='</div></div>';
     });
-    html+='</div>';
   }
-
-  // Recherche
-  html+='<div style="margin-top:24px"><div style="font-size:12px;font-weight:700;color:var(--tx2);margin-bottom:8px">🔍 Recherche par activité</div>';
-  html+='<div class="srb" style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="sri">⌕</span><input id="si-ann" type="text" placeholder="Rechercher..." oninput="renderPersonnelFilter()" style="flex:1;border:2px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none"></div>';
-  html+='<div id="sr"></div></div></div>';
-
+  html+='</div>';
   el.innerHTML=html;
-
-  // ── Wirer les événements APRÈS injection HTML ────────────────────
-  // Bouton Sauvegarder
-  var saveBtn=el.querySelector('#_pe_save');
-  if(saveBtn){
-    saveBtn.onclick=function(){
-      var newNm=el.querySelector('#_pe_name').value.trim();
-      if(!newNm){alert('Entrez un nom.');return;}
-      var type=el.querySelector('#_pe_type').value;
-      var habs=[];
-      el.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb){habs.push(cb.value);});
-      var orig=editingNm||'';
-      saveGlobalPerson(orig,newNm,type,habs);
-      window._editingPerson=undefined;
-      renderPersonnelSearch();
-      refreshAllTabs();
-    };
-  }
-
-  // Boutons ✏️ et 🗑 — délégation via data-pname du parent
-  el.querySelectorAll('._edit_btn').forEach(function(btn){
-    btn.onclick=function(e){
-      e.stopPropagation();
-      openPersonEditor(btn.dataset.pname);
-    };
-  });
-  el.querySelectorAll('._del_btn').forEach(function(btn){
-    btn.onclick=function(e){
-      e.stopPropagation();
-      deleteGlobalPerson(btn.dataset.pname);
-    };
-  });
-
-  // Checkboxes — mettre à jour le style à la volée
-  el.querySelectorAll('input[type="checkbox"]').forEach(function(cb){
-    cb.onchange=function(){
-      var lbl=cb.closest('label');
-      if(cb.checked){
-        lbl.style.borderColor='#1D4ED8';lbl.style.background='#DBEAFE';
-        lbl.querySelector('span').style.color='#1D4ED8';
-      } else {
-        lbl.style.borderColor='var(--bd)';lbl.style.background='var(--bg3)';
-        lbl.querySelector('span').style.color='var(--tx2)';
-      }
-    };
-  });
-
-  var si=el.querySelector('#si');if(si&&si.value)renderSearch();
 }
+
+
+function renderPersonnelFilter(){
+  var q=document.getElementById('si-ann');
+  var val=q?q.value:'';
+  renderPersonnelSearch();
+  var q2=document.getElementById('si-ann');
+  if(q2){q2.value=val;q2.focus();q2.setSelectionRange(val.length,val.length);}
+}
+function _annEdit(nm){window._editingPerson=nm;renderPersonnelSearch();}
+
+
+function openPersonProfile(nm){
+  var gp=_getGlobalPersons();
+  var p=gp[nm];
+  if(!p)return;
+  var svcInfo=SERVICES.find(function(s){return s.k===p.service;})||{l:'—',color:'#6B7280',bg:'#F9FAFB'};
+  var habs=p.habilitations||[];
+  var ini=nm.trim().charAt(0).toUpperCase();
+  // Affaires actives
+  var tasksByAff={};
+  Object.keys(STORE.projects).sort().forEach(function(aff){
+    if(STORE.projects[aff].closed)return;
+    (STORE.projects[aff].data||[]).filter(function(r){return r.t==='act';}).forEach(function(a){
+      if((a.p||[]).some(function(pp){return pp.name===nm;})){
+        if(!tasksByAff[aff])tasksByAff[aff]=[];
+        tasksByAff[aff].push(a);
+      }
+    });
+  });
+  // Modal
+  var existing=document.getElementById('_persProfileModal');
+  if(existing)existing.remove();
+  var ov=document.createElement('div');
+  ov.id='_persProfileModal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  // Header
+  var hdr='<div style="background:'+svcInfo.color+';padding:20px 24px;border-radius:16px 16px 0 0;position:relative">'
+    +'<button onclick="document.getElementById(\'_persProfileModal\').remove()" style="position:absolute;top:12px;right:14px;background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:16px;line-height:1">×</button>'
+    +'<div style="display:flex;align-items:center;gap:14px">'
+    +'<div style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.25);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;flex-shrink:0">'+ini+'</div>'
+    +'<div><div style="font-size:18px;font-weight:900;color:#fff">'+escHtml(nm)+'</div>'
+    +'<div style="font-size:11px;color:rgba(255,255,255,.8);margin-top:2px">'+svcInfo.l+(p.type?' · '+escHtml(p.type):'')+'</div></div>'
+    +'</div></div>';
+  // Body
+  var body='<div style="padding:20px 24px">';
+  if(p.email)body+='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:'+svcInfo.bg+';border-radius:8px;margin-bottom:14px">'
+    +'<span style="font-size:16px">📧</span>'
+    +'<a href="mailto:'+escHtml(p.email)+'" style="color:'+svcInfo.color+';font-size:12px;font-weight:600;text-decoration:none">'+escHtml(p.email)+'</a></div>';
+  if(habs.length)body+='<div style="margin-bottom:14px"><div style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;margin-bottom:6px">HABILITATIONS</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:5px">'+habs.map(function(h){
+      return '<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:'+svcInfo.bg+';color:'+svcInfo.color+';border:1px solid '+svcInfo.color+'40">'+escHtml(h)+'</span>';
+    }).join('')+'</div></div>';
+  var affKeys=Object.keys(tasksByAff);
+  if(affKeys.length){
+    body+='<div><div style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;margin-bottom:8px">AFFAIRES EN COURS</div>';
+    affKeys.forEach(function(aff){
+      var _inf=(STORE.projects[aff].infos)||{};
+      var _al=(_inf.numeroClient?_inf.numeroClient+' | ':'')+aff+(_inf.libelle?' — '+escHtml(_inf.libelle.substring(0,30)):'');
+      body+='<div style="margin-bottom:8px;padding:10px 12px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">'
+        +'<div style="font-size:10px;font-weight:700;color:var(--ac);margin-bottom:5px">'+_al+'</div>'
+        +'<div style="display:flex;flex-wrap:wrap;gap:4px">';
+      tasksByAff[aff].forEach(function(a){
+        var ph=PH_get(a.pk);
+        body+='<span style="font-size:9px;padding:2px 7px;border-radius:6px;background:'+(ph.f||ph.s||'#eee')+';color:'+(ph.xd||ph.t||'#333')+'">'+(a.done?'✓ ':'')+escHtml(a.lb)+'</span>';
+      });
+      body+='</div></div>';
+    });
+    body+='</div>';
+  } else {
+    body+='<div style="font-size:11px;color:var(--tx3);text-align:center;padding:12px">Aucune affaire active assignée</div>';
+  }
+  var safeName=nm.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  body+='<button onclick="document.getElementById(\'_persProfileModal\').remove();_annEdit(\''+safeName+'\');switchTab(\'personnel\')" style="margin-top:14px;width:100%;padding:8px;border-radius:var(--r);background:var(--bg3);border:1px solid var(--bd);color:var(--tx2);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">✎ Modifier la fiche</button>';
+  body+='</div>';
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--bg2);border-radius:16px;width:460px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4);font-family:inherit';
+  box.innerHTML=hdr+body;
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+}
+
 
 function renderDashboard(){
   var fw=document.getElementById('dbw');
@@ -4907,8 +4982,10 @@ function buildModifPanel(row){
     h+='<span style="font-size:11px;font-weight:600;color:var(--tx2)">'+rd.l+(mainNom?' <span style="color:var(--tx3);font-weight:400">('+resp.nom+')</span>':'')+'</span></label>';
   });
   h+='</div>';
-  h+='<button onclick="sendModif(\''+row.id+'\',true)" style="width:100%;padding:9px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;margin-bottom:5px">\uD83D\uDCE7 Enregistrer & Envoyer</button>';
+  h+='<div style="display:flex;flex-direction:column;gap:6px">';
+  h+='<button onclick="sendModif(\''+row.id+'\',true)" style="width:100%;padding:9px;border-radius:var(--r);border:none;background:var(--ac);color:#fff;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">\uD83D\uDCE7 Enregistrer & Envoyer</button>';
   h+='<button onclick="sendModif(\''+row.id+'\',false)" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);color:var(--tx2);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">\uD83D\uDCBE Enregistrer sans envoyer</button>';
+  h+='</div>';
   h+='</div></div>';
   return h;
 }
@@ -5187,10 +5264,9 @@ function openAffaireInfos(){
     {k:'tableauterie',l:'Tableauterie'}
   ];
   var respHtml=respDefs.map(function(rd){
-    var resp=resps[rd.k]||{nom:'',emails:[]};
-    var _cts2=_getContacts(resp);
-    var _fn2=_cts2.map(function(ct2){return _nafContactRow(rd.k,ct2.nom,ct2.email,'aif');}).join('');
-return '<div style="background:var(--bg3);border-radius:var(--r2);padding:12px;border:1px solid var(--bd)">'+'<div style="font-size:9px;font-weight:800;color:var(--ac);margin-bottom:6px">'+rd.l+'</div>'+'<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;margin-bottom:3px"><div style="font-size:8px;font-weight:700;color:var(--tx3)">NOM</div><div style="font-size:8px;font-weight:700;color:var(--tx3)">EMAIL</div></div>'+'<div id="aif-contacts-'+rd.k+'">'+_fn2+'</div>'+'<button onclick="aifAddEmail(\''+rd.k+'\')" style="font-size:10px;color:var(--ac);background:none;border:none;cursor:pointer;padding:2px 0;font-family:inherit">+ Contact</button></div>'
+    var resp=resps[rd.k]||{};
+    var _cts3=_getContacts(resp);
+    return _nafRespBlock(rd.k,rd.l,(_cts3[0]&&_cts3[0].nom)||'',_cts3.map(function(ct){return ct.email||'';}),'aif','aifAddEmail');
   }).join('');
 
   // Construire le HTML du modal
@@ -5238,9 +5314,9 @@ function saveAffaireInfos(){
   var resps={};
   ['els','client','auto','be','chantier','tableauterie'].forEach(function(k){
     var contacts=[];
-    document.querySelectorAll('#aif-contacts-'+k+' .aif-contact-row').forEach(function(row){
-      var nomI=row.querySelector('.aif-nom-inp');
-      var emI=row.querySelector('.aif-email-inp');
+    document.querySelectorAll('#aif-contacts-'+k+' [data-naf-row]').forEach(function(row){
+      var nomI=row.querySelector('input[data-field="nom"]');
+      var emI=row.querySelector('input[data-field="email"]');
       var n=(nomI?nomI.value:'').trim();
       var e=(emI?emI.value:'').trim();
       if(n||e)contacts.push({nom:n,email:e});
@@ -5330,19 +5406,110 @@ function _nafContactRow(k,nom,email,cls){
     'style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 7px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+
     '</div>';
 }
+function _nafPickPerson(sel, pfx, respKey){
+  var val=sel.value;if(!val)return;
+  var parts=val.split('|');
+  var nm=parts[0]||'';var email=parts[1]||'';
+  // Ajouter une nouvelle ligne de contact
+  var ct=document.getElementById(pfx+'-contacts-'+respKey);
+  if(!ct)return;
+  // Créer la ligne avec nom et email pré-remplis
+  ct.insertAdjacentHTML('beforeend',_nafContactRow(respKey,nm,email,pfx));
+  // Pré-remplir les champs
+  var rows=ct.querySelectorAll('.naf-ct-row');
+  var last=rows[rows.length-1];
+  if(last){
+    var nameInp=last.querySelector('input[placeholder*="Nom"]');
+    var emailInp=last.querySelector('input[type="email"]');
+    if(nameInp){nameInp.value=nm;}
+    if(emailInp){emailInp.value=email;}
+  }
+  sel.value=''; // reset picker
+}
+
+// Mapping service → services annuaire associés
+var _NAF_SVC_MAP={
+  els:['els_projet','els_auto'],
+  client:['client'],
+  auto:['els_auto'],
+  be:['bureau_etude'],
+  chantier:['els_chantier'],
+  tableauterie:['tableauterie']
+};
+
+function _nafGetChips(k,pfx){
+  // Lire les contacts actuels depuis les inputs cachés
+  var ct=document.getElementById(pfx+'-contacts-'+k);
+  if(!ct)return [];
+  var chips=[];
+  ct.querySelectorAll('input[data-field="nom"]').forEach(function(inp){
+    var nm=inp.value.trim();
+    var emailInp=inp.parentElement.querySelector('input[data-field="email"]');
+    var em=emailInp?emailInp.value.trim():'';
+    if(nm)chips.push({nom:nm,email:em});
+  });
+  return chips;
+}
+
+function _nafRemoveContact(btn,pfx,k){
+  var row=btn.closest('[data-naf-row]');
+  if(row)row.remove();
+}
+
+
 function _nafRespBlock(k,label,nom,emails,cls,addFn){
   var contacts=_getContacts({nom:nom,emails:emails});
-  return '<div style="background:var(--bg3);border-radius:var(--r2);padding:12px;border:1px solid var(--bd)">'+
-    '<div style="font-size:9px;font-weight:800;color:var(--ac);margin-bottom:6px">'+label+'</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;margin-bottom:3px">'+
-    '<div style="font-size:8px;font-weight:700;color:var(--tx3);padding:0 0 2px 0">NOM</div>'+
-    '<div style="font-size:8px;font-weight:700;color:var(--tx3);padding:0 0 2px 0">EMAIL</div></div>'+
-    '<div id="'+cls+'-contacts-'+k+'">'+
-    contacts.map(function(ct){return _nafContactRow(k,ct.nom,ct.email,cls);}).join('')+
-    '</div>'+
-    '<button onclick="'+addFn+'(\''+k+'\')" style="font-size:10px;color:var(--ac);background:none;border:none;cursor:pointer;padding:2px 0;font-family:inherit">+ Contact</button>'+
-    '</div>';
+  var svcs=_NAF_SVC_MAP[k]||[];
+  var gp=_getGlobalPersons();
+  var cands=Object.values(gp).filter(function(p){
+    return !svcs.length||svcs.indexOf(p.service||'')>=0;
+  }).sort(function(a,b){return a.name.localeCompare(b.name);});
+
+  // Toutes les personnes si pas de candidats dans le service
+  if(!cands.length){
+    cands=Object.values(gp).sort(function(a,b){return a.name.localeCompare(b.name);});
+  }
+
+  var svcInfo=SERVICES.find(function(s){return svcs.indexOf(s.k)>=0;})||{color:'#6366F1'};
+
+  // Générer les chips pour les contacts existants
+  var chipsHtml='';
+  contacts.filter(function(ct){return ct.nom;}).forEach(function(ct){
+    var p=gp[ct.nom]||null;
+    var pi=p&&p.service?SERVICES.find(function(s){return s.k===p.service;}):null;
+    var color=pi?pi.color:'#6B7280';
+    var ini=ct.nom.trim().charAt(0).toUpperCase();
+    var em=ct.email||'';
+    chipsHtml+='<div data-naf-row="1" style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:'+color+'15;border:1px solid '+color+'40;border-radius:20px;margin-bottom:4px">'
+      +'<span style="width:22px;height:22px;border-radius:50%;background:'+color+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0">'+ini+'</span>'
+      +'<span style="flex:1;min-width:0">'
+      +'<div style="font-size:11px;font-weight:700;color:var(--tx)">'+escHtml(ct.nom)+'</div>'
+      +(em?'<div style="font-size:9px;color:var(--tx3)">'+escHtml(em)+'</div>':'')
+      +'</span>'
+      +'<button onclick="_nafRemoveContact(this,\''+cls+'\',\''+k+'\')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;line-height:1;padding:0 2px" title="Retirer">×</button>'
+      +'<input type="hidden" data-field="nom" value="'+escHtml(ct.nom)+'">'
+      +'<input type="hidden" data-field="email" value="'+escHtml(em)+'">'
+      +'</div>';
+  });
+
+  // Options dropdown
+  var opts='<option value="">— Sélectionner une personne —</option>';
+  cands.forEach(function(p){
+    opts+='<option value="'+escHtml(p.name)+'|'+escHtml(p.email||'')+'">'+escHtml(p.name)+(p.email?' · '+escHtml(p.email):'')+'</option>';
+  });
+
+  return '<div style="background:var(--bg3);border-radius:var(--r2);padding:12px;border:1px solid var(--bd)">'
+    +'<div style="font-size:9px;font-weight:800;color:'+svcInfo.color+';margin-bottom:8px;letter-spacing:.5px">'+label.toUpperCase()+'</div>'
+    +'<select onchange="_nafPickPerson(this,\''+cls+'\',\''+k+'\')" style="width:100%;border:1.5px solid '+svcInfo.color+'40;border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;margin-bottom:8px;cursor:pointer">'
+    +opts+'</select>'
+    +'<div id="'+cls+'-contacts-'+k+'">'
+    +chipsHtml
+    +'</div>'
+    +'</div>';
 }
+
+
+
 function showNewAffaireForm(){
   var ex=document.getElementById('_nafModal');if(ex)ex.remove();
   var ov=document.createElement('div');
@@ -5397,9 +5564,9 @@ function confirmNewAffaire(){
   var resps={};
   ['els','client','auto','be','chantier','tableauterie'].forEach(function(k){
     var contacts=[];
-    document.querySelectorAll('#naf-contacts-'+k+' .naf-contact-row').forEach(function(row){
-      var nomI=row.querySelector('.naf-nom-inp');
-      var emI=row.querySelector('.naf-email-inp');
+    document.querySelectorAll('#naf-contacts-'+k+' [data-naf-row]').forEach(function(row){
+      var nomI=row.querySelector('input[data-field="nom"]');
+      var emI=row.querySelector('input[data-field="email"]');
       var n=(nomI?nomI.value:'').trim();
       var e=(emI?emI.value:'').trim();
       if(n||e)contacts.push({nom:n,email:e});
@@ -7108,7 +7275,7 @@ function buildFullExpPanel(row,ph,nd){
   // Le panneau modif est sticky à left:min(97vw,880px) — juste à droite du .ei
   return leftPanel+
     '<div id="modif-panel-'+row.id+'" '+
-    'style="position:sticky;left:min(97vw,880px);top:0;width:560px;max-height:580px;overflow-y:auto;'+
+    'style="position:sticky;left:min(97vw,880px);top:0;width:640px;max-height:580px;overflow-y:auto;'+
     'background:var(--bg2);border-left:2px solid var(--bd);display:inline-block;vertical-align:top;box-sizing:border-box">'+
     rightPanel+'</div>';
 }
@@ -9115,6 +9282,46 @@ function buildActOpts(aff,selActId){
   });
   opts+='</optgroup>';
   return opts;
+}
+
+function _savePersonForm(orig){
+  var nm=(document.getElementById('_pe_name')||{value:''}).value.trim();
+  var svc=(document.getElementById('_pe_svc')||{value:''}).value;
+  var em=(document.getElementById('_pe_email')||{value:''}).value.trim();
+  var type=(document.getElementById('_pe_type')||{value:''}).value;
+  var habsRaw=(document.getElementById('_pe_hab')||{value:''}).value;
+  var habs=habsRaw.split('\n').map(function(h){return h.trim();}).filter(Boolean);
+  saveGlobalPerson(orig,nm,type,habs,svc,em);
+  window._editingPerson=undefined;
+  renderPersonnelSearch();
+}
+
+function openPersonProfile(nm){
+  var gp=_getGlobalPersons();var p=gp[nm];if(!p)return;
+  var sv=getSvc(p.service||'');
+  var ex=document.getElementById('_persProfileModal');if(ex)ex.remove();
+  var ov=document.createElement('div');
+  ov.id='_persProfileModal';
+  ov.style.cssText='position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+  var hdr='<div style="background:'+sv.color+';padding:22px 24px 18px;color:#fff;position:relative">';
+  hdr+='<button onclick="document.getElementById(\'_persProfileModal\').remove()" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,.2);border:none;border-radius:50%;width:26px;height:26px;color:#fff;font-size:15px;cursor:pointer">\u00D7</button>';
+  hdr+='<div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;margin-bottom:8px">'+p.name.charAt(0).toUpperCase()+'</div>';
+  hdr+='<div style="font-size:18px;font-weight:900">'+escHtml(p.name)+'</div>';
+  hdr+='<div style="font-size:10px;opacity:.8;margin-top:2px">'+sv.l+'</div></div>';
+  var body='<div style="padding:18px 22px">';
+  if(p.email)body+='<div style="display:flex;align-items:center;gap:7px;margin-bottom:9px"><span>\u{1F4E7}</span><a href="mailto:'+escHtml(p.email)+'" style="color:'+sv.color+';font-size:12px;font-weight:600;text-decoration:none">'+escHtml(p.email)+'</a></div>';
+  if(p.type)body+='<div style="font-size:12px;color:var(--tx);margin-bottom:9px">\u{1F4BC} Contrat : <strong>'+escHtml(p.type)+'</strong></div>';
+  if(p.habilitations&&p.habilitations.length)body+='<div style="margin-bottom:10px"><div style="font-size:9px;font-weight:700;color:var(--tx3);margin-bottom:5px">HABILITATIONS</div><div style="display:flex;flex-wrap:wrap;gap:4px">'+p.habilitations.map(function(h){return '<span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+sv.bg+';color:'+sv.color+';border:1px solid '+sv.color+'33">'+escHtml(h)+'</span>';}).join('')+'</div></div>';
+  var affs=[];
+  Object.keys(STORE.projects||{}).forEach(function(aff){var proj=STORE.projects[aff];if(proj.closed)return;var tasks=(proj.data||[]).filter(function(r){return r.t==='act'&&(r.p||[]).some(function(pp){return pp.name===nm;});});if(tasks.length)affs.push({aff:aff,tasks:tasks,infos:proj.infos||{}});});
+  if(affs.length){body+='<div><div style="font-size:9px;font-weight:700;color:var(--tx3);margin-bottom:7px">T\u00C2CHES ACTIVES</div>';affs.forEach(function(a){body+='<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:var(--ac);margin-bottom:3px">'+escHtml(a.aff)+(a.infos.libelle?' \u2014 '+escHtml(a.infos.libelle.substring(0,28)):'')+'</div><div style="display:flex;flex-wrap:wrap;gap:3px">'+a.tasks.map(function(t){var ph=PH_get(t.pk);return '<span style="font-size:8px;padding:2px 6px;border-radius:5px;background:'+ph.f+';color:'+ph.xd+'">'+escHtml(t.lb)+'</span>';}).join('')+'</div></div>';});}
+  body+='</div>';
+  body+='<div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end"><button onclick="window._editingPerson=\''+nm.replace(/\'/g,'\\\'')+'\';document.getElementById(\'_persProfileModal\').remove();renderPersonnelSearch()" style="padding:7px 14px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">\u270F\uFE0F Modifier</button><button onclick="document.getElementById(\'_persProfileModal\').remove()" style="padding:7px 14px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);cursor:pointer;font-size:11px;font-family:inherit;color:var(--tx2)">Fermer</button></div></div>';
+  var box=document.createElement('div');
+  box.style.cssText='background:var(--bg2);border-radius:14px;width:420px;max-width:95%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit;overflow:hidden';
+  box.innerHTML=hdr+body;
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
 }
 </script>
 <!-- Fortuit Modal -->
