@@ -91,38 +91,27 @@
 
   function _applyRemote(remote){
     if(!_isValidStore(remote)){console.warn('donnees vides ignorees');return;}
-    // Garder mes affaires locales + ajouter celles du collegue
+    // ── Sauvegarder globalPersons LOCAL avant tout ecrasement ──────────
+    // globalPersons n'est JAMAIS ecrase par Supabase : la version locale prime toujours
+    var _localGP=(STORE&&STORE.globalPersons)?STORE.globalPersons:{};
+    try{
+      var _gpKey=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
+      // Fusionner GP_KEY dans localGP (GP_KEY = la plus récente)
+      Object.keys(_gpKey).forEach(function(nm){_localGP[nm]=_gpKey[nm];});
+    }catch(e){}
+    // ── Garder les affaires locales ─────────────────────────────────────
     if(STORE&&STORE.projects){
       Object.keys(STORE.projects).forEach(function(aff){
         if(!remote.projects[aff])remote.projects[aff]=STORE.projects[aff];
       });
     }
-    // Bloquer l'ecrasement si une personne vient d'être sauvegardée
-    if(window._lastPersonSave&&(Date.now()-window._lastPersonSave)<5000){
-      // Dans les 5s après une sauvegarde personne : forcer la restauration GP_KEY
-      if(!remote.globalPersons)remote.globalPersons={};
-      try{
-        var _gpFresh=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
-        Object.keys(_gpFresh).forEach(function(nm){
-          remote.globalPersons[nm]=_gpFresh[nm];
-        });
-      }catch(e){}
-    }
-    // ── Fusionner globalPersons depuis GP_KEY localStorage ET STORE local ──
-    if(!remote.globalPersons)remote.globalPersons={};
-    try{
-      var _gpSaved=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
-      var _dpr=remote._deletedPersons||{};
-      Object.keys(_gpSaved).forEach(function(nm){
-        if(!_dpr[nm])remote.globalPersons[nm]=_gpSaved[nm];
-      });
-    }catch(e2){}
-    if(STORE&&STORE.globalPersons){
-      Object.keys(STORE.globalPersons).forEach(function(nm){
-        if(!remote.globalPersons[nm])remote.globalPersons[nm]=STORE.globalPersons[nm];
-      });
-    }
+    // ── Appliquer le remote ─────────────────────────────────────────────
     STORE=remote;
+    // ── Restaurer globalPersons local (jamais perdu) ────────────────────
+    STORE.globalPersons=_localGP;
+    // Supprimer les tombstones du remote
+    var _del=STORE._deletedPersons||{};
+    Object.keys(_del).forEach(function(nm){delete STORE.globalPersons[nm];});
     localStorage.setItem(SK,JSON.stringify(STORE));
     applySync();
   }
