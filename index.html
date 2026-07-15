@@ -1534,24 +1534,27 @@ function _annEdit(nm){window._editingPerson=nm;renderPersonnelSearch();}
 function _annCancel(){window._editingPerson=undefined;renderPersonnelSearch();}
 function _savePersonForm2(){
   var nmEl=document.getElementById('_pe_name');
-  var emEl=document.getElementById('_pe_email');
-  var svcEl=document.getElementById('_pe_svc');
-  var tpEl=document.getElementById('_pe_type');
   if(!nmEl||!nmEl.value.trim()){alert('Le nom ne peut pas \u00eatre vide.');return;}
   var newNm=nmEl.value.trim();
-  var em=emEl?emEl.value.trim():'';
-  var svcV=svcEl?svcEl.value:'';
-  var tpV=tpEl?tpEl.value:'';
+  var em=(document.getElementById('_pe_email')||{value:''}).value.trim();
+  var svcV=(document.getElementById('_pe_svc')||{value:''}).value;
+  var tpV=(document.getElementById('_pe_type')||{value:''}).value;
   var habs=[];
   [].forEach.call(document.querySelectorAll('._pe_hab_cb'),function(cb){if(cb.checked)habs.push(cb.value);});
   var origNm=(window._editingPerson===null||window._editingPerson===undefined)?'':String(window._editingPerson);
-  // Utiliser saveGlobalPerson qui fonctionne
-  saveGlobalPerson(origNm, newNm, tpV, habs, svcV, em);
+  saveGlobalPerson(origNm,newNm,tpV,habs,svcV,em);
   window._editingPerson=undefined;
-  renderPersonnelSearch();
-  // Focus sur la liste
-  var el=document.getElementById('pers-search');
-  if(el)el.scrollTop=0;
+  // Forcer navigation vers l'onglet annuaire pour recharger depuis STORE
+  switchPersonnelTab('search');
+  // Notif
+  var sv=document.getElementById('sv');
+  if(sv){
+    var cnt=Object.keys(STORE.globalPersons||{}).length;
+    sv.textContent='\u2713 '+newNm+' - '+cnt+' personne'+(cnt>1?'s':'')+' dans l\'annuaire';
+    sv.style.display='inline';
+    clearTimeout(_savePersonForm2._t);
+    _savePersonForm2._t=setTimeout(function(){sv.style.display='none';},4000);
+  }
 }
 
 function renderPersonnelSearch(){
