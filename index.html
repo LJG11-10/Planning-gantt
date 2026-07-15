@@ -97,6 +97,17 @@
         if(!remote.projects[aff])remote.projects[aff]=STORE.projects[aff];
       });
     }
+    // Bloquer l'ecrasement si une personne vient d'être sauvegardée
+    if(window._lastPersonSave&&(Date.now()-window._lastPersonSave)<5000){
+      // Dans les 5s après une sauvegarde personne : forcer la restauration GP_KEY
+      if(!remote.globalPersons)remote.globalPersons={};
+      try{
+        var _gpFresh=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
+        Object.keys(_gpFresh).forEach(function(nm){
+          remote.globalPersons[nm]=_gpFresh[nm];
+        });
+      }catch(e){}
+    }
     // ── Fusionner globalPersons depuis GP_KEY localStorage ET STORE local ──
     if(!remote.globalPersons)remote.globalPersons={};
     try{
@@ -1506,7 +1517,14 @@ function saveGlobalPerson(origNm, newNm, type, habsArr, service, email){
   localStorage.setItem('plan26v5',JSON.stringify(STORE));
   // Sauvegarder globalPersons séparément pour survivre aux rechargements STORE
   localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));
-  scheduleSupa();
+  // Uploader sur Supabase IMMEDIATEMENT (pas de debounce)
+  // pour que le prochain poll récupère les données à jour
+  window._lastPersonSave=Date.now(); // Marquer le moment de sauvegarde personne
+  if(typeof supaSave==='function'){
+    supaSave(STORE).catch(function(){scheduleSupa();});
+  } else {
+    scheduleSupa();
+  }
 }
 
 function deleteGlobalPerson(nm){
