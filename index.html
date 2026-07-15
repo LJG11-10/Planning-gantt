@@ -1187,19 +1187,22 @@ function loadStore(){
         Object.keys(_delAll).forEach(function(k){delete STORE.absences[k];});
       }
 
-      // globalPersons : filtrer les personnes supprimées
+      // globalPersons : GP_KEY est la source de vérité, toujours prioritaire
+      if(!STORE.globalPersons)STORE.globalPersons={};
+      // 1. Charger depuis remote (base)
       if(remote.globalPersons){
-        var _filtGP={};
-        Object.keys(remote.globalPersons).forEach(function(k){if(!_delAll[k])_filtGP[k]=remote.globalPersons[k];});
-        STORE.globalPersons=Object.assign({},_filtGP,STORE.globalPersons||{});
-        Object.keys(_delAll).forEach(function(k){delete STORE.globalPersons[k];});
+        Object.keys(remote.globalPersons).forEach(function(k){
+          if(!STORE.globalPersons[k])STORE.globalPersons[k]=remote.globalPersons[k];
+        });
       }
-      // Fusionner GP_KEY (localStorage resilient aux polls Supabase)
+      // 2. GP_KEY écrase tout - jamais bloqué par tombstones
       try{
         var _gpK=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
-        if(!STORE.globalPersons)STORE.globalPersons={};
         Object.keys(_gpK).forEach(function(nm){
-          if(!_delAll[nm])STORE.globalPersons[nm]=_gpK[nm];
+          STORE.globalPersons[nm]=_gpK[nm];
+          // Retirer du tombstone si présent
+          if(STORE._deletedPersons&&STORE._deletedPersons[nm])
+            delete STORE._deletedPersons[nm];
         });
       }catch(_e){}
 
