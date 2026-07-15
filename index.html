@@ -97,23 +97,21 @@
         if(!remote.projects[aff])remote.projects[aff]=STORE.projects[aff];
       });
     }
-    // ── Fusionner globalPersons : le local est prioritaire ──────────
+    // ── Fusionner globalPersons depuis GP_KEY localStorage ET STORE local ──
+    if(!remote.globalPersons)remote.globalPersons={};
+    try{
+      var _gpSaved=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
+      var _dpr=remote._deletedPersons||{};
+      Object.keys(_gpSaved).forEach(function(nm){
+        if(!_dpr[nm])remote.globalPersons[nm]=_gpSaved[nm];
+      });
+    }catch(e2){}
     if(STORE&&STORE.globalPersons){
-      if(!remote.globalPersons)remote.globalPersons={};
       Object.keys(STORE.globalPersons).forEach(function(nm){
-        // Garder la version locale si plus récente ou absente du remote
         if(!remote.globalPersons[nm])remote.globalPersons[nm]=STORE.globalPersons[nm];
       });
     }
-    // ── Fusionner tombstones ─────────────────────────────────────────
-    if(STORE&&STORE._deletedPersons){
-      if(!remote._deletedPersons)remote._deletedPersons={};
-      Object.assign(remote._deletedPersons,STORE._deletedPersons);
-    }
-    if(STORE&&STORE._deletedAffaires){
-      if(!remote._deletedAffaires)remote._deletedAffaires={};
-      Object.assign(remote._deletedAffaires,STORE._deletedAffaires);
-    }
+}
     STORE=remote;
     localStorage.setItem(SK,JSON.stringify(STORE));
     applySync();
@@ -1075,6 +1073,7 @@ let EXP=null;
 let ZOOM_DW=36; // largeur colonne jour en px // largeur colonne jour en px
 let GANTT_VIEW='week'; // 'week' or 'day'
 const SK='plan26v5';
+const GP_KEY='plan26v5_gp';
 // Identifiant unique de session (pour ignorer ses propres mises à jour Realtime)
 var SESSION_ID='sess_'+Math.random().toString(36).slice(2,10)+'_'+Date.now();
 var _lastSaveSid=null;
@@ -1405,6 +1404,16 @@ const HAB_GROUPS = [
 
 function _getGlobalPersons(){
   if(!STORE.globalPersons)STORE.globalPersons={};
+  // Fusionner avec la sauvegarde locale qui résiste aux rechargements
+  try{
+    var _gpLocal=JSON.parse(localStorage.getItem(GP_KEY)||'{}');
+    var _delP=STORE._deletedPersons||{};
+    Object.keys(_gpLocal).forEach(function(nm){
+      if(!_delP[nm]&&!STORE.globalPersons[nm]){
+        STORE.globalPersons[nm]=_gpLocal[nm];
+      }
+    });
+  }catch(e){}
   return STORE.globalPersons;
 }
 
@@ -1476,7 +1485,18 @@ function saveGlobalPerson(origNm, newNm, type, habsArr, service, email){
       p.persons.push({name:newNm,type:type||'',ent:''});
     }
   }
-  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  // Effacer tombstone si la personne avait ete supprimee avant
+  if(STORE._deletedPersons&&STORE._deletedPersons[newNm]){
+    delete STORE._deletedPersons[newNm];
+  }
+  // Pareil pour origNm si renommage
+  if(origNm&&STORE._deletedPersons&&STORE._deletedPersons[origNm]){
+    delete STORE._deletedPersons[origNm];
+  }
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));
+  // Sauvegarder globalPersons séparément pour survivre aux rechargements STORE
+  localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));
+  scheduleSupa();
 }
 
 function deleteGlobalPerson(nm){
@@ -4020,7 +4040,10 @@ function toggleCongeDay(name, dateISO){
   var idx=days.indexOf(dateISO);
   if(idx>=0)days.splice(idx,1);
   else days.push(dateISO);
-  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));
+  // Sauvegarder globalPersons séparément pour survivre aux rechargements STORE
+  localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));
+  scheduleSupa();
   renderAbsences();
 }
 
@@ -4041,14 +4064,20 @@ function addCongePeriod(name){
     if(dow!==0&&dow!==6&&days.indexOf(k)<0)days.push(k);
     cur.setDate(cur.getDate()+1);
   }
-  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));
+  // Sauvegarder globalPersons séparément pour survivre aux rechargements STORE
+  localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));
+  scheduleSupa();
   renderAbsences();
 }
 
 function clearAllConges(name){
   if(!confirm('Effacer tous les congés de '+name+' ?'))return;
   if(STORE.absences&&STORE.absences[name])STORE.absences[name].congesDays=[];
-  localStorage.setItem('plan26v5',JSON.stringify(STORE));scheduleSupa();
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));
+  // Sauvegarder globalPersons séparément pour survivre aux rechargements STORE
+  localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));
+  scheduleSupa();
   renderAbsences();
 }
 
