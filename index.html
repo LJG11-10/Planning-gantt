@@ -1580,7 +1580,7 @@ function renderPersonnelSearch(){
   var el=document.getElementById('pers-search');
   if(!el){console.error('pers-search not found');return;}
 
-  var gp=STORE.globalPersons||{};
+  var gp=_getGlobalPersons(); // Fusionne GP_KEY + STORE.globalPersons
   var _del=STORE._deletedPersons||{};
   var editingNm=window._editingPerson;
 
