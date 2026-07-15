@@ -91,28 +91,33 @@
 
   function _applyRemote(remote){
     if(!_isValidStore(remote)){console.warn('donnees vides ignorees');return;}
-    // ── Sauvegarder globalPersons LOCAL avant tout ecrasement ──────────
-    // globalPersons n'est JAMAIS ecrase par Supabase : la version locale prime toujours
-    var _localGP=(STORE&&STORE.globalPersons)?STORE.globalPersons:{};
+    // ── Construire globalPersons depuis GP_KEY (source la plus fiable) ──
+    var _localGP={};
     try{
       var _gpKey=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
-      // Fusionner GP_KEY dans localGP (GP_KEY = la plus récente)
       Object.keys(_gpKey).forEach(function(nm){_localGP[nm]=_gpKey[nm];});
     }catch(e){}
+    // Ajouter aussi ce qui est dans STORE local mais pas dans GP_KEY
+    if(STORE&&STORE.globalPersons){
+      Object.keys(STORE.globalPersons).forEach(function(nm){
+        if(!_localGP[nm])_localGP[nm]=STORE.globalPersons[nm];
+      });
+    }
     // ── Garder les affaires locales ─────────────────────────────────────
     if(STORE&&STORE.projects){
       Object.keys(STORE.projects).forEach(function(aff){
         if(!remote.projects[aff])remote.projects[aff]=STORE.projects[aff];
       });
     }
-    // ── Appliquer le remote ─────────────────────────────────────────────
+    // ── Appliquer le remote puis restaurer globalPersons ────────────────
     STORE=remote;
-    // ── Restaurer globalPersons local (jamais perdu) ────────────────────
+    // globalPersons = version locale UNIQUEMENT (GP_KEY prime sur Supabase)
+    // NE PAS appliquer les tombstones remote sur globalPersons :
+    // renderPersonnelSearch filtre deja via _deletedPersons
     STORE.globalPersons=_localGP;
-    // Supprimer les tombstones du remote
-    var _del=STORE._deletedPersons||{};
-    Object.keys(_del).forEach(function(nm){delete STORE.globalPersons[nm];});
     localStorage.setItem(SK,JSON.stringify(STORE));
+    // Mettre a jour GP_KEY avec la version finale
+    try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}
     applySync();
   }
 
