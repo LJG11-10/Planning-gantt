@@ -1184,6 +1184,14 @@ function loadStore(){
         STORE.globalPersons=Object.assign({},_filtGP,STORE.globalPersons||{});
         Object.keys(_delAll).forEach(function(k){delete STORE.globalPersons[k];});
       }
+      // Fusionner GP_KEY (localStorage resilient aux polls Supabase)
+      try{
+        var _gpK=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
+        if(!STORE.globalPersons)STORE.globalPersons={};
+        Object.keys(_gpK).forEach(function(nm){
+          if(!_delAll[nm])STORE.globalPersons[nm]=_gpK[nm];
+        });
+      }catch(_e){}
 
       // conges : filtrer les personnes supprimées
       if(remote.conges){
@@ -1403,12 +1411,15 @@ const HAB_GROUPS = [
 
 function _getGlobalPersons(){
   if(!STORE.globalPersons)STORE.globalPersons={};
-  // Fusionner avec la sauvegarde locale qui résiste aux rechargements
+  // GP_KEY = source la plus fiable (séparée du STORE Supabase)
+  // On fusionne TOUJOURS depuis GP_KEY, le STORE n'est qu'un complément
   try{
     var _gpLocal=JSON.parse(localStorage.getItem(GP_KEY)||'{}');
     var _delP=STORE._deletedPersons||{};
     Object.keys(_gpLocal).forEach(function(nm){
-      if(!_delP[nm]&&!STORE.globalPersons[nm]){
+      // Ajouter depuis GP_KEY si pas dans tombstone
+      if(!_delP[nm]){
+        // Toujours écraser depuis GP_KEY (plus récent et fiable)
         STORE.globalPersons[nm]=_gpLocal[nm];
       }
     });
