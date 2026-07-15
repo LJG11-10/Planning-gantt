@@ -1515,43 +1515,40 @@ function _annEdit(nm){window._editingPerson=nm;renderPersonnelSearch();}
 function _annEdit(nm){window._editingPerson=nm;renderPersonnelSearch();}
 function _annCancel(){window._editingPerson=undefined;renderPersonnelSearch();}
 function _savePersonForm2(){
-  try{
-    var nm=document.getElementById('_pe_name');
-    var em=document.getElementById('_pe_email');
-    var svc=document.getElementById('_pe_svc');
-    var tp=document.getElementById('_pe_type');
-    if(!nm||!nm.value.trim()){alert('Le nom ne peut pas être vide.');return;}
-    var habs=[];
-    document.querySelectorAll('._pe_hab_cb').forEach(function(cb){if(cb.checked)habs.push(cb.value);});
-    var newNm=nm.value.trim();
-    var origNm=window._editingPerson===null||window._editingPerson===''?'':
-               window._editingPerson===undefined?'':window._editingPerson;
-    // Sauvegarder directement dans STORE
-    var gp=_getGlobalPersons();
-    if(origNm&&origNm!==newNm&&gp[origNm]){
-      gp[newNm]=gp[origNm];
-      delete gp[origNm];
-    }
-    if(!gp[newNm])gp[newNm]={};
-    gp[newNm].name=newNm;
-    gp[newNm].type=tp?tp.value:'';
-    gp[newNm].habilitations=habs;
-    gp[newNm].service=svc?svc.value:'';
-    gp[newNm].email=em?em.value.trim():'';
-    STORE.globalPersons=gp;
-    saveNow();
-    window._editingPerson=undefined;
-    renderPersonnelSearch();
-    // Notification
-    var sv=document.getElementById('sv');
-    if(sv){sv.textContent='✓ '+newNm+' sauvegardé';sv.style.display='inline';
-      setTimeout(function(){sv.style.display='none';},2000);}
-  }catch(err){
-    console.error('Erreur sauvegarde personne:',err);
-    alert('Erreur lors de la sauvegarde : '+err.message);
+  var nm=document.getElementById('_pe_name');
+  if(!nm||!nm.value.trim()){alert('Le nom ne peut pas être vide.');return;}
+  var newNm=nm.value.trim();
+  var em=document.getElementById('_pe_email');
+  var svc=document.getElementById('_pe_svc');
+  var tp=document.getElementById('_pe_type');
+  var habs=[];
+  document.querySelectorAll('._pe_hab_cb').forEach(function(cb){if(cb.checked)habs.push(cb.value);});
+  var origNm=window._editingPerson;
+  if(origNm===null||origNm===undefined||origNm==='')origNm='';
+  // Mettre à jour globalPersons directement
+  if(!STORE.globalPersons)STORE.globalPersons={};
+  // Si renommage
+  if(origNm&&origNm!==newNm&&STORE.globalPersons[origNm]){
+    STORE.globalPersons[newNm]=STORE.globalPersons[origNm];
+    delete STORE.globalPersons[origNm];
   }
+  if(!STORE.globalPersons[newNm])STORE.globalPersons[newNm]={};
+  STORE.globalPersons[newNm].name=newNm;
+  STORE.globalPersons[newNm].type=tp?tp.value:'';
+  STORE.globalPersons[newNm].habilitations=habs;
+  STORE.globalPersons[newNm].service=svc?svc.value:'';
+  STORE.globalPersons[newNm].email=em?em.value.trim():'';
+  // Sauvegarder
+  localStorage.setItem(SK,JSON.stringify(STORE));
+  scheduleSupa();
+  // Fermer form et re-render
+  window._editingPerson=undefined;
+  renderPersonnelSearch();
+  // Notification
+  var sv=document.getElementById('sv');
+  if(sv){sv.textContent='\u2713 '+newNm+' sauvegard\u00e9';sv.style.display='inline';
+    clearTimeout(_savePersonForm2._t);_savePersonForm2._t=setTimeout(function(){sv.style.display='none';},2000);}
 }
-
 
 function renderPersonnelSearch(){
   var el=document.getElementById('pers-search');
