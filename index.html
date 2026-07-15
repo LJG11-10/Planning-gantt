@@ -97,6 +97,23 @@
         if(!remote.projects[aff])remote.projects[aff]=STORE.projects[aff];
       });
     }
+    // ── Fusionner globalPersons : le local est prioritaire ──────────
+    if(STORE&&STORE.globalPersons){
+      if(!remote.globalPersons)remote.globalPersons={};
+      Object.keys(STORE.globalPersons).forEach(function(nm){
+        // Garder la version locale si plus récente ou absente du remote
+        if(!remote.globalPersons[nm])remote.globalPersons[nm]=STORE.globalPersons[nm];
+      });
+    }
+    // ── Fusionner tombstones ─────────────────────────────────────────
+    if(STORE&&STORE._deletedPersons){
+      if(!remote._deletedPersons)remote._deletedPersons={};
+      Object.assign(remote._deletedPersons,STORE._deletedPersons);
+    }
+    if(STORE&&STORE._deletedAffaires){
+      if(!remote._deletedAffaires)remote._deletedAffaires={};
+      Object.assign(remote._deletedAffaires,STORE._deletedAffaires);
+    }
     STORE=remote;
     localStorage.setItem(SK,JSON.stringify(STORE));
     applySync();
@@ -1540,7 +1557,9 @@ function _savePersonForm2(){
   STORE.globalPersons[newNm].email=em?em.value.trim():'';
   // Sauvegarder
   localStorage.setItem(SK,JSON.stringify(STORE));
-  scheduleSupa();
+  // Sauvegarder immédiatement sur Supabase (pas de debounce)
+  if(typeof supaSave==='function')supaSave(STORE).catch(function(){});
+  else scheduleSupa();
   // Fermer form et re-render
   window._editingPerson=undefined;
   renderPersonnelSearch();
