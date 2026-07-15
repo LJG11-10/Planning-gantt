@@ -115,8 +115,13 @@
     // NE PAS appliquer les tombstones remote sur globalPersons :
     // renderPersonnelSearch filtre deja via _deletedPersons
     STORE.globalPersons=_localGP;
+    // Nettoyer les tombstones Supabase pour les personnes présentes localement
+    if(STORE._deletedPersons){
+      Object.keys(STORE.globalPersons).forEach(function(nm){
+        delete STORE._deletedPersons[nm];
+      });
+    }
     localStorage.setItem(SK,JSON.stringify(STORE));
-    // Mettre a jour GP_KEY avec la version finale
     try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}
     applySync();
   }
@@ -1615,7 +1620,7 @@ function renderPersonnelSearch(){
   var allPersons=[];
   Object.keys(gp).forEach(function(nm){
     var p=gp[nm];
-    if(!p||!p.name||_del[nm])return;
+    if(!p||!p.name)return; // tombstones geres par saveGlobalPerson/GP_KEY
     if(_ql){
       var match=p.name.toLowerCase().indexOf(_ql)>=0
         ||(p.email&&p.email.toLowerCase().indexOf(_ql)>=0)
