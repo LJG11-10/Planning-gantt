@@ -132,7 +132,7 @@
       var t=document.querySelector('.nb.on');
       if(t&&t.dataset){
         var tab=t.dataset.tab;
-        if(tab==='recap'){syncFichesToGantt();renderRecap();}
+        if(tab==='recap'){if(!window._tdbTab||window._tdbTab==='overview')renderOverview();else{syncFichesToGantt();renderRecap();}}
         else if(tab==='dashboard')renderDashboard();
       }
       var n=document.createElement('div');
@@ -598,9 +598,11 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
 <div id="tab-gantt" class="tab on"><div id="gd-nav" style="flex-shrink:0"></div><div id="gw" style="flex:1;overflow:scroll"></div></div>
 <div id="tab-recap" class="tab" style="flex-direction:column">
   <div id="tdb-subnav" style="display:flex;gap:4px;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--bd);flex-shrink:0">
-    <button class="tdb-tab on" data-tt="recap-current" onclick="switchTdbTab('recap-current')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📋 Récap — Affaire courante</button>
+    <button class="tdb-tab on" data-tt="overview" onclick="switchTdbTab('overview')" style="padding:5px 14px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">🏠 Vue d'ensemble</button>
+    <button class="tdb-tab" data-tt="recap-current" onclick="switchTdbTab('recap-current')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📋 Récap — Affaire courante</button>
     <button class="tdb-tab" data-tt="recap-all" onclick="switchTdbTab('recap-all')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">📊 Récap — Toutes affaires</button>
   </div>
+  <div id="tdb-overview" class="tdb-pane"></div>
   <div id="tdb-recap-current" class="tdb-pane pg" style="flex:1;overflow:auto"><div id="rw" class="pg"></div></div>
   <div id="tdb-recap-all" class="tdb-pane pg" style="flex:1;overflow:auto;display:none"></div>
 </div>
@@ -1220,6 +1222,7 @@ function loadStore(){
     var first=STORE.current||Object.keys(STORE.projects)[0];
     if(first)switchProjet(first);
     startRealtime();
+    if(!window._defaultTabDone){window._defaultTabDone=true;switchTab('recap');}
   setTimeout(_initSelAffSearch,300);
   }).catch(function(){startRealtime();});
   // Check envoi rappels lundi 8h
@@ -1318,8 +1321,18 @@ function switchTdbTab(sub){
   document.querySelectorAll('.tdb-pane').forEach(function(p){p.style.display='none';});
   var pane=document.getElementById('tdb-'+sub);
   if(pane)pane.style.display='';
-  if(sub==='recap-current'){
-    // Assurer que #rw est dans tdb-recap-current
+  if(sub==='overview'){
+    // Créer le pane si besoin
+    var container=document.getElementById('tab-recap');
+    if(container&&!document.getElementById('tdb-overview')){
+      var d=document.createElement('div');
+      d.id='tdb-overview';d.className='tdb-pane';
+      container.appendChild(d);
+    }
+    var ov=document.getElementById('tdb-overview');
+    if(ov)ov.style.display='';
+    renderOverview();
+  } else if(sub==='recap-current'){
     var rw=document.getElementById('rw');
     var pane2=document.getElementById('tdb-recap-current');
     if(rw&&pane2&&!pane2.contains(rw))pane2.innerHTML='<div id="rw" class="pg"></div>';
@@ -1352,13 +1365,18 @@ function switchTab(t){
   // Rendre le contenu
   if(t==='gantt'){renderGantt();}
   else if(t==='planning-reunion'){renderPlanningReunionTab();}
-  else if(t==='recap'){switchTdbTab(window._tdbTab||'recap-current');}
+  else if(t==='recap'){switchTdbTab(window._tdbTab||'overview');}
   // Masquer/afficher les boutons Vue+Zoom selon onglet
   var _gvb=document.getElementById('gantt-view-btns');
   var _gvs=document.getElementById('gantt-view-sep');
   var _isGantt=(t==='gantt');
   if(_gvb)_gvb.style.display=_isGantt?'flex':'none';
   if(_gvs)_gvs.style.display=_isGantt?'':'none';
+  // Sbar visible uniquement sur GANTT
+  var _sb=document.getElementById('sbar');
+  if(_sb&&CURRENT_ROLE!=='chef_chantier'){
+    _sb.style.display=_isGantt?'flex':'none';
+  }
 }
 function switchPersonnelTab(sub){
   window._personnelTab=sub;
@@ -1829,6 +1847,286 @@ function openPersonProfile(nm){
   box.innerHTML=hdr+body;
   ov.appendChild(box);
   document.body.appendChild(ov);
+}
+
+
+function renderOverview(){
+  var cont=document.getElementById('tdb-overview');
+  if(!cont)return;
+
+  // ── Semaine courante ───────────────────────────────────────────────
+  var curWk=window._dbwk||(TODAY?TODAY.w+1:2);
+  var wpWk=STORE.weekPlan&&STORE.weekPlan[curWk]||{};
+  var gp=STORE.globalPersons||{};
+  var del=STORE._deletedPersons||{};
+  var persons=Object.keys(gp).filter(function(n){return n&&!del[n];}).sort();
+  var DN=['Lun','Mar','Mer','Jeu','Ven'];
+
+  // Helper : label d'une activité
+  function getActLabel(affId,actId){
+    if(!affId||!actId)return '';
+    var d=(STORE.projects[affId]&&STORE.projects[affId].data)||[];
+    var a=d.find(function(r){return r.id===actId;});
+    return a?a.lb:'';
+  }
+
+  // Helper : label court affaire
+  function getAffShort(affId){
+    if(!affId)return '';
+    var inf=(STORE.projects[affId]&&STORE.projects[affId].infos)||{};
+    return inf.numeroClient||affId;
+  }
+
+  // Helper : couleur de phase d'une activité
+  function getActBg(affId,actId){
+    if(!affId||!actId)return '';
+    var d=(STORE.projects[affId]&&STORE.projects[affId].data)||[];
+    var a=d.find(function(r){return r.id===actId;});
+    if(!a)return '';
+    var ph=PH_get(a.pk);
+    return (ph&&ph.b)||'';
+  }
+
+  // ── Label semaine ──────────────────────────────────────────────────
+  var wkLabel='Semaine '+curWk;
+  try{
+    if(typeof weekDayToDate==='function'){
+      var mon=weekDayToDate((curWk-1)*5);
+      var fri=weekDayToDate((curWk-1)*5+4);
+      if(mon&&fri)wkLabel='Semaine '+curWk+' · '+mon.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})+' – '+fri.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
+    }
+  }catch(e){}
+
+  // ── Affaires actives ───────────────────────────────────────────────
+  var affaires=Object.keys(STORE.projects).filter(function(k){return !STORE.projects[k].closed;}).sort();
+
+  // ── Tâches en retard ──────────────────────────────────────────────
+  var retard=[];
+  var todayMs=new Date().setHours(0,0,0,0);
+  affaires.forEach(function(aff){
+    (STORE.projects[aff].data||[]).filter(function(r){return r.t==='act'&&!r.done;}).forEach(function(a){
+      var days=a.reelDays&&a.reelDays.length?a.reelDays:(a.prevDays||[]);
+      if(!days||!days.length)return;
+      var lastDay=Math.max.apply(null,days);
+      if(typeof weekDayToDate==='function'){
+        try{var d=weekDayToDate(lastDay);if(d&&d.getTime()<todayMs)retard.push({aff:aff,act:a});}catch(e){}
+      }
+    });
+  });
+
+  // ── Absences semaine en cours ──────────────────────────────────────
+  // congesDays = strings ISO 'YYYY-MM-DD'
+  // Construire le set des dates ISO de la semaine courante
+  var absents=[];
+  var _wkISOSet={};
+  if(typeof weekDayToDate==='function'){
+    for(var _di=0;_di<5;_di++){
+      try{
+        var _wd=weekDayToDate(curWk,_di);
+        if(_wd){var _iso=_wd.getFullYear()+'-'+String(_wd.getMonth()+1).padStart(2,'0')+'-'+String(_wd.getDate()).padStart(2,'0');_wkISOSet[_iso]=true;}
+      }catch(e2){}
+    }
+  }
+  persons.forEach(function(nm){
+    var _cdays=getCongesDays(nm);
+    if(_cdays.some(function(d){return _wkISOSet[d]===true;}))absents.push(nm);
+  });
+
+  var html='<div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+
+  // ═══ CARTE 1 — Planning semaine ════════════════════════════════════
+  html+='<div style="background:linear-gradient(145deg,#0369A1,#0284C7);border-radius:14px;padding:0;overflow:hidden;box-shadow:0 4px 20px rgba(3,105,161,.3)">';
+  html+='<div style="padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.15)">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between">';
+  html+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">🗓️</span>';
+  html+='<div><div style="font-size:13px;font-weight:900;color:#fff;letter-spacing:.5px">PLANNING SEMAINE</div>';
+  html+='<div style="font-size:10px;color:rgba(255,255,255,.75)">'+escHtml(wkLabel)+'</div></div></div>';
+  html+='<button onclick="switchTab(\'planning-reunion\')" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);border-radius:20px;color:#fff;font-size:9px;font-weight:700;padding:3px 10px;cursor:pointer;font-family:inherit">Voir tout →</button>';
+  html+='</div></div>';
+  html+='<div style="padding:12px 16px;max-height:300px;overflow-y:auto">';
+
+  var hasPlanning=false;
+  persons.forEach(function(nm){
+    var allEntries=[];
+    for(var di=0;di<5;di++){
+      var key=nm+'::'+di;
+      var vals=wpWk[key];
+      if(!vals)continue;
+      if(!Array.isArray(vals))vals=[vals];
+      vals.forEach(function(v){if(v&&(v.affId||v.actId))allEntries.push({di:di,v:v});});
+    }
+    if(!allEntries.length)return;
+    hasPlanning=true;
+    var ini=nm.trim().charAt(0).toUpperCase();
+    html+='<div style="margin-bottom:10px;padding:10px;background:rgba(255,255,255,.12);border-radius:10px">';
+    html+='<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">';
+    html+='<span style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.25);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">'+ini+'</span>';
+    html+='<span style="font-size:12px;font-weight:800;color:#fff">'+escHtml(nm)+'</span>';
+    html+='</div>';
+    allEntries.forEach(function(e){
+      var actLbl=getActLabel(e.v.affId||e.v.aff,e.v.actId);
+      var affShort=getAffShort(e.v.affId||e.v.aff);
+      var bg=getActBg(e.v.affId||e.v.aff,e.v.actId);
+      html+='<div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:5px;padding:5px 8px;background:rgba(255,255,255,.08);border-radius:7px;border-left:3px solid rgba(255,255,255,.4)">';
+      html+='<span style="font-size:9px;font-weight:800;color:rgba(255,255,255,.7);min-width:22px;padding-top:1px">'+DN[e.di]+'</span>';
+      html+='<div style="flex:1;min-width:0">';
+      if(affShort)html+='<div style="font-size:9px;color:rgba(255,255,255,.6);font-weight:700">'+escHtml(affShort)+'</div>';
+      if(actLbl)html+='<div style="font-size:10px;color:#fff;font-weight:700">'+escHtml(actLbl)+'</div>';
+      if(e.v.comment&&e.v.comment.trim())html+='<div style="font-size:9px;color:rgba(255,255,255,.75);font-style:italic;margin-top:2px">💬 '+escHtml(e.v.comment)+'</div>';
+      html+='</div></div>';
+    });
+    html+='</div>';
+  });
+  if(!hasPlanning)html+='<div style="text-align:center;padding:20px;color:rgba(255,255,255,.6);font-size:11px">Aucun planning saisi pour cette semaine</div>';
+  html+='</div></div>';
+
+  // ═══ CARTE 2 — Avancement affaires ════════════════════════════════
+  html+='<div style="background:linear-gradient(145deg,#059669,#047857);border-radius:14px;padding:0;overflow:hidden;box-shadow:0 4px 20px rgba(5,150,105,.3)">';
+  html+='<div style="padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.15)">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between">';
+  html+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">📊</span>';
+  html+='<div><div style="font-size:13px;font-weight:900;color:#fff;letter-spacing:.5px">AVANCEMENT AFFAIRES</div>';
+  html+='<div style="font-size:10px;color:rgba(255,255,255,.75)">'+affaires.length+' affaire'+(affaires.length>1?'s':'')+' active'+(affaires.length>1?'s':'')+'</div></div></div>';
+  html+='<button onclick="switchTdbTab(\'recap-all\')" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);border-radius:20px;color:#fff;font-size:9px;font-weight:700;padding:3px 10px;cursor:pointer;font-family:inherit">Voir tout →</button>';
+  html+='</div></div>';
+  html+='<div style="padding:12px 16px;max-height:300px;overflow-y:auto">';
+
+  if(!affaires.length){
+    html+='<div style="text-align:center;padding:20px;color:rgba(255,255,255,.6);font-size:11px">Aucune affaire active</div>';
+  } else {
+    affaires.forEach(function(aff){
+      var acts=(STORE.projects[aff].data||[]).filter(function(r){return r.t==='act';});
+      var done=acts.filter(function(r){return r.done;});
+      var pct=acts.length?Math.round(done.length/acts.length*100):0;
+      var inf=STORE.projects[aff].infos||{};
+      var lbl=(inf.numeroClient||aff)+(inf.libelle?' — '+inf.libelle.substring(0,25):'');
+      var barColor=pct>=80?'#86EFAC':pct>=50?'#FDE68A':'#FCA5A5';
+      var txtColor=pct>=80?'#14532D':pct>=50?'#78350F':'#7F1D1D';
+      // Activités par phase
+      var byPhase={};
+      acts.forEach(function(a){byPhase[a.pk]=(byPhase[a.pk]||0)+1;});
+      var doneByPhase={};
+      done.forEach(function(a){doneByPhase[a.pk]=(doneByPhase[a.pk]||0)+1;});
+      html+='<div style="margin-bottom:12px;padding:10px;background:rgba(255,255,255,.12);border-radius:10px">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">';
+      html+='<div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(lbl)+'</div>';
+      html+='<div style="font-size:10px;color:rgba(255,255,255,.75);margin-top:2px">'+done.length+'/'+acts.length+' activité'+(acts.length>1?'s':'')+' terminée'+(done.length>1?'s':'')+'</div></div>';
+      html+='<div style="background:'+barColor+';color:'+txtColor+';font-size:13px;font-weight:900;padding:3px 10px;border-radius:20px;margin-left:8px;flex-shrink:0">'+pct+'%</div>';
+      html+='</div>';
+      // Barre de progression
+      html+='<div style="background:rgba(255,255,255,.2);border-radius:20px;height:8px;margin-bottom:6px">';
+      html+='<div style="background:'+barColor+';border-radius:20px;height:8px;width:'+pct+'%"></div></div>';
+      // Détail par phase
+      var phKeys=Object.keys(byPhase);
+      if(phKeys.length>1){
+        html+='<div style="display:flex;flex-wrap:wrap;gap:4px">';
+        phKeys.forEach(function(pk){
+          var ph=PH_get(pk);
+          var nbT=byPhase[pk];var nbD=doneByPhase[pk]||0;
+          var pctP=Math.round(nbD/nbT*100);
+          html+='<span style="font-size:8px;font-weight:700;padding:2px 7px;border-radius:10px;background:rgba(255,255,255,.15);color:#fff">'+pk+' '+nbD+'/'+nbT+' ('+pctP+'%)</span>';
+        });
+        html+='</div>';
+      }
+      html+='</div>';
+    });
+  }
+  html+='</div></div>';
+
+  // ═══ CARTE 3 — Tâches en retard ════════════════════════════════════
+  var retColor=retard.length?'linear-gradient(145deg,#DC2626,#B91C1C)':'linear-gradient(145deg,#16A34A,#15803D)';
+  var retShadow=retard.length?'rgba(220,38,38,.3)':'rgba(22,163,74,.3)';
+  html+='<div style="background:'+retColor+';border-radius:14px;padding:0;overflow:hidden;box-shadow:0 4px 20px '+retShadow+'">';
+  html+='<div style="padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.15)">';
+  html+='<div style="display:flex;align-items:center;gap:8px">';
+  html+='<span style="font-size:18px">'+(retard.length?'⚠️':'✅')+'</span>';
+  html+='<div><div style="font-size:13px;font-weight:900;color:#fff;letter-spacing:.5px">TÂCHES EN RETARD</div>';
+  html+='<div style="font-size:10px;color:rgba(255,255,255,.75)">'+retard.length+' tâche'+(retard.length>1?'s':'')+' en dépassement</div></div></div></div>';
+  html+='<div style="padding:12px 16px;max-height:300px;overflow-y:auto">';
+  if(!retard.length){
+    html+='<div style="text-align:center;padding:20px">';
+    html+='<div style="font-size:32px">🎉</div>';
+    html+='<div style="font-size:12px;font-weight:800;color:#fff;margin-top:8px">Tout est dans les temps !</div>';
+    html+='<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:4px">Aucune activité en retard</div></div>';
+  } else {
+    retard.forEach(function(item){
+      var ph=PH_get(item.act.pk);
+      var inf=STORE.projects[item.aff].infos||{};
+      var affLbl=(inf.numeroClient||item.aff)+(inf.libelle?' · '+inf.libelle.substring(0,20):'');
+      var persons2=(item.act.p||[]).filter(function(pp){return pp.name;}).map(function(pp){return pp.name;}).join(', ');
+      html+='<div style="margin-bottom:7px;padding:8px 10px;background:rgba(255,255,255,.12);border-radius:9px;border-left:3px solid rgba(255,255,255,.5)">';
+      html+='<div style="font-size:11px;font-weight:700;color:#fff">'+escHtml(item.act.lb)+'</div>';
+      html+='<div style="font-size:9px;color:rgba(255,255,255,.75);margin-top:2px">📁 '+escHtml(affLbl)+'</div>';
+      if(persons2)html+='<div style="font-size:9px;color:rgba(255,255,255,.7);margin-top:2px">👤 '+escHtml(persons2)+'</div>';
+      html+='</div>';
+    });
+  }
+  html+='</div></div>';
+
+  // ═══ CARTE 4 — Absences ════════════════════════════════════════════
+  html+='<div style="background:linear-gradient(145deg,#D97706,#B45309);border-radius:14px;padding:0;overflow:hidden;box-shadow:0 4px 20px rgba(217,119,6,.3)">';
+  html+='<div style="padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.15)">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between">';
+  html+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">🏖️</span>';
+  html+='<div><div style="font-size:13px;font-weight:900;color:#fff;letter-spacing:.5px">ABSENCES CETTE SEMAINE</div>';
+  html+='<div style="font-size:10px;color:rgba(255,255,255,.75)">'+absents.length+' personne'+(absents.length!==1?'s':'')+' absente'+(absents.length>1?'s':'')+'</div></div></div>';
+  html+='<button onclick="switchPersonnelTab(\'absences\')" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);border-radius:20px;color:#fff;font-size:9px;font-weight:700;padding:3px 10px;cursor:pointer;font-family:inherit">Gérer →</button>';
+  html+='</div></div>';
+  html+='<div style="padding:12px 16px;max-height:300px;overflow-y:auto">';
+  if(!absents.length){
+    html+='<div style="text-align:center;padding:20px">';
+    html+='<div style="font-size:32px">👨‍💼</div>';
+    html+='<div style="font-size:12px;font-weight:800;color:#fff;margin-top:8px">Tout le monde est présent !</div></div>';
+  } else {
+    // Helper: trouver les plages de dates consécutives depuis congesDays
+    function getAbsRanges(nm){
+      var allDays=getCongesDays(nm).slice().sort();
+      if(!allDays.length)return [];
+      var ranges=[];
+      var start=allDays[0],prev=allDays[0];
+      for(var i=1;i<allDays.length;i++){
+        var d1=new Date(prev),d2=new Date(allDays[i]);
+        var diff=(d2-d1)/(86400000);
+        // Jours consécutifs (1 ou 3 pour sauter le week-end)
+        if(diff<=3){prev=allDays[i];}
+        else{ranges.push({s:start,e:prev});start=allDays[i];prev=allDays[i];}
+      }
+      ranges.push({s:start,e:prev});
+      return ranges;
+    }
+    function fmtDate(iso){
+      try{
+        var d=new Date(iso+'T00:00:00');
+        return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
+      }catch(e){return iso;}
+    }
+    absents.forEach(function(nm){
+      var ini=nm.trim().charAt(0).toUpperCase();
+      var _gp3=gp[nm];
+      var svcInfo=_gp3&&_gp3.service?SERVICES.find(function(s){return s.k===_gp3.service;}):null;
+      var ranges=getAbsRanges(nm);
+      // Filtrer les plages qui chevauchent la semaine en cours ou toutes les plages à venir
+      var todayISO=new Date().toISOString().slice(0,10);
+      var relRanges=ranges.filter(function(r){return r.e>=todayISO;});
+      if(!relRanges.length)relRanges=ranges;
+      html+='<div style="margin-bottom:7px;padding:8px 10px;background:rgba(255,255,255,.12);border-radius:9px">';
+      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+      html+='<span style="width:28px;height:28px;border-radius:50%;background:'+(svcInfo?svcInfo.color:'rgba(255,255,255,.3)')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">'+ini+'</span>';
+      html+='<div><div style="font-size:11px;font-weight:700;color:#fff">'+escHtml(nm)+'</div>';
+      if(svcInfo)html+='<div style="font-size:9px;color:rgba(255,255,255,.75)">'+escHtml(svcInfo.l)+'</div>';
+      html+='</div></div>';
+      // Afficher les plages de congés
+      relRanges.slice(0,3).forEach(function(r){
+        var label=r.s===r.e?'📅 '+fmtDate(r.s):'📅 Du '+fmtDate(r.s)+' au '+fmtDate(r.e);
+        html+='<div style="font-size:10px;color:#FEF3C7;font-weight:600;padding:3px 6px;background:rgba(0,0,0,.15);border-radius:6px;display:inline-block;margin-right:4px;margin-bottom:2px">'+label+'</div>';
+      });
+      html+='</div>';
+    });
+  }
+  html+='</div></div>';
+
+  html+='</div>';
+  cont.innerHTML=html;
 }
 
 
@@ -3635,12 +3933,12 @@ function dbBuildPlanningGrid(){
   return Object.keys(ps).sort();
 }
   function buildAffOpts(selAff){var o='<option value="">-- Choisir affaire --</option>';affs.forEach(function(a){o+='<option value="'+a+'"'+(selAff===a?' selected':'')+'>'+getAffLabel(a)+'</option>';});return o;}
-  function buildActOpts(aff,selId){if(!aff)return '<option value="">-- Choisir activite --</option>';var o='<option value="">-- Choisir activite --</option>';var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];var sb='';dat.forEach(function(r){if(r.t==='sb'){sb=r.lb;return;}if(r.t!=='act')return;if(r.done&&r.id!==selId)return;o+='<option value="'+r.id+'"'+(selId===r.id?' selected':'')+'>'+(sb?sb+' > ':'')+r.lb+(r.done?' ✓':'')+'</option>';});return o;}
+  function buildActOpts(aff,selId,phaseFilter){if(!aff)return '<option value="">-- Choisir activite --</option>';var o='<option value="">-- Choisir activite --</option>';var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];var sb='';dat.forEach(function(r){if(r.t==='sb'){sb=r.lb;return;}if(r.t!=='act')return;if(r.done&&r.id!==selId)return;if(phaseFilter&&phaseFilter.indexOf(r.pk)<0)return;var _ph2=PH_get(r.pk);var _bg2=(_ph2&&_ph2.b)||'';var _xd2=(_ph2&&_ph2.xd)||'#333';o+='<option value="'+r.id+'"'+(selId===r.id?' selected':'')+(_bg2?' style="background:'+_bg2+';color:'+_xd2+'"':'')+'>'+(sb?sb+' ▸ ':'')+r.lb+(r.done?' ✓':'')+'</option>';});return o;}
   function getSavedEntries(nm,di){var key=nm+'::'+di;var val=STORE.weekPlan[selWk][key];if(!val)return [];if(Array.isArray(val))return val;return [val];}
   function getCellRows(nm,di){var saved=getSavedEntries(nm,di);var extraKey=nm+'::'+di;var extra=window._wpExtra[extraKey]||0;var rows=saved.slice();for(var i=0;i<extra;i++)rows.push({aff:'',actId:'',comment:''});if(!rows.length)rows.push({aff:'',actId:'',comment:''});return rows;}
   function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length)STORE.weekPlan[selWk][key]=clean;else delete STORE.weekPlan[selWk][key];localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
   function removeEntry(nm,di,ei){var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved.splice(ei,1);var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length)STORE.weekPlan[selWk][key]=clean;else delete STORE.weekPlan[selWk][key];localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}else{if(extra>0)window._wpExtra[key]=extra-1;}dbBuildPlanningGrid();}
-  window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){as.innerHTML=buildActOpts(sel.value,'');as.style.display=sel.value?'block':'none';}};
+  window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];as.innerHTML=buildActOpts(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null);as.style.display=sel.value?'block':'none';}};
   window._wpActChange=function(sel){
   var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;
   saveCellEntry(nm,di,ei,'actId',sel.value);
@@ -3724,7 +4022,7 @@ function dbBuildPlanningGrid(){
   html+='</tr></thead><tbody>';
   persons.forEach(function(nm,pi){
     var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var nmEsc=nm.replace(/"/g,'&quot;');
-    html+='<tr style="border-bottom:1px solid var(--bd);background:'+(pi%2===0?'#fff':'#F8FBFF')+'">';
+    html+='<tr data-nm="'+nmEsc+'" style="border-bottom:1px solid var(--bd);background:'+(pi%2===0?'#fff':'#F8FBFF')+'">';
     var _gp2=STORE.globalPersons&&STORE.globalPersons[nm];
     var _habs=_gp2&&_gp2.habilitations&&_gp2.habilitations.length
       ?'<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:2px">'+_gp2.habilitations.map(function(h){return '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;background:#DBEAFE;color:#1D4ED8;border:1px solid #BFDBFE">'+h+'</span>';}).join('')+'</div>'
@@ -3749,7 +4047,7 @@ function dbBuildPlanningGrid(){
         if(totalRows>1)html+='<span class="wp-rm" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpRemove(this)" style="position:absolute;top:2px;right:3px;font-size:11px;color:#aaa;cursor:pointer;line-height:1;font-weight:700">x</span>';
         html+='<select class="wp-aff" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpAffChange(this)" style="width:100%;border:none;border-bottom:1px solid var(--bd);padding:2px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;margin-bottom:2px">'+buildAffOpts(sAff)+'</select>';
         html+='<select id="wpa-'+nmKey+'-'+di+'-'+ei+'" class="wp-act" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpActChange(this)" style="width:100%;border:none;padding:2px;font-size:10px;font-family:inherit;background:transparent;color:var(--tx);outline:none;display:'+(sAff?'block':'none')+'">';
-        if(sAff)html+=buildActOpts(sAff,sAct);
+        if(sAff)html+=buildActOpts(sAff,sAct,_gp2?_getServicePhases(_gp2.service||''):null);
         html+='</select>';
         html+='<textarea class="wp-comment" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpCommentChange(this)" onblur="window._wpCommentChange(this)" placeholder="Commentaire..." style="width:100%;border:none;border-top:1px dashed var(--bd);padding:2px;font-size:10px;font-family:inherit;background:transparent;color:var(--tx);outline:none;resize:none;min-height:28px;overflow:hidden" rows="1">'+sComment.replace(/</g,'&lt;')+'</textarea>';
         html+='</div>';
@@ -4310,11 +4608,27 @@ function renderAbsences(){
     +tabs+bodyHtml+'</div>';
 }
 
+// Filtrer les activités par service de la personne
+// Retourne null = tout afficher, ou tableau de pk autorisés
+function _getServicePhases(service){
+  var map={
+    'els_chantier':  ['CHANTIER'],
+    'els_auto':      ['AUTOMATISME'],
+    'bureau_etude':  ['ETUDE']
+    // els_projet, client, tableauterie → null (tout afficher)
+  };
+  return map[service]||null;
+}
+
 function renderFiche(){
   var selAff='__ALL__'; // always all active affaires
   // Only active (non-closed) affaires
   var allAffs=Object.keys(STORE.projects).sort().filter(function(a){return !(STORE.projects[a]&&STORE.projects[a].closed);});
   var allActs=allAffs.flatMap(function(a){return(STORE.projects[a].data||[]).filter(function(r){return r.t==='act';}).map(function(r){return Object.assign({},r,{_aff:a});});});
+  // Filtrer par service de la personne sélectionnée
+  var _selGP=selNm?(STORE.globalPersons&&STORE.globalPersons[selNm]):null;
+  var _selPhases=_selGP?_getServicePhases(_selGP.service||''):null;
+  if(_selPhases)allActs=allActs.filter(function(a){return _selPhases.indexOf(a.pk)>=0;});
   var actById={};allActs.forEach(function(a){actById[a.id]=a;});
   // Build act options once
   // Build opts grouped by phase
@@ -4334,7 +4648,7 @@ function renderFiche(){
         if(r.t==='sb'){curSub=r.lb;return;}
         if(r.t!=='act')return;
         var label=(curSub?curSub+' > ':'')+r.lb;
-        actOptsHtml+='<option value="'+r.id+'">'+label+'</option>';
+        var _phFO=PH_get(r.pk);var _bgFO=(_phFO&&_phFO.b)||'';var _xdFO=(_phFO&&_phFO.xd)||'#333';actOptsHtml+='<option value="'+r.id+'"'+(_bgFO?' style="background:'+_bgFO+';color:'+_xdFO+'"':'')+'>'+label+'</option>';
       });
       actOptsHtml+='</optgroup>';
     });
@@ -4574,7 +4888,7 @@ function refreshAllTabs(){
   const activeTab=document.querySelector('.nb.on');
   if(activeTab){
     const t=activeTab.dataset.tab;
-    if(t==='recap'){syncFichesToGantt();switchTdbTab(window._tdbTab||'recap-current');}
+    if(t==='recap'){switchTdbTab(window._tdbTab||'overview');}
     else if(t==='planning-reunion')renderPlanningReunionTab();
   
 
