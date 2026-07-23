@@ -811,25 +811,25 @@ async function loadRoleAndStart() {
 
 function applyRoleRestrictions() {
   if (CURRENT_ROLE === 'chef_chantier') {
-    // Masquer tous les onglets sauf GANTT et Fiche d'heure
+    // Masquer tous les onglets sauf GANTT et Personnel
     document.querySelectorAll('.nb[data-tab]').forEach(function(btn) {
       var tab = btn.getAttribute('data-tab');
-      if (tab !== 'gantt' && tab !== 'recap' && tab !== 'fortuites' && tab !== 'fiche' && tab !== 'skids') btn.style.display = 'none';
+      if (tab !== 'gantt' && tab !== 'personnel') btn.style.display = 'none';
     });
-    // Masquer toute la barre d'actions (sbar)
-    var sbar = document.getElementById('sbar');
-    if (sbar) sbar.style.display = 'none';
-    // Masquer le bouton Éditer planning et autres boutons admin
-    document.querySelectorAll('[onclick="openPlanEditor()"]').forEach(function(b){ b.style.display='none'; });
-    document.querySelectorAll('[onclick*="openModal"]').forEach(function(b){ b.style.display='none'; });
-    document.querySelectorAll('[onclick="downloadPlanning()"]').forEach(function(b){ b.style.display='none'; });
-    // Désactiver les clics sur le GANTT (lecture seule)
-    window._ganttReadOnly = true;
-    // Skids en lecture seule — désactiver les inputs budget
-    setTimeout(function(){
-      document.querySelectorAll('#skw input').forEach(function(i){ i.disabled=true; i.style.opacity='0.5'; });
-    }, 500);
-    // Ajouter badge utilisateur
+    // Masquer H vendues (budget) dans la sbar - mais garder le reste
+    document.querySelectorAll('#inp-bud,label[for="inp-bud"],.bud-box').forEach(function(el){el.style.display='none';});
+    // Masquer les boutons de gestion d'affaires
+    document.querySelectorAll('.btn-np,.btn-da,[onclick*="openModal"],[onclick="openRenameModal()"]').forEach(function(b){b.style.display='none';});
+    // Masquer le bouton Éditer planning
+    document.querySelectorAll('[onclick="openPlanEditor()"]').forEach(function(b){b.style.display='none';});
+    // Masquer téléchargements, rappels
+    document.querySelectorAll('[onclick*="downloadPlanning"],[onclick*="showClientDownload"],[onclick*="openRappels"]').forEach(function(b){b.style.display='none';});
+    // Masquer le bouton Annuler (undo)
+    var undoBtn=document.getElementById('btn-undo');if(undoBtn)undoBtn.style.display='none';
+    // Chef chantier PEUT : marquer terminé, mettre % avancement, voir heures
+    // Chef chantier NE PEUT PAS : modifier les tâches (plan editor), voir H vendues
+    window._ganttReadOnly = false;  // peut interagir avec le GANTT
+    window._chefChantier = true;    // flag pour bloquer l'éditeur et les modifications de structure
     addUserBadge();
   } else if (CURRENT_ROLE === 'automatisme') {
     // Rôle Automatisme : GANTT (édition), Planning Réunion, Annuaire, Congés, Récap
@@ -8354,52 +8354,28 @@ function toggleExp(id){
   // Si même tâche cliquée ET panneau visible → fermer
   if(EXP===id){
     var _pnl=document.getElementById('exp-panel-row');
-    if(_pnl){
-      EXP=null;
-      _pnl.remove();
-      const _r=document.querySelector('[data-rid="'+id+'"]');
-      if(_r)_r.classList.remove('exp-open');
-      return;
-    }
-    // Panneau non visible mais EXP set → traiter comme une ouverture
+    if(_pnl){EXP=null;_pnl.remove();var _r=document.querySelector('[data-rid="'+id+'"]');if(_r)_r.classList.remove('exp-open');return;}
     EXP=null;
   }
-  // Fermer l'ancien
-  const old=document.getElementById('exp-panel-row');
+  var old=document.getElementById('exp-panel-row');
   if(old)old.remove();
-  if(EXP){
-    const pr=document.querySelector('[data-rid="'+EXP+'"]');
-    if(pr)pr.classList.remove('exp-open');
-    _reRenderGanttKeepScroll();
-  }
+  if(EXP){var pr=document.querySelector('[data-rid="'+EXP+'"]');if(pr)pr.classList.remove('exp-open');}
   EXP=id;
-  syncFichesToGantt();
-  const row=D().find(x=>x.id===id);
-  if(!row)return;
-  const ph=PH_get(row.pk);
-  const nd=(row.e-row.s+1)*5;
-  const tr=document.querySelector('[data-rid="'+id+'"]');
-  if(!tr){_reRenderGanttKeepScroll();return;}
+  var row=D().find(function(x){return x.id===id;});
+  if(!row){EXP=null;return;}
+  var tr=document.querySelector('[data-rid="'+id+'"]');
+  if(!tr){EXP=null;return;}
   tr.classList.add('exp-open');
-  const expandTr=document.createElement('tr');
-  expandTr.id='exp-panel-row';
-  const expandTd=document.createElement('td');
-  expandTd.setAttribute('colspan','999');
-  expandTd.style.padding='0';
-  expandTd.style.background='transparent';
-  expandTd.onclick=function(e){e.stopPropagation();};
-  try{
-    expandTd.innerHTML=buildFullExpPanel(row,ph,nd);
-  }catch(err){
-    // Afficher l'erreur directement dans le panneau pour débugger
-    expandTd.innerHTML='<div style="padding:20px;background:#fff;border:2px solid red;font-family:monospace;font-size:11px;color:red;white-space:pre-wrap">ERREUR PANNEAU:\n'+String(err)+'\n\nrow.id='+row.id+' row.pk='+row.pk+' row.s='+row.s+' row.e='+row.e+'\nrow.p='+JSON.stringify(row.p)+'</div>';
-  }
-  expandTr.appendChild(expandTd);
-  tr.after(expandTr);
-  requestAnimationFrame(function(){
-    expandTr.scrollIntoView({block:'nearest',behavior:'smooth'});
-  });
+  var et=document.createElement('tr');et.id='exp-panel-row';
+  var td=document.createElement('td');td.setAttribute('colspan','999');
+  td.style.padding='0';td.style.background='transparent';
+  td.onclick=function(e){e.stopPropagation();};
+  try{td.innerHTML=buildFullExpPanel(row,PH_get(row.pk),(row.e-row.s+1)*5);}
+  catch(err){td.innerHTML='<div style="padding:16px;color:red;font-size:12px">Erreur panneau: '+String(err)+'</div>';}
+  et.appendChild(td);tr.after(et);
+  requestAnimationFrame(function(){et.scrollIntoView({block:'nearest',behavior:'smooth'});});
 }
+
 
 function setProgress(id,val){
   const r=D().find(x=>x.id===id);if(!r)return;
