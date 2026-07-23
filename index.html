@@ -136,11 +136,15 @@
   function applySync(){
     try{
       renderProjSel();updBudget();
-      var _expBeforeSync=typeof EXP!=='undefined'?EXP:null;
+      // Sauvegarder le nœud DOM du panneau AVANT que renderGantt le détruise
+      var _expId=(typeof EXP!=='undefined')?EXP:null;
+      var _expNode=_expId?document.getElementById('exp-panel-row'):null;
       renderGantt();
-      // Restaurer le panneau expand s'il était ouvert avant le re-render
-      if(_expBeforeSync&&typeof _restoreExpPanel==='function'){
-        requestAnimationFrame(function(){_restoreExpPanel(_expBeforeSync);});
+      // Réinsérer le même nœud (sans rebuild) après le re-render
+      if(_expId&&_expNode&&!document.getElementById('exp-panel-row')){
+        var _tr=document.querySelector('[data-rid="'+_expId+'"]');
+        if(_tr){_tr.classList.add('exp-open');_tr.after(_expNode);}
+        else{EXP=null;} // tâche plus visible → fermer proprement
       }
       var t=document.querySelector('.nb.on');
       if(t&&t.dataset){
@@ -6518,61 +6522,7 @@ function renderGantt(){
 
 
 
-// ── Garde le panneau expand ouvert quoi qu'il arrive ─────────────────────────
-// Le MutationObserver intercepte la suppression du nœud et le réinsère immédiatement.
-// Avantage : on réutilise le nœud DOM exact (valeurs des inputs préservées).
-(function(){
-  var _savedNode=null; // nœud TR du panneau quand il est retiré du DOM
 
-  // Intercepte les suppressions dans tout le document
-  var obs=new MutationObserver(function(mutations){
-    // Si EXP n'est pas défini, le panneau doit être fermé - ne pas restaurer
-    if(typeof EXP==='undefined'||!EXP)return;
-    // Vérifier si le panneau est encore dans le DOM
-    if(document.getElementById('exp-panel-row'))return;
-    // Chercher le nœud exp-panel-row dans les nœuds supprimés
-    var found=null;
-    for(var i=0;i<mutations.length&&!found;i++){
-      var rn=mutations[i].removedNodes;
-      for(var j=0;j<rn.length&&!found;j++){
-        var n=rn[j];
-        if(n.id==='exp-panel-row'){found=n;}
-        else if(n.nodeType===1){var q=n.querySelector&&n.querySelector('#exp-panel-row');if(q)found=q;}
-      }
-    }
-    if(!found)return;
-    // Réinsérer après la ligne de la tâche
-    var tr=document.querySelector('[data-rid="'+EXP+'"]');
-    if(tr){tr.classList.add('exp-open');tr.after(found);}
-  });
-
-  // Lancer l'observation dès que div#gw est dans le DOM
-  function startObs(){
-    var gw=document.getElementById('gw');
-    if(gw){obs.observe(gw,{childList:true,subtree:true});}
-    else{setTimeout(startObs,200);}
-  }
-  startObs();
-
-  // Filet de sécurité absolu : toutes les 300ms, si EXP est défini mais
-  // le panneau est absent, on le reconstruit
-  setInterval(function(){
-    if(typeof EXP==='undefined'||!EXP)return;
-    if(document.getElementById('exp-panel-row'))return;
-    var row=typeof D==='function'&&D().find(function(x){return x.id===EXP;});
-    if(!row)return;
-    var tr=document.querySelector('[data-rid="'+EXP+'"]');
-    if(!tr)return;
-    var ph=typeof PH_get==='function'&&PH_get(row.pk);
-    var nd=(row.e-row.s+1)*5;
-    var et=document.createElement('tr');et.id='exp-panel-row';
-    var td=document.createElement('td');td.setAttribute('colspan','999');
-    td.style.padding='0';td.style.background='transparent';
-    td.onclick=function(e){e.stopPropagation();};
-    try{td.innerHTML=buildFullExpPanel(row,ph,nd);}catch(e){return;}
-    et.appendChild(td);tr.classList.add('exp-open');tr.after(et);
-  },300);
-})();
 
 function setGanttView(mode){
   GANTT_VIEW=mode;
@@ -8401,43 +8351,54 @@ function _restoreExpPanel(id){
 }
 function closeExp(){EXP=null;_reRenderGanttKeepScroll();}
 function toggleExp(id){
-  // Si même tâche cliquée et panneau visible → fermer
-  if(EXP===id&&document.getElementById('exp-panel-row')){
+  // Si même tâche cliquée ET panneau visible → fermer
+  if(EXP===id){
+    var _pnl=document.getElementById('exp-panel-row');
+    if(_pnl){
+      EXP=null;
+      _pnl.remove();
+      const _r=document.querySelector('[data-rid="'+id+'"]');
+      if(_r)_r.classList.remove('exp-open');
+      return;
+    }
+    // Panneau non visible mais EXP set → traiter comme une ouverture
     EXP=null;
-    document.getElementById('exp-panel-row').remove();
-    var _rr=document.querySelector('[data-rid="'+id+'"]');
-    if(_rr)_rr.classList.remove('exp-open');
-    return;
   }
-  // Fermer l'ancien panneau
-  var old=document.getElementById('exp-panel-row');
+  // Fermer l'ancien
+  const old=document.getElementById('exp-panel-row');
   if(old)old.remove();
-  if(EXP){var pr=document.querySelector('[data-rid="'+EXP+'"]');if(pr)pr.classList.remove('exp-open');}
+  if(EXP){
+    const pr=document.querySelector('[data-rid="'+EXP+'"]');
+    if(pr)pr.classList.remove('exp-open');
+    _reRenderGanttKeepScroll();
+  }
   EXP=id;
-  // Trouver la donnée
-  var row=D().find(function(x){return x.id===id;});
-  if(!row){EXP=null;return;}
-  // Trouver la ligne dans le DOM (re-render si absente)
-  var tr=document.querySelector('[data-rid="'+id+'"]');
-  if(!tr){
-    renderGantt(); // simple re-render sans restauration de scroll
-    tr=document.querySelector('[data-rid="'+id+'"]');
-    if(!tr){EXP=null;return;}
-  }
+  syncFichesToGantt();
+  const row=D().find(x=>x.id===id);
+  if(!row)return;
+  const ph=PH_get(row.pk);
+  const nd=(row.e-row.s+1)*5;
+  const tr=document.querySelector('[data-rid="'+id+'"]');
+  if(!tr){_reRenderGanttKeepScroll();return;}
   tr.classList.add('exp-open');
-  // Créer le panneau
-  var et=document.createElement('tr');et.id='exp-panel-row';
-  var td=document.createElement('td');td.setAttribute('colspan','999');
-  td.style.padding='0';td.style.background='transparent';
-  td.onclick=function(e){e.stopPropagation();};
+  const expandTr=document.createElement('tr');
+  expandTr.id='exp-panel-row';
+  const expandTd=document.createElement('td');
+  expandTd.setAttribute('colspan','999');
+  expandTd.style.padding='0';
+  expandTd.style.background='transparent';
+  expandTd.onclick=function(e){e.stopPropagation();};
   try{
-    td.innerHTML=buildFullExpPanel(row,PH_get(row.pk),(row.e-row.s+1)*5);
+    expandTd.innerHTML=buildFullExpPanel(row,ph,nd);
   }catch(err){
-    td.innerHTML='<div style="padding:16px;color:var(--rd);font-size:12px">Erreur: '+String(err)+'</div>';
+    // Afficher l'erreur directement dans le panneau pour débugger
+    expandTd.innerHTML='<div style="padding:20px;background:#fff;border:2px solid red;font-family:monospace;font-size:11px;color:red;white-space:pre-wrap">ERREUR PANNEAU:\n'+String(err)+'\n\nrow.id='+row.id+' row.pk='+row.pk+' row.s='+row.s+' row.e='+row.e+'\nrow.p='+JSON.stringify(row.p)+'</div>';
   }
-  et.appendChild(td);
-  tr.after(et);
-  requestAnimationFrame(function(){et.scrollIntoView({block:'nearest',behavior:'smooth'});});
+  expandTr.appendChild(expandTd);
+  tr.after(expandTr);
+  requestAnimationFrame(function(){
+    expandTr.scrollIntoView({block:'nearest',behavior:'smooth'});
+  });
 }
 
 function setProgress(id,val){
