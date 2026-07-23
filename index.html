@@ -66,12 +66,28 @@
 
   var _pollInterval=null,_lastEtag=null;
 
+  // Empêche le polling d'écraser/fermer un panneau de modification en cours d'édition
+  // (panneau tâche ouvert, popup heures/jour ouverte, ou focus actif dans un champ du planning)
+  function _isEditingUI(){
+    try{
+      if(typeof EXP!=='undefined'&&EXP&&document.getElementById('exp-panel-row'))return true;
+      if(document.getElementById('day-popup'))return true;
+      var ae=document.activeElement;
+      if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)){
+        if(ae.closest('#exp-panel-row')||ae.closest('#day-popup'))return true;
+      }
+    }catch(e){}
+    return false;
+  }
+
   function startRealtime(){
     if(!supa)return;
     // Polling toutes les 3s : telecharger le fichier et comparer
     if(_pollInterval)clearInterval(_pollInterval);
     _pollInterval=setInterval(function(){
       if(!supa)return;
+      // Ne rien faire tant qu'un panneau/popup d'édition est ouvert : on retente au cycle suivant
+      if(_isEditingUI())return;
       // Verifier si le fichier a change via les metadonnees
       supa.storage.from(BUCKET).list('',{search:FILE})
         .then(function(res){
@@ -87,10 +103,12 @@
             _lastEtag=etag;
             return;
           }
+          // Re-vérifier juste avant d'appliquer : une édition a pu démarrer pendant le fetch
+          if(_isEditingUI())return;
           _lastEtag=etag;
           // Telecharger et appliquer
           supaLoad().then(function(remote){
-            if(remote)_applyRemote(remote);
+            if(remote&&!_isEditingUI())_applyRemote(remote);
           });
         });
     },3000);
@@ -136,15 +154,29 @@
   function applySync(){
     try{
       renderProjSel();updBudget();
-      // Sauvegarder le nœud DOM du panneau AVANT que renderGantt le détruise
       var _expId=(typeof EXP!=='undefined')?EXP:null;
       var _expNode=_expId?document.getElementById('exp-panel-row'):null;
       renderGantt();
-      // Réinsérer le même nœud (sans rebuild) après le re-render
-      if(_expId&&_expNode&&!document.getElementById('exp-panel-row')){
-        var _tr=document.querySelector('[data-rid="'+_expId+'"]');
-        if(_tr){_tr.classList.add('exp-open');_tr.after(_expNode);}
-        else{EXP=null;} // tâche plus visible → fermer proprement
+      // Restaurer le panneau après renderGantt
+      if(_expId&&!document.getElementById('exp-panel-row')){
+        var _tr2=document.querySelector('[data-rid="'+_expId+'"]');
+        if(_tr2){
+          if(_expNode){
+            // Méthode 1 : réinsérer le nœud exact (inputs préservés)
+            _tr2.classList.add('exp-open');_tr2.after(_expNode);
+          } else {
+            // Méthode 2 : rebuild
+            var _row2=D().find(function(x){return x.id===_expId;});
+            if(_row2){
+              var _et2=document.createElement('tr');_et2.id='exp-panel-row';
+              var _td2=document.createElement('td');_td2.setAttribute('colspan','999');
+              _td2.style.cssText='padding:0;background:transparent';
+              _td2.onclick=function(e){e.stopPropagation();};
+              try{_td2.innerHTML=buildFullExpPanel(_row2,PH_get(_row2.pk),(_row2.e-_row2.s+1)*5);}catch(e){}
+              _et2.appendChild(_td2);_tr2.classList.add('exp-open');_tr2.after(_et2);
+            }
+          }
+        } else {EXP=null;} // tâche plus dans vue → fermer proprement
       }
       var t=document.querySelector('.nb.on');
       if(t&&t.dataset){
@@ -783,6 +815,7 @@ function toggleSignup(on) {
 }
 
 async function loadRoleAndStart() {
+  window._appBootstrapped = true;
   try {
     var email = CURRENT_USER.email;
     var res = await supa.from('roles').select('role,nom').eq('email', email).single();
@@ -799,6 +832,13 @@ async function loadRoleAndStart() {
     if (!STORE.weekPlan) STORE.weekPlan = {};
     autoCalcAllHPrev();
     renderProjSel();
+    // Atterrir directement sur Tableau de bord après connexion (pas de passage par le GANTT)
+    // Protégé pour ne s'exécuter qu'une seule fois, même si cette fonction est réappelée.
+    if(!window._landedOnRecap){
+      window._landedOnRecap = true;
+      switchTab('recap');
+      window._userTabClicked = false; // ce changement d'onglet est automatique, pas un choix de l'utilisateur
+    }
     var firstProj = STORE.current || Object.keys(STORE.projects)[0];
     if (firstProj) switchProjet(firstProj);
     setTimeout(navRefreshArchBtn, 100);
@@ -811,10 +851,10 @@ async function loadRoleAndStart() {
 
 function applyRoleRestrictions() {
   if (CURRENT_ROLE === 'chef_chantier') {
-    // Masquer tous les onglets sauf GANTT et Personnel
+    // Masquer tous les onglets sauf GANTT, Planning réunion et Personnel
     document.querySelectorAll('.nb[data-tab]').forEach(function(btn) {
       var tab = btn.getAttribute('data-tab');
-      if (tab !== 'gantt' && tab !== 'personnel') btn.style.display = 'none';
+      if (tab !== 'gantt' && tab !== 'personnel' && tab !== 'planning-reunion') btn.style.display = 'none';
     });
     // Masquer H vendues (budget) dans la sbar - mais garder le reste
     document.querySelectorAll('#inp-bud,label[for="inp-bud"],.bud-box').forEach(function(el){el.style.display='none';});
@@ -1144,11 +1184,9 @@ function loadStore(){
   checkPasswordReset();
   window.addEventListener('hashchange', checkPasswordReset);
   // ── Restaurer session existante automatiquement ──────────────────
-  var _appStarted=false;
-  if(supa){
+  if(supa && !window._appBootstrapped){
     supa.auth.getSession().then(function(res){
-      if(res.data&&res.data.session&&res.data.session.user&&!_appStarted){
-        _appStarted=true;
+      if(res.data&&res.data.session&&res.data.session.user&&!window._appBootstrapped){
         CURRENT_USER=res.data.session.user;
         loadRoleAndStart();
       }
@@ -1233,7 +1271,15 @@ function loadStore(){
     var first=STORE.current||Object.keys(STORE.projects)[0];
     if(first)switchProjet(first);
     startRealtime();
-    if(!window._defaultTabDone){window._defaultTabDone=true;switchTab('recap');}
+    if(!window._defaultTabDone){
+      window._defaultTabDone=true;
+      // Ne pas arracher l'utilisateur de l'onglet GANTT (ou fermer un panneau de tâche
+      // qu'il vient d'ouvrir) si le chargement initial de Supabase se termine après
+      // qu'il a déjà commencé à interagir avec la page.
+      if(!window._userTabClicked && !(typeof EXP!=='undefined'&&EXP)){
+        switchTab('recap');
+      }
+    }
   setTimeout(_initSelAffSearch,300);
   }).catch(function(){startRealtime();});
   // Check envoi rappels lundi 8h
@@ -1361,6 +1407,7 @@ function renderFortuitesTab(){
 }
 
 function switchTab(t){
+  window._userTabClicked=true;
   // Mettre à jour les boutons de nav
   document.querySelectorAll('.nb').forEach(function(b){
     b.classList.remove('on');
@@ -8211,9 +8258,13 @@ function _reRenderGanttKeepScroll(){
 }
 function toggleDayExp(evt,actId,dayAbsIdx,dayLabel){
   evt.stopPropagation();
-  // Remove any existing popup
+  // Remove any existing popup + son listener de clic extérieur (évite les listeners fantômes)
   var existing=document.getElementById('day-popup');
   if(existing)existing.remove();
+  if(window._dayPopupOutsideClick){
+    document.removeEventListener('click',window._dayPopupOutsideClick);
+    window._dayPopupOutsideClick=null;
+  }
   const sameKey=actId+'_d'+dayAbsIdx;
   if(EXP===sameKey){EXP=null;return;}
   EXP=sameKey;
@@ -8319,8 +8370,15 @@ function toggleDayExp(evt,actId,dayAbsIdx,dayLabel){
   // Close on outside click
   setTimeout(function(){
     function outsideClick(e){
-      if(!popup.contains(e.target)){popup.remove();document.removeEventListener('click',outsideClick);}
+      if(!document.body.contains(popup)){document.removeEventListener('click',outsideClick);window._dayPopupOutsideClick=null;return;}
+      if(!popup.contains(e.target)){
+        popup.remove();
+        document.removeEventListener('click',outsideClick);
+        window._dayPopupOutsideClick=null;
+        if(EXP===sameKey)EXP=null;
+      }
     }
+    window._dayPopupOutsideClick=outsideClick;
     document.addEventListener('click',outsideClick);
   },10);
 }
@@ -8351,29 +8409,38 @@ function _restoreExpPanel(id){
 }
 function closeExp(){EXP=null;_reRenderGanttKeepScroll();}
 function toggleExp(id){
-  // Si même tâche cliquée ET panneau visible → fermer
-  if(EXP===id){
-    var _pnl=document.getElementById('exp-panel-row');
-    if(_pnl){EXP=null;_pnl.remove();var _r=document.querySelector('[data-rid="'+id+'"]');if(_r)_r.classList.remove('exp-open');return;}
+  window._userTabClicked=true;
+  // Même tâche + panneau visible → fermer
+  if(EXP===id&&document.getElementById('exp-panel-row')){
     EXP=null;
+    document.getElementById('exp-panel-row').remove();
+    var _r=document.querySelector('[data-rid="'+id+'"]');
+    if(_r)_r.classList.remove('exp-open');
+    return;
   }
-  var old=document.getElementById('exp-panel-row');
-  if(old)old.remove();
+  // Fermer tout ancien panneau
+  var old=document.getElementById('exp-panel-row');if(old)old.remove();
   if(EXP){var pr=document.querySelector('[data-rid="'+EXP+'"]');if(pr)pr.classList.remove('exp-open');}
   EXP=id;
+  // Trouver la tâche
   var row=D().find(function(x){return x.id===id;});
   if(!row){EXP=null;return;}
+  // Trouver la ligne GANTT
   var tr=document.querySelector('[data-rid="'+id+'"]');
   if(!tr){EXP=null;return;}
   tr.classList.add('exp-open');
+  // Créer et insérer le panneau
   var et=document.createElement('tr');et.id='exp-panel-row';
   var td=document.createElement('td');td.setAttribute('colspan','999');
-  td.style.padding='0';td.style.background='transparent';
+  td.style.cssText='padding:0;background:transparent';
   td.onclick=function(e){e.stopPropagation();};
-  try{td.innerHTML=buildFullExpPanel(row,PH_get(row.pk),(row.e-row.s+1)*5);}
-  catch(err){td.innerHTML='<div style="padding:16px;color:red;font-size:12px">Erreur panneau: '+String(err)+'</div>';}
-  et.appendChild(td);tr.after(et);
-  requestAnimationFrame(function(){et.scrollIntoView({block:'nearest',behavior:'smooth'});});
+  try{
+    td.innerHTML=buildFullExpPanel(row,PH_get(row.pk),(row.e-row.s+1)*5);
+  }catch(err){
+    td.innerHTML='<div style="padding:20px;background:#fff3cd;border:2px solid orange;font-size:12px">Erreur ouverture: '+String(err)+'</div>';
+  }
+  et.appendChild(td);
+  tr.after(et);
 }
 
 
