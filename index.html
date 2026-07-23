@@ -6465,7 +6465,7 @@ function renderGantt(){
     const rowBorderLeft=!_hasBars?'none':done?'3px solid var(--gn)':row.inProgress?'3px solid #D97706':isOverdue?'3px solid #DC2626':'none';
     html+=`<tr class="ra" data-rid="${row.id}" style="height:79px;background:${rowBgColor}">
       
-      <td class="al s1" onclick="toggleExp('${row.id}')" style="cursor:pointer;background:${isE?'var(--ac2)':done?'rgba(209,250,229,.5)':row.inProgress?'rgba(254,243,199,.5)':isOverdue?'rgba(254,226,226,.5)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':row.inProgress?'#D97706':isOverdue?'#DC2626':'var(--tx)'};border-left:${rowBorderLeft};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
+      <td class="al s1" onclick="event.stopPropagation();toggleExp('${row.id}')" style="cursor:pointer;background:${isE?'var(--ac2)':done?'rgba(209,250,229,.5)':row.inProgress?'rgba(254,243,199,.5)':isOverdue?'rgba(254,226,226,.5)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':row.inProgress?'#D97706':isOverdue?'#DC2626':'var(--tx)'};border-left:${rowBorderLeft};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
         <div style="display:flex;flex-direction:column;gap:1px;padding-left:2px;">
           <div style="display:flex;align-items:center;gap:3px;min-width:0;">
             <span onclick="event.stopPropagation();toggleDone('${row.id}')" title="${done?'Décocher':'Marquer terminé'}"
@@ -7700,7 +7700,7 @@ function pedConfirmAddPhase(){
       const diff2=(a.hPrev&&a.hReel)?a.hReel-a.hPrev:null;
 
       tbody+=`<tr data-rid="${a.id}" style="border-bottom:1px solid var(--bd)">
-        <td style="padding:5px 8px;width:220px;min-width:220px;position:sticky;left:0;background:${isE?'var(--ac2)':done?'var(--gn2)':'var(--bg2)'};z-index:8;border-right:2px solid var(--bd2);cursor:pointer;vertical-align:top" onclick="toggleExp('${a.id}')">
+        <td style="padding:5px 8px;width:220px;min-width:220px;position:sticky;left:0;background:${isE?'var(--ac2)':done?'var(--gn2)':'var(--bg2)'};z-index:8;border-right:2px solid var(--bd2);cursor:pointer;vertical-align:top" onclick="event.stopPropagation();toggleExp('${a.id}')">
           <div style="display:flex;align-items:center;gap:4px">
             <span onclick="event.stopPropagation();toggleDone('${a.id}')" style="cursor:pointer;font-size:14px;flex-shrink:0">${done?'☑':'☐'}</span>
             <span style="font-size:10px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.lb}</span>
@@ -8409,41 +8409,35 @@ function toggleExp(id){
     if(_rr)_rr.classList.remove('exp-open');
     return;
   }
-  // Fermer l'ancien panneau s'il y en a un
+  // Fermer l'ancien panneau
   var old=document.getElementById('exp-panel-row');
   if(old)old.remove();
   if(EXP){var pr=document.querySelector('[data-rid="'+EXP+'"]');if(pr)pr.classList.remove('exp-open');}
   EXP=id;
-  // Trouver la donnée de l'activité
-  const row=D().find(x=>x.id===id);
+  // Trouver la donnée
+  var row=D().find(function(x){return x.id===id;});
   if(!row){EXP=null;return;}
-  const ph=PH_get(row.pk);
-  const nd=(row.e-row.s+1)*5;
-  // Trouver la ligne dans le DOM
-  let tr=document.querySelector('[data-rid="'+id+'"]');
+  // Trouver la ligne dans le DOM (re-render si absente)
+  var tr=document.querySelector('[data-rid="'+id+'"]');
   if(!tr){
-    _reRenderGanttKeepScroll();
-    // Réessayer après le re-render
+    renderGantt(); // simple re-render sans restauration de scroll
     tr=document.querySelector('[data-rid="'+id+'"]');
     if(!tr){EXP=null;return;}
   }
   tr.classList.add('exp-open');
   // Créer le panneau
-  const expandTr=document.createElement('tr');
-  expandTr.id='exp-panel-row';
-  const expandTd=document.createElement('td');
-  expandTd.setAttribute('colspan','999');
-  expandTd.style.padding='0';
-  expandTd.style.background='transparent';
-  expandTd.onclick=function(e){e.stopPropagation();};
+  var et=document.createElement('tr');et.id='exp-panel-row';
+  var td=document.createElement('td');td.setAttribute('colspan','999');
+  td.style.padding='0';td.style.background='transparent';
+  td.onclick=function(e){e.stopPropagation();};
   try{
-    expandTd.innerHTML=buildFullExpPanel(row,ph,nd);
+    td.innerHTML=buildFullExpPanel(row,PH_get(row.pk),(row.e-row.s+1)*5);
   }catch(err){
-    expandTd.innerHTML='<div style="padding:16px;color:var(--rd);font-size:12px">Erreur: '+String(err)+'</div>';
+    td.innerHTML='<div style="padding:16px;color:var(--rd);font-size:12px">Erreur: '+String(err)+'</div>';
   }
-  expandTr.appendChild(expandTd);
-  tr.after(expandTr);
-  requestAnimationFrame(function(){expandTr.scrollIntoView({block:'nearest',behavior:'smooth'});});
+  et.appendChild(td);
+  tr.after(et);
+  requestAnimationFrame(function(){et.scrollIntoView({block:'nearest',behavior:'smooth'});});
 }
 
 function setProgress(id,val){
