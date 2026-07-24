@@ -1613,6 +1613,10 @@ function deleteGlobalPerson(nm){
   // 1. Supprimer de l'annuaire global
   var gp=_getGlobalPersons();
   delete gp[nm];
+  // 1bis. Répercuter immédiatement sur la copie GP_KEY (source jugée "la plus fiable"
+  // au chargement) : sans ça, la personne supprimée est restaurée au prochain
+  // rechargement de la page, et son tombstone est même effacé au passage.
+  try{localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));}catch(e){}
   // 2. Supprimer de toutes les tâches de toutes les affaires
   Object.values(STORE.projects).forEach(function(proj){
     if(proj.persons)
