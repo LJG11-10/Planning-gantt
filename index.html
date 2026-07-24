@@ -2232,7 +2232,9 @@ function renderDashboard(){
 
 
 function dbEquipe(){
-  if(!window._eqWk)window._eqWk=TODAY?TODAY.w:1;
+  // Même semaine par défaut que Planning réunion (semaine à venir), pour que ce qui vient
+  // d'être planifié en réunion apparaisse directement ici sans changer de semaine.
+  if(!window._eqWk)window._eqWk=TODAY?TODAY.w+1:2;
   var selWk=window._eqWk;
   var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 
@@ -6528,9 +6530,21 @@ function renderGantt(){
         const sepBdr=d===6?'border-right:2px solid #374151;':(d===4&&sep?'border-right:1px solid var(--bd2);':'');
         const todBdr=isTD?'box-shadow:inset 0 0 0 2px #D97706;':'';
 
-        // Cellule week-end
+        // Cellule week-end : normalement grisée, mais peut être marquée "travaillée"
         if(isWE){
-          dc+=`<td style="background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px);border-right:${d===6?'2px solid #374151':'none'};min-width:${DW}px"></td>`;
+          const _wkPrev=(row.weekendPrev||[]).indexOf(absDay)>=0;
+          const _wkReel=(row.weekendReel||[]).indexOf(absDay)>=0;
+          if(_wkPrev||_wkReel){
+            const prevBgWE=_wkPrev?ph.xl:'transparent';
+            const reelBgWE=_wkReel?ph.xd:'transparent';
+            dc+=`<td onclick="wkendToggle('${row.id}',${absDay},event)" title="Week-end travaillé — clic en haut=Prévu / clic en bas=Réel" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${d===6?'border-right:2px solid #374151;':''}cursor:pointer;background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px)">
+              <div style="height:32px;margin:3px 0 2px;background:${prevBgWE};border-radius:8px;${_wkPrev?'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);':''}display:flex;align-items:center;justify-content:center;overflow:hidden">${_wkPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55)">P</span>`:''}</div>
+              <div style="height:3px;background:rgba(255,255,255,.9)"></div>
+              <div style="height:32px;margin:2px 0 3px;background:${reelBgWE};border-radius:8px;${_wkReel?'box-shadow:inset 0 1px 0 rgba(255,255,255,.18);':''}display:flex;align-items:center;justify-content:center;overflow:hidden">${_wkReel?`<span style="font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)">R</span>`:''}</div>
+            </td>`;
+          } else {
+            dc+=`<td onclick="wkendToggle('${row.id}',${absDay},event)" title="Cliquer pour marquer ce week-end comme travaillé (haut=Prévu / bas=Réel)" style="background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px);border-right:${d===6?'2px solid #374151':'none'};min-width:${DW}px;cursor:pointer"></td>`;
+          }
           continue;
         }
         if(!inAny){
@@ -8581,6 +8595,23 @@ function _syncTaskMeta(row){
     row.sReel=Math.floor(mnR/5)+1; row.dStartR=mnR%5;
     row.eReel=Math.floor(mxR/5)+1; row.dEndR=mxR%5;
   } else if(row.reelDays){row.sReel=0;row.eReel=0;}
+}
+
+function wkendToggle(rid, absDay, ev){
+  if(ev)ev.stopPropagation();
+  var r=D().find(function(x){return x.id===rid;});
+  if(!r)return;
+  var rect=ev&&ev.currentTarget?ev.currentTarget.getBoundingClientRect():null;
+  var relY=rect?(ev.clientY-rect.top):40;
+  var cellH=rect?rect.height:80;
+  var mode=(relY<cellH/2)?'prev':'reel';
+  var key=mode==='reel'?'weekendReel':'weekendPrev';
+  if(!r[key])r[key]=[];
+  var ix=r[key].indexOf(absDay);
+  if(ix>=0){r[key].splice(ix,1);} else {r[key].push(absDay);}
+  saveNow();
+  scheduleSupa();
+  _reRenderGanttKeepScroll();
 }
 
 function gcDown(rid, w, d, ev){
