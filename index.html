@@ -116,6 +116,13 @@
 
   function _applyRemote(remote){
     if(!_isValidStore(remote)){console.warn('donnees vides ignorees');return;}
+    // ── Récupérer les tombstones LOCAUX avant tout remplacement ──────────
+    // (sinon une suppression tout juste faite localement, pas encore
+    // uploadée, serait perdue au prochain cycle de synchronisation)
+    var _localDeleted={};
+    if(STORE&&STORE._deletedPersons){
+      Object.keys(STORE._deletedPersons).forEach(function(nm){_localDeleted[nm]=STORE._deletedPersons[nm];});
+    }
     // ── Construire globalPersons depuis GP_KEY (source la plus fiable) ──
     var _localGP={};
     try{
@@ -128,6 +135,9 @@
         if(!_localGP[nm])_localGP[nm]=STORE.globalPersons[nm];
       });
     }
+    // Une personne supprimée localement ne doit jamais réapparaître ici,
+    // même si une vieille copie GP_KEY ou STORE local la contient encore
+    Object.keys(_localDeleted).forEach(function(nm){delete _localGP[nm];});
     // ── Garder les affaires locales ─────────────────────────────────────
     if(STORE&&STORE.projects){
       Object.keys(STORE.projects).forEach(function(aff){
@@ -140,12 +150,25 @@
     // NE PAS appliquer les tombstones remote sur globalPersons :
     // renderPersonnelSearch filtre deja via _deletedPersons
     STORE.globalPersons=_localGP;
-    // Nettoyer les tombstones Supabase pour les personnes présentes localement
-    if(STORE._deletedPersons){
-      Object.keys(STORE.globalPersons).forEach(function(nm){
-        delete STORE._deletedPersons[nm];
+    // Fusionner les tombstones remote ET locaux (le local ne doit jamais être perdu)
+    STORE._deletedPersons=Object.assign({},STORE._deletedPersons||{},_localDeleted);
+    // Nettoyer les tombstones pour les personnes réellement présentes localement
+    Object.keys(STORE.globalPersons).forEach(function(nm){
+      delete STORE._deletedPersons[nm];
+    });
+    // Retirer du weekPlan/absences/conges toute entrée d'une personne supprimée
+    // (le remote peut encore contenir d'anciennes entrées pas encore nettoyées)
+    var _delAll2=STORE._deletedPersons||{};
+    if(STORE.weekPlan){
+      Object.keys(STORE.weekPlan).forEach(function(wk){
+        Object.keys(STORE.weekPlan[wk]||{}).forEach(function(key){
+          var _nmWp=key.split('::')[0];
+          if(_delAll2[_nmWp])delete STORE.weekPlan[wk][key];
+        });
       });
     }
+    if(STORE.absences){Object.keys(_delAll2).forEach(function(nm){delete STORE.absences[nm];});}
+    if(STORE.conges){Object.keys(_delAll2).forEach(function(nm){delete STORE.conges[nm];});}
     localStorage.setItem(SK,JSON.stringify(STORE));
     try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}
     applySync();
@@ -1227,7 +1250,19 @@ function loadStore(){
       Object.keys(_delAffAll).forEach(function(k){delete STORE.projects[k];});
       var _delAll=STORE._deletedPersons||{};
 
-      if(remote.weekPlan)STORE.weekPlan=Object.assign({},remote.weekPlan,STORE.weekPlan||{});
+      if(remote.weekPlan){
+        // Filtrer les entrées des personnes supprimées AVANT de fusionner
+        var _filtWP={};
+        Object.keys(remote.weekPlan).forEach(function(wk){
+          var wkData={};
+          Object.keys(remote.weekPlan[wk]).forEach(function(key){
+            var _nmWp=key.split('::')[0];
+            if(!_delAll[_nmWp])wkData[key]=remote.weekPlan[wk][key];
+          });
+          _filtWP[wk]=wkData;
+        });
+        STORE.weekPlan=Object.assign({},_filtWP,STORE.weekPlan||{});
+      }
 
       // Absences : filtrer les personnes supprimées
       if(remote.absences){
@@ -1239,16 +1274,18 @@ function loadStore(){
 
       // globalPersons : GP_KEY est la source de vérité, toujours prioritaire
       if(!STORE.globalPersons)STORE.globalPersons={};
-      // 1. Charger depuis remote (base)
+      // 1. Charger depuis remote (base) — jamais pour une personne supprimée (tombstone)
       if(remote.globalPersons){
         Object.keys(remote.globalPersons).forEach(function(k){
-          if(!STORE.globalPersons[k])STORE.globalPersons[k]=remote.globalPersons[k];
+          if(!STORE.globalPersons[k]&&!_delAll[k])STORE.globalPersons[k]=remote.globalPersons[k];
         });
       }
-      // 2. GP_KEY écrase tout - jamais bloqué par tombstones
+      // 2. GP_KEY écrase tout, SAUF les personnes tombstonées localement :
+      // une suppression locale doit toujours l'emporter sur une ancienne copie GP_KEY.
       try{
         var _gpK=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
         Object.keys(_gpK).forEach(function(nm){
+          if(_delAll[nm])return; // ne pas ressusciter une personne supprimée localement
           STORE.globalPersons[nm]=_gpK[nm];
           // Retirer du tombstone si présent
           if(STORE._deletedPersons&&STORE._deletedPersons[nm])
