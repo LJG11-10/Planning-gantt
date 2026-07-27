@@ -4596,9 +4596,15 @@ function renderAbsences(){
   window._absTab=absTab;
 
   // ── Personnes : directement depuis globalPersons (source de vérité)
+  // Congés : uniquement les ELS et les Alternants (inutile de gérer des congés
+  // pour un client, un sous-traitant ou un intérimaire)
   var _delP=STORE._deletedPersons||{};
   var _gp=STORE.globalPersons||{};
-  var allNames=Object.keys(_gp).filter(function(nm){return nm&&nm.trim()&&!_delP[nm];}).sort();
+  var allNames=Object.keys(_gp).filter(function(nm){
+    if(!nm||!nm.trim()||_delP[nm])return false;
+    var t=_gp[nm]&&_gp[nm].type;
+    return t==='ELS'||t==='Alternant';
+  }).sort();
 
   // ── Alternants/Stagiaires (pour école/entreprise)
   var altMap={};
