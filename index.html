@@ -2302,6 +2302,9 @@ function dbEquipe(){
     var parts=key.split('::'); if(parts.length!==2)return;
     var nm=parts[0], di=+parts[1];
     if(isNaN(di)||di<0||di>4)return;
+    // Ne pas afficher une personne cochée "masquée" dans Planning réunion
+    var _gpHide=STORE.globalPersons&&STORE.globalPersons[nm];
+    if(_gpHide&&_gpHide.hiddenEquipe)return;
     var entries=wp[key]; if(!Array.isArray(entries))entries=[entries];
     var valid=entries.filter(function(e){return e&&e.aff;});
     if(!valid.length)return;
@@ -4109,6 +4112,16 @@ function dbBuildPlanningGrid(){
   window._wpCommentChange=function(ta){var nm=ta.dataset.nm,di=+ta.dataset.di,ei=+ta.dataset.ei;saveCellEntry(nm,di,ei,'comment',ta.value);};
   window._wpAddEntry=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di;var key=nm+'::'+di;window._wpExtra[key]=(window._wpExtra[key]||0)+1;dbBuildPlanningGrid();};
   window._wpRemove=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di,ei=+btn.dataset.ei;removeEntry(nm,di,ei);};
+  window._wpToggleHidden=function(cb){
+    var nm=cb.dataset.nm;
+    if(!STORE.globalPersons)STORE.globalPersons={};
+    if(!STORE.globalPersons[nm])STORE.globalPersons[nm]={name:nm};
+    STORE.globalPersons[nm].hiddenEquipe=cb.checked;
+    localStorage.setItem(SK,JSON.stringify(STORE));
+    try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}
+    scheduleSupa();
+    dbBuildPlanningGrid();
+  };
   var dLun=weekDayToDate(selWk,0);
   var wkLbl='S'+selWk+(dLun?' - du '+dLun.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'}):'');
   var persons=getAllPersons();
@@ -4175,10 +4188,19 @@ function dbBuildPlanningGrid(){
     var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var nmEsc=nm.replace(/"/g,'&quot;');
     html+='<tr data-nm="'+nmEsc+'" style="border-bottom:1px solid var(--bd);background:'+(pi%2===0?'#fff':'#F8FBFF')+'">';
     var _gp2=STORE.globalPersons&&STORE.globalPersons[nm];
+    var _isHidden=!!(_gp2&&_gp2.hiddenEquipe);
     var _habs=_gp2&&_gp2.habilitations&&_gp2.habilitations.length
       ?'<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:2px">'+_gp2.habilitations.map(function(h){return '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;background:#DBEAFE;color:#1D4ED8;border:1px solid #BFDBFE">'+h+'</span>';}).join('')+'</div>'
       :'';
-    html+='<td style="padding:10px 16px;font-weight:800;font-size:13px;white-space:nowrap;border-right:3px solid #BFDBFE;vertical-align:top;background:linear-gradient(135deg,#EFF6FF,#DBEAFE);color:#1E40AF">'+nm+_habs+'</td>';
+    html+='<td style="padding:10px 16px;font-weight:800;font-size:13px;white-space:nowrap;border-right:3px solid #BFDBFE;vertical-align:top;background:linear-gradient(135deg,#EFF6FF,#DBEAFE);color:#1E40AF">'
+      +'<label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Cocher pour masquer cette personne cette semaine (elle ne travaille que rarement)">'
+      +'<input type="checkbox" data-nm="'+nmEsc+'" onchange="window._wpToggleHidden(this)"'+(_isHidden?' checked':'')+' style="width:14px;height:14px;cursor:pointer;flex-shrink:0">'
+      +'<span>'+nm+'</span></label>'+_habs+'</td>';
+    if(_isHidden){
+      html+='<td colspan="'+DN.length+'" style="padding:10px 16px;text-align:center;color:var(--tx3);font-size:11px;font-style:italic;background:#F9FAFB">Masqué</td>';
+      html+='</tr>';
+      return;
+    }
     DN.forEach(function(d,di){
       // Vérifier congé pour CE jour spécifique
       var _dayDate=new Date(dLun.getTime()+di*86400000);
@@ -9683,6 +9705,20 @@ function renderRecap(){
       +'</div>';
   }).filter(Boolean).join('')
 
+  // ── Date de début / fin calculées automatiquement (1ère et dernière barre GANTT) ──
+  var _allD5Dates=[];
+  D().filter(function(r){return r.t==='act';}).forEach(function(r){
+    getTaskDays5(r,'prev').forEach(function(d5){_allD5Dates.push(d5);});
+    getTaskDays5(r,'reel').forEach(function(d5){_allD5Dates.push(d5);});
+  });
+  var _affDateDebut=null,_affDateFin=null;
+  if(_allD5Dates.length){
+    var _minD5=Math.min.apply(null,_allD5Dates), _maxD5=Math.max.apply(null,_allD5Dates);
+    _affDateDebut=weekDayToDate(Math.floor(_minD5/5)+1,_minD5%5);
+    _affDateFin=weekDayToDate(Math.floor(_maxD5/5)+1,_maxD5%5);
+  }
+  var _fmtDateFr=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});};
+
   let html=`<div class="pg-ttl" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
     <span>RÉCAPITULATIF — <span style="color:var(--ac)">${STORE.current}</span></span>
     <div style="display:flex;gap:8px">
@@ -9691,14 +9727,17 @@ function renderRecap(){
     </div>
   </div>`;
 
-  // Carte infos affaire (si infos renseignées)
-  if(_pi.numero||_pi.libelle||_respCards){
+  // Carte infos affaire (si infos renseignées OU si des dates sont calculables)
+  if(_pi.numero||_pi.libelle||_respCards||_affDateDebut){
     html+=`<div style="background:var(--bg3);border-radius:var(--r2);border:1px solid var(--bd);padding:14px 18px;margin-bottom:18px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:12px;flex-wrap:wrap">
         <div>
           ${_pi.numero?`<div style="font-size:18px;font-weight:900;color:var(--tx);letter-spacing:.5px">${_pi.numero}${_pi.numeroClient?` <span style="font-size:13px;font-weight:600;color:var(--tx3);margin-left:8px">(Client: ${_pi.numeroClient})</span>`:''}</div>`:''}
           ${_pi.libelle?`<div style="font-size:13px;color:var(--tx2);font-weight:600;margin-top:2px">${_pi.libelle}</div>`:''}
-          ${_pi.dateCreation?`<div style="font-size:10px;color:var(--tx3);margin-top:4px">📅 Créé le ${new Date(_pi.dateCreation).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'})}</div>`:''}
+          <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">
+            ${_pi.dateCreation?`<div style="font-size:10px;color:var(--tx3)">📅 Créé le ${_fmtDateFr(new Date(_pi.dateCreation))}</div>`:''}
+            ${_affDateDebut&&_affDateFin?`<div style="font-size:10px;color:var(--tx3)">🚀 Début : <strong style="color:var(--tx2)">${_fmtDateFr(_affDateDebut)}</strong> &nbsp;—&nbsp; 🏁 Fin : <strong style="color:var(--tx2)">${_fmtDateFr(_affDateFin)}</strong></div>`:`<div style="font-size:10px;color:var(--tx3);font-style:italic">Début/Fin : aucune barre planifiée pour le moment</div>`}
+          </div>
         </div>
         <button onclick="openAffaireInfos()" style="padding:5px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;color:var(--tx2);white-space:nowrap;flex-shrink:0">✏️ Modifier</button>
       </div>
