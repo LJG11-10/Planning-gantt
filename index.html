@@ -629,9 +629,9 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
 
   <div class="sep"></div>
   <span class="lbl">DÉBUT</span>
-  <input type="date" id="inp-dstart" style="font-size:10px;padding:3px 5px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg2);color:var(--tx);outline:none" onchange="updDateBudget()">
+  <input type="date" id="inp-dstart" readonly title="Calculé automatiquement d'après la 1ère barre posée sur le GANTT" style="font-size:10px;padding:3px 5px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg3);color:var(--tx2);outline:none;cursor:default">
   <span class="lbl">FIN</span>
-  <input type="date" id="inp-dend" style="font-size:10px;padding:3px 5px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg2);color:var(--tx);outline:none" onchange="updDateBudget()">
+  <input type="date" id="inp-dend" readonly title="Calculé automatiquement d'après la dernière barre posée sur le GANTT" style="font-size:10px;padding:3px 5px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg3);color:var(--tx2);outline:none;cursor:default">
   <span id="inp-deadline" style="font-size:10px;font-weight:700;color:var(--tx3)"></span>
   <div class="bud-box">
     <span class="lbl">UTILISÉES</span>
@@ -1025,6 +1025,41 @@ function weekDayToDate(w,di){
   var d=new Date(W1_2025);
   d.setDate(W1_2025.getDate()+(w-1)*7+di);
   return d;
+}
+// ── Date de début / fin du projet, calculées à partir de la 1ère et la
+// dernière barre (Prévu ou Réel) posée sur le GANTT ──────────────────
+function computeAffaireDateRange(){
+  var _allD5=[];
+  D().filter(function(r){return r.t==='act';}).forEach(function(r){
+    getTaskDays5(r,'prev').forEach(function(d5){_allD5.push(d5);});
+    getTaskDays5(r,'reel').forEach(function(d5){_allD5.push(d5);});
+  });
+  if(!_allD5.length)return {debut:null,fin:null};
+  var _minD5=Math.min.apply(null,_allD5), _maxD5=Math.max.apply(null,_allD5);
+  return {
+    debut:weekDayToDate(Math.floor(_minD5/5)+1,_minD5%5),
+    fin:weekDayToDate(Math.floor(_maxD5/5)+1,_maxD5%5)
+  };
+}
+function _isoDate(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+// Met à jour les champs Début/Fin ("en haut") + le libellé de capacité,
+// d'après les barres GANTT actuelles. Appelé à chaque changement de barre.
+function refreshAffaireDateRange(){
+  var range=computeAffaireDateRange();
+  var ds=document.getElementById('inp-dstart');
+  var de=document.getElementById('inp-dend');
+  var dl=document.getElementById('inp-deadline');
+  if(ds)ds.value=range.debut?_isoDate(range.debut):'';
+  if(de)de.value=range.fin?_isoDate(range.fin):'';
+  if(dl){
+    if(range.debut&&range.fin){
+      var days=0,cur=new Date(range.debut);
+      while(cur<=range.fin){var wd=cur.getDay();if(wd>=1&&wd<=5&&!isFerie(cur))days++;cur.setDate(cur.getDate()+1);}
+      dl.textContent='→ '+range.fin.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' ('+days+'j / '+(days*8)+'H cap. max)';
+    } else dl.textContent='';
+  }
 }
 function isFerie(d){
   var dt=d instanceof Date?d:new Date(d);
@@ -5451,15 +5486,7 @@ function toggleAffaireClosed(val){
 
 function renderProjSel(){
   var el=document.getElementById('sel-aff');
-  var pp=currP()||{};
-  var dsEl=document.getElementById('inp-dstart');if(dsEl)dsEl.value=pp.dstart||'';
-  var deEl=document.getElementById('inp-dend');if(deEl)deEl.value=pp.dend||'';
-  var dlEl=document.getElementById('inp-deadline');
-  if(dlEl&&pp.dstart&&pp.dend){
-    var d1r=new Date(pp.dstart),d2r=new Date(pp.dend),daysR=0,curR=new Date(d1r);
-    while(curR<=d2r){if(curR.getDay()>=1&&curR.getDay()<=5)daysR++;curR.setDate(curR.getDate()+1);}
-    dlEl.textContent='→ '+d2r.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' ('+daysR+'j / '+(daysR*8)+'H)';
-  } else if(dlEl)dlEl.textContent='';
+  refreshAffaireDateRange();
   if(!el)return;
   var prevVal=el.value||STORE.current;
   el.innerHTML='';
@@ -5484,10 +5511,6 @@ function switchProjet(k){
   EXP=null;STORE.current=k;
   const p=currP();
   document.getElementById('inp-bud').value=p.budget||500;
-  var ds2=document.getElementById('inp-dstart');if(ds2)ds2.value=p.dstart||'';
-  var de2=document.getElementById('inp-dend');if(de2)de2.value=p.dend||'';
-  var dl2=document.getElementById('inp-deadline');
-  if(dl2&&p.dstart&&p.dend){var d1x=new Date(p.dstart),d2x=new Date(p.dend);var daysX=0,curX=new Date(d1x);while(curX<=d2x){var wdX=curX.getDay();if(wdX>=1&&wdX<=5)daysX++;curX.setDate(curX.getDate()+1);}dl2.textContent='→ '+d2x.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' ('+daysX+'j / '+(daysX*8)+'H)';}else if(dl2)dl2.textContent='';
 
   saveNow();renderProjSel();renderGantt();navRefreshArchBtn();
   // Marquer : scroller vers aujourd'hui au prochain renderGantt
@@ -6499,6 +6522,7 @@ function renderPortfolio(){
 function renderGantt(){
   if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='day'){renderGanttDay();return;}
   if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='global'){renderPortfolio();return;}
+  refreshAffaireDateRange();
   const DW=ZOOM_DW,NC=52*7;
   const wrap=document.getElementById('gw');
   // Mois
@@ -7849,6 +7873,7 @@ function pedConfirmAddPhase(){
 }function renderGanttDay(){
   const wrap=document.getElementById('gw');
   if(!wrap)return;
+  refreshAffaireDateRange();
 
   if(!window._gdStartW)window._gdStartW=1;
   if(!window._gdNbW)window._gdNbW=52;
@@ -9705,17 +9730,8 @@ function renderRecap(){
   }).filter(Boolean).join('')
 
   // ── Date de début / fin calculées automatiquement (1ère et dernière barre GANTT) ──
-  var _allD5Dates=[];
-  D().filter(function(r){return r.t==='act';}).forEach(function(r){
-    getTaskDays5(r,'prev').forEach(function(d5){_allD5Dates.push(d5);});
-    getTaskDays5(r,'reel').forEach(function(d5){_allD5Dates.push(d5);});
-  });
-  var _affDateDebut=null,_affDateFin=null;
-  if(_allD5Dates.length){
-    var _minD5=Math.min.apply(null,_allD5Dates), _maxD5=Math.max.apply(null,_allD5Dates);
-    _affDateDebut=weekDayToDate(Math.floor(_minD5/5)+1,_minD5%5);
-    _affDateFin=weekDayToDate(Math.floor(_maxD5/5)+1,_maxD5%5);
-  }
+  var _dateRangeRecap=computeAffaireDateRange();
+  var _affDateDebut=_dateRangeRecap.debut,_affDateFin=_dateRangeRecap.fin;
   var _fmtDateFr=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});};
 
   let html=`<div class="pg-ttl" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
