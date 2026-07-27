@@ -116,6 +116,7 @@
 
   function _applyRemote(remote){
     if(!_isValidStore(remote)){console.warn('donnees vides ignorees');return;}
+    try{
     // ── Récupérer les tombstones LOCAUX avant tout remplacement ──────────
     // (sinon une suppression tout juste faite localement, pas encore
     // uploadée, serait perdue au prochain cycle de synchronisation)
@@ -171,6 +172,10 @@
     if(STORE.conges){Object.keys(_delAll2).forEach(function(nm){delete STORE.conges[nm];});}
     localStorage.setItem(SK,JSON.stringify(STORE));
     try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}
+    }catch(_e2){
+      console.error('Erreur _applyRemote (synchronisation ignorée pour ce cycle) :',_e2);
+      return;
+    }
     applySync();
   }
 
@@ -1232,6 +1237,7 @@ function loadStore(){
   // Charger depuis Supabase et fusionner avec local
   // Chargement depuis Supabase — source de vérité commune
   supaLoad().then(function(remote){
+    try{
     if(remote&&remote.projects){
       // Charger tombstones EN PREMIER
       if(remote._deletedAffaires)
@@ -1255,7 +1261,7 @@ function loadStore(){
         var _filtWP={};
         Object.keys(remote.weekPlan).forEach(function(wk){
           var wkData={};
-          Object.keys(remote.weekPlan[wk]).forEach(function(key){
+          Object.keys(remote.weekPlan[wk]||{}).forEach(function(key){
             var _nmWp=key.split('::')[0];
             if(!_delAll[_nmWp])wkData[key]=remote.weekPlan[wk][key];
           });
@@ -1301,6 +1307,13 @@ function loadStore(){
         Object.keys(_delAll).forEach(function(k){delete STORE.conges[k];});
       }
     }
+    }catch(_mergeErr){
+      // Une erreur inattendue pendant la fusion ne doit JAMAIS empêcher
+      // l'affichage de l'app ni écraser les données distantes avec un état
+      // partiel/cassé : on log l'erreur et on continue avec le STORE local.
+      console.error('Erreur fusion Supabase (STORE local conservé tel quel) :',_mergeErr);
+      _showMsg&&_showMsg('Erreur de synchronisation — vos données locales sont conservées','#DC2626');
+    }
     // Uploader immédiatement sur Supabase (fusion des données de tout le monde)
     supaSave(STORE);
     localStorage.setItem(SK,JSON.stringify(STORE));
@@ -1318,7 +1331,7 @@ function loadStore(){
       }
     }
   setTimeout(_initSelAffSearch,300);
-  }).catch(function(){startRealtime();});
+  }).catch(function(e){console.error('Erreur chargement Supabase:',e);renderProjSel();var first=STORE.current||Object.keys(STORE.projects)[0];if(first)switchProjet(first);startRealtime();});
   // Check envoi rappels lundi 8h
   setTimeout(checkAndSendMondayRappel,5000);
   setInterval(checkAndSendMondayRappel,1800000); // check every 30min
