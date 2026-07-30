@@ -2016,6 +2016,17 @@ function weekDayToDate(w,di){
   d.setDate(W1_2025.getDate()+(w-1)*7+di);
   return d;
 }
+// Convertit une semaine interne (w) vers le VRAI numéro de semaine ISO 8601
+// (pour l'affichage uniquement — ne change rien au stockage/calcul interne,
+// qui continue d'utiliser w tel quel partout ailleurs dans l'app).
+function isoWeekOf(w){
+  var d=weekDayToDate(w,0);
+  var date=new Date(d.getTime());
+  date.setHours(0,0,0,0);
+  date.setDate(date.getDate()+3-((date.getDay()+6)%7));
+  var week1=new Date(date.getFullYear(),0,4);
+  return 1+Math.round(((date-week1)/86400000-3+((week1.getDay()+6)%7))/7);
+}
 // ── Date de début / fin du projet, calculées à partir de la 1ère et la
 // dernière barre (Prévu ou Réel) posée sur le GANTT ──────────────────
 function computeAffaireDateRange(){
@@ -3045,12 +3056,12 @@ function renderOverview(){
   }
 
   // ── Label semaine ──────────────────────────────────────────────────
-  var wkLabel='Semaine '+curWk;
+  var wkLabel='Semaine '+isoWeekOf(curWk);
   try{
     if(typeof weekDayToDate==='function'){
       var mon=weekDayToDate((curWk-1)*5);
       var fri=weekDayToDate((curWk-1)*5+4);
-      if(mon&&fri)wkLabel='Semaine '+curWk+' · '+mon.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})+' – '+fri.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
+      if(mon&&fri)wkLabel='Semaine '+isoWeekOf(curWk)+' · '+mon.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})+' – '+fri.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
     }
   }catch(e){}
 
@@ -3452,7 +3463,7 @@ function fhPrintFiche(nm){
     var wkTotal=0;
     var dStart=wkD(wk);
     var dEnd=new Date(dStart);dEnd.setDate(dStart.getDate()+4);
-    var wkLabel='Semaine '+wk+' &nbsp;·&nbsp; '
+    var wkLabel='Semaine '+isoWeekOf(wk)+' &nbsp;·&nbsp; '
       +dStart.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'})
       +' au '+dEnd.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
 
@@ -5147,7 +5158,7 @@ function dbBuildPlanningGrid(){
     dbBuildPlanningGrid();
   };
   var dLun=weekDayToDate(selWk,0);
-  var wkLbl='S'+selWk+(dLun?' - du '+dLun.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'}):'');
+  var wkLbl='S'+isoWeekOf(selWk)+(dLun?' - du '+dLun.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'}):'');
   var persons=getAllPersons();
   var html='<div style="background:var(--bg2);border-radius:var(--r2);padding:20px 24px">';
   var _activeTasks=[];
@@ -5159,7 +5170,7 @@ function dbBuildPlanningGrid(){
   });
   if(_activeTasks.length){
     html+='<div style="margin-bottom:14px;padding:10px 14px;background:var(--bg2);border-radius:var(--r2);border:1px solid var(--bd)">';
-    html+='<div style="font-size:10px;font-weight:800;color:var(--tx2);letter-spacing:.5px;margin-bottom:10px">\uD83D\uDCCB T\u00C2CHES ACTIVES S'+selWk+'</div>';
+    html+='<div style="font-size:10px;font-weight:800;color:var(--tx2);letter-spacing:.5px;margin-bottom:10px">\uD83D\uDCCB T\u00C2CHES ACTIVES S'+isoWeekOf(selWk)+'</div>';
     // Grouper par affaire
     var _taskByAff={};
     _activeTasks.forEach(function(t){
@@ -5371,7 +5382,7 @@ function dbDownloadWeek(dlMode){
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   var dStart=wkD(selWk);
   var dEnd=new Date(dStart.getTime()+4*86400000);
-  var wkLabel='Semaine '+selWk+' — '+dStart.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'})+' au '+dEnd.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+  var wkLabel='Semaine '+isoWeekOf(selWk)+' — '+dStart.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'})+' au '+dEnd.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
   var dateEd=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
   var rows='';
   persons.forEach(function(nm){
@@ -5395,7 +5406,7 @@ function dbDownloadWeek(dlMode){
     }
     rows+='<tr class="sep-row"><td colspan="3"></td></tr>';
   });
-  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Planning reunion S'+selWk+'</title>'
+  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Planning reunion S'+isoWeekOf(selWk)+'</title>'
     +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}'
     +'h1{font-size:20px;font-weight:900;color:#1F4E79;margin-bottom:4px}.meta{font-size:11px;color:#666;margin-bottom:20px}'
     +'table{width:100%;border-collapse:collapse;border:1px solid #CBD5E1}'
@@ -9411,7 +9422,7 @@ function fhGenerateHTML(nm,cb){
   wks.forEach(function(wk){
     var wkData=fhData[wk]||{};var wkTotal=0;
     var dStart=wkD(wk);var dEnd=new Date(dStart);dEnd.setDate(dStart.getDate()+4);
-    var wkLabel='Semaine '+wk+' &nbsp;·&nbsp; '+dStart.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'})+' au '+dEnd.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+    var wkLabel='Semaine '+isoWeekOf(wk)+' &nbsp;·&nbsp; '+dStart.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'})+' au '+dEnd.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
     var rows='';
     DN.forEach(function(dayName,di){
       var dayDate=new Date(dStart);dayDate.setDate(dStart.getDate()+di);
@@ -9504,7 +9515,7 @@ function loadRappelsPreview(){
   var dLun=weekDayToDate(nextWk,0);
   var dVen=weekDayToDate(nextWk,4);
   var fmtD=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long'});};
-  var label='S'+nextWk+' \u2014 du '+fmtD(dLun)+' au '+fmtD(dVen);
+  var label='S'+isoWeekOf(nextWk)+' \u2014 du '+fmtD(dLun)+' au '+fmtD(dVen);
   if(!rappels.length){
     preview.innerHTML='<div style="color:var(--tx3);font-style:italic;font-size:11px;padding:8px">Aucune t\u00e2che active la semaine prochaine ('+label+').</div>';
     return;
@@ -10486,7 +10497,7 @@ function renderCharges(){
     </div>
 
     <!-- Vue calendrier -->
-    ${(()=>{const bad=sorted.filter(ps=>{const cm=chargeMap(ps.name);return Object.values(cm).some(h=>h>MAX_H);});if(!bad.length)return '';const det=bad.map(ps=>{const cm=chargeMap(ps.name);const bw=Object.entries(cm).filter(([w,h])=>h>MAX_H).map(([w,h])=>'S'+w+': '+Math.round(h*10)/10+'H');return '<b>'+ps.name+'</b> — '+bw.join(', ');}).join('<br>');return '<div style="margin-bottom:16px;padding:12px 16px;background:#1A0000;border:2px solid #FF0000;border-radius:var(--r2);display:flex;gap:12px;align-items:flex-start"><span style="font-size:20px">⛔</span><div><div style="font-size:13px;font-weight:700;color:#FF4444;margin-bottom:6px">DÉPASSEMENT LÉGAL 48H/SEMAINE</div><div style="font-size:11px;color:#FF8888;line-height:1.6">'+det+'</div></div></div>';})()}
+    ${(()=>{const bad=sorted.filter(ps=>{const cm=chargeMap(ps.name);return Object.values(cm).some(h=>h>MAX_H);});if(!bad.length)return '';const det=bad.map(ps=>{const cm=chargeMap(ps.name);const bw=Object.entries(cm).filter(([w,h])=>h>MAX_H).map(([w,h])=>'S'+isoWeekOf(+w)+': '+Math.round(h*10)/10+'H');return '<b>'+ps.name+'</b> — '+bw.join(', ');}).join('<br>');return '<div style="margin-bottom:16px;padding:12px 16px;background:#1A0000;border:2px solid #FF0000;border-radius:var(--r2);display:flex;gap:12px;align-items:flex-start"><span style="font-size:20px">⛔</span><div><div style="font-size:13px;font-weight:700;color:#FF4444;margin-bottom:6px">DÉPASSEMENT LÉGAL 48H/SEMAINE</div><div style="font-size:11px;color:#FF8888;line-height:1.6">'+det+'</div></div></div>';})()}
     <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">PLANNING DE CHARGE — vue semaine par semaine</div>
     <div style="overflow-x:auto;border:1px solid var(--bd);border-radius:var(--r2);margin-bottom:24px">
       <table style="border-collapse:collapse;width:max-content;min-width:100%">
