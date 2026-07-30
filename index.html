@@ -722,7 +722,7 @@ window.PresseEtoupe = (function () {
   ];
 
   const MARGIN_CANDIDATES = [25, 22, 20, 18, 15, 12, 10, 8, 6, 5, 4, 3];
-  const GAP_CANDIDATES = [15, 12, 10, 8, 6, 5, 4, 3, 2];
+  const GAP_CANDIDATES = [15, 12, 10, 8, 6, 5, 4, 3, 2, 1.5, 1, 0.75, 0.5];
 
   const STORAGE_KEY = "presseEtoupe_state_v1";
 
@@ -859,6 +859,47 @@ window.PresseEtoupe = (function () {
     return placements;
   }
 
+  // ── Rangement compact de secours : n'aligne pas forcement en lignes,
+  // case chaque presse-etoupe (du plus grand au plus petit) à la première
+  // position libre trouvée (balayage bas -> haut, gauche -> droite), tant
+  // que son cercle d'encombrement ne chevauche aucun voisin déjà placé
+  // (distance centre-a-centre >= somme des rayons + jeu). Utilisé uniquement
+  // quand le rangement en lignes ne suffit pas a tout faire rentrer.
+  function computeLayoutCompact(items, availW, availH, gap, margin) {
+    let pieces = [];
+    items.forEach(function (it) {
+      for (let i = 0; i < it.qty; i++) pieces.push(it.sizeId);
+    });
+    pieces.sort(function (a, b) { return diamOf(b) - diamOf(a); });
+    const placed = [];
+    const step = 2; // resolution du balayage en mm (suffisant pour du positionnement de plaque)
+    for (let pi = 0; pi < pieces.length; pi++) {
+      const d = diamOf(pieces[pi]);
+      const r = d / 2;
+      const xMin = margin + r, xMax = margin + availW - r;
+      const yMin = margin + r, yMax = margin + availH - r;
+      if (xMax < xMin - 1e-6 || yMax < yMin - 1e-6) return { fits: false };
+      let found = null;
+      for (let y = yMin; y <= yMax + 1e-6 && !found; y += step) {
+        for (let x = xMin; x <= xMax + 1e-6 && !found; x += step) {
+          let ok = true;
+          for (let k = 0; k < placed.length; k++) {
+            const dx = x - placed[k].x, dy = y - placed[k].y;
+            const minDist = r + placed[k].r + gap;
+            if (dx * dx + dy * dy < minDist * minDist - 1e-6) { ok = false; break; }
+          }
+          if (ok) found = { x: x, y: y };
+        }
+      }
+      if (!found) return { fits: false };
+      placed.push({ x: found.x, y: found.y, r: r, sizeId: pieces[pi] });
+    }
+    return {
+      fits: true,
+      placements: placed.map(function (p) { return { sizeId: p.sizeId, x: p.x, y: p.y }; })
+    };
+  }
+
   function findBestFit(items, plateW, plateH) {
     for (let mi = 0; mi < MARGIN_CANDIDATES.length; mi++) {
       const margin = MARGIN_CANDIDATES[mi];
@@ -870,7 +911,23 @@ window.PresseEtoupe = (function () {
         const res = computeLayout(items, availW, availH, gap);
         if (res.fits) {
           const placements = placementsFromLayout(res, availW, availH, margin, gap);
-          return { ok: true, margin: margin, gap: gap, placements: placements, totalH: res.totalH, availH: availH, maxW: res.maxW, availW: availW };
+          return { ok: true, mode: "lignes", margin: margin, gap: gap, placements: placements, totalH: res.totalH, availH: availH, maxW: res.maxW, availW: availW };
+        }
+      }
+    }
+    // Aucun rangement en lignes propres ne rentre : on tente un rangement
+    // compact (chaque presse-etoupe casé où il y a de la place, pas
+    // forcement aligné), tant que ca respecte bien les jeux mini.
+    for (let mi = 0; mi < MARGIN_CANDIDATES.length; mi++) {
+      const margin = MARGIN_CANDIDATES[mi];
+      const availW = plateW - 2 * margin;
+      const availH = plateH - 2 * margin;
+      if (availW <= 0 || availH <= 0) continue;
+      for (let gi = 0; gi < GAP_CANDIDATES.length; gi++) {
+        const gap = GAP_CANDIDATES[gi];
+        const resC = computeLayoutCompact(items, availW, availH, gap, margin);
+        if (resC.fits) {
+          return { ok: true, mode: "compact", margin: margin, gap: gap, placements: resC.placements, availH: availH, availW: availW };
         }
       }
     }
@@ -885,6 +942,24 @@ window.PresseEtoupe = (function () {
     for (let w = 30; w <= maxW; w += 5) {
       const res = computeLayout(items, w, availH, gap);
       if (res.fits) return { width: res.maxW, rows: res.rows, heights: res.heights, widths: res.widths, totalH: res.totalH };
+    }
+    return null;
+  }
+
+  // Variante compacte (pas d'alignement en lignes) de findMinWidthForHeight,
+  // utilisee en repli pour les plaques splitees quand le rangement en
+  // lignes ne suffit pas d'un cote ou de l'autre.
+  function findMinWidthForHeightCompact(items, availH, gap, maxW) {
+    if (!items.length) return { width: 0, placements: [] };
+    for (let w = 30; w <= maxW; w += 5) {
+      const res = computeLayoutCompact(items, w, availH, gap, 0);
+      if (res.fits) {
+        const maxX = res.placements.reduce(function (m, p) {
+          const it = items.find(function (i) { return i.sizeId === p.sizeId; });
+          return Math.max(m, p.x + diamOf(p.sizeId) / 2);
+        }, 0);
+        return { width: maxX, placements: res.placements };
+      }
     }
     return null;
   }
@@ -916,6 +991,38 @@ window.PresseEtoupe = (function () {
           ).map(function (p) { return Object.assign({}, p, { x: p.x + (xOffsetRight - margin) }); });
           return {
             ok: true, margin: margin, gap: gap, divider: divider,
+            wLeft: left.width, wRight: right.width,
+            placements: leftPlacements.concat(rightPlacements),
+          };
+        }
+      }
+    }
+    // Repli compact : si aucun rangement en lignes ne rentre des 2 cotes,
+    // tenter un rangement compact de chaque cote (pas force en lignes).
+    for (let mi = 0; mi < MARGIN_CANDIDATES.length; mi++) {
+      const margin = MARGIN_CANDIDATES[mi];
+      const availH = plateH - 2 * margin;
+      const availW = plateW - 2 * margin;
+      if (availH <= 0 || availW <= 0) continue;
+      for (let gi = 0; gi < GAP_CANDIDATES.length; gi++) {
+        const gap = GAP_CANDIDATES[gi];
+        const divider = Math.max(15, gap);
+        const budget = availW - divider;
+        if (budget <= 0) continue;
+        const left = findMinWidthForHeightCompact(itemsLeft, availH, gap, budget);
+        if (!left) continue;
+        const right = findMinWidthForHeightCompact(itemsRight, availH, gap, budget - left.width);
+        if (!right) continue;
+        if (left.width + right.width + divider <= availW) {
+          const leftPlacements = left.placements.map(function (p) {
+            return { sizeId: p.sizeId, x: p.x + margin, y: p.y + margin };
+          });
+          const xOffsetRight = margin + left.width + divider;
+          const rightPlacements = right.placements.map(function (p) {
+            return { sizeId: p.sizeId, x: p.x + xOffsetRight, y: p.y + margin };
+          });
+          return {
+            ok: true, mode: "compact", margin: margin, gap: gap, divider: divider,
             wLeft: left.width, wRight: right.width,
             placements: leftPlacements.concat(rightPlacements),
           };
@@ -1183,7 +1290,8 @@ function downloadDXF(text, filename) {
 
     if (plate.result) {
       if (plate.result.ok) {
-        html += '<div class="petool-alert petool-alert-ok">Rangement trouve — marge ' + plate.result.margin + 'mm, jeu ' + plate.result.gap + 'mm. ' + plate.result.placements.length + ' presse-etoupe places.</div>';
+        var _modeLbl = plate.result.mode === "compact" ? " (rangement compact, pas aligné en lignes)" : "";
+        html += '<div class="petool-alert petool-alert-ok">Rangement trouve — marge ' + plate.result.margin + 'mm, jeu ' + plate.result.gap + 'mm' + _modeLbl + '. ' + plate.result.placements.length + ' presse-etoupe places.</div>';
       } else {
         html += '<div class="petool-alert petool-alert-error">Ca ne rentre pas, meme a marge/jeu minimal. Les tailles distinctes demandees necessitent au moins ' + plate.result.bareMin.toFixed(0) + 'mm de hauteur cumulee pour une plaque de ' + plate.result.plateH.toFixed(0) + 'mm. Reduisez les quantites ou choisissez une plaque plus grande.</div>';
       }
