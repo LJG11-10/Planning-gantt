@@ -5399,7 +5399,7 @@ function dbDownloadWeek(dlMode){
         firstRow=false;
       } else {
         dayEntries.forEach(function(e,ei){
-          rows+='<tr>'+(firstRow&&ei===0?'<td class="nm" rowspan="'+totalEntries+'">'+esc(nm)+'</td>':'')+(ei===0?'<td class="day" rowspan="'+rowspan+'">'+dtStr+'</td>':'')+'<td class="act">'+(e.actPk?'<span class="pk">'+esc(e.actPk)+'</span>':'')+esc(e.actLb||'—')+(e.comment?'<div style="font-size:9px;color:#6B7280;margin-top:2px;font-style:italic">&#128172; '+esc(e.comment)+'</div>':'')+'</td><td class="aff">'+esc(e.aff)+'</td></tr>';
+          rows+='<tr>'+(firstRow&&ei===0?'<td class="nm" rowspan="'+totalEntries+'">'+esc(nm)+'</td>':'')+(ei===0?'<td class="day" rowspan="'+rowspan+'">'+dtStr+'</td>':'')+'<td class="act">'+(e.actPk?'<span class="pk">'+esc(e.actPk)+'</span>':'')+esc(e.actLb||'—')+(e.comment?'<div style="font-size:9px;color:#6B7280;margin-top:2px;font-style:italic">&#128172; '+esc(e.comment)+'</div>':'')+'</td><td class="aff">'+esc(getAffLabel(e.aff))+'</td></tr>';
           if(ei===0)firstRow=false;
         });
       }
