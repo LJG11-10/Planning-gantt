@@ -2026,7 +2026,7 @@ function isoWeekOf(w){
   date.setHours(0,0,0,0);
   date.setDate(date.getDate()+3-((date.getDay()+6)%7));
   var week1=new Date(date.getFullYear(),0,4);
-  return 1+Math.round(((date-week1)/86400000-3+((week1.getDay()+6)%7))/7);
+  return 1+Math.round((_daysBetween(week1,date)-3+((week1.getDay()+6)%7))/7);
 }
 // ── Date de début / fin du projet, calculées à partir de la 1ère et la
 // dernière barre (Prévu ou Réel) posée sur le GANTT ──────────────────
@@ -2089,7 +2089,7 @@ function dateToWkDay(iso){
   const dt=new Date(iso);if(isNaN(dt.getTime()))return null;
   // Même base que wkD() : W1_2025 = lundi 5 janvier 2026
   const base=new Date(W1_2025.getFullYear(),W1_2025.getMonth(),W1_2025.getDate());
-  const diffDays=Math.round((new Date(dt.getFullYear(),dt.getMonth(),dt.getDate())-base)/86400000);
+  const diffDays=_daysBetween(base,dt);
   const w=Math.min(52,Math.max(1,Math.floor(diffDays/7)+1));
   const wd=dt.getDay(); // 0=Sun,1=Mon...5=Fri,6=Sat
   const d=wd===0?4:wd===6?4:Math.max(0,Math.min(4,wd-1));
@@ -2137,26 +2137,46 @@ function updActFromDate(id,field,isoVal){
 function wkD(w){const d=new Date(W1_2025);d.setDate(W1_2025.getDate()+(w-1)*7);return d;}
 function ddD(w,d){const dt=wkD(w);dt.setDate(dt.getDate()+d);return dt;}
 function fmt(dt){return dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});}
+// Différence en jours calendaires entre deux dates, insensible au changement
+// d'heure été/hiver (DST). Un calcul naïf "(date2-date1)/86400000" peut se
+// tromper d'un jour (voire d'une semaine entière une fois arrondi) quand les
+// deux dates ne sont pas dans la même période été/hiver, car l'heure locale
+// décale alors la différence réelle en millisecondes d'une heure.
+function _daysBetween(d1,d2){
+  var u1=Date.UTC(d1.getFullYear(),d1.getMonth(),d1.getDate());
+  var u2=Date.UTC(d2.getFullYear(),d2.getMonth(),d2.getDate());
+  return Math.round((u2-u1)/86400000);
+}
 function todayInfo(){
   const n=new Date();const dw=n.getDay();
   if(dw===0||dw===6)return null;
   const di=dw-1;
   // Use same base as weekDayToDate: W1_2025 = Monday Jan 6, 2025
   const W1=new Date(2026,0,5); // Same as W1_2025 constant
-  const days=Math.floor((new Date(n.getFullYear(),n.getMonth(),n.getDate())-W1)/(864e5));
+  const days=_daysBetween(W1,n);
   const w=Math.floor(days/7)+1;
   if(w<1||w>52)return null;
   return{w,di};
 }
-let TODAY=todayInfo();
-// La date "aujourd'hui" n'est calculée qu'au chargement du script. Si l'onglet
-// reste ouvert d'un jour sur l'autre (ou plusieurs jours), on la recalcule et on
-// rafraîchit l'affichage dès qu'on détecte que le jour a changé.
+// IMPORTANT : TODAY n'est plus une valeur stockée qui peut devenir périmée.
+// C'est maintenant une propriété "calculée à la volée" : chaque fois que
+// quelque part dans le code on lit TODAY, ça relance todayInfo() et recalcule
+// depuis la vraie date système du moment, sans jamais pouvoir rester figé,
+// peu importe depuis quand la page est ouverte.
+Object.defineProperty(window, 'TODAY', {
+  get: function () { return todayInfo(); },
+  configurable: true
+});
+// On garde un rafraîchissement périodique de l'affichage (pas du calcul, qui
+// est toujours à jour désormais) pour que l'écran se redessine tout seul si
+// le jour change pendant que l'onglet reste ouvert sans interaction.
+var _lastKnownDayKey = null;
 function _refreshTodayIfNeeded(){
   var fresh=todayInfo();
-  var changed=(fresh&&TODAY&&(fresh.w!==TODAY.w||fresh.di!==TODAY.di))||(!!fresh!==!!TODAY);
-  if(!changed)return;
-  TODAY=fresh;
+  var key=fresh?(fresh.w+'-'+fresh.di):'null';
+  if(_lastKnownDayKey===null){_lastKnownDayKey=key;return;}
+  if(key===_lastKnownDayKey)return;
+  _lastKnownDayKey=key;
   try{ if(typeof renderGantt==='function')renderGantt(); }catch(e){}
   try{ if(typeof renderProjSel==='function')renderProjSel(); }catch(e){}
   try{
@@ -4494,7 +4514,7 @@ function _parseICSDate(s){
 
 function _getISOWeek(d){
   var jan1=new Date(d.getFullYear(),0,1);
-  return Math.ceil(((d-jan1)/86400000+jan1.getDay()+1)/7);
+  return Math.ceil((_daysBetween(jan1,d)+jan1.getDay()+1)/7);
 }
 
 
