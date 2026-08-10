@@ -86,6 +86,7 @@
     if(_pollInterval)clearInterval(_pollInterval);
     _pollInterval=setInterval(function(){
       if(!supa)return;
+      try{ if(typeof _refreshTodayIfNeeded==='function')_refreshTodayIfNeeded(); }catch(e){}
       // Ne rien faire tant qu'un panneau/popup d'édition est ouvert : on retente au cycle suivant
       if(_isEditingUI())return;
       // Verifier si le fichier a change via les metadonnees
