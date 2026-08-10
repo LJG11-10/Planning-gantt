@@ -2147,7 +2147,30 @@ function todayInfo(){
   if(w<1||w>52)return null;
   return{w,di};
 }
-const TODAY=todayInfo();
+let TODAY=todayInfo();
+// La date "aujourd'hui" n'est calculée qu'au chargement du script. Si l'onglet
+// reste ouvert d'un jour sur l'autre (ou plusieurs jours), on la recalcule et on
+// rafraîchit l'affichage dès qu'on détecte que le jour a changé.
+function _refreshTodayIfNeeded(){
+  var fresh=todayInfo();
+  var changed=(fresh&&TODAY&&(fresh.w!==TODAY.w||fresh.di!==TODAY.di))||(!!fresh!==!!TODAY);
+  if(!changed)return;
+  TODAY=fresh;
+  try{ if(typeof renderGantt==='function')renderGantt(); }catch(e){}
+  try{ if(typeof renderProjSel==='function')renderProjSel(); }catch(e){}
+  try{
+    var activeTab=document.querySelector('.nb.on');
+    if(activeTab){
+      var t=activeTab.dataset.tab;
+      if(t==='planning-reunion'&&typeof renderPlanningReunionTab==='function')renderPlanningReunionTab();
+      else if(t==='personnel'&&typeof switchPersonnelTab==='function')switchPersonnelTab(window._personnelTab||'equipe');
+      else if(t==='recap'&&typeof switchTdbTab==='function')switchTdbTab(window._tdbTab||'overview');
+    }
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',function(){if(!document.hidden)_refreshTodayIfNeeded();});
+window.addEventListener('focus',_refreshTodayIfNeeded);
+setInterval(_refreshTodayIfNeeded,5*60*1000);
 
 const mkP=()=>({name:'',ent:'',heures:0});
 const TMPL=[
@@ -2622,7 +2645,7 @@ function _mergePersonsFromProjects(){
   });
 }
 
-var SERVICES=[{k:'els_projet',l:'ELS Projet',color:'#6366F1',bg:'#EEF2FF'},{k:'els_auto',l:'ELS Automatisme',color:'#7C3AED',bg:'#F5F3FF'},{k:'els_chantier',l:'ELS Chantier',color:'#D97706',bg:'#FFFBEB'},{k:'tableauterie',l:'Tableauterie',color:'#DC2626',bg:'#FEF2F2'},{k:'client',l:'Client',color:'#059669',bg:'#ECFDF5'},{k:'bureau_etude',l:'Bureau d\'\u00E9tude',color:'#0891B2',bg:'#ECFEFF'}];
+var SERVICES=[{k:'els_projet',l:'ELS Projet',color:'#6366F1',bg:'#EEF2FF'},{k:'els_auto',l:'ELS Automatisme',color:'#7C3AED',bg:'#F5F3FF'},{k:'els_chantier',l:'ELS Chantier',color:'#D97706',bg:'#FFFBEB'},{k:'tableauterie',l:'Tableauterie',color:'#DC2626',bg:'#FEF2F2'},{k:'client',l:'Client',color:'#059669',bg:'#ECFDF5'},{k:'bureau_etude',l:'ELS Bureau d\'\u00E9tude',color:'#0891B2',bg:'#ECFEFF'}];
 function getSvc(k){return SERVICES.find(function(s){return s.k===k;})||{k:k,l:k,color:'#6B7280',bg:'#F9FAFB'};}
 
 function saveGlobalPerson(origNm, newNm, type, habsArr, service, email){
@@ -6369,7 +6392,7 @@ function phSetNotifResps(pk){
   if(!phRow)return;
   var p=currP(),infos=p.infos||{},resps=infos.responsables||{};
   var current=phRow.notifResps||[];
-  var defs=[{k:'els',l:'ELS'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
+  var defs=[{k:'els',l:'ELS'},{k:'auto',l:'Automatisme'},{k:'be',l:"ELS Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
 
   // Construire un modal de sélection
   var ex=document.getElementById('_notifModal');if(ex)ex.remove();
@@ -6898,7 +6921,7 @@ function openAffaireInfos(){
     {k:'els',l:'ELS'},
     {k:'client',l:'Client'},
     {k:'auto',l:'Automatisme'},
-    {k:'be',l:'Bureau d\u2019\u00C9tudes'},
+    {k:'be',l:'ELS Bureau d\u2019\u00C9tudes'},
     {k:'chantier',l:'Chantier'},
     {k:'tableauterie',l:'Tableauterie'}
   ];
@@ -7156,7 +7179,7 @@ function showNewAffaireForm(){
   ov.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:30px 20px;overflow-y:auto';
   var copyOpts='<option value="">— Nouvelle affaire vide —</option>';
   Object.keys(STORE.projects).sort().forEach(function(k){copyOpts+='<option value="'+k+'">'+getAffLabel(k)+'</option>';});
-  var respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
+  var respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"ELS Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
   var respHtml=respDefs.map(function(rd){return _nafRespBlock(rd.k,rd.l,'',[],'naf','nafAddEmail');}).join('');
   var box=document.createElement('div');
   box.style.cssText='background:var(--bg2);border-radius:14px;padding:28px 32px;width:660px;max-width:100%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit';
@@ -10705,7 +10728,7 @@ function renderRecap(){
   const _respDefs=[
     {k:'els',           l:'ELS',              color:'#6366F1',bg:'#EEF2FF'},
     {k:'auto',          l:'Automatisme',       color:'#7C3AED',bg:'#F5F3FF'},
-    {k:'be',            l:"Bureau d'\u00C9tudes", color:'#0891B2',bg:'#ECFEFF'},
+    {k:'be',            l:"ELS Bureau d'\u00C9tudes", color:'#0891B2',bg:'#ECFEFF'},
     {k:'client',        l:'Client',            color:'#059669',bg:'#ECFDF5'},
     {k:'chantier',      l:'Chantier',          color:'#D97706',bg:'#FFFBEB'},
     {k:'tableauterie',  l:'Tableauterie',      color:'#DC2626',bg:'#FEF2F2'}
