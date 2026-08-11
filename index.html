@@ -6957,7 +6957,7 @@ function openAffaireInfos(){
   var respHtml=respDefs.map(function(rd){
     var resp=resps[rd.k]||{};
     var _cts3=_getContacts(resp);
-    return _nafRespBlock(rd.k,rd.l,(_cts3[0]&&_cts3[0].nom)||'',_cts3.map(function(ct){return ct.email||'';}),'aif','aifAddEmail');
+    return _nafRespBlock(rd.k,rd.l,_cts3,'aif','aifAddEmail');
   }).join('');
 
   // Construire le HTML du modal
@@ -7139,8 +7139,8 @@ function _nafRemoveContact(btn,pfx,k){
 }
 
 
-function _nafRespBlock(k,label,nom,emails,cls,addFn){
-  var contacts=_getContacts({nom:nom,emails:emails}).filter(function(ct){return ct.nom||ct.email;});
+function _nafRespBlock(k,label,contactsIn,cls,addFn){
+  var contacts=(contactsIn||[]).filter(function(ct){return ct&&(ct.nom||ct.email);});
   var svcs=_NAF_SVC_MAP[k]||[];
   var gp=_getGlobalPersons();
   var cands=Object.values(gp).filter(function(p){
@@ -7202,7 +7202,7 @@ function showNewAffaireForm(){
   var copyOpts='<option value="">— Nouvelle affaire vide —</option>';
   Object.keys(STORE.projects).sort().forEach(function(k){copyOpts+='<option value="'+k+'">'+getAffLabel(k)+'</option>';});
   var respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"ELS Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
-  var respHtml=respDefs.map(function(rd){return _nafRespBlock(rd.k,rd.l,'',[],'naf','nafAddEmail');}).join('');
+  var respHtml=respDefs.map(function(rd){return _nafRespBlock(rd.k,rd.l,[],'naf','nafAddEmail');}).join('');
   var box=document.createElement('div');
   box.style.cssText='background:var(--bg2);border-radius:14px;padding:28px 32px;width:660px;max-width:100%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit';
   box.innerHTML=
