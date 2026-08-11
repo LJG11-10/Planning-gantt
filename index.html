@@ -7676,7 +7676,7 @@ function renderGantt(){
       const _ensBudget=row.budgetH||0;
       const _ensBudBadge=`<span onclick="event.stopPropagation();ensSetBudget('${row.id}',${_ensBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.25);border-radius:3px;cursor:pointer" title="Budget ensemble">${_ensBudget>0?'B:'+_ensBudget+'H':'+ Budget'}</span>`;
       const _isColl=!!row.collapsed;
-      if(_isColl)_skipToken=row.id;
+      if(_isColl)_skipToken=row.id;else _skipToken=null;
       const _chev=_isColl?'\u25B6':'\u25BC';
       html+=`<tr><td class="s0" onclick="toggleEnsCollapse('${row.id}')" style="cursor:pointer;position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};padding:0 12px 0 20px;font-size:12px;font-weight:600;height:21px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.1)" title="Cliquer pour replier/déplier cet ensemble">${_chev} &nbsp;${row.lb}${_ensPctBadge}${_ensBudBadge}</td><td colspan="${2+NC}" style="background:${ph.s};height:21px"></td></tr>`;return;
     }
