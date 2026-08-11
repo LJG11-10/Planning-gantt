@@ -3897,7 +3897,7 @@ function dbRecap(){
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">'
       +'<div style="display:flex;align-items:center;gap:8px">'
       +(isCurrent?'<span style="font-size:9px;font-weight:700;background:var(--ac);color:#fff;padding:2px 8px;border-radius:10px">▶ COURANTE</span>':'')
-      +'<span style="font-size:15px;font-weight:700;color:var(--ac);cursor:pointer" onclick="switchProjet(\''+aff.replace(/'/g,"\\'")+'\')">'+aff+' ↗</span>'
+      +'<span style="font-size:15px;font-weight:700;color:var(--ac);cursor:pointer" onclick="switchProjet(\''+aff.replace(/'/g,"\\'")+'\')">'+getAffLabel(aff)+' ↗</span>'
       +'</div>'
       +'<div style="display:flex;gap:12px;flex-wrap:wrap">'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--or)">'+prev+'H</div><div style="font-size:8px;color:var(--tx3)">PRÉVUES</div></div>'
@@ -7090,31 +7090,22 @@ function _getContacts(resp){
   return emails.map(function(e,i){return {nom:i===0?nom:'',email:e};});
 }
 function _nafContactRow(k,nom,email,cls){
-  return '<div class="'+cls+'-contact-row" data-resp="'+k+'" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:4px">'+
-    '<input placeholder="Nom" class="'+cls+'-nom-inp" data-resp="'+k+'" value="'+(nom||'')+'" '+
+  return '<div data-naf-row="1" data-resp="'+k+'" style="display:grid;grid-template-columns:1fr 1fr auto;gap:4px;margin-bottom:4px;align-items:center">'+
+    '<input placeholder="Nom" data-field="nom" data-resp="'+k+'" value="'+escHtml(nom||'')+'" '+
     'style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 7px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+
-    '<input placeholder="email@exemple.com" class="'+cls+'-email-inp" data-resp="'+k+'" value="'+(email||'')+'" '+
+    '<input placeholder="email@exemple.com" data-field="email" data-resp="'+k+'" value="'+escHtml(email||'')+'" '+
     'style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 7px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+
+    '<button onclick="_nafRemoveContact(this,\''+cls+'\',\''+k+'\')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;line-height:1;padding:0 4px" title="Retirer">×</button>'+
     '</div>';
 }
 function _nafPickPerson(sel, pfx, respKey){
   var val=sel.value;if(!val)return;
   var parts=val.split('|');
   var nm=parts[0]||'';var email=parts[1]||'';
-  // Ajouter une nouvelle ligne de contact
+  // Ajouter une nouvelle ligne de contact (nom/email déjà pré-remplis par _nafContactRow)
   var ct=document.getElementById(pfx+'-contacts-'+respKey);
   if(!ct)return;
-  // Créer la ligne avec nom et email pré-remplis
   ct.insertAdjacentHTML('beforeend',_nafContactRow(respKey,nm,email,pfx));
-  // Pré-remplir les champs
-  var rows=ct.querySelectorAll('.naf-ct-row');
-  var last=rows[rows.length-1];
-  if(last){
-    var nameInp=last.querySelector('input[placeholder*="Nom"]');
-    var emailInp=last.querySelector('input[type="email"]');
-    if(nameInp){nameInp.value=nm;}
-    if(emailInp){emailInp.value=email;}
-  }
   sel.value=''; // reset picker
 }
 
@@ -7149,7 +7140,7 @@ function _nafRemoveContact(btn,pfx,k){
 
 
 function _nafRespBlock(k,label,nom,emails,cls,addFn){
-  var contacts=_getContacts({nom:nom,emails:emails});
+  var contacts=_getContacts({nom:nom,emails:emails}).filter(function(ct){return ct.nom||ct.email;});
   var svcs=_NAF_SVC_MAP[k]||[];
   var gp=_getGlobalPersons();
   var cands=Object.values(gp).filter(function(p){
@@ -7163,9 +7154,11 @@ function _nafRespBlock(k,label,nom,emails,cls,addFn){
 
   var svcInfo=SERVICES.find(function(s){return svcs.indexOf(s.k)>=0;})||{color:'#6366F1'};
 
+  var displayContacts=contacts;
+
   // Générer les chips pour les contacts existants
   var chipsHtml='';
-  contacts.filter(function(ct){return ct.nom;}).forEach(function(ct){
+  displayContacts.filter(function(ct){return ct.nom;}).forEach(function(ct){
     var p=gp[ct.nom]||null;
     var pi=p&&p.service?SERVICES.find(function(s){return s.k===p.service;}):null;
     var color=pi?pi.color:'#6B7280';
