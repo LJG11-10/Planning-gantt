@@ -4240,8 +4240,8 @@ function ftUpdateActs(){
   ftAct.innerHTML='<option value="">— Choisir une activité —</option>';
   var curSubBase='',curEnsLbl='';
   data.forEach(function(r){
-    if(r.t==='sb'){curSubBase=r.lb;curEnsLbl='';return;}
-    if(r.t==='ens'){curEnsLbl=r.lb;return;}
+    if(r.t==='ens'){curSubBase=r.lb;curEnsLbl='';return;}
+    if(r.t==='sb'){curEnsLbl=r.lb;return;}
     if(r.t!=='act')return;
     if(r.done)return; // Tâche terminée : masquée
     var ph=PH_get(r.pk);
@@ -4684,8 +4684,8 @@ function dbDownloadRecap(aff){
   body+='<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr><th style="background:#F5F4F1;padding:7px 10px;text-align:left;border-bottom:2px solid #D0CCc4">Phase</th><th style="background:#F5F4F1;padding:7px 10px;text-align:left;border-bottom:2px solid #D0CCc4">Activité</th><th style="background:#F5F4F1;padding:7px 10px;border-bottom:2px solid #D0CCc4">Sem.</th><th style="background:#F5F4F1;padding:7px 10px;border-bottom:2px solid #D0CCc4">H Prév.</th><th style="background:#F5F4F1;padding:7px 10px;border-bottom:2px solid #D0CCc4">H Réel</th><th style="background:#F5F4F1;padding:7px 10px;border-bottom:2px solid #D0CCc4">Écart</th><th style="background:#F5F4F1;padding:7px 10px;border-bottom:2px solid #D0CCc4">Statut</th></tr></thead><tbody>';
   var curSbBaseY='',curEnsLblY='';
   allRows.forEach(function(r){
-    if(r.t==='sb'){curSbBaseY=r.lb;curEnsLblY='';return;}
-    if(r.t==='ens'){curEnsLblY=r.lb;return;}
+    if(r.t==='ens'){curSbBaseY=r.lb;curEnsLblY='';return;}
+    if(r.t==='sb'){curEnsLblY=r.lb;return;}
     if(r.t!=='act'){curSbBaseY='';curEnsLblY='';return;}
     var curSb=curSbBaseY+(curEnsLblY?' ▸ '+curEnsLblY:'');
     var hP=+r.hPrev||0,hR=Math.round((+r.hReel||0)*10)/10,d=Math.round((hP-hR)*10)/10;
@@ -4721,7 +4721,7 @@ function dbExportExcel(aff){
   csv+='STATISTIQUES\r\n'+csvRow(['Activités',acts.length])+csvRow(['Terminées',totDone])+csvRow(['H Prévues',totPrev])+csvRow(['H Réelles',Math.round(totReel*10)/10])+'\r\n';
   csv+='ACTIVITÉS\r\n'+csvRow(['Phase','Sous-phase','Activité','Sem. début','Sem. fin','H Prév.','H Réel','Écart','Statut']);
   var curSbBaseX='',curEnsLblX='';
-  allRows.forEach(function(r){if(r.t==='sb'){curSbBaseX=r.lb;curEnsLblX='';return;}if(r.t==='ens'){curEnsLblX=r.lb;return;}if(r.t!=='act'){curSbBaseX='';curEnsLblX='';return;}var curSb=curSbBaseX+(curEnsLblX?' \u25B8 '+curEnsLblX:'');var hP=+r.hPrev||0,hR=Math.round((+r.hReel||0)*10)/10;csv+=csvRow([r.pk,curSb,r.lb,'S'+r.s,'S'+(r.e||r.s),hP,hR,Math.round((hP-hR)*10)/10,r.done?'Terminé':'En cours']);});
+  allRows.forEach(function(r){if(r.t==='ens'){curSbBaseX=r.lb;curEnsLblX='';return;}if(r.t==='sb'){curEnsLblX=r.lb;return;}if(r.t!=='act'){curSbBaseX='';curEnsLblX='';return;}var curSb=curSbBaseX+(curEnsLblX?' \u25B8 '+curEnsLblX:'');var hP=+r.hPrev||0,hR=Math.round((+r.hReel||0)*10)/10;csv+=csvRow([r.pk,curSb,r.lb,'S'+r.s,'S'+(r.e||r.s),hP,hR,Math.round((hP-hR)*10)/10,r.done?'Terminé':'En cours']);});
   if(forts.length){csv+='\r\nFORTUITS\r\n'+csvRow(['Date','Phase','Activité','Objet','Durée','Unité','Impact H']);forts.forEach(function(f){csv+=csvRow([f.date||'',f.pk||'',f.actLb||'',f.obj||'',f.dur||0,f.unit==='hours'?'Heures':'Jours',Math.round((f.durDays||0)*8)]);});}
   // Use data URI to avoid popup blocker / CSP issues
   var encoded=encodeURIComponent(csv);
@@ -4839,8 +4839,8 @@ function downloadPlanning(mode){
   var curSbBaseZ='',curEnsLblZ='';
   var prevPk='';
   (p.data||[]).forEach(function(r,ri){
-    if(r.t==='sb'){curSbBaseZ=r.lb;curEnsLblZ='';return;}
-    if(r.t==='ens'){curEnsLblZ=r.lb;return;}
+    if(r.t==='ens'){curSbBaseZ=r.lb;curEnsLblZ='';return;}
+    if(r.t==='sb'){curEnsLblZ=r.lb;return;}
     if(r.t!=='act'){curSbBaseZ='';curEnsLblZ='';return;}
     var curSb=curSbBaseZ+(curEnsLblZ?' ▸ '+curEnsLblZ:'');
     var hP=+r.hPrev||0;
@@ -4999,8 +4999,8 @@ function downloadPlanning(mode){
     // Activity rows
     var curSbBaseW=''; var curEnsLblW=''; var curPk='';
     (p.data||[]).forEach(function(r){
-      if(r.t==='sb'){curSbBaseW=r.lb;curEnsLblW='';return;}
-      if(r.t==='ens'){curEnsLblW=r.lb;return;}
+      if(r.t==='ens'){curSbBaseW=r.lb;curEnsLblW='';return;}
+      if(r.t==='sb'){curEnsLblW=r.lb;return;}
       if(r.t==='ph'){
         curPk=r.pk||r.lb; curSbBaseW='';curEnsLblW='';
         var phC=getPHC(curPk);
@@ -5165,7 +5165,7 @@ function dbBuildPlanningGrid(){
   return Object.keys(ps).sort();
 }
   function buildAffOpts(selAff){var o='<option value="">-- Choisir affaire --</option>';affs.forEach(function(a){o+='<option value="'+a+'"'+(selAff===a?' selected':'')+'>'+getAffLabel(a)+'</option>';});return o;}
-  function buildActOpts(aff,selId,phaseFilter){if(!aff)return '<option value="">-- Choisir activite --</option>';var o='<option value="">-- Choisir activite --</option>';var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];var sbBase='';var ensLbl='';dat.forEach(function(r){if(r.t==='sb'){sbBase=r.lb;ensLbl='';return;}if(r.t==='ens'){ensLbl=r.lb;return;}if(r.t!=='act')return;if(r.done&&r.id!==selId)return;if(phaseFilter&&phaseFilter.indexOf(r.pk)<0)return;var sb=sbBase+(ensLbl?' ▸ '+ensLbl:'');var _ph2=PH_get(r.pk);var _bg2=(_ph2&&_ph2.b)||'';var _xd2=(_ph2&&_ph2.xd)||'#333';o+='<option value="'+r.id+'"'+(selId===r.id?' selected':'')+(_bg2?' style="background:'+_bg2+';color:'+_xd2+'"':'')+'>'+(sb?sb+' ▸ ':'')+r.lb+(r.done?' ✓':'')+'</option>';});return o;}
+  function buildActOpts(aff,selId,phaseFilter){if(!aff)return '<option value="">-- Choisir activite --</option>';var o='<option value="">-- Choisir activite --</option>';var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];var sbBase='';var ensLbl='';dat.forEach(function(r){if(r.t==='ens'){sbBase=r.lb;ensLbl='';return;}if(r.t==='sb'){ensLbl=r.lb;return;}if(r.t!=='act')return;if(r.done&&r.id!==selId)return;if(phaseFilter&&phaseFilter.indexOf(r.pk)<0)return;var sb=sbBase+(ensLbl?' ▸ '+ensLbl:'');var _ph2=PH_get(r.pk);var _bg2=(_ph2&&_ph2.b)||'';var _xd2=(_ph2&&_ph2.xd)||'#333';o+='<option value="'+r.id+'"'+(selId===r.id?' selected':'')+(_bg2?' style="background:'+_bg2+';color:'+_xd2+'"':'')+'>'+(sb?sb+' ▸ ':'')+r.lb+(r.done?' ✓':'')+'</option>';});return o;}
   function getSavedEntries(nm,di){var key=nm+'::'+di;var val=STORE.weekPlan[selWk][key];if(!val)return [];if(Array.isArray(val))return val;return [val];}
   function getCellRows(nm,di){var saved=getSavedEntries(nm,di);var extraKey=nm+'::'+di;var extra=window._wpExtra[extraKey]||0;var rows=saved.slice();for(var i=0;i<extra;i++)rows.push({aff:'',actId:'',comment:''});if(!rows.length)rows.push({aff:'',actId:'',comment:''});return rows;}
   function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length)STORE.weekPlan[selWk][key]=clean;else delete STORE.weekPlan[selWk][key];localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
@@ -6408,6 +6408,14 @@ function ensSetBudget(ensId,current){
   if(r){r.budgetH=Math.max(0,parseFloat(val)||0);saveNow();renderGantt();}
 }
 
+function toggleEnsCollapse(ensId){
+  var r=D().find(function(x){return x.id===ensId;});
+  if(!r)return;
+  r.collapsed=!r.collapsed;
+  saveNow();
+  renderGantt();
+}
+
 function phSetNotifResps(pk){
   var phRow=D().find(function(x){return x.pk===pk&&x.t==='ph';});
   if(!phRow)return;
@@ -7622,9 +7630,12 @@ function renderGantt(){
     </tr>
   </thead><tbody>`;
 
+  let _skipToken=null; // si un ensemble est replié, on saute tout jusqu'à la prochaine borne (ens/ph)
   D().forEach(row=>{
     const ph=PH_get(row.pk);
+    if(row.t!=='ph'&&row.t!=='ens'&&_skipToken)return; // contenu d'un ensemble replié : masqué
     if(row.t==='ph'){
+      _skipToken=null;
       const _phActs=D().filter(function(r){return r.t==='act'&&r.pk===row.pk;});
       const _phPrev=_phActs.reduce(function(s,a){return s+(+a.hPrev||0);},0);
       const _phReel=_phActs.reduce(function(s,a){return s+(+a.hReel||0);},0);
@@ -7649,35 +7660,42 @@ function renderGantt(){
       const _phStatusBtn=`<button onclick="event.stopPropagation();togglePhStatus('${row.id}')" title="Changer le statut de la phase" style="margin-left:auto;background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;padding:1px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">${row.phStatus==='done'?'✓':row.phStatus==='inprogress'?'⚡':'○'}</button>`;
       html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${_phBg};padding:0 12px;font-size:13px;font-weight:700;color:#fff;height:25px;letter-spacing:1px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.25);display:flex;align-items:center">▶ &nbsp;${row.lb||row.pk}${_phStatusBadge}${_phBadge}${_phStatusBtn}</td><td colspan="${2+NC}" style="background:${_phBg};height:25px"></td></tr>`;return;
     }
-    if(row.t==='sb'){
-      // Calcul % sous-phase = tâches qui suivent jusqu'au prochain sb/ph
-      const _sbIdx=D().indexOf(row);
-      const _sbActs=[];
-      for(let _si=_sbIdx+1;_si<D().length;_si++){
-        const _sr=D()[_si];
-        if(_sr.t==='ph'||_sr.t==='sb')break;
-        if(_sr.t==='act')_sbActs.push(_sr);
-      }
-      const _sbPct=calcWeightedProgress(_sbActs);
-      const _sbPctBadge=_sbPct>0?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.15);color:${ph.t}">${_sbPct}%</span>`:'';
-      const _sbBudget=row.budgetH||0;
-      const _sbBudBadge=`<span onclick="event.stopPropagation();sbSetBudget('${row.id}',${_sbBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.25);border-radius:3px;cursor:pointer" title="Budget sous-phase">${_sbBudget>0?'B:'+_sbBudget+'H':'+ Budget'}</span>`;
-      html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};padding:0 12px 0 20px;font-size:12px;font-weight:600;height:21px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.1)">◆ &nbsp;${row.lb}${_sbPctBadge}${_sbBudBadge}</td><td colspan="${2+NC}" style="background:${ph.s};height:21px"></td></tr>`;return;
-    }
     if(row.t==='ens'){
-      // Calcul % ensemble = tâches qui suivent jusqu'au prochain ens/sb/ph
+      // Un ensemble regroupe désormais plusieurs sous-phases (et leurs tâches) :
+      // le % et le budget se calculent sur TOUT ce qui suit jusqu'au prochain
+      // ensemble ou la prochaine phase (pas juste jusqu'à la prochaine sous-phase).
       const _ensIdx=D().indexOf(row);
       const _ensActs=[];
       for(let _ei=_ensIdx+1;_ei<D().length;_ei++){
         const _er=D()[_ei];
-        if(_er.t==='ph'||_er.t==='sb'||_er.t==='ens')break;
+        if(_er.t==='ph'||_er.t==='ens')break;
         if(_er.t==='act')_ensActs.push(_er);
       }
       const _ensPct=calcWeightedProgress(_ensActs);
-      const _ensPctBadge=_ensPct>0?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.12);color:${ph.t}">${_ensPct}%</span>`:'';
+      const _ensPctBadge=_ensPct>0?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.15);color:${ph.t}">${_ensPct}%</span>`:'';
       const _ensBudget=row.budgetH||0;
-      const _ensBudBadge=`<span onclick="event.stopPropagation();ensSetBudget('${row.id}',${_ensBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.18);border-radius:3px;cursor:pointer" title="Budget ensemble">${_ensBudget>0?'B:'+_ensBudget+'H':'+ Budget'}</span>`;
-      html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};opacity:.92;padding:0 12px 0 34px;font-size:11px;font-weight:600;height:19px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.08)">▸ &nbsp;${row.lb}${_ensPctBadge}${_ensBudBadge}</td><td colspan="${2+NC}" style="background:${ph.s};opacity:.92;height:19px"></td></tr>`;return;
+      const _ensBudBadge=`<span onclick="event.stopPropagation();ensSetBudget('${row.id}',${_ensBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.25);border-radius:3px;cursor:pointer" title="Budget ensemble">${_ensBudget>0?'B:'+_ensBudget+'H':'+ Budget'}</span>`;
+      const _isColl=!!row.collapsed;
+      if(_isColl)_skipToken=row.id;
+      const _chev=_isColl?'\u25B6':'\u25BC';
+      html+=`<tr><td class="s0" onclick="toggleEnsCollapse('${row.id}')" style="cursor:pointer;position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};padding:0 12px 0 20px;font-size:12px;font-weight:600;height:21px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.1)" title="Cliquer pour replier/déplier cet ensemble">${_chev} &nbsp;${row.lb}${_ensPctBadge}${_ensBudBadge}</td><td colspan="${2+NC}" style="background:${ph.s};height:21px"></td></tr>`;return;
+    }
+    if(row.t==='sb'){
+      // Sous-phase imbriquée dans un ensemble (ou directement sous la phase s'il
+      // n'y a pas d'ensemble) : % calculé sur ses propres tâches uniquement,
+      // jusqu'à la prochaine sous-phase, ensemble ou phase.
+      const _sbIdx=D().indexOf(row);
+      const _sbActs=[];
+      for(let _si=_sbIdx+1;_si<D().length;_si++){
+        const _sr=D()[_si];
+        if(_sr.t==='ph'||_sr.t==='sb'||_sr.t==='ens')break;
+        if(_sr.t==='act')_sbActs.push(_sr);
+      }
+      const _sbPct=calcWeightedProgress(_sbActs);
+      const _sbPctBadge=_sbPct>0?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.12);color:${ph.t}">${_sbPct}%</span>`:'';
+      const _sbBudget=row.budgetH||0;
+      const _sbBudBadge=`<span onclick="event.stopPropagation();sbSetBudget('${row.id}',${_sbBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.18);border-radius:3px;cursor:pointer" title="Budget sous-phase">${_sbBudget>0?'B:'+_sbBudget+'H':'+ Budget'}</span>`;
+      html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};opacity:.92;padding:0 12px 0 34px;font-size:11px;font-weight:600;height:19px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.08)">\u25C6 &nbsp;${row.lb}${_sbPctBadge}${_sbBudBadge}</td><td colspan="${2+NC}" style="background:${ph.s};opacity:.92;height:19px"></td></tr>`;return;
     }
     const nb=row.p.filter(p=>p.name.trim()).length;
     const isE=EXP===row.id,done=!!row.done;
@@ -8154,13 +8172,40 @@ function buildPhaseList(container){
     var phBody=document.createElement('div');
     phBody.className='ped-ph-body';
 
-    var curEnsIndent=false;
+    var curEnsCtx=null; // id de l'ensemble courant (si les lignes suivantes lui appartiennent), sinon null
     rows.forEach(function(row){
       if(row.t==='ph')return;
       var item=document.createElement('div');
-      if(row.t==='sb'){
-        curEnsIndent=false;
+      if(row.t==='ens'){
+        curEnsCtx=row.id;
         item.className='ped-sb';
+        var lbl=document.createElement('span');
+        lbl.style.flex='1';
+        lbl.textContent='\u25B8 '+row.lb;
+        item.draggable=true;
+        item.dataset.dragId=row.id;
+        var ensHandle=document.createElement('span');
+        ensHandle.textContent='\u2630';
+        ensHandle.title='Glisser pour déplacer (avec son contenu)';
+        ensHandle.style.cssText='cursor:grab;color:var(--tx3);font-size:13px;margin-right:6px;flex-shrink:0;user-select:none';
+        item.insertBefore(ensHandle,item.firstChild);
+        item.appendChild(lbl);
+        item.appendChild(makeBtn('\u29C9','dup-ens','Dupliquer (avec sous-phases et tâches)',row.id,'ped-ico'));
+        item.appendChild(makeBtn('\u270E','rename','Renommer',row.id,'ped-ico'));
+        item.appendChild(makeBtn('\u2715','del','Supprimer',row.id,'ped-ico'));
+        phBody.appendChild(item);
+        // Bouton "+ Sous-phase" scopé à cet ensemble
+        var addSubInEns=document.createElement('button');
+        addSubInEns.className='ped-add';
+        addSubInEns.style.cssText='margin-left:22px;font-size:10px;padding:2px 8px;margin-top:2px;margin-bottom:2px';
+        addSubInEns.textContent='+ Sous-phase';
+        (function(_pk,_ensId){addSubInEns.onclick=function(){pedShowAddSubForm(_pk,_ensId);};})(pk,row.id);
+        phBody.appendChild(addSubInEns);
+        return;
+      } else if(row.t==='sb'){
+        var _inEns=!!curEnsCtx;
+        item.className='ped-sb';
+        if(_inEns)item.style.cssText='margin-left:22px;opacity:.94';
         var lbl=document.createElement('span');
         lbl.style.flex='1';
         lbl.textContent='\u25C6 '+row.lb;
@@ -8170,44 +8215,17 @@ function buildPhaseList(container){
         var sbHandle=document.createElement('span');
         sbHandle.textContent='\u2630';
         sbHandle.title='Glisser pour déplacer';
-        sbHandle.style.cssText='cursor:grab;color:var(--tx3);font-size:13px;margin-right:6px;flex-shrink:0;user-select:none';
+        sbHandle.style.cssText='cursor:grab;color:var(--tx3);font-size:'+(_inEns?'12':'13')+'px;margin-right:6px;flex-shrink:0;user-select:none';
         item.insertBefore(sbHandle,item.firstChild);
         item.appendChild(lbl);
         item.appendChild(makeBtn('\u29C9','dup-sb','Dupliquer (avec tâches)',row.id,'ped-ico'));
         item.appendChild(makeBtn('\u270E','rename','Renommer',row.id,'ped-ico'));
         item.appendChild(makeBtn('\u2715','del','Supprimer',row.id,'ped-ico'));
         phBody.appendChild(item);
-        // Bouton "+ Ensemble" juste après la sous-phase, scopé à cette sous-phase
-        var addEnsBtn=document.createElement('button');
-        addEnsBtn.className='ped-add';
-        addEnsBtn.style.cssText='margin-left:22px;font-size:10px;padding:2px 8px;margin-top:2px;margin-bottom:2px';
-        addEnsBtn.textContent='+ Ensemble';
-        (function(_sbId){addEnsBtn.onclick=function(){pedShowAddEnsForm(_sbId);};})(row.id);
-        phBody.appendChild(addEnsBtn);
-        return;
-      } else if(row.t==='ens'){
-        curEnsIndent=true;
-        item.className='ped-sb';
-        item.style.cssText='margin-left:22px;opacity:.94';
-        var lbl=document.createElement('span');
-        lbl.style.flex='1';
-        lbl.textContent='\u25B8 '+row.lb;
-        item.draggable=true;
-        item.dataset.dragId=row.id;
-        var ensHandle=document.createElement('span');
-        ensHandle.textContent='\u2630';
-        ensHandle.title='Glisser pour déplacer (avec ses tâches)';
-        ensHandle.style.cssText='cursor:grab;color:var(--tx3);font-size:12px;margin-right:6px;flex-shrink:0;user-select:none';
-        item.insertBefore(ensHandle,item.firstChild);
-        item.appendChild(lbl);
-        item.appendChild(makeBtn('\u29C9','dup-ens','Dupliquer (avec tâches)',row.id,'ped-ico'));
-        item.appendChild(makeBtn('\u270E','rename','Renommer',row.id,'ped-ico'));
-        item.appendChild(makeBtn('\u2715','del','Supprimer',row.id,'ped-ico'));
-        phBody.appendChild(item);
         return;
       } else if(row.t==='act'){
         item.className='ped-act';
-        if(curEnsIndent)item.style.marginLeft='22px';
+        if(curEnsCtx)item.style.marginLeft='22px';
         var tot=row.p.reduce(function(s,p){return s+(+p.heures||0);},0);
         var lbl=document.createElement('span');
         lbl.className='act-lbl';
@@ -8243,11 +8261,17 @@ function buildPhaseList(container){
     addSubBtn.className='ped-add';
     addSubBtn.textContent='+ Sous-phase';
     (function(_pk){addSubBtn.onclick=function(){pedShowAddSubForm(_pk);};})(pk);
+    var addEnsBtnPh=document.createElement('button');
+    addEnsBtnPh.className='ped-add';
+    addEnsBtnPh.textContent='+ Ensemble';
+    addEnsBtnPh.title='Regrouper plusieurs sous-phases (ex: un petit chantier parmi plusieurs)';
+    (function(_pk){addEnsBtnPh.onclick=function(){pedShowAddEnsForm(_pk);};})(pk);
     var addActBtn=document.createElement('button');
     addActBtn.className='ped-add';
     addActBtn.textContent='+ Activit\u00E9';
     (function(_pk){addActBtn.onclick=function(){pedShowAddActForm(_pk);};})(pk);
     addRow.appendChild(addSubBtn);
+    addRow.appendChild(addEnsBtnPh);
     addRow.appendChild(addActBtn);
     phBody.appendChild(addRow);
 
@@ -8294,8 +8318,9 @@ function pedMoveTo(dragId, targetId){
   if(srcRow.pk!==tgtRow.pk)return;
   if(srcRow.t==='sb'||srcRow.t==='ens'){
     // Sous-phase ou ensemble : déplacer avec tous ses enfants
-    // (une sous-phase s'arrête au prochain sb/ph ; un ensemble s'arrête aussi au prochain ens)
-    var boundary=srcRow.t==='sb'?['sb','ph']:['sb','ph','ens'];
+    // (un ensemble contient des sous-phases, s'arrête au prochain ens/ph ;
+    // une sous-phase contient des tâches, s'arrête au prochain sb/ens/ph)
+    var boundary=srcRow.t==='ens'?['ph','ens']:['sb','ph','ens'];
     var children=[];
     var j=fi+1;
     while(j<data.length&&boundary.indexOf(data[j].t)<0){children.push(data[j]);j++;}
@@ -8307,7 +8332,7 @@ function pedMoveTo(dragId, targetId){
     var insertAt=fi<ti?newTi+1:newTi;
     // Si la cible est elle-même un groupe (sb ou ens), insérer après elle ET ses enfants
     if(data[newTi]&&(data[newTi].t==='sb'||data[newTi].t==='ens')){
-      var tgtBoundary=data[newTi].t==='sb'?['sb','ph']:['sb','ph','ens'];
+      var tgtBoundary=data[newTi].t==='ens'?['ph','ens']:['sb','ph','ens'];
       var k=newTi+1;
       while(k<data.length&&tgtBoundary.indexOf(data[k].t)<0)k++;
       if(fi<ti)insertAt=k;
@@ -8373,10 +8398,10 @@ function pedDupSb(sbId){
   var sbIdx=data.findIndex(function(r){return r.id===sbId;});
   if(sbIdx<0)return;
   var sb=data[sbIdx];
-  // Collecter tout le contenu de cette sous-phase (tâches ET ensembles, jusqu'à la prochaine sb ou ph)
+  // Collecter les tâches de cette sous-phase (jusqu'à la prochaine sous-phase, ensemble ou phase)
   var children=[];
   var j=sbIdx+1;
-  while(j<data.length&&data[j].t!=='sb'&&data[j].t!=='ph'){
+  while(j<data.length&&data[j].t!=='sb'&&data[j].t!=='ph'&&data[j].t!=='ens'){
     children.push(data[j]);
     j++;
   }
@@ -8386,14 +8411,8 @@ function pedDupSb(sbId){
     t:'sb',pk:sb.pk,lb:sb.lb+' (copie)'
   };
   var nbTasks=0;
-  // Créer des copies des enfants, en préservant les ensembles (non planifiées)
+  // Créer des copies des tâches (non planifiées)
   var newChildren=children.map(function(c){
-    if(c.t==='ens'){
-      return {
-        id:'ens_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
-        t:'ens',pk:c.pk,lb:c.lb,budgetH:c.budgetH||0
-      };
-    }
     nbTasks++;
     return {
       id:'act_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
@@ -8542,18 +8561,19 @@ function clearFormArea(){
   if(fa)fa.innerHTML='';
 }
 
-function pedShowAddSubForm(pk){
+function pedShowAddSubForm(pk,ensId){
   var fa=document.getElementById('ped-form-area');
   if(!fa)return;
+  var ensRow=ensId?D().find(function(r){return r.id===ensId;}):null;
   fa.innerHTML='';
   var d=document.createElement('div');d.className='ped-form';
-  d.innerHTML='<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Nouvelle sous-phase dans '+pk+'</div>';
+  d.innerHTML='<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Nouvelle sous-phase dans '+(ensRow?ensRow.lb:pk)+'</div>';
   var lbl=document.createElement('label');lbl.textContent='NOM';
   var inp=document.createElement('input');inp.type='text';inp.id='pf-sb-lb';inp.placeholder='Ex: Validation FAT';
   var row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:8px';
   var ok=document.createElement('button');ok.className='btn btn-a';ok.textContent='\u2713 Ajouter';
   var cancel=document.createElement('button');cancel.className='btn btn-g';cancel.textContent='Annuler';
-  ok.onclick=function(){pedConfirmAddSub(pk);};
+  ok.onclick=function(){pedConfirmAddSub(pk,ensId);};
   cancel.onclick=clearFormArea;
   row.appendChild(ok);row.appendChild(cancel);
   d.appendChild(lbl);d.appendChild(inp);d.appendChild(row);
@@ -8561,32 +8581,42 @@ function pedShowAddSubForm(pk){
   fa.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
-function pedConfirmAddSub(pk){
+function pedConfirmAddSub(pk,ensId){
   var el=document.getElementById('pf-sb-lb');
   if(!el||!el.value.trim())return;
   var lb=el.value.trim();
   var data=D();
-  var phIdx=data.reduce(function(last,r,i){return r.pk===pk?i:last;},-1);
+  var insertAt;
+  if(ensId){
+    // Insérer à la fin du contenu de cet ensemble (après ses sous-phases/tâches actuelles)
+    var ensIdx=data.findIndex(function(r){return r.id===ensId;});
+    if(ensIdx<0)return;
+    var j=ensIdx+1;
+    while(j<data.length&&data[j].t!=='ens'&&data[j].t!=='ph')j++;
+    insertAt=j;
+  }else{
+    // Sous-phase directement sous la phase (comportement historique, inchangé)
+    var phIdx=data.reduce(function(last,r,i){return r.pk===pk?i:last;},-1);
+    insertAt=phIdx+1;
+  }
   var newRow={id:'sb_'+Date.now(),t:'sb',pk:pk,lb:lb};
-  data.splice(phIdx+1,0,newRow);
+  data.splice(insertAt,0,newRow);
   saveNow();clearFormArea();renderPlanEditor();refreshAllTabs();
   requestAnimationFrame(function(){var gw=document.getElementById('gw');if(gw)gw.scrollTop=gw.scrollHeight;});
 }
 
-function pedShowAddEnsForm(sbId){
+function pedShowAddEnsForm(pk){
   var fa=document.getElementById('ped-form-area');
   if(!fa)return;
-  var sbRow=D().find(function(r){return r.id===sbId;});
-  if(!sbRow)return;
   fa.innerHTML='';
   var d=document.createElement('div');d.className='ped-form';
-  d.innerHTML='<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Nouvel ensemble dans '+sbRow.lb+'</div>';
+  d.innerHTML='<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Nouvel ensemble dans '+pk+'</div>';
   var lbl=document.createElement('label');lbl.textContent='NOM';
-  var inp=document.createElement('input');inp.type='text';inp.id='pf-ens-lb';inp.placeholder='Ex: Armoire TGBT-1';
+  var inp=document.createElement('input');inp.type='text';inp.id='pf-ens-lb';inp.placeholder='Ex: Petit chantier 1';
   var row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:8px';
   var ok=document.createElement('button');ok.className='btn btn-a';ok.textContent='\u2713 Ajouter';
   var cancel=document.createElement('button');cancel.className='btn btn-g';cancel.textContent='Annuler';
-  ok.onclick=function(){pedConfirmAddEns(sbId);};
+  ok.onclick=function(){pedConfirmAddEns(pk);};
   cancel.onclick=clearFormArea;
   row.appendChild(ok);row.appendChild(cancel);
   d.appendChild(lbl);d.appendChild(inp);d.appendChild(row);
@@ -8595,17 +8625,14 @@ function pedShowAddEnsForm(sbId){
   inp.focus();
 }
 
-function pedConfirmAddEns(sbId){
+function pedConfirmAddEns(pk){
   var el=document.getElementById('pf-ens-lb');
   if(!el||!el.value.trim())return;
   var lb=el.value.trim();
   var data=D();
-  var sbIdx=data.findIndex(function(r){return r.id===sbId;});
-  if(sbIdx<0)return;
-  // Insérer à la fin du bloc de cette sous-phase (après toutes ses tâches/ensembles actuels)
-  var j=sbIdx+1;
-  while(j<data.length&&data[j].t!=='sb'&&data[j].t!=='ph')j++;
-  var newRow={id:'ens_'+Date.now(),t:'ens',pk:data[sbIdx].pk,lb:lb,budgetH:0};
+  // Insérer à la fin du contenu de la phase (après tout ce qui existe déjà)
+  var j=data.reduce(function(last,r,i){return r.pk===pk?i:last;},-1)+1;
+  var newRow={id:'ens_'+Date.now(),t:'ens',pk:pk,lb:lb,budgetH:0};
   data.splice(j,0,newRow);
   saveNow();clearFormArea();renderPlanEditor();refreshAllTabs();
   requestAnimationFrame(function(){var gw=document.getElementById('gw');if(gw)gw.scrollTop=gw.scrollHeight;});
@@ -8616,42 +8643,48 @@ function pedDupEns(ensId){
   var ensIdx=data.findIndex(function(r){return r.id===ensId;});
   if(ensIdx<0)return;
   var ens=data[ensIdx];
-  // Collecter les tâches de cet ensemble (jusqu'au prochain ens/sb/ph)
-  var tasks=[];
+  // Collecter tout le contenu de cet ensemble (sous-phases ET tâches, dans l'ordre),
+  // jusqu'au prochain ensemble ou la prochaine phase.
+  var children=[];
   var j=ensIdx+1;
-  while(j<data.length&&data[j].t!=='sb'&&data[j].t!=='ph'&&data[j].t!=='ens'){
-    if(data[j].t==='act')tasks.push(data[j]);
+  while(j<data.length&&data[j].t!=='ens'&&data[j].t!=='ph'){
+    children.push(data[j]);
     j++;
   }
   var newEns={
     id:'ens_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
     t:'ens',pk:ens.pk,lb:ens.lb+' (copie)',budgetH:0
   };
-  var newTasks=tasks.map(function(t){
+  var nbTasks=0;
+  var newChildren=children.map(function(c){
+    if(c.t==='sb'){
+      return {id:'sb_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),t:'sb',pk:c.pk,lb:c.lb};
+    }
+    nbTasks++;
     return {
       id:'act_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
-      t:'act',pk:t.pk,grp:t.grp||t.pk,lb:t.lb,
+      t:'act',pk:c.pk,grp:c.grp||c.pk,lb:c.lb,
       hPrev:0,hReel:0,
       prevDays:[],reelDays:[],
       s:0,e:0,sPrev:0,ePrev:0,sReel:0,eReel:0,
       dDur:0,dDurR:0,
       done:false,inProgress:false,
-      p:[],budgetH:t.budgetH||0
+      p:[],budgetH:c.budgetH||0
     };
   });
   var insertAt=j;
-  var block=[newEns].concat(newTasks);
+  var block=[newEns].concat(newChildren);
   data.splice.apply(data,[insertAt,0].concat(block));
   saveNow();renderPlanEditor();
   var sv=document.getElementById('sv');
-  if(sv){sv.textContent='\u2B21 Ensemble dupliqué ('+newTasks.length+' tâche'+(newTasks.length!==1?'s':'')+')';sv.style.display='inline';
+  if(sv){sv.textContent='\u2B21 Ensemble dupliqué ('+nbTasks+' tâche'+(nbTasks!==1?'s':'')+')';sv.style.display='inline';
     clearTimeout(pedDupEns._t);pedDupEns._t=setTimeout(function(){sv.style.display='none';},2500);}
 }
 
 function pedShowAddActForm(pk){
   var fa=document.getElementById('ped-form-area');
   if(!fa)return;
-  var subs=D().filter(function(r){return r.pk===pk&&r.t==='sb';});
+  var subs=D().filter(function(r){return r.pk===pk&&(r.t==='sb'||r.t==='ens');});
   var skidMatch=pk.match(/SKID[_ ]*(\d+)/i);
   var defGrp=skidMatch?'Skid '+skidMatch[1]:pk;
   fa.innerHTML='';
@@ -8670,14 +8703,16 @@ function pedShowAddActForm(pk){
   addField('GROUPE (Skid 1, Skid 2\u2026)','pf-act-grp','text',defGrp,'');
 
   if(subs.length){
-    var sl=document.createElement('label');sl.textContent='SOUS-PHASE / ENSEMBLE (insertion après)';
+    var sl=document.createElement('label');sl.textContent='ENSEMBLE / SOUS-PHASE (insertion après)';
     var ss=document.createElement('select');ss.id='pf-act-sub';
     var opt0=document.createElement('option');opt0.value='';opt0.textContent='\u2014 Fin de la phase \u2014';
     ss.appendChild(opt0);
     var subsAndEns=D().filter(function(r){return r.pk===pk&&(r.t==='sb'||r.t==='ens');});
+    var _sawEns=false;
     subsAndEns.forEach(function(s){
+      if(s.t==='ens')_sawEns=true;
       var o=document.createElement('option');o.value=s.id;
-      o.textContent=(s.t==='ens'?'\u00A0\u00A0\u00A0\u21B3 ':'')+s.lb;
+      o.textContent=(s.t==='sb'&&_sawEns?'\u00A0\u00A0\u00A0\u21B3 ':'')+s.lb;
       ss.appendChild(o);
     });
     d.appendChild(sl);d.appendChild(ss);
@@ -8987,18 +9022,23 @@ function pedConfirmAddPhase(){
 
     // Sub-phases and activities (preserving order from D())
     let curSubDay='';
+    let _skipTokenDay=null;
     D().filter(r=>r.pk===pk&&(r.t==='sb'||r.t==='ens'||r.t==='act')).forEach(function(row){
-      if(row.t==='sb'){
-        curSubDay=row.lb;
+      if(row.t!=='ens'&&_skipTokenDay)return;
+      if(row.t==='ens'){
+        const _isCollD=!!row.collapsed;
+        if(_isCollD)_skipTokenDay=row.id;else _skipTokenDay=null;
+        const _chevD=_isCollD?'\u25B6':'\u25BC';
         tbody+=`<tr style="height:22px">
-          <td style="background:${ph.f||ph.s};color:${ph.t||'#fff'};font-size:9px;font-weight:700;padding:3px 12px 3px 20px;position:sticky;left:0;z-index:9;white-space:nowrap;width:220px;min-width:220px;border-right:1px solid rgba(255,255,255,.2);letter-spacing:.5px">▸ ${row.lb}</td>
+          <td onclick="toggleEnsCollapse('${row.id}')" style="cursor:pointer;background:${ph.f||ph.s};color:${ph.t||'#fff'};font-size:9px;font-weight:700;padding:3px 12px 3px 20px;position:sticky;left:0;z-index:9;white-space:nowrap;width:220px;min-width:220px;border-right:1px solid rgba(255,255,255,.2);letter-spacing:.5px">${_chevD} ${row.lb}</td>
           <td colspan="${days.length}" style="background:${ph.f||ph.s};height:22px"></td>
         </tr>`;
         return;
       }
-      if(row.t==='ens'){
+      if(row.t==='sb'){
+        curSubDay=row.lb;
         tbody+=`<tr style="height:20px">
-          <td style="background:${ph.f||ph.s};opacity:.9;color:${ph.t||'#fff'};font-size:9px;font-weight:600;padding:3px 12px 3px 32px;position:sticky;left:0;z-index:9;white-space:nowrap;width:220px;min-width:220px;border-right:1px solid rgba(255,255,255,.15);letter-spacing:.4px">▸ ${row.lb}</td>
+          <td style="background:${ph.f||ph.s};opacity:.9;color:${ph.t||'#fff'};font-size:9px;font-weight:600;padding:3px 12px 3px 32px;position:sticky;left:0;z-index:9;white-space:nowrap;width:220px;min-width:220px;border-right:1px solid rgba(255,255,255,.15);letter-spacing:.4px">\u25C6 ${row.lb}</td>
           <td colspan="${days.length}" style="background:${ph.f||ph.s};opacity:.9;height:20px"></td>
         </tr>`;
         return;
@@ -10668,24 +10708,24 @@ function renderRecap(){
     const _phActsR=rows.filter(r=>r.t==='act');
     const _phPctR=calcWeightedProgress(_phActsR);
     rows.forEach(r=>{
-      if(r.t==='sb'){
-        // Calcul % sous-phase dans le recap
-        const _sbIdxR=rows.indexOf(r);
-        const _sbActsR=[];
-        for(let _sj=_sbIdxR+1;_sj<rows.length;_sj++){
-          const _rr=rows[_sj];if(_rr.t==='sb'||_rr.t==='ph')break;
-          if(_rr.t==='act')_sbActsR.push(_rr);
-        }
-        html+=subRow(r.lb,ph.h,calcWeightedProgress(_sbActsR));
-      } else if(r.t==='ens'){
-        // Calcul % ensemble dans le recap
+      if(r.t==='ens'){
+        // Calcul % ensemble dans le recap (regroupe maintenant plusieurs sous-phases)
         const _ensIdxR=rows.indexOf(r);
         const _ensActsR=[];
         for(let _ej=_ensIdxR+1;_ej<rows.length;_ej++){
-          const _err=rows[_ej];if(_err.t==='sb'||_err.t==='ph'||_err.t==='ens')break;
+          const _err=rows[_ej];if(_err.t==='ph'||_err.t==='ens')break;
           if(_err.t==='act')_ensActsR.push(_err);
         }
-        html+=ensRow(r.lb,ph.h,calcWeightedProgress(_ensActsR));
+        html+=subRow(r.lb,ph.h,calcWeightedProgress(_ensActsR));
+      } else if(r.t==='sb'){
+        // Calcul % sous-phase dans le recap (imbriquée dans un ensemble ou directement sous la phase)
+        const _sbIdxR=rows.indexOf(r);
+        const _sbActsR=[];
+        for(let _sj=_sbIdxR+1;_sj<rows.length;_sj++){
+          const _rr=rows[_sj];if(_rr.t==='sb'||_rr.t==='ph'||_rr.t==='ens')break;
+          if(_rr.t==='act')_sbActsR.push(_rr);
+        }
+        html+=ensRow(r.lb,ph.h,calcWeightedProgress(_sbActsR));
       } else if(r.t==='act'){
         html+=aRow(r);
         totH+=r.p.reduce((s,p)=>s+(+p.heures||0),0);
@@ -10891,7 +10931,7 @@ function renderRecap(){
       var _ensIdxB=_allRowsEns.indexOf(ens_r);
       var _a=[];
       for(var _bj=_ensIdxB+1;_bj<_allRowsEns.length;_bj++){
-        var _br=_allRowsEns[_bj];if(_br.t==='sb'||_br.t==='ph'||_br.t==='ens')break;
+        var _br=_allRowsEns[_bj];if(_br.t==='ph'||_br.t==='ens')break;
         if(_br.t==='act')_a.push(_br);
       }
       var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
@@ -11216,8 +11256,8 @@ function buildActOpts(aff,selActId){
   opts+='<optgroup label="'+aff+'">';
   var curSubBaseU='',curEnsLblU='';
   data.forEach(function(r){
-    if(r.t==='sb'){curSubBaseU=r.lb;curEnsLblU='';return;}
-    if(r.t==='ens'){curEnsLblU=r.lb;return;}
+    if(r.t==='ens'){curSubBaseU=r.lb;curEnsLblU='';return;}
+    if(r.t==='sb'){curEnsLblU=r.lb;return;}
     if(r.t!=='act')return;
     var curSub=curSubBaseU+(curEnsLblU?' ▸ '+curEnsLblU:'');
     var lbl=r.pk+' — '+(curSub?curSub+' > ':'')+r.lb;
