@@ -68,6 +68,28 @@
 
   // Empêche le polling d'écraser/fermer un panneau de modification en cours d'édition
   // (panneau tâche ouvert, popup heures/jour ouverte, ou focus actif dans un champ du planning)
+  // Fusion fine des tâches (lignes) d'une affaire : jamais de perte, même si
+  // le local et le distant ont chacun des modifications sur des tâches
+  // différentes de la même affaire au même moment.
+  function _mergeProjectData(remoteData,localData){
+    if(!Array.isArray(remoteData))remoteData=[];
+    if(!Array.isArray(localData))localData=[];
+    var localMap={};
+    localData.forEach(function(r){if(r&&r.id)localMap[r.id]=r;});
+    var seen={};
+    var merged=remoteData.map(function(r){
+      if(r&&r.id){
+        seen[r.id]=true;
+        if(localMap[r.id])return localMap[r.id]; // le local (potentiellement pas encore envoyé) prime
+      }
+      return r;
+    });
+    // Lignes qui n'existent QUE localement (pas encore envoyées) : jamais les perdre
+    localData.forEach(function(r){
+      if(r&&r.id&&!seen[r.id])merged.push(r);
+    });
+    return merged;
+  }
   function _isEditingUI(){
     try{
       if(typeof EXP!=='undefined'&&EXP&&document.getElementById('exp-panel-row'))return true;
@@ -143,9 +165,25 @@
     // ── Garder les affaires locales ─────────────────────────────────────
     if(STORE&&STORE.projects){
       Object.keys(STORE.projects).forEach(function(aff){
-        if(!remote.projects[aff])remote.projects[aff]=STORE.projects[aff];
+        if(!remote.projects[aff]){remote.projects[aff]=STORE.projects[aff];}
+        else{
+          // Affaire présente des deux côtés : fusionner les tâches ligne par
+          // ligne au lieu de faire gagner un côté en bloc (jamais de perte).
+          remote.projects[aff].data=_mergeProjectData(remote.projects[aff].data,STORE.projects[aff].data);
+        }
       });
     }
+    // ── Capturer weekPlan/absences/conges LOCAUX avant tout remplacement ──
+    // CRITIQUE : un cycle de synchro (toutes les 3s) ne doit JAMAIS remplacer
+    // en bloc des données en cours de saisie qui n'ont pas encore eu le temps
+    // d'être envoyées au serveur. On fusionne entrée par entrée (semaine par
+    // semaine, puis personne/jour par personne/jour) au lieu d'écraser.
+    var _localWeekPlan={},_localAbsences={},_localConges={};
+    try{
+      if(STORE&&STORE.weekPlan)_localWeekPlan=JSON.parse(JSON.stringify(STORE.weekPlan));
+      if(STORE&&STORE.absences)_localAbsences=JSON.parse(JSON.stringify(STORE.absences));
+      if(STORE&&STORE.conges)_localConges=JSON.parse(JSON.stringify(STORE.conges));
+    }catch(_eClone){}
     // ── Appliquer le remote puis restaurer globalPersons ────────────────
     STORE=remote;
     // globalPersons = version locale UNIQUEMENT (GP_KEY prime sur Supabase)
@@ -158,6 +196,16 @@
     Object.keys(STORE.globalPersons).forEach(function(nm){
       delete STORE._deletedPersons[nm];
     });
+    // Fusion fine du weekPlan : le remote sert de base, le local (potentiellement
+    // pas encore envoyé au serveur) prend le dessus entrée par entrée — jamais
+    // semaine entière par semaine entière, pour ne perdre le travail de
+    // personne quand deux personnes modifient la même semaine en parallèle.
+    STORE.weekPlan=STORE.weekPlan||{};
+    Object.keys(_localWeekPlan).forEach(function(wk){
+      STORE.weekPlan[wk]=Object.assign({},STORE.weekPlan[wk]||{},_localWeekPlan[wk]);
+    });
+    STORE.absences=Object.assign({},STORE.absences||{},_localAbsences);
+    STORE.conges=Object.assign({},STORE.conges||{},_localConges);
     // Retirer du weekPlan/absences/conges toute entrée d'une personne supprimée
     // (le remote peut encore contenir d'anciennes entrées pas encore nettoyées)
     var _delAll2=STORE._deletedPersons||{};
@@ -2328,9 +2376,18 @@ function loadStore(){
       var localProjs=STORE.projects||{};
       var _filtProjs={};
       Object.keys(remote.projects).forEach(function(k){
-        if(!_delAffAll[k])_filtProjs[k]=remote.projects[k];
+        if(_delAffAll[k])return;
+        if(localProjs[k]){
+          // Affaire présente des deux côtés : fusionner les tâches ligne par
+          // ligne (jamais de perte), et garder les autres réglages locaux.
+          var _merged=Object.assign({},remote.projects[k],localProjs[k]);
+          _merged.data=_mergeProjectData(remote.projects[k].data,localProjs[k].data);
+          _filtProjs[k]=_merged;
+        }else{
+          _filtProjs[k]=remote.projects[k];
+        }
       });
-      STORE.projects=Object.assign({},_filtProjs,localProjs);
+      STORE.projects=Object.assign({},localProjs,_filtProjs);
       // Supprimer les affaires tombstonées du local aussi
       Object.keys(_delAffAll).forEach(function(k){delete STORE.projects[k];});
       var _delAll=STORE._deletedPersons||{};
@@ -2346,7 +2403,17 @@ function loadStore(){
           });
           _filtWP[wk]=wkData;
         });
-        STORE.weekPlan=Object.assign({},_filtWP,STORE.weekPlan||{});
+        // Fusion fine entrée par entrée (pas semaine entière par semaine entière) :
+        // le remote sert de base, le local prend le dessus clé par clé — pour ne
+        // jamais perdre le travail d'une autre personne sur la même semaine.
+        var _localWP0=STORE.weekPlan||{};
+        STORE.weekPlan={};
+        Object.keys(_filtWP).forEach(function(wk){
+          STORE.weekPlan[wk]=Object.assign({},_filtWP[wk],_localWP0[wk]||{});
+        });
+        Object.keys(_localWP0).forEach(function(wk){
+          if(!STORE.weekPlan[wk])STORE.weekPlan[wk]=_localWP0[wk];
+        });
       }
 
       // Absences : filtrer les personnes supprimées
@@ -7071,6 +7138,19 @@ function openModal(type){
     // Tombstone pour résister au merge Supabase
     if(!STORE._deletedAffaires)STORE._deletedAffaires={};
     STORE._deletedAffaires[_delAff]=Date.now();
+    // Nettoyer le weekPlan : retirer toute entrée qui référençait cette affaire
+    // (sinon elle reste "orpheline", invisible mais toujours en mémoire)
+    if(STORE.weekPlan){
+      Object.keys(STORE.weekPlan).forEach(function(wk){
+        var wkData=STORE.weekPlan[wk]||{};
+        Object.keys(wkData).forEach(function(key){
+          var entries=wkData[key];
+          if(!Array.isArray(entries))return;
+          var filtered=entries.filter(function(e){return !(e&&e.aff===_delAff);});
+          if(filtered.length!==entries.length)wkData[key]=filtered;
+        });
+      });
+    }
     STORE.current=Object.keys(STORE.projects)[0]||'';
     // Sauvegarde IMMÉDIATE (pas debounce)
     localStorage.setItem('plan26v5',JSON.stringify(STORE));
