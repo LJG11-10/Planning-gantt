@@ -6,6 +6,7 @@
 <title>Pétrosphère</title>
 <!-- SUPABASE -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
   const SUPA_URL = 'https://phcnmrsvywnzdrfazavv.supabase.co';
   const SUPA_KEY = 'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
@@ -1814,6 +1815,7 @@ function downloadDXF(text, filename) {
   <button class="nb" data-tab="planning-reunion" onclick="switchTab('planning-reunion')">📅 Planning réunion</button>
   <button class="nb" data-tab="recap" onclick="switchTab('recap')">📋 Tableau de bord</button>
   <button class="nb" data-tab="personnel" onclick="switchPersonnelTab(window._personnelTab||'equipe')">👤 Personnel</button>
+  <button class="nb" data-tab="modifications" onclick="switchTab('modifications')">📄 Modifications</button>
   <div class="nav-r">
     <span id="sv" class="sv">✓ Sauvegardé</span>
     <button id="btn-undo" onclick="undoAction()" title="Annuler la dernière action (Ctrl+Z)" style="background:var(--bg3);color:var(--tx3);border:1px solid var(--bd);font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit;opacity:.4;pointer-events:none">↩ Annuler</button>
@@ -1880,6 +1882,9 @@ function downloadDXF(text, filename) {
   <div id="tdb-overview" class="tdb-pane"></div>
   <div id="tdb-recap-current" class="tdb-pane pg" style="flex:1;overflow:auto"><div id="rw" class="pg"></div></div>
   <div id="tdb-recap-all" class="tdb-pane pg" style="flex:1;overflow:auto;display:none"></div>
+</div>
+<div id="tab-modifications" class="tab" style="flex-direction:column">
+  <div id="mods-w" class="pg" style="flex:1;overflow:auto"></div>
 </div>
 <div id="tab-personnel" class="tab" style="flex-direction:column">
   <!-- Sous-onglets Personnel -->
@@ -2791,6 +2796,7 @@ function switchTab(t){
   if(t==='gantt'){renderGantt();}
   else if(t==='planning-reunion'){renderPlanningReunionTab();}
   else if(t==='recap'){switchTdbTab(window._tdbTab||'overview');}
+  else if(t==='modifications'){renderModificationsTab();}
   // Masquer/afficher les boutons Vue+Zoom selon onglet
   var _gvb=document.getElementById('gantt-view-btns');
   var _gvs=document.getElementById('gantt-view-sep');
@@ -6297,6 +6303,365 @@ function fhBuildPersonWeekBlock(nm,w){
     +'</table></div></div>';
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// ONGLET MODIFICATIONS — registre de documents par affaire, avec versions,
+// pièces jointes, cases "fait", responsables et notifications par email.
+// ══════════════════════════════════════════════════════════════════════
+function _modsGetDocs(){
+  var p=currP();
+  if(!p.documents)p.documents=[];
+  return p.documents;
+}
+function _modsResponsables(){
+  var p=currP();
+  if(!p.infos)p.infos={};
+  if(!p.infos.modifResponsables)p.infos.modifResponsables={contacts:[]};
+  return p.infos.modifResponsables;
+}
+function renderModificationsTab(){
+  var w=document.getElementById('mods-w');
+  if(!w)return;
+  var docs=_modsGetDocs();
+  var resp=_modsResponsables();
+  var contacts=(resp.contacts||[]).filter(function(c){return c.nom||c.email;});
+
+  var html='<div style="padding:16px 20px;max-width:1100px;margin:0 auto">';
+
+  // ── Responsables à prévenir ──────────────────────────────────────────
+  html+='<div style="background:var(--bg2);border-radius:var(--r2);padding:16px 18px;margin-bottom:18px">'
+    +'<div style="font-size:11px;font-weight:800;color:var(--tx3);letter-spacing:.6px;margin-bottom:10px">🔔 RESPONSABLES À PRÉVENIR (nouveaux documents, modifications, documents terminés)</div>'
+    +_nafRespBlock('modif','Responsables',contacts,'mods','modsAddEmail')
+    +'<button class="btn btn-a" style="margin-top:8px" onclick="modsSaveResponsables()">💾 Enregistrer les responsables</button>'
+    +'</div>';
+
+  // ── Bouton nouveau document ──────────────────────────────────────────
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
+    +'<div style="font-size:11px;font-weight:800;color:var(--tx3);letter-spacing:.6px">📄 DOCUMENTS — '+esc2(STORE.current)+'</div>'
+    +'<div style="display:flex;gap:8px">'
+    +(docs.length?'<button class="btn btn-g" onclick="modsExportAll()">⬇ Exporter tous les documents (.zip)</button>':'')
+    +(docs.some(function(d){return d.versions.some(function(v){return v.attachmentPath;});})?'<button class="btn" style="background:#FEF2F2;color:#B91C1C;border:1px solid #FCA5A5" onclick="modsPurgeAttachments()">🗑 Purger les pièces jointes</button>':'')
+    +'<button class="btn btn-a" onclick="modShowAddDocForm()">+ Ajouter document</button>'
+    +'</div></div>';
+
+  html+='<div id="mods-form-area"></div>';
+
+  // ── Liste des documents ───────────────────────────────────────────────
+  if(!docs.length){
+    html+='<div style="padding:30px;text-align:center;color:var(--tx3);border:1px dashed var(--bd);border-radius:var(--r2)">Aucun document pour cette affaire — cliquez "+ Ajouter document" pour commencer.</div>';
+  }else{
+    docs.slice().sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);}).forEach(function(doc){
+      html+=_modsBuildDocCard(doc);
+    });
+  }
+
+  html+='</div>';
+  w.innerHTML=html;
+}
+function esc2(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function _modsBuildDocCard(doc){
+  var versions=(doc.versions||[]).slice().sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
+  var latest=versions[0]||{};
+  var html='<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);margin-bottom:14px;overflow:hidden">'
+    +'<div style="padding:12px 16px;background:var(--ac2);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'
+    +'<div><span style="font-size:14px;font-weight:800;color:var(--ac)">'+esc2(doc.nom)+'</span>'
+    +'<span style="font-size:10px;color:var(--tx3);margin-left:10px">Version actuelle : '+esc2(latest.version||'—')+'</span></div>'
+    +'<div style="display:flex;gap:6px">'
+    +'<button class="btn" style="font-size:11px;padding:5px 10px" onclick="modShowAddVersionForm(\''+doc.id+'\')">+ Nouvelle modif</button>'
+    +'<button class="btn" style="font-size:11px;padding:5px 8px;background:var(--rd2);color:var(--rd)" onclick="modDeleteDoc(\''+doc.id+'\')" title="Supprimer le document">✕</button>'
+    +'</div></div>'
+    +'<div style="padding:6px 16px 12px">';
+
+  versions.forEach(function(v){
+    html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--bd)">'
+      +'<label style="display:flex;align-items:center;gap:5px;cursor:pointer;flex-shrink:0" title="Cocher quand cette version est terminée">'
+      +'<input type="checkbox" '+(v.fait?'checked':'')+' onchange="modToggleFait(\''+doc.id+'\',\''+v.id+'\',this.checked)" style="width:16px;height:16px;cursor:pointer">'
+      +'<span style="font-size:10px;font-weight:700;color:'+(v.fait?'var(--gn)':'var(--tx3)')+'">'+(v.fait?'✓ Fait':'À faire')+'</span>'
+      +'</label>'
+      +'<span style="font-size:11px;font-weight:700;color:var(--tx);background:var(--bg3);border-radius:4px;padding:2px 8px">v'+esc2(v.version)+'</span>'
+      +'<span style="font-size:10px;color:var(--tx3)">'+esc2(v.date)+'</span>'
+      +(v.attachmentPath?'<a href="#" onclick="modDownloadAttachment(\''+v.attachmentPath.replace(/'/g,"\\'")+'\',\''+ (v.attachmentName||'document').replace(/'/g,"\\'")+'\');return false;" style="font-size:11px;color:var(--ac);font-weight:700;text-decoration:underline">📎 '+esc2(v.attachmentName||'pièce jointe')+'</a>':'<span style="font-size:10px;color:var(--tx3);font-style:italic">Sans pièce jointe</span>')
+      +'<span style="flex:1"></span>'
+      +'<button onclick="modDeleteVersion(\''+doc.id+'\',\''+v.id+'\')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:12px" title="Supprimer cette version">✕</button>'
+      +'</div>';
+  });
+
+  html+='</div></div>';
+  return html;
+}
+
+// ── Formulaire nouveau document ──────────────────────────────────────
+function modShowAddDocForm(){
+  var fa=document.getElementById('mods-form-area');
+  if(!fa)return;
+  fa.innerHTML='<div class="ped-form" style="margin-bottom:16px">'
+    +'<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Nouveau document</div>'
+    +'<label>NOM DU DOCUMENT</label><input type="text" id="mf-doc-nom" placeholder="Ex: Schéma unifilaire MCC-1">'
+    +'<label style="margin-top:8px">VERSION</label><input type="text" id="mf-doc-version" placeholder="Ex: 0" value="0">'
+    +'<label style="margin-top:8px">PIÈCE JOINTE (PDF, Excel...) — optionnel</label><input type="file" id="mf-doc-file">'
+    +'<div style="display:flex;gap:8px;margin-top:10px">'
+    +'<button class="btn btn-a" onclick="modConfirmAddDoc()">✓ Créer</button>'
+    +'<button class="btn btn-g" onclick="document.getElementById(\'mods-form-area\').innerHTML=\'\'">Annuler</button>'
+    +'</div></div>';
+  fa.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function modConfirmAddDoc(){
+  var nomEl=document.getElementById('mf-doc-nom');
+  var verEl=document.getElementById('mf-doc-version');
+  var fileEl=document.getElementById('mf-doc-file');
+  if(!nomEl||!nomEl.value.trim()){alert('Indiquez un nom de document.');return;}
+  var nom=nomEl.value.trim();
+  var version=(verEl&&verEl.value.trim())||'0';
+  var docId='doc_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+  var verId='v_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+  var now=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  var file=(fileEl&&fileEl.files&&fileEl.files[0])||null;
+
+  function finish(attachmentPath,attachmentName){
+    var doc={id:docId,nom:nom,_createdAt:Date.now(),versions:[{
+      id:verId,version:version,date:now,fait:false,
+      attachmentPath:attachmentPath||null,attachmentName:attachmentName||null,_createdAt:Date.now()
+    }]};
+    _modsGetDocs().push(doc);
+    saveNow();
+    document.getElementById('mods-form-area').innerHTML='';
+    renderModificationsTab();
+    modsNotify(doc,doc.versions[0],'nouveau document');
+  }
+  if(file){
+    modUploadAttachment(file,docId,verId,function(path){finish(path,file.name);},function(err){alert('Document créé, mais échec de l\'envoi de la pièce jointe : '+err);finish(null,null);});
+  }else{
+    finish(null,null);
+  }
+}
+
+// ── Formulaire nouvelle version/modif ────────────────────────────────
+function modShowAddVersionForm(docId){
+  var fa=document.getElementById('mods-form-area');
+  if(!fa)return;
+  var doc=_modsGetDocs().find(function(d){return d.id===docId;});
+  if(!doc)return;
+  fa.innerHTML='<div class="ped-form" style="margin-bottom:16px">'
+    +'<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Nouvelle modification — '+esc2(doc.nom)+'</div>'
+    +'<label>NOUVELLE VERSION</label><input type="text" id="mf-ver-version" placeholder="Ex: 1">'
+    +'<label style="margin-top:8px">PIÈCE JOINTE (PDF, Excel...) — optionnel</label><input type="file" id="mf-ver-file">'
+    +'<div style="display:flex;gap:8px;margin-top:10px">'
+    +'<button class="btn btn-a" onclick="modConfirmAddVersion(\''+docId+'\')">✓ Ajouter</button>'
+    +'<button class="btn btn-g" onclick="document.getElementById(\'mods-form-area\').innerHTML=\'\'">Annuler</button>'
+    +'</div></div>';
+  fa.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function modConfirmAddVersion(docId){
+  var doc=_modsGetDocs().find(function(d){return d.id===docId;});
+  if(!doc)return;
+  var verEl=document.getElementById('mf-ver-version');
+  var fileEl=document.getElementById('mf-ver-file');
+  if(!verEl||!verEl.value.trim()){alert('Indiquez un numéro/nom de version.');return;}
+  var version=verEl.value.trim();
+  var verId='v_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+  var now=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  var file=(fileEl&&fileEl.files&&fileEl.files[0])||null;
+
+  function finish(attachmentPath,attachmentName){
+    var v={id:verId,version:version,date:now,fait:false,attachmentPath:attachmentPath||null,attachmentName:attachmentName||null,_createdAt:Date.now()};
+    doc.versions.push(v);
+    saveNow();
+    document.getElementById('mods-form-area').innerHTML='';
+    renderModificationsTab();
+    modsNotify(doc,v,'nouvelle modification');
+  }
+  if(file){
+    modUploadAttachment(file,docId,verId,function(path){finish(path,file.name);},function(err){alert('Modification ajoutée, mais échec de l\'envoi de la pièce jointe : '+err);finish(null,null);});
+  }else{
+    finish(null,null);
+  }
+}
+
+// ── Case "fait" ────────────────────────────────────────────────────────
+function modToggleFait(docId,verId,checked){
+  var doc=_modsGetDocs().find(function(d){return d.id===docId;});
+  if(!doc)return;
+  var v=doc.versions.find(function(x){return x.id===verId;});
+  if(!v)return;
+  v.fait=checked;
+  saveNow();
+  renderModificationsTab();
+  if(checked)modsNotify(doc,v,'document terminé');
+}
+
+// ── Suppression ───────────────────────────────────────────────────────
+function modDeleteDoc(docId){
+  if(!confirm('Supprimer ce document et toutes ses versions ?'))return;
+  var docs=_modsGetDocs();
+  var doc=docs.find(function(d){return d.id===docId;});
+  var idx=docs.indexOf(doc);
+  if(idx>=0)docs.splice(idx,1);
+  saveNow();
+  renderModificationsTab();
+}
+function modDeleteVersion(docId,verId){
+  if(!confirm('Supprimer cette version ?'))return;
+  var doc=_modsGetDocs().find(function(d){return d.id===docId;});
+  if(!doc)return;
+  doc.versions=doc.versions.filter(function(v){return v.id!==verId;});
+  saveNow();
+  renderModificationsTab();
+}
+
+// ── Responsables (réutilise le composant annuaire existant) ──────────
+function modsAddEmail(){
+  var ct=document.getElementById('mods-contacts-modif');
+  if(!ct)return;
+  ct.insertAdjacentHTML('beforeend',_nafContactRow('modif','','','mods'));
+}
+function modsSaveResponsables(){
+  var resp=_modsResponsables();
+  var contacts=[];
+  document.querySelectorAll('#mods-contacts-modif [data-naf-row]').forEach(function(row){
+    var nomI=row.querySelector('input[data-field="nom"]');
+    var emI=row.querySelector('input[data-field="email"]');
+    var n=(nomI?nomI.value:'').trim();
+    var e=(emI?emI.value:'').trim();
+    if(n||e)contacts.push({nom:n,email:e});
+  });
+  resp.contacts=contacts;
+  saveNow();
+  var sv=document.getElementById('sv');
+  if(sv){sv.textContent='✓ Responsables enregistrés';sv.style.display='inline';setTimeout(function(){sv.style.display='none';},2000);}
+}
+
+// ── Notification par email (réutilise l'infrastructure send-rappels) ──
+function modsNotify(doc,version,eventLabel){
+  var resp=_modsResponsables();
+  var emails=(resp.contacts||[]).map(function(c){return c.email;}).filter(function(e){return e&&e.trim()&&e.includes('@');});
+  if(!emails.length)return; // pas de responsables configurés : pas d'envoi, pas d'erreur
+  var num=(currP().infos&&currP().infos.numero)||STORE.current;
+  var lib=(currP().infos&&currP().infos.libelle)||'';
+  var sujet='[ELS - '+num+'] '+eventLabel+' : '+doc.nom;
+  var corps='<h2 style="color:#1F4E79">Notification — '+esc2(eventLabel)+'</h2>'
+    +'<table style="font-size:14px;border-collapse:collapse;width:100%">'
+    +'<tr><td style="padding:6px 12px;font-weight:700;width:160px">Affaire</td><td style="padding:6px 12px"><strong>'+esc2(num)+'</strong> — '+esc2(lib)+'</td></tr>'
+    +'<tr style="background:#F8F9FA"><td style="padding:6px 12px;font-weight:700">Document</td><td style="padding:6px 12px">'+esc2(doc.nom)+'</td></tr>'
+    +'<tr><td style="padding:6px 12px;font-weight:700">Version</td><td style="padding:6px 12px">v'+esc2(version.version)+'</td></tr>'
+    +'<tr style="background:#F8F9FA"><td style="padding:6px 12px;font-weight:700">Date</td><td style="padding:6px 12px">'+esc2(version.date)+'</td></tr>'
+    +'</table>'
+    +'<p style="margin-top:20px;font-size:12px;color:#888">Pétrosphère — Planning Pétrole — ELS/Génesienne</p>';
+  var sv=document.getElementById('sv');
+  function flash(txt,ok){
+    if(!sv)return;
+    sv.textContent=txt;
+    sv.style.color=ok?'':'var(--rd)';
+    sv.style.display='inline';
+    clearTimeout(modsNotify._t);
+    modsNotify._t=setTimeout(function(){sv.style.display='none';sv.style.color='';},4000);
+  }
+  fetch('https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU','apikey':'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU'},
+    body:JSON.stringify({emails:emails,subject:sujet,html:corps})
+  }).then(function(res){
+    var status=res.status;
+    return res.text().then(function(txt){
+      var data={};try{data=JSON.parse(txt);}catch(e){}
+      if(status===200&&data.ok){
+        flash('✉️ Email envoyé à '+emails.length+' responsable(s)',true);
+      }else{
+        console.error('Notification non envoyée (status '+status+') :',txt);
+        flash('⚠️ Document enregistré, email NON envoyé (voir console)',false);
+      }
+    });
+  }).catch(function(e){
+    console.error('Erreur réseau envoi notification :',e);
+    flash('⚠️ Document enregistré, échec réseau email',false);
+  });
+}
+
+// ── Pièces jointes : upload / téléchargement / export / purge ─────────
+function modUploadAttachment(file,docId,verId,onOk,onErr){
+  if(!supa){onErr&&onErr('non connecté');return;}
+  var safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  var path='documents/'+STORE.current.replace(/[^a-zA-Z0-9._-]/g,'_')+'/'+docId+'/'+verId+'_'+safeName;
+  supa.storage.from(BUCKET).upload(path,file,{upsert:true}).then(function(res){
+    if(res.error){onErr&&onErr(res.error.message||'erreur upload');return;}
+    onOk&&onOk(path);
+  }).catch(function(e){onErr&&onErr(String(e));});
+}
+function modDownloadAttachment(path,filename){
+  if(!supa)return;
+  supa.storage.from(BUCKET).download(path).then(function(res){
+    if(res.error||!res.data){alert('Impossible de récupérer cette pièce jointe.');return;}
+    var url=URL.createObjectURL(res.data);
+    var a=document.createElement('a');
+    a.href=url;a.download=filename||'document';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},5000);
+  });
+}
+function modsExportAll(){
+  if(typeof JSZip==='undefined'){alert('Bibliothèque de compression non chargée — vérifiez votre connexion internet.');return;}
+  var docs=_modsGetDocs();
+  var attachments=[];
+  docs.forEach(function(doc){
+    (doc.versions||[]).forEach(function(v){
+      if(v.attachmentPath)attachments.push({doc:doc,v:v});
+    });
+  });
+  var zip=new JSZip();
+  // Fichier récapitulatif texte
+  var recap='Registre de documents — '+STORE.current+'\nExporté le '+new Date().toLocaleDateString('fr-FR')+'\n\n';
+  docs.forEach(function(doc){
+    recap+='=== '+doc.nom+' ===\n';
+    (doc.versions||[]).slice().sort(function(a,b){return (a._createdAt||0)-(b._createdAt||0);}).forEach(function(v){
+      recap+='  v'+v.version+' — '+v.date+' — '+(v.fait?'Fait':'À faire')+(v.attachmentPath?' — pièce jointe : '+v.attachmentName:' — sans pièce jointe')+'\n';
+    });
+    recap+='\n';
+  });
+  zip.file('_registre.txt',recap);
+  if(!attachments.length){
+    var blob0=new Blob([recap],{type:'text/plain;charset=utf-8'});
+    var url0=URL.createObjectURL(blob0);
+    var a0=document.createElement('a');a0.href=url0;a0.download='Registre_'+STORE.current.replace(/[^a-zA-Z0-9._-]/g,'_')+'.txt';
+    document.body.appendChild(a0);a0.click();document.body.removeChild(a0);
+    setTimeout(function(){URL.revokeObjectURL(url0);},5000);
+    return;
+  }
+  var sv=document.getElementById('sv');
+  if(sv){sv.textContent='⏳ Préparation de l\'export…';sv.style.display='inline';}
+  var done=0;
+  attachments.forEach(function(item){
+    supa.storage.from(BUCKET).download(item.v.attachmentPath).then(function(res){
+      done++;
+      if(!res.error&&res.data){
+        var folder=item.doc.nom.replace(/[^a-zA-Z0-9._ -]/g,'_');
+        zip.folder(folder).file('v'+item.v.version+'_'+(item.v.attachmentName||'fichier'),res.data);
+      }
+      if(done===attachments.length){
+        zip.generateAsync({type:'blob'}).then(function(content){
+          var url=URL.createObjectURL(content);
+          var a=document.createElement('a');
+          a.href=url;a.download='Documents_'+STORE.current.replace(/[^a-zA-Z0-9._-]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.zip';
+          document.body.appendChild(a);a.click();document.body.removeChild(a);
+          setTimeout(function(){URL.revokeObjectURL(url);},5000);
+          if(sv)sv.style.display='none';
+        });
+      }
+    });
+  });
+}
+function modsPurgeAttachments(){
+  var docs=_modsGetDocs();
+  var paths=[];
+  docs.forEach(function(doc){(doc.versions||[]).forEach(function(v){if(v.attachmentPath)paths.push(v.attachmentPath);});});
+  if(!paths.length){alert('Aucune pièce jointe à purger pour cette affaire.');return;}
+  if(!confirm('Supprimer les '+paths.length+' pièce(s) jointe(s) de cette affaire du serveur ?\n\nAssurez-vous d\'avoir bien exporté les documents avant (bouton "Exporter tous les documents").\n\nL\'historique (noms, versions, dates, cases "fait") sera conservé — seuls les fichiers seront supprimés.'))return;
+  supa.storage.from(BUCKET).remove(paths).then(function(){
+    docs.forEach(function(doc){(doc.versions||[]).forEach(function(v){if(v.attachmentPath){v.attachmentPath=null;v.attachmentName=(v.attachmentName||'')+' (purgé, exporté localement)';}});});
+    saveNow();
+    renderModificationsTab();
+    alert('Pièces jointes purgées. L\'historique reste disponible.');
+  }).catch(function(e){alert('Erreur lors de la purge : '+String(e));});
+}
+
 function renderFiche(){
   var selAff='__ALL__'; // always all active affaires
   // Only active (non-closed) affaires
@@ -7583,7 +7948,8 @@ var _NAF_SVC_MAP={
   auto:['els_auto'],
   be:['bureau_etude'],
   chantier:['els_chantier'],
-  tableauterie:['tableauterie']
+  tableauterie:['tableauterie'],
+  modif:['els_chantier','els_projet','bureau_etude']
 };
 
 function _nafGetChips(k,pfx){
@@ -7612,7 +7978,14 @@ function _nafRespBlock(k,label,contactsIn,cls,addFn){
   var gp=_getGlobalPersons();
   var cands=Object.values(gp).filter(function(p){
     return !svcs.length||svcs.indexOf(p.service||'')>=0;
-  }).sort(function(a,b){return a.name.localeCompare(b.name);});
+  }).sort(function(a,b){
+    if(svcs.length){
+      var ia=svcs.indexOf(a.service||'');if(ia<0)ia=svcs.length;
+      var ib=svcs.indexOf(b.service||'');if(ib<0)ib=svcs.length;
+      if(ia!==ib)return ia-ib;
+    }
+    return a.name.localeCompare(b.name);
+  });
 
   // Toutes les personnes si pas de candidats dans le service
   if(!cands.length){
@@ -7643,11 +8016,32 @@ function _nafRespBlock(k,label,contactsIn,cls,addFn){
       +'</div>';
   });
 
-  // Options dropdown
+  // Options dropdown — groupées par catégorie (optgroup) quand plusieurs services sont concernés
   var opts='<option value="">— Sélectionner une personne —</option>';
-  cands.forEach(function(p){
-    opts+='<option value="'+escHtml(p.name)+'|'+escHtml(p.email||'')+'">'+escHtml(p.name)+(p.email?' · '+escHtml(p.email):'')+'</option>';
-  });
+  if(svcs.length>1){
+    svcs.forEach(function(svcKey){
+      var svcMeta=SERVICES.find(function(s){return s.k===svcKey;});
+      var groupLbl=svcMeta?svcMeta.l:svcKey;
+      var groupPeople=cands.filter(function(p){return (p.service||'')===svcKey;});
+      if(!groupPeople.length)return;
+      opts+='<optgroup label="'+escHtml(groupLbl)+'">';
+      groupPeople.forEach(function(p){
+        opts+='<option value="'+escHtml(p.name)+'|'+escHtml(p.email||'')+'">'+escHtml(p.name)+(p.email?' · '+escHtml(p.email):'')+'</option>';
+      });
+      opts+='</optgroup>';
+    });
+    // Personnes hors des catégories listées (fallback "toutes personnes")
+    var autres=cands.filter(function(p){return svcs.indexOf(p.service||'')<0;});
+    if(autres.length){
+      opts+='<optgroup label="Autres">';
+      autres.forEach(function(p){opts+='<option value="'+escHtml(p.name)+'|'+escHtml(p.email||'')+'">'+escHtml(p.name)+(p.email?' · '+escHtml(p.email):'')+'</option>';});
+      opts+='</optgroup>';
+    }
+  }else{
+    cands.forEach(function(p){
+      opts+='<option value="'+escHtml(p.name)+'|'+escHtml(p.email||'')+'">'+escHtml(p.name)+(p.email?' · '+escHtml(p.email):'')+'</option>';
+    });
+  }
 
   return '<div style="background:var(--bg3);border-radius:var(--r2);padding:12px;border:1px solid var(--bd)">'
     +'<div style="font-size:9px;font-weight:800;color:'+svcInfo.color+';margin-bottom:8px;letter-spacing:.5px">'+label.toUpperCase()+'</div>'
@@ -9618,18 +10012,9 @@ function pedConfirmAddPhase(){
 
 
 function buildFullExpPanel(row,ph,nd){
-  // .ei a position:sticky;left:0 — le panneau modif doit être en dehors du flow sticky
-  // On retourne les deux panneaux comme siblings dans le TD (pas de wrapper grid)
-  var leftPanel=buildExpandPanel(row,ph,nd);
-  var rightPanel='';
-  try{ rightPanel=buildModifPanel(row); }
-  catch(e){ rightPanel='<div style="padding:16px;color:var(--rd);font-size:11px">Erreur: '+String(e)+'</div>'; }
-  // Le panneau modif est sticky à left:min(97vw,880px) — juste à droite du .ei
-  return leftPanel+
-    '<div id="modif-panel-'+row.id+'" '+
-    'style="position:sticky;left:min(97vw,880px);top:0;width:640px;max-height:580px;overflow-y:auto;'+
-    'background:var(--bg2);border-left:2px solid var(--bd);display:inline-block;vertical-align:top;box-sizing:border-box">'+
-    rightPanel+'</div>';
+  // Panneau "modifications par tâche" retiré : remplacé par l'onglet
+  // dédié "📄 Modifications" (registre de documents par affaire).
+  return buildExpandPanel(row,ph,nd);
 }
 
 function buildExpandPanel(row,ph,nd){
