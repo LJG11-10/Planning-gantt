@@ -7976,20 +7976,42 @@ function _nafRespBlock(k,label,contactsIn,cls,addFn){
   var contacts=(contactsIn||[]).filter(function(ct){return ct&&(ct.nom||ct.email);});
   var svcs=_NAF_SVC_MAP[k]||[];
   var gp=_getGlobalPersons();
-  var cands=Object.values(gp).filter(function(p){
-    return !svcs.length||svcs.indexOf(p.service||'')>=0;
-  }).sort(function(a,b){
-    if(svcs.length){
-      var ia=svcs.indexOf(a.service||'');if(ia<0)ia=svcs.length;
-      var ib=svcs.indexOf(b.service||'');if(ib<0)ib=svcs.length;
-      if(ia!==ib)return ia-ib;
-    }
-    return a.name.localeCompare(b.name);
-  });
+  var modifGroups=null; // spécifique à k==='modif' : groupé par catégorie de responsable d'affaire
+  var cands;
+  if(k==='modif'){
+    // Onglet Modifications : uniquement les personnes déjà choisies comme
+    // responsables de CETTE affaire (Infos affaire) — pas tout l'annuaire.
+    var _p=currP();
+    var respAll=(_p.infos&&_p.infos.responsables)||{};
+    var catDefs=[{k:'chantier',l:'Chantier'},{k:'els',l:'ELS'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'\u00C9tudes"},{k:'tableauterie',l:'Tableauterie'}];
+    var seenNm={};
+    modifGroups=[];
+    catDefs.forEach(function(cd){
+      var catContacts=(respAll[cd.k]&&respAll[cd.k].contacts)||[];
+      var people=catContacts.filter(function(c){
+        if(!c.nom||!c.nom.trim()||seenNm[c.nom])return false;
+        seenNm[c.nom]=true;
+        return true;
+      }).map(function(c){return {name:c.nom,email:c.email||''};});
+      if(people.length)modifGroups.push({catLabel:cd.l,people:people});
+    });
+    cands=modifGroups.reduce(function(acc,g){return acc.concat(g.people);},[]);
+  }else{
+    cands=Object.values(gp).filter(function(p){
+      return !svcs.length||svcs.indexOf(p.service||'')>=0;
+    }).sort(function(a,b){
+      if(svcs.length){
+        var ia=svcs.indexOf(a.service||'');if(ia<0)ia=svcs.length;
+        var ib=svcs.indexOf(b.service||'');if(ib<0)ib=svcs.length;
+        if(ia!==ib)return ia-ib;
+      }
+      return a.name.localeCompare(b.name);
+    });
 
-  // Toutes les personnes si pas de candidats dans le service
-  if(!cands.length){
-    cands=Object.values(gp).sort(function(a,b){return a.name.localeCompare(b.name);});
+    // Toutes les personnes si pas de candidats dans le service
+    if(!cands.length){
+      cands=Object.values(gp).sort(function(a,b){return a.name.localeCompare(b.name);});
+    }
   }
 
   var svcInfo=SERVICES.find(function(s){return svcs.indexOf(s.k)>=0;})||{color:'#6366F1'};
@@ -8016,9 +8038,21 @@ function _nafRespBlock(k,label,contactsIn,cls,addFn){
       +'</div>';
   });
 
-  // Options dropdown — groupées par catégorie (optgroup) quand plusieurs services sont concernés
+  // Options dropdown — groupées par catégorie (optgroup)
   var opts='<option value="">— Sélectionner une personne —</option>';
-  if(svcs.length>1){
+  if(modifGroups){
+    if(!modifGroups.length){
+      opts='<option value="">— Aucun responsable défini pour cette affaire (voir ℹ️ Infos affaire) —</option>';
+    }else{
+      modifGroups.forEach(function(g){
+        opts+='<optgroup label="'+escHtml(g.catLabel)+'">';
+        g.people.forEach(function(p){
+          opts+='<option value="'+escHtml(p.name)+'|'+escHtml(p.email||'')+'">'+escHtml(p.name)+(p.email?' · '+escHtml(p.email):'')+'</option>';
+        });
+        opts+='</optgroup>';
+      });
+    }
+  }else if(svcs.length>1){
     svcs.forEach(function(svcKey){
       var svcMeta=SERVICES.find(function(s){return s.k===svcKey;});
       var groupLbl=svcMeta?svcMeta.l:svcKey;
@@ -8378,7 +8412,7 @@ function renderPortfolio(){
     html+='</tr>';
 
     // ── Lignes par phase ─────────────────────────────────────────
-    var phases=Object.keys(getPH()).filter(function(pk){return allActs.some(function(a){return a.pk===pk;});});
+    var phases=Array.from(new Set(allActs.map(function(a){return a.pk;}).filter(Boolean)));
     phases.forEach(function(pk){
       var ph=PH_get(pk);
       var pka=allActs.filter(function(a){return a.pk===pk;});
@@ -8930,7 +8964,7 @@ function renderPlanEditor(){
 
 function buildPhaseList(container){
   container.innerHTML='';
-  var phases=Object.keys(getPH()).filter(function(pk){return D().some(function(r){return r.pk===pk;});});
+  var phases=Array.from(new Set(D().map(function(r){return r.pk;}).filter(Boolean)));
   var builtins=['ETUDE','TABLEAUTERIE','AUTOMATISME','CHANTIER'];
 
   phases.forEach(function(pk){
@@ -9028,6 +9062,7 @@ function buildPhaseList(container){
 
     var curEnsCtx=null; // id de l'ensemble courant (si les lignes suivantes lui appartiennent), sinon null
     rows.forEach(function(row){
+     try{
       if(row.t==='ph')return;
       var item=document.createElement('div');
       if(row.t==='ens'){
@@ -9080,6 +9115,7 @@ function buildPhaseList(container){
       } else if(row.t==='act'){
         item.className='ped-act';
         if(curEnsCtx)item.style.marginLeft='22px';
+        if(!row.p||!Array.isArray(row.p))row.p=[]; // garde-fou : champ manquant/corrompu sur d'anciennes données
         var tot=row.p.reduce(function(s,p){return s+(+p.heures||0);},0);
         var lbl=document.createElement('span');
         lbl.className='act-lbl';
@@ -9106,6 +9142,14 @@ function buildPhaseList(container){
         item.appendChild(makeBtn('\u2715','del','Supprimer',row.id,'ped-ico'));
       }
       phBody.appendChild(item);
+     }catch(_rowErr){
+      // Une ligne cassée ne doit JAMAIS empêcher l'affichage des suivantes.
+      console.error('Erreur affichage ligne éditeur (id='+(row&&row.id)+', type='+(row&&row.t)+') :',_rowErr);
+      var errItem=document.createElement('div');
+      errItem.style.cssText='padding:4px 8px;font-size:10px;color:var(--rd);background:var(--rd2);border-radius:4px';
+      errItem.textContent='⚠ Ligne non affichée (erreur) — id: '+(row&&row.id)+' — voir console';
+      phBody.appendChild(errItem);
+     }
     });
 
     // Add buttons
