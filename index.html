@@ -3663,7 +3663,7 @@ function dbEquipe(){
   var dLun=weekDayToDate(selWk,0);
   var dVen=weekDayToDate(selWk,4);
   var fmt2=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});};
-  var wkLabel='S'+selWk+' — '+fmt2(dLun)+' au '+fmt2(dVen);
+  var wkLabel='S'+isoWeekOf(selWk)+' — '+fmt2(dLun)+' au '+fmt2(dVen);
 
   var nav='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 16px;background:var(--bg3);border-radius:var(--r2);border:1px solid var(--bd)">'
     +'<button onclick="window._eqWk=Math.max(1,window._eqWk-1);renderEquipeInto(\'pers-equipe\')" style="padding:6px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-weight:700;font-size:14px">&#8249;</button>'
@@ -3986,7 +3986,7 @@ function exportRecapCSV(){
   all.forEach(r=>{
     const tot=r.p.reduce((s,p)=>s+(+p.heures||0),0);
     const dlt=(r.hPrev&&r.hReel)?(r.hReel-r.hPrev):'';
-    rows.push([r.pk,r.lb,r.done?'OUI':'NON',tot,r.hPrev||'',r.hReel||'',dlt,'S'+r.s,'S'+r.e]);
+    rows.push([r.pk,r.lb,r.done?'OUI':'NON',tot,r.hPrev||'',r.hReel||'',dlt,'S'+isoWeekOf(r.s),'S'+isoWeekOf(r.e)]);
   });
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
@@ -4876,7 +4876,7 @@ function absAddPeriod(person,type){
   for(var w=1;w<=52;w++){
     var d2=weekDayToDate(w,0);
     var ml=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'][d2.getMonth()];
-    opts+='<option value="'+w+'">S'+w+' — '+ml+' '+d2.getDate()+'</option>';
+    opts+='<option value="'+w+'">S'+isoWeekOf(w)+' — '+ml+' '+d2.getDate()+'</option>';
   }
   modal.innerHTML='<div style="background:var(--bg2);border-radius:20px;padding:28px 32px;width:420px;box-shadow:0 20px 60px rgba(0,0,0,.25);border:2px solid '+border+'">'
     +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">'
@@ -5032,7 +5032,7 @@ function dbExportExcel(aff){
   csv+='STATISTIQUES\r\n'+csvRow(['Activités',acts.length])+csvRow(['Terminées',totDone])+csvRow(['H Prévues',totPrev])+csvRow(['H Réelles',Math.round(totReel*10)/10])+'\r\n';
   csv+='ACTIVITÉS\r\n'+csvRow(['Phase','Sous-phase','Activité','Sem. début','Sem. fin','H Prév.','H Réel','Écart','Statut']);
   var curSbBaseX='',curEnsLblX='';
-  allRows.forEach(function(r){if(r.t==='ens'){curSbBaseX=r.lb;curEnsLblX='';return;}if(r.t==='sb'){curEnsLblX=r.lb;return;}if(r.t!=='act'){curSbBaseX='';curEnsLblX='';return;}var curSb=curSbBaseX+(curEnsLblX?' \u25B8 '+curEnsLblX:'');var hP=+r.hPrev||0,hR=Math.round((+r.hReel||0)*10)/10;csv+=csvRow([r.pk,curSb,r.lb,'S'+r.s,'S'+(r.e||r.s),hP,hR,Math.round((hP-hR)*10)/10,r.done?'Terminé':'En cours']);});
+  allRows.forEach(function(r){if(r.t==='ens'){curSbBaseX=r.lb;curEnsLblX='';return;}if(r.t==='sb'){curEnsLblX=r.lb;return;}if(r.t!=='act'){curSbBaseX='';curEnsLblX='';return;}var curSb=curSbBaseX+(curEnsLblX?' \u25B8 '+curEnsLblX:'');var hP=+r.hPrev||0,hR=Math.round((+r.hReel||0)*10)/10;csv+=csvRow([r.pk,curSb,r.lb,'S'+isoWeekOf(r.s),'S'+isoWeekOf(r.e||r.s),hP,hR,Math.round((hP-hR)*10)/10,r.done?'Terminé':'En cours']);});
   if(forts.length){csv+='\r\nFORTUITS\r\n'+csvRow(['Date','Phase','Activité','Objet','Durée','Unité','Impact H']);forts.forEach(function(f){csv+=csvRow([f.date||'',f.pk||'',f.actLb||'',f.obj||'',f.dur||0,f.unit==='hours'?'Heures':'Jours',Math.round((f.durDays||0)*8)]);});}
   // Use data URI to avoid popup blocker / CSP issues
   var encoded=encodeURIComponent(csv);
@@ -6740,7 +6740,7 @@ function renderFiche(){
     +'<span class="lbl">SEMAINE</span>'
     +'<select id="fc-wk" onchange="renderFiche()">'
     +'<option value="all"'+(selWk==='all'?' selected':'')+'>Toutes</option>'
-    +availWks.map(function(w){return '<option value="'+w+'"'+(selWk==w?' selected':'')+'>S'+w+' — '+fmt(wkD(w))+' au '+fmt(ddD(w,4))+'</option>';}).join('')
+    +availWks.map(function(w){return '<option value="'+w+'"'+(selWk==w?' selected':'')+'>S'+isoWeekOf(w)+' — '+fmt(wkD(w))+' au '+fmt(ddD(w,4))+'</option>';}).join('')
     +'</select>'
     +'<button class="btn btn-g" onclick="fhImprimer()">🖨 Imprimer</button>'
     +'<button class="btn btn-a" onclick="fhTelecharger()" style="margin-left:6px">⬇ Télécharger</button>'
@@ -6767,7 +6767,7 @@ function renderFiche(){
       +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
       +'<span class="lbl">SEMAINE AFFICH\u00c9E</span>'
       +'<select onchange="window._fhWeekView=+this.value;renderFiche()" style="border:1px solid var(--bd);border-radius:var(--r);padding:4px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
-      +Array.from({length:52},function(_,i){return i+1;}).map(function(w){return '<option value="'+w+'"'+(w===weekView?' selected':'')+'>S'+w+' — '+fmt(wkD(w))+(TODAY&&TODAY.w===w?' (en cours)':'')+'</option>';}).join('')
+      +Array.from({length:52},function(_,i){return i+1;}).map(function(w){return '<option value="'+w+'"'+(w===weekView?' selected':'')+'>S'+isoWeekOf(w)+' — '+fmt(wkD(w))+(TODAY&&TODAY.w===w?' (en cours)':'')+'</option>';}).join('')
       +'</select>'
       +'</div>'
       +wvBlocks
@@ -6798,7 +6798,7 @@ function renderFiche(){
     +'<div class="fhi"><div class="fhl">ENTREPRISE</div><div class="fhv">'+ent+'</div></div>'
     +'<div class="fhi"><div class="fhl">BUDGET</div><div class="fhv" style="color:var(--tx2)">'+budH+' H</div></div>'
     +'<div class="fhi"><div class="fhl">SAISI</div><div class="fhv" style="color:var(--ac)" id="ft-gt-hdr">'+savedT+' H</div></div>'
-    +'<div class="fhi"><div class="fhl">PÉRIODE</div><div class="fhv">'+(weeks.length?'S'+weeks[0]+'→S'+weeks[weeks.length-1]:selWk==='all'?'—':'S'+selWk)+'</div></div>'
+    +'<div class="fhi"><div class="fhl">PÉRIODE</div><div class="fhv">'+(weeks.length?'S'+isoWeekOf(weeks[0])+'→S'+isoWeekOf(weeks[weeks.length-1]):selWk==='all'?'—':'S'+isoWeekOf(selWk))+'</div></div>'
     +'</div>';
 
   // ── Synthèse semaines × personnes ────────────────────────────────────────
@@ -6814,7 +6814,7 @@ function renderFiche(){
       var thCells='<th style="text-align:left;padding:5px 10px;font-size:9px;font-weight:700;border-bottom:2px solid var(--bd2)">PERSONNE</th>';
       summaryWks.forEach(function(w){
         var isTW=TODAY&&TODAY.w===w;
-        thCells+='<th style="text-align:center;min-width:55px;padding:4px 6px;font-size:9px;font-weight:700;border-left:1px solid var(--bd);border-bottom:2px solid var(--bd2);background:'+(isTW?'#FEF3C7':'var(--bg3)')+';color:'+(isTW?'#D97706':'var(--tx2)')+'">S'+w+'<br><span style="font-size:8px;font-weight:400">'+fmt(wkD(w))+'</span></th>';
+        thCells+='<th style="text-align:center;min-width:55px;padding:4px 6px;font-size:9px;font-weight:700;border-left:1px solid var(--bd);border-bottom:2px solid var(--bd2);background:'+(isTW?'#FEF3C7':'var(--bg3)')+';color:'+(isTW?'#D97706':'var(--tx2)')+'">S'+isoWeekOf(w)+'<br><span style="font-size:8px;font-weight:400">'+fmt(wkD(w))+'</span></th>';
       });
       thCells+='<th style="text-align:center;padding:5px 10px;font-size:9px;font-weight:700;border-left:2px solid var(--bd2);border-bottom:2px solid var(--bd2)">TOTAL</th>';
       var trRows='';
@@ -6879,7 +6879,7 @@ function renderFiche(){
 
     blocksHtml+='<div style="margin-bottom:20px;border:1px solid '+(isTW?'#F59E0B':'var(--bd)')+';border-radius:var(--r2);overflow:hidden">'
       +'<div style="padding:7px 14px;font-size:12px;font-weight:700;background:'+(isTW?'#FEF3C7':'var(--ac2)')+';color:'+(isTW?'#92400E':'var(--ac)')+';display:flex;align-items:center;justify-content:space-between">'
-      +'<span>▶ Semaine <strong>S'+w+'</strong>'+(isTW?' 📍 Semaine courante':'')+' &nbsp;—&nbsp; du '+fmt(wkD(w))+' au '+fmt(ddD(w,4))+'</span>'
+      +'<span>▶ Semaine <strong>S'+isoWeekOf(w)+'</strong>'+(isTW?' 📍 Semaine courante':'')+' &nbsp;—&nbsp; du '+fmt(wkD(w))+' au '+fmt(ddD(w,4))+'</span>'
       +'<div style="display:flex;align-items:center;gap:10px">'
       +'<span id="ftw-'+w+'" style="font-family:\'Courier New\';font-weight:700;font-size:14px">'+(wkT?wkT+' H':'—')+'</span>'
       +'<button onclick="fhWeekDel(window._fhAff,window._fhNm,'+w+')" style="background:rgba(0,0,0,.12);border:none;border-radius:3px;cursor:pointer;color:inherit;font-size:12px;padding:2px 7px">✕</button>'
@@ -8300,7 +8300,7 @@ function renderPortfolio(){
   var prevMo=-1,curMoStart=minWk;
   for(var wh=minWk;wh<=maxWk;wh++){
     var d=wkD(wh);
-    if(!d){if(!monthGroups.length)monthGroups.push({name:'S'+wh,start:wh,count:0});monthGroups[monthGroups.length-1].count++;continue;}
+    if(!d){if(!monthGroups.length)monthGroups.push({name:'S'+isoWeekOf(wh),start:wh,count:0});monthGroups[monthGroups.length-1].count++;continue;}
     var mo=d.getMonth();
     var moName=d.toLocaleDateString('fr-FR',{month:'long',year:'2-digit'});
     if(mo!==prevMo){
@@ -8458,7 +8458,7 @@ function renderGantt(){
     const fw=isTW||hasFerie?'700':'600';
     const _wkDate=weekDayToDate(w,0);
     const _wkFmt=_wkDate?(_wkDate.getDate()).toString().padStart(2,'0')+'/'+((_wkDate.getMonth()+1)).toString().padStart(2,'0'):'';
-    wH+=`<th colspan="7" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;border-bottom:1px solid var(--bd2);overflow:hidden;white-space:nowrap;${sep}${hasFerie?';border-top:2px solid #DC2626':''}">S${w}<span style="font-size:8px;opacity:.75;margin-left:3px">${_wkFmt}</span>${hasFerie?'<span style="font-size:7px"> 🎌</span>':isTW?'<span style="font-size:7px;font-weight:900"> ●</span>':''}</th>`;
+    wH+=`<th colspan="7" style="background:${bg};font-size:9px;font-weight:${fw};color:${clr};text-align:center;border-bottom:1px solid var(--bd2);overflow:hidden;white-space:nowrap;${sep}${hasFerie?';border-top:2px solid #DC2626':''}">S${isoWeekOf(w)}<span style="font-size:8px;opacity:.75;margin-left:3px">${_wkFmt}</span>${hasFerie?'<span style="font-size:7px"> 🎌</span>':isTW?'<span style="font-size:7px;font-weight:900"> ●</span>':''}</th>`;
   }
   // Jours
   let dH='';
@@ -9229,7 +9229,7 @@ function buildPhaseList(container){
         lbl.textContent=row.lb;
         var info=document.createElement('span');
         info.style.cssText='font-size:9px;color:var(--tx3);white-space:nowrap';
-        var startLbl=row._isoP?row._isoP.slice(0,10):'S'+row.s;
+        var startLbl=row._isoP?row._isoP.slice(0,10):'S'+isoWeekOf(row.s);
         var durLbl=row.dDur!=null?row.dDur+'j':((row.e-row.s)*5+5)+'j';
         info.textContent=startLbl+' · '+durLbl+(tot?' · '+tot+'H':'');
         // Handle drag-and-drop
@@ -10066,7 +10066,7 @@ function pedConfirmAddPhase(){
   // Navigation bar
   const nav=`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--bd);flex-wrap:wrap;">
     <button onclick="window._gdStartW=Math.max(1,window._gdStartW-${nbW});_reRenderGanttKeepScroll()" style="padding:3px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-size:13px;font-family:inherit">◀</button>
-    <span style="font-size:11px;font-weight:700;color:var(--ac)">S${startW} → S${endW} &nbsp;·&nbsp; ${fmt(wkD(startW))} au ${fmt(ddD(endW,4))}</span>
+    <span style="font-size:11px;font-weight:700;color:var(--ac)">S${isoWeekOf(startW)} → S${isoWeekOf(endW)} &nbsp;·&nbsp; ${fmt(wkD(startW))} au ${fmt(ddD(endW,4))}</span>
     <button onclick="window._gdStartW=Math.min(52-${nbW-1},window._gdStartW+${nbW});_reRenderGanttKeepScroll()" style="padding:3px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-size:13px;font-family:inherit">▶</button>
     <button onclick="window._gdStartW=TODAY?TODAY.w:1;renderGantt()" style="padding:3px 9px;border:1px solid var(--ac);border-radius:var(--r);background:var(--ac2);color:var(--ac);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit">📍 Aujourd'hui</button>
     <div style="display:flex;align-items:center;gap:4px;margin-left:4px">
@@ -10278,8 +10278,8 @@ function buildExpandPanel(row,ph,nd){
 
         </div>
 
-        <div style="margin-top:6px;height:8px;background:${ph.xl};border-radius:4px" title="Barre prévue → S${row.s} J${(row.dStart||0)+1} ${String(Math.floor(hStartP)).padStart(2,'0')}h"></div>
-        <div style="font-size:8px;color:${ph.xd};margin-top:3px;opacity:.8">${row.s?'S'+row.s+' → S'+row.e:'Non placée — Cliquez sur le GANTT pour placer'}</div>
+        <div style="margin-top:6px;height:8px;background:${ph.xl};border-radius:4px" title="Barre prévue → S${isoWeekOf(row.s)} J${(row.dStart||0)+1} ${String(Math.floor(hStartP)).padStart(2,'0')}h"></div>
+        <div style="font-size:8px;color:${ph.xd};margin-top:3px;opacity:.8">${row.s?'S'+isoWeekOf(row.s)+' → S'+isoWeekOf(row.e):'Non placée — Cliquez sur le GANTT pour placer'}</div>
       </div>
 
       <!-- Bouton aligner -->
@@ -10300,7 +10300,7 @@ function buildExpandPanel(row,ph,nd){
         </div>
         <div style="margin-top:6px;height:8px;background:var(--gn);border-radius:4px;opacity:.7" title="Barre réelle"></div>
         ${diff2!==null?`<div style="margin-top:4px;font-size:9px;font-weight:700;color:${diff2>0?'var(--rd)':diff2<0?'var(--gn)':'var(--tx3)'}">Δ ${diff2>0?'+':''}${diff2} H</div>`:''}
-        <div style="font-size:8px;color:var(--gn);margin-top:3px;opacity:.8">${(row.sReel||row.s)?'S'+(row.sReel||row.s)+' → S'+(row.eReel||row.e):'Non placée'}</div>
+        <div style="font-size:8px;color:var(--gn);margin-top:3px;opacity:.8">${(row.sReel||row.s)?'S'+isoWeekOf(row.sReel||row.s)+' → S'+isoWeekOf(row.eReel||row.e):'Non placée'}</div>
       </div>
     </div>
 
@@ -10530,7 +10530,7 @@ function fhWeekAdd(aff,nm,w){
   renderFiche();
 }
 function fhWeekDel(aff,nm,w){
-  if(!confirm('Supprimer la semaine S'+w+' et toutes ses heures ?'))return;
+  if(!confirm('Supprimer la semaine S'+isoWeekOf(w)+' et toutes ses heures ?'))return;
   var p=STORE.projects[aff];
   if(p&&p.fh&&p.fh[nm])delete p.fh[nm][w];
   localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
@@ -10844,7 +10844,7 @@ function getNextWeekRappels(){
       });
       if(!matchingRappels.length)return;
       var dLunS=weekDayToDate(s,0);
-      var label='S'+s+(dLunS?' — début '+fmt(dLunS):'');
+      var label='S'+isoWeekOf(s)+(dLunS?' — début '+fmt(dLunS):'');
       var persons=(act.p||[]).filter(function(p){return p.name&&p.name.trim();}).map(function(p){return p.name;});
       results.push({aff:aff,actLb:act.lb,actPk:act.pk||'',wk:s,weekLabel:label,
         hPrev:act.hPrev||0,hReel:act.hReel||0,persons:persons,rappels:matchingRappels,done:!!act.done});
@@ -11365,7 +11365,7 @@ function pedDaysModal(actId, pIdx){
     var wLabel=document.createElement('div');
     wLabel.style.cssText='font-size:10px;font-weight:700;color:var(--tx2);margin-bottom:6px';
     var dLunW=weekDayToDate(w,0);
-    wLabel.textContent='Semaine S'+w+(dLunW?' ('+dLunW.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})+')':'');
+    wLabel.textContent='Semaine S'+isoWeekOf(w)+(dLunW?' ('+dLunW.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})+')':'');
     wDiv.appendChild(wLabel);
     var dRow=document.createElement('div');
     dRow.style.cssText='display:flex;gap:5px;flex-wrap:wrap';
@@ -11423,7 +11423,7 @@ function updPAutoEnt(id,i,name){
     var actWks=[];for(var _w=r.s;_w<=(r.e||r.s);_w++)actWks.push(_w);
     var conflict=actWks.filter(function(_w){return schoolWks.indexOf(_w)>=0;});
     if(conflict.length>0){
-      var wkStr=conflict.map(function(_w){return 'S'+_w;}).join(', ');
+      var wkStr=conflict.map(function(_w){return 'S'+isoWeekOf(_w);}).join(', ');
       alert('\u26a0\ufe0f ' + name + ' est \u00e0 l\u2019\u00e9cole !\nSemaines : ' + wkStr + '\nIl ne sera pas disponible.');
     }
   }
@@ -11760,7 +11760,7 @@ function renderCharges(){
             <span style="color:var(--tx2)">${a.lb}</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-            <span style="color:var(--tx3);font-size:9px">S${a.s}→S${a.e}</span>
+            <span style="color:var(--tx3);font-size:9px">S${isoWeekOf(a.s)}→S${isoWeekOf(a.e)}</span>
             <span style="font-weight:700;color:var(--ac)">${a.heures}H</span>
             <span style="padding:1px 6px;border-radius:20px;background:${c2.bg};color:${c2.tc};border:1px solid ${c2.bd||'var(--bd)'};font-size:9px;font-weight:700;white-space:nowrap">${c2.icon} ${pct2}%/sem</span>
           </div>
@@ -11773,7 +11773,7 @@ function renderCharges(){
   const wMax=weeks; // all 52 weeks with horizontal scroll
   const timelineHdr=`<tr style="background:var(--bg3)">
     <th style="text-align:left;padding:6px 10px;font-size:9px;font-weight:700;letter-spacing:.5px;position:sticky;left:0;background:var(--bg3);z-index:2;min-width:150px">PERSONNE</th>
-    ${wMax.map(w=>{const isTW=TODAY&&TODAY.w===w;return `<th style="text-align:center;padding:4px 5px;font-size:9px;font-weight:700;min-width:46px;background:${isTW?'#FEF3C7':'var(--bg3)'};color:${isTW?'#D97706':'var(--tx2)'}">S${w}</th>`;}).join('')}
+    ${wMax.map(w=>{const isTW=TODAY&&TODAY.w===w;return `<th style="text-align:center;padding:4px 5px;font-size:9px;font-weight:700;min-width:46px;background:${isTW?'#FEF3C7':'var(--bg3)'};color:${isTW?'#D97706':'var(--tx2)'}">S${isoWeekOf(w)}</th>`;}).join('')}
     <th style="text-align:center;padding:4px 8px;font-size:9px;font-weight:700;background:var(--bg3);position:sticky;right:0">MOY.</th>
   </tr>`;
 
@@ -11791,7 +11791,7 @@ function renderCharges(){
       const isCrit=pct>=120;
       if(!h)return `<td style="background:var(--bg3);${isTW?'border-left:2px solid #D97706;':''}"></td>`;
       if(isOver48)return `<td style="background:#1A0000;border:3px solid #FF0000;${isTW?'border-left:3px solid #FF0000;':''}padding:3px 2px;text-align:center" title="⛔ ${Math.round(h*10)/10}H — DÉPASSE 48H MAX"><div style="font-size:9px;font-weight:900;color:#FF4444">${Math.round(h*10)/10}H</div><div style="font-size:8px;color:#FF6666">⛔ MAX</div></td>`;
-      return `<td style="background:${cc.bg};${isOver?`border:2px solid ${cc.bd};`:''}${isTW?'border-left:3px solid #D97706;':''}padding:3px 2px;text-align:center;position:relative;" title="${ps.name} S${w}: ${h.toFixed(1)}H = ${pct}% (base ${SEL_REF}H)">
+      return `<td style="background:${cc.bg};${isOver?`border:2px solid ${cc.bd};`:''}${isTW?'border-left:3px solid #D97706;':''}padding:3px 2px;text-align:center;position:relative;" title="${ps.name} S${isoWeekOf(w)}: ${h.toFixed(1)}H = ${pct}% (base ${SEL_REF}H)">
         <div style="font-size:9px;font-weight:700;color:${cc.tc};line-height:1.2">${pct}%</div>
         ${isOver?`<div style="font-size:7px;font-weight:700;color:${cc.tc};line-height:1">${cc.icon}</div>`:''}
         ${miniBar(pct)}
@@ -11825,7 +11825,7 @@ function renderCharges(){
     ${overNow.length?`<div style="background:#FEE2E2;border:2px solid #EF4444;border-radius:var(--r2);padding:10px 14px;margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <span style="font-size:18px">⚠️</span>
-        <span style="font-size:13px;font-weight:700;color:#991B1B">${overNow.length} personne(s) dépassent 100% cette semaine (S${cw})</span>
+        <span style="font-size:13px;font-weight:700;color:#991B1B">${overNow.length} personne(s) dépassent 100% cette semaine (S${isoWeekOf(cw)})</span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${overNow.map(ps=>{const cmap=chargeMap(ps.name);const pct=Math.round((cmap[cw]||0)/(SEL_REF||35)*100);const isCrit=pct>=120;return `<span style="padding:3px 10px;border-radius:20px;background:${isCrit?'#991B1B':'#FEE2E2'};color:${isCrit?'#fff':'#991B1B'};border:1px solid #EF4444;font-size:11px;font-weight:700">${isCrit?'🔴':'⚠️'} ${ps.name} — ${pct}%</span>`;}).join('')}
@@ -11935,8 +11935,8 @@ function renderRecap(){
     else if(_prevDays.length){
       const wS=Math.floor(Math.min.apply(null,_prevDays)/5)+1;
       const wE=Math.floor(Math.max.apply(null,_prevDays)/5)+1;
-      _dateStr='S'+wS+(wS!==wE?'→S'+wE:'');
-    } else if(r.s>0){_dateStr='S'+r.s+(r.e&&r.e!==r.s?'→S'+r.e:'');}
+      _dateStr='S'+isoWeekOf(wS)+(wS!==wE?'→S'+isoWeekOf(wE):'');
+    } else if(r.s>0){_dateStr='S'+isoWeekOf(r.s)+(r.e&&r.e!==r.s?'→S'+isoWeekOf(r.e):'');}
     return `<tr style="border-bottom:1px solid var(--bd);background:${_isOverdue?'rgba(254,226,226,.2)':r.done?'rgba(209,250,229,.1)':''}">
       <td style="padding:4px 8px;white-space:nowrap">${progBadge}${done}${r.lb}</td>${pc}
       <td style="text-align:right;font-weight:700;color:${tot?'var(--ac)':'var(--tx3)'};">${tot||'—'}</td>
@@ -12440,7 +12440,7 @@ function renderSkids(){
       <div class="card-hdr">
         <div class="c-bar" style="height:50px;background:var(--C1)"></div>
         <div><div class="c-ttl">SKID ${num}</div>
-          <div class="c-sub">${sActs.length} activité(s)${sMn?' · S'+sMn+'→S'+sMx:''} · S${cw} courante</div>
+          <div class="c-sub">${sActs.length} activité(s)${sMn?' · S'+isoWeekOf(sMn)+'→S'+isoWeekOf(sMx):''} · S${isoWeekOf(cw)} courante</div>
         </div>
         <div class="stats" style="margin-left:auto">
           <div class="stat" style="background:#F0FDF4;border-color:#BBF7D0">
@@ -12473,7 +12473,7 @@ function renderSkids(){
       <div class="prog-wrap">
         ${progBar(wp,'var(--gn)','Avancement travail',done+'/'+sActs.length+' activités cochées')}
         ${progBar(hp,'var(--C2)','Avancement heures vs budget',used+'H prévues / '+bud+'H budget')}
-        ${progBar(tp,'#D4A017','Avancement temporel',sMn?'S'+cw+' / S'+sMn+'→S'+sMx:'')}
+        ${progBar(tp,'#D4A017','Avancement temporel',sMn?'S'+isoWeekOf(cw)+' / S'+isoWeekOf(sMn)+'→S'+isoWeekOf(sMx):'')}
         ${bud>0&&delta>0?`<div style="margin-top:6px;padding:5px 10px;background:var(--rd2);color:var(--rd);border-radius:var(--r);font-size:11px;font-weight:700;border:1px solid var(--rd)">⚠ Dépassement budget de ${delta} H</div>`:''}
       </div>
       ${persons.length?`<div style="font-size:10px;font-weight:700;color:var(--tx2);margin:12px 0 8px">RÉPARTITION PAR PERSONNE</div><div class="p-grid">${pCards}</div>`:'<div style="color:var(--tx3);font-size:11px;margin-top:10px">Aucune personne affectée à ce Skid.</div>'}
@@ -12481,7 +12481,7 @@ function renderSkids(){
   }
 
   document.getElementById('skw').innerHTML=`
-    <div class="pg-ttl">TABLEAU DE BORD SKIDS — <span style="color:var(--ac)">${STORE.current}</span> · S${cw}</div>
+    <div class="pg-ttl">TABLEAU DE BORD SKIDS — <span style="color:var(--ac)">${STORE.current}</span> · S${isoWeekOf(cw)}</div>
     <div class="card">
       <div class="card-hdr">
         <div class="c-bar" style="height:40px;background:var(--ac)"></div>
@@ -12506,7 +12506,7 @@ function renderSkids(){
       <div class="prog-wrap">
         ${progBar(projWP,'var(--gn)','Avancement travail',projDone+'/'+allA.length+' activités terminées')}
         ${progBar(projHP,'var(--ac)','Avancement heures',projUsed+'H / '+projBud+'H')}
-        ${progBar(projTP,'#D4A017','Avancement temporel','S'+cw+' sur plage S'+projSmin+'→S'+projSmax)}
+        ${progBar(projTP,'#D4A017','Avancement temporel','S'+isoWeekOf(cw)+' sur plage S'+isoWeekOf(projSmin)+'→S'+isoWeekOf(projSmax))}
       </div>
     </div>
     ${allSkids.map(grp=>skCard(grp)).join('')}`;
