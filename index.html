@@ -73,13 +73,18 @@
   // Fusion fine des tâches (lignes) d'une affaire : jamais de perte, même si
   // le local et le distant ont chacun des modifications sur des tâches
   // différentes de la même affaire au même moment.
-  function _mergeProjectData(remoteData,localData){
+  function _mergeProjectData(remoteData,localData,deletedIds){
     if(!Array.isArray(remoteData))remoteData=[];
     if(!Array.isArray(localData))localData=[];
+    deletedIds=deletedIds||{};
     var localMap={};
     localData.forEach(function(r){if(r&&r.id)localMap[r.id]=r;});
     var seen={};
-    var merged=remoteData.map(function(r){
+    var merged=remoteData.filter(function(r){
+      // Une ligne supprimée localement ne doit JAMAIS ressusciter depuis une
+      // copie distante pas encore à jour.
+      return !(r&&r.id&&deletedIds[r.id]);
+    }).map(function(r){
       if(r&&r.id){
         seen[r.id]=true;
         if(localMap[r.id])return localMap[r.id]; // le local (potentiellement pas encore envoyé) prime
@@ -173,9 +178,16 @@
       Object.keys(STORE.projects).forEach(function(aff){
         if(!remote.projects[aff]){remote.projects[aff]=STORE.projects[aff];}
         else{
+          // Fusionner les tombstones de lignes supprimées (local + distant) —
+          // sans ça, une ligne supprimée localement pourrait ressusciter
+          // depuis une copie du serveur pas encore à jour.
+          var _delRowsMerged=Object.assign({},
+            (remote.projects[aff]&&remote.projects[aff]._deletedRowIds)||{},
+            (STORE.projects[aff]&&STORE.projects[aff]._deletedRowIds)||{});
           // Affaire présente des deux côtés : fusionner les tâches ligne par
           // ligne au lieu de faire gagner un côté en bloc (jamais de perte).
-          remote.projects[aff].data=_mergeProjectData(remote.projects[aff].data,STORE.projects[aff].data);
+          remote.projects[aff].data=_mergeProjectData(remote.projects[aff].data,STORE.projects[aff].data,_delRowsMerged);
+          remote.projects[aff]._deletedRowIds=_delRowsMerged;
         }
       });
     }
@@ -2550,10 +2562,15 @@ function loadStore(){
       Object.keys(remote.projects).forEach(function(k){
         if(_delAffAll[k])return;
         if(localProjs[k]){
+          // Fusionner les tombstones de lignes supprimées (local + distant)
+          var _delRowsMerged0=Object.assign({},
+            (remote.projects[k]&&remote.projects[k]._deletedRowIds)||{},
+            (localProjs[k]&&localProjs[k]._deletedRowIds)||{});
           // Affaire présente des deux côtés : fusionner les tâches ligne par
           // ligne (jamais de perte), et garder les autres réglages locaux.
           var _merged=Object.assign({},remote.projects[k],localProjs[k]);
-          _merged.data=_mergeProjectData(remote.projects[k].data,localProjs[k].data);
+          _merged.data=_mergeProjectData(remote.projects[k].data,localProjs[k].data,_delRowsMerged0);
+          _merged._deletedRowIds=_delRowsMerged0;
           _filtProjs[k]=_merged;
         }else{
           _filtProjs[k]=remote.projects[k];
@@ -5517,6 +5534,39 @@ function dbBuildPlanningGrid(){
   window._wpCommentChange=function(ta){var nm=ta.dataset.nm,di=+ta.dataset.di,ei=+ta.dataset.ei;saveCellEntry(nm,di,ei,'comment',ta.value);};
   window._wpAddEntry=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di;var key=nm+'::'+di;window._wpExtra[key]=(window._wpExtra[key]||0)+1;dbBuildPlanningGrid();};
   window._wpRemove=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di,ei=+btn.dataset.ei;removeEntry(nm,di,ei);};
+  window._wpToggleDupPicker=function(btn){
+    var wrap=btn.closest('div');
+    var existing=wrap.querySelector('.wp-dup-picker');
+    if(existing){existing.remove();return;}
+    var nm=btn.dataset.nm,di=+btn.dataset.di,ei=+btn.dataset.ei;
+    var DAY_LBL=['Lun','Mar','Mer','Jeu','Ven'];
+    var picker=document.createElement('div');
+    picker.className='wp-dup-picker';
+    picker.style.cssText='display:flex;gap:3px;margin-top:3px;flex-wrap:wrap;padding-top:3px;border-top:1px dashed var(--bd)';
+    picker.innerHTML='<span style="font-size:8px;color:var(--tx3);width:100%">Dupliquer vers :</span>';
+    for(var d=0;d<5;d++){
+      if(d===di)continue;
+      var b=document.createElement('button');
+      b.textContent=DAY_LBL[d];
+      b.dataset.nm=nm;b.dataset.di=di;b.dataset.ei=ei;b.dataset.target=d;
+      b.style.cssText='font-size:9px;padding:2px 7px;border:1px solid var(--ac3);border-radius:10px;background:var(--ac2);color:var(--ac);cursor:pointer;font-weight:700';
+      b.onclick=function(){window._wpDupToDay(this);};
+      picker.appendChild(b);
+    }
+    wrap.appendChild(picker);
+  };
+  window._wpDupToDay=function(btn){
+    var nm=btn.dataset.nm,srcDi=+btn.dataset.di,srcEi=+btn.dataset.ei,targetDi=+btn.dataset.target;
+    var srcEntry=getSavedEntries(nm,srcDi)[srcEi];
+    if(!srcEntry||!srcEntry.aff)return;
+    if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};
+    var key=nm+'::'+targetDi;
+    var existing=getSavedEntries(nm,targetDi);
+    existing.push({aff:srcEntry.aff,actId:srcEntry.actId||'',comment:srcEntry.comment||''});
+    STORE.weekPlan[selWk][key]=existing;
+    localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
+    dbBuildPlanningGrid();
+  };
   window._wpToggleHidden=function(cb){
     var nm=cb.dataset.nm;
     if(!STORE.globalPersons)STORE.globalPersons={};
@@ -5623,6 +5673,7 @@ function dbBuildPlanningGrid(){
         var sAff=entry.aff||'',sAct=entry.actId||'',sComment=entry.comment||'';
         html+='<div style="margin-bottom:3px;background:var(--bg2);border:1px solid var(--bd);border-radius:4px;padding:3px;position:relative">';
         if(totalRows>1)html+='<span class="wp-rm" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpRemove(this)" style="position:absolute;top:2px;right:3px;font-size:11px;color:#aaa;cursor:pointer;line-height:1;font-weight:700">x</span>';
+        if(sAff)html+='<span data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpToggleDupPicker(this)" title="Dupliquer vers d\'autres jours" style="position:absolute;top:2px;right:'+(totalRows>1?'16':'3')+'px;font-size:11px;color:var(--ac);cursor:pointer;line-height:1;font-weight:700">\u29C9</span>';
         html+='<select class="wp-aff" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpAffChange(this)" style="width:100%;border:none;border-bottom:1px solid var(--bd);padding:2px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;margin-bottom:2px">'+buildAffOpts(sAff)+'</select>';
         html+='<select id="wpa-'+nmKey+'-'+di+'-'+ei+'" class="wp-act" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpActChange(this)" style="width:100%;border:none;padding:2px;font-size:10px;font-family:inherit;background:transparent;color:var(--tx);outline:none;display:'+(sAff?'block':'none')+'">';
         if(sAff)html+=buildActOpts(sAff,sAct,_gp2?_getServicePhases(_gp2.service||''):null);
@@ -6273,13 +6324,54 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
       +'style="background:none;border:1px solid var(--rd);border-radius:3px;cursor:pointer;color:var(--rd);font-size:10px;padding:1px 5px">\u2715</button>'
       +'</div></div>';
   }
+  var hasContent=lines.some(function(l){return l&&(l.affId||l.actId||l.hours);})||meta.panier||meta.gd||(meta.lieu&&meta.lieu.trim());
   return '<div style="vertical-align:top;padding:4px;background:'+(isTD?'#FFFBEB':'inherit')+'">'
     +metaHtml
     +linesHtml
     +'<button onclick="fhLineAdd(\''+aff+'\',\''+nmEsc+'\','+w+','+di+')" '
     +'style="width:100%;background:var(--ac2);border:1px dashed var(--ac);border-radius:3px;color:var(--ac);font-size:10px;font-weight:700;cursor:pointer;padding:4px;font-family:inherit;margin-top:2px">+ Sous-phase</button>'
+    +(hasContent?'<button onclick="fhToggleDupPicker(this,\''+aff+'\',\''+nmEsc+'\','+w+','+di+')" '
+      +'style="width:100%;background:var(--bg3);border:1px dashed var(--tx3);border-radius:3px;color:var(--tx2);font-size:9px;font-weight:700;cursor:pointer;padding:3px;font-family:inherit;margin-top:2px">\u29C9 Dupliquer ce jour</button>':'')
     +'<div style="text-align:center;font-family:\'Courier New\';font-size:11px;font-weight:700;color:'+(dayT?'var(--ac)':'var(--tx3)')+';margin-top:4px;padding-top:3px;border-top:1px solid var(--bd)">'+(dayT?dayT+'H':'—')+'</div>'
     +'</div>';
+}
+function fhToggleDupPicker(btn,aff,nm,w,srcDi){
+  var wrap=btn.parentElement;
+  var existing=wrap.querySelector('.fh-dup-picker');
+  if(existing){existing.remove();return;}
+  var DAY_LBL=['Lun','Mar','Mer','Jeu','Ven'];
+  var picker=document.createElement('div');
+  picker.className='fh-dup-picker';
+  picker.style.cssText='display:flex;gap:3px;margin-top:3px;flex-wrap:wrap';
+  var lbl=document.createElement('span');
+  lbl.style.cssText='font-size:8px;color:var(--tx3);width:100%';
+  lbl.textContent='Dupliquer vers :';
+  picker.appendChild(lbl);
+  for(var d=0;d<5;d++){
+    if(d===srcDi)continue;
+    var b=document.createElement('button');
+    b.textContent=DAY_LBL[d];
+    b.style.cssText='font-size:9px;padding:2px 7px;border:1px solid var(--tx3);border-radius:10px;background:var(--bg2);color:var(--tx2);cursor:pointer;font-weight:700';
+    (function(targetDi){b.onclick=function(){fhDupDayToDay(aff,nm,w,srcDi,targetDi);};})(d);
+    picker.appendChild(b);
+  }
+  wrap.appendChild(picker);
+}
+function fhDupDayToDay(aff,nm,w,srcDi,targetDi){
+  var srcLines=fhGet(aff,nm,w,srcDi);
+  var validLines=srcLines.filter(function(l){return l&&(l.affId||l.actId||l.hours);});
+  if(validLines.length){
+    var targetLines=fhGet(aff,nm,w,targetDi).slice();
+    validLines.forEach(function(l){targetLines.push({affId:l.affId,actId:l.actId,hours:l.hours});});
+    fhPut(aff,nm,w,targetDi,targetLines);
+  }
+  var srcMeta=fhMetaGet(w,nm,srcDi);
+  if(srcMeta.panier)fhMetaSet(w,nm,targetDi,'panier',true);
+  if(srcMeta.gd)fhMetaSet(w,nm,targetDi,'gd',true);
+  if(srcMeta.lieu)fhMetaSet(w,nm,targetDi,'lieu',srcMeta.lieu);
+  saveNow();
+  if(typeof syncFichesToGantt==='function')syncFichesToGantt();
+  renderFiche();
 }
 // Bloc complet d'une personne pour une semaine : grille des 5 jours (Panier/GD/Lieu
 // est maintenant dans chaque case jour) — même mécanisme de saisie que la vue
@@ -9043,6 +9135,8 @@ function renderPlanEditor(){
     if(act==='rename'){pedRename(id);return;}
     if(act==='dup'){pedDup(id);return;}
     if(act==='dup-sb'){pedDupSb(id);return;}
+    if(act==='dup-ens'){pedDupEns(id);return;}
+    if(act==='dup-act'){pedDupAct(id);return;}
     if(act==='edit'){pedShowEditForm(id);return;}
   };
 }
@@ -9147,12 +9241,14 @@ function buildPhaseList(container){
     phBody.className='ped-ph-body';
 
     var curEnsCtx=null; // id de l'ensemble courant (si les lignes suivantes lui appartiennent), sinon null
+    var curTaskIndent=0; // indentation à appliquer aux tâches (dépend d'où elles sont imbriquées)
     rows.forEach(function(row){
      try{
       if(row.t==='ph')return;
       var item=document.createElement('div');
       if(row.t==='ens'){
         curEnsCtx=row.id;
+        curTaskIndent=22; // tâche directement sous cet ensemble (sans sous-phase intermédiaire)
         item.className='ped-sb';
         if(window._pedMultiSelActive){
           var cbEns=document.createElement('input');
@@ -9189,8 +9285,10 @@ function buildPhaseList(container){
         return;
       } else if(row.t==='sb'){
         var _inEns=!!curEnsCtx;
+        var _sbIndent=_inEns?22:0;
+        curTaskIndent=_sbIndent+22; // les tâches de cette sous-phase sont décalées un cran de plus qu'elle
         item.className='ped-sb';
-        if(_inEns)item.style.cssText='margin-left:22px;opacity:.94';
+        if(_inEns)item.style.cssText='margin-left:'+_sbIndent+'px;opacity:.94';
         if(window._pedMultiSelActive){
           var cbSb=document.createElement('input');
           cbSb.type='checkbox';
@@ -9220,7 +9318,7 @@ function buildPhaseList(container){
         return;
       } else if(row.t==='act'){
         item.className='ped-act';
-        if(curEnsCtx)item.style.marginLeft='22px';
+        if(curTaskIndent)item.style.marginLeft=curTaskIndent+'px';
         if(!row.p||!Array.isArray(row.p))row.p=[]; // garde-fou : champ manquant/corrompu sur d'anciennes données
         var tot=row.p.reduce(function(s,p){return s+(+p.heures||0);},0);
         var lbl=document.createElement('span');
@@ -9244,7 +9342,7 @@ function buildPhaseList(container){
         item.appendChild(lbl);
         item.appendChild(info);
         item.appendChild(makeBtn('\u270E','edit','Modifier',row.id,'ped-ico'));
-        item.appendChild(makeBtn('\u29C9','dup-sb','Dupliquer (avec tâches)',row.id,'ped-ico'));
+        item.appendChild(makeBtn('\u29C9','dup-act','Dupliquer cette t\u00E2che uniquement',row.id,'ped-ico'));
         item.appendChild(makeBtn('\u2715','del','Supprimer',row.id,'ped-ico'));
       }
       phBody.appendChild(item);
@@ -9298,6 +9396,7 @@ function makeBtn(text,action,title,id,cls){
   else if(action==='dup'){btn.onclick=function(e){e.stopPropagation();pedDup(id);};}  
   else if(action==='dup-sb'){btn.onclick=function(e){e.stopPropagation();pedDupSb(id);}; }
   else if(action==='dup-ens'){btn.onclick=function(e){e.stopPropagation();pedDupEns(id);}; }
+  else if(action==='dup-act'){btn.onclick=function(e){e.stopPropagation();pedDupAct(id);}; }
   return btn;
 }
 
@@ -9456,6 +9555,30 @@ function _pedInitDrag(container){
   });
 }
 
+function pedDupAct(actId){
+  var data=D();
+  var actIdx=data.findIndex(function(r){return r.id===actId;});
+  if(actIdx<0)return;
+  var act=data[actIdx];
+  if(act.t!=='act')return;
+  var newAct={
+    id:'act_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    t:'act',pk:act.pk,grp:act.grp||act.pk,lb:act.lb+' (copie)',
+    hPrev:0,hReel:0,
+    prevDays:[],reelDays:[],
+    s:0,e:0,sPrev:0,ePrev:0,sReel:0,eReel:0,
+    dDur:0,dDurR:0,
+    done:false,inProgress:false,
+    p:[],budgetH:act.budgetH||0
+  };
+  // Insérer juste après la tâche d'origine (ne touche à rien d'autre)
+  data.splice(actIdx+1,0,newAct);
+  saveNow();renderPlanEditor();
+  var sv=document.getElementById('sv');
+  if(sv){sv.textContent='\u2B21 T\u00E2che dupliqu\u00E9e';sv.style.display='inline';
+    clearTimeout(pedDupAct._t);pedDupAct._t=setTimeout(function(){sv.style.display='none';},2000);}
+}
+
 function pedDupSb(sbId){
   var data=D();
   // Trouver la sous-phase
@@ -9512,11 +9635,24 @@ function pedMove(id,dir){
   saveNow();renderPlanEditor();
 }
 
+// Empêche une ligne supprimée localement de "ressusciter" si une copie du
+// serveur pas encore à jour est fusionnée au prochain chargement — même
+// principe que les tombstones déjà utilisés pour les personnes/affaires
+// supprimées, mais au niveau de chaque ligne individuelle (tâche, sous-phase,
+// ensemble, phase entière...).
+function _pedTombstoneRows(ids){
+  var p=currP();
+  if(!p._deletedRowIds)p._deletedRowIds={};
+  var now=Date.now();
+  ids.forEach(function(id){if(id)p._deletedRowIds[id]=now;});
+}
+
 function pedDel(id){
   var data=D();
   var idx=data.findIndex(function(x){return x.id===id;});
   if(idx<0)return;
   data.splice(idx,1);
+  _pedTombstoneRows([id]);
   saveNow();renderPlanEditor();refreshAllTabs();
 }
 
@@ -9629,7 +9765,9 @@ function pedDelPhase(pk){
   var p=currP();
   if(p.customPhases)delete p.customPhases[pk];
   var data=D();
-  for(var i=data.length-1;i>=0;i--){if(data[i].pk===pk)data.splice(i,1);}
+  var removedIds=[];
+  for(var i=data.length-1;i>=0;i--){if(data[i].pk===pk){removedIds.push(data[i].id);data.splice(i,1);}}
+  _pedTombstoneRows(removedIds);
   saveNow();renderPlanEditor();refreshAllTabs();
 }
 
@@ -9637,7 +9775,9 @@ function pedDelBuiltinPhase(pk){
   var count=D().filter(function(r){return r.pk===pk&&r.t!=='ph';}).length;
 
   var data=D();
-  for(var i=data.length-1;i>=0;i--){if(data[i].pk===pk&&data[i].t!=='ph')data.splice(i,1);}
+  var removedIds=[];
+  for(var i=data.length-1;i>=0;i--){if(data[i].pk===pk&&data[i].t!=='ph'){removedIds.push(data[i].id);data.splice(i,1);}}
+  _pedTombstoneRows(removedIds);
   saveNow();renderPlanEditor();refreshAllTabs();
 }
 
