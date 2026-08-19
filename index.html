@@ -6229,16 +6229,26 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
       affOpts+='<option value="'+a2+'"'+(ln.affId===a2?' selected':'')+'>'+getAffLabel(a2)+'</option>';
     });
     var selAff2=ln.affId||'';
-    var actOpts='<option value="">— Choisir une activit\u00E9 —</option>';
+    var actOpts='<option value="">— Choisir une sous-phase —</option>';
     if(selAff2){
       var aData2=(STORE.projects[selAff2]&&STORE.projects[selAff2].data)||[];
-      var _curPk3b='';
+      var _curPk3b='',_curEns3b='',_groups3b=[];
       aData2.forEach(function(r2){
-        if(r2.t==='ph'){_curPk3b=r2.pk;return;}
+        if(r2.t==='ph'){_curPk3b=r2.pk;_curEns3b='';return;}
+        if(r2.t==='ens'){_curEns3b=r2.lb;return;}
         if(r2.t!=='sb')return;
-        var _ph3b=PH_get(_curPk3b);
-        var _lbl3=r2.lb;
-        actOpts+='<option value="'+r2.id+'"'+(ln.actId===r2.id?' selected':'')+' style="background:'+_ph3b.f+';color:'+_ph3b.xd+'">'+_lbl3+'</option>';
+        var _groupLbl=_curPk3b+(_curEns3b?' \u25B8 '+_curEns3b:'');
+        var _g=_groups3b.find(function(g){return g.label===_groupLbl;});
+        if(!_g){_g={label:_groupLbl,items:[]};_groups3b.push(_g);}
+        _g.items.push(r2);
+      });
+      _groups3b.forEach(function(g){
+        if(!g.items.length)return;
+        actOpts+='<optgroup label="'+escHtml(g.label)+'">';
+        g.items.forEach(function(sb2){
+          actOpts+='<option value="'+sb2.id+'"'+(ln.actId===sb2.id?' selected':'')+'>'+escHtml(sb2.lb)+'</option>';
+        });
+        actOpts+='</optgroup>';
       });
     }
     linesHtml+='<div style="background:'+(li%2?'var(--bg3)':'var(--bg2)')+';border:1px solid var(--bd);border-radius:4px;padding:5px;margin-bottom:4px">'
@@ -6247,7 +6257,7 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
       +'style="width:100%;border:1px solid var(--bd);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;margin-bottom:5px">'
       +affOpts+'</select>'
       +(selAff2
-        ?'<div style="font-size:8px;font-weight:700;color:var(--ac);margin-bottom:2px">ACTIVIT\u00C9 (rempli automatiquement)</div>'
+        ?'<div style="font-size:8px;font-weight:700;color:var(--ac);margin-bottom:2px">SOUS-PHASE (rempli automatiquement)</div>'
          +'<select onchange="fhLineSet(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+',\'actId\',this.value)" '
          +'style="width:100%;border:1px solid var(--ac);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;margin-bottom:5px">'
          +actOpts+'</select>'
@@ -6267,7 +6277,7 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
     +metaHtml
     +linesHtml
     +'<button onclick="fhLineAdd(\''+aff+'\',\''+nmEsc+'\','+w+','+di+')" '
-    +'style="width:100%;background:var(--ac2);border:1px dashed var(--ac);border-radius:3px;color:var(--ac);font-size:10px;font-weight:700;cursor:pointer;padding:4px;font-family:inherit;margin-top:2px">+ Activit\u00E9</button>'
+    +'style="width:100%;background:var(--ac2);border:1px dashed var(--ac);border-radius:3px;color:var(--ac);font-size:10px;font-weight:700;cursor:pointer;padding:4px;font-family:inherit;margin-top:2px">+ Sous-phase</button>'
     +'<div style="text-align:center;font-family:\'Courier New\';font-size:11px;font-weight:700;color:'+(dayT?'var(--ac)':'var(--tx3)')+';margin-top:4px;padding-top:3px;border-top:1px solid var(--bd)">'+(dayT?dayT+'H':'—')+'</div>'
     +'</div>';
 }
@@ -6859,68 +6869,12 @@ function renderFiche(){
         +'</th>';
     }
 
-    // Day cells content
+    // Day cells content — réutilise fhBuildDayCell (même logique que la vue
+    // "grille semaine", corrigée : vraies tâches groupées Phase/Ensemble/Sous-phase)
     var dayCellsHtml='';
     for(var di=0;di<5;di++){
       var isTD=isTW&&TODAY&&TODAY.di===di;
-      var lines=fhGet(fhAff,selNm,w,di);
-      var dayT=lines.reduce(function(s,l){return s+(l.hours===''?0:+l.hours||0);},0);
-      var linesHtml='';
-      for(var li=0;li<lines.length;li++){
-        var ln=lines[li];
-        // ── Dropdown 1 : Affaire ──────────────────────────────────────
-        var affOpts='<option value="">— Choisir une affaire —</option>';
-        Object.keys(STORE.projects).sort().filter(function(a2){
-          return !(STORE.projects[a2]&&STORE.projects[a2].closed);
-        }).forEach(function(a2){
-          affOpts+='<option value="'+a2+'"'+(ln.affId===a2?' selected':'')+'>'+getAffLabel(a2)+'</option>';
-        });
-        // ── Dropdown 2 : Activité (si affaire sélectionnée) ──────────
-        var selAff2=ln.affId||'';
-        var actOpts='<option value="">— Choisir une activit\u00E9 —</option>';
-        if(selAff2){
-          var aData2=(STORE.projects[selAff2]&&STORE.projects[selAff2].data)||[];
-          var _curPk3b='';
-          aData2.forEach(function(r2){
-            if(r2.t==='ph'){_curPk3b=r2.pk;return;}
-            if(r2.t!=='sb')return;
-            var _ph3b=PH_get(_curPk3b);
-            var _lbl3=r2.lb; // Label de la sous-phase
-            actOpts+='<option value="'+r2.id+'"'+(ln.actId===r2.id?' selected':'')+' style="background:'+_ph3b.f+';color:'+_ph3b.xd+'">'+_lbl3+'</option>';
-          });
-        }
-        // ── Ligne HTML ────────────────────────────────────────────────
-        linesHtml+='<div style="background:'+(li%2?'var(--bg3)':'var(--bg2)')+';border:1px solid var(--bd);border-radius:4px;padding:5px;margin-bottom:4px">'
-          // Dropdown affaire
-          +'<div style="font-size:8px;font-weight:700;color:var(--tx3);margin-bottom:2px">AFFAIRE</div>'
-          +'<select onchange="fhLineSetAff(window._fhAff,window._fhNm,'+w+','+di+','+li+',this.value)" '
-          +'style="width:100%;border:1px solid var(--bd);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;margin-bottom:5px">'
-          +affOpts+'</select>'
-          // Dropdown activité (si affaire choisie)
-          +(selAff2
-            ?'<div style="font-size:8px;font-weight:700;color:var(--ac);margin-bottom:2px">ACTIVIT\u00C9</div>'
-             +'<select onchange="fhLineSet(window._fhAff,window._fhNm,'+w+','+di+','+li+',\'actId\',this.value)" '
-             +'style="width:100%;border:1px solid var(--ac);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;margin-bottom:5px">'
-             +actOpts+'</select>'
-            :'')
-          // Heures + supprimer
-          +'<div style="display:flex;align-items:center;gap:4px">'
-          +'<span style="font-size:8px;color:var(--tx3);font-weight:700">HEURES</span>'
-          +'<input type="number" min="0" max="24" step="0.5" value="'+(ln.hours===''?'':ln.hours)+'" placeholder="0" '
-          +'style="flex:1;border:1px solid var(--bd);border-radius:3px;padding:3px 4px;font-size:12px;font-weight:700;font-family:\'Courier New\',monospace;color:var(--ac);background:'+(isTD?'#FEF9C3':'var(--bg2)')+';outline:none;text-align:center;min-width:0" '
-          +'oninput="fhLineSet(window._fhAff,window._fhNm,'+w+','+di+','+li+',\'hours\',this.value)" '
-          +'onblur="fhLineSet(window._fhAff,window._fhNm,'+w+','+di+','+li+',\'hours\',this.value)">'
-          +'<span style="font-size:9px;color:var(--tx3)">H</span>'
-          +'<button onmousedown="event.preventDefault();fhLineDel(window._fhAff,window._fhNm,'+w+','+di+','+li+')" '
-          +'style="background:none;border:1px solid var(--rd);border-radius:3px;cursor:pointer;color:var(--rd);font-size:10px;padding:1px 5px">\u2715</button>'
-          +'</div></div>';
-      }
-      dayCellsHtml+='<td style="vertical-align:top;padding:4px;border-left:1px solid var(--bd);background:'+(isTD?'#FFFBEB':'inherit')+'">'
-        +linesHtml
-        +'<button onclick="fhLineAdd(window._fhAff,window._fhNm,'+w+','+di+')" '
-        +'style="width:100%;background:var(--ac2);border:1px dashed var(--ac);border-radius:3px;color:var(--ac);font-size:10px;font-weight:700;cursor:pointer;padding:4px;font-family:inherit;margin-top:2px">+ Activité</button>'
-        +'<div id="ftd-'+w+'-'+di+'" style="text-align:center;font-family:\'Courier New\';font-size:11px;font-weight:700;color:'+(dayT?'var(--ac)':'var(--tx3)')+';margin-top:4px;padding-top:3px;border-top:1px solid var(--bd)">'+(dayT?dayT+'H':'—')+'</div>'
-        +'</td>';
+      dayCellsHtml+='<td style="border-left:1px solid var(--bd)">'+fhBuildDayCell(selNm,fhAff,w,di,isTD)+'</td>';
     }
 
     blocksHtml+='<div style="margin-bottom:20px;border:1px solid '+(isTW?'#F59E0B':'var(--bd)')+';border-radius:var(--r2);overflow:hidden">'
@@ -8769,6 +8723,57 @@ function setZoom(mode){
 // Utilise uniquement du DOM manipulation direct
 // ═══════════════════════════════
 
+// ── Détection de "phases fantômes" ────────────────────────────────────
+// Des lignes (ensemble/sous-phase/tâche) dont le pk n'a AUCUNE ligne 'ph'
+// correspondante — typiquement créées accidentellement lors d'une
+// duplication. Elles s'affichent quand même dans l'éditeur (corrigé), mais
+// sur le GANTT elles restent scindées physiquement de leur vraie phase,
+// ce qui perturbe l'ordre d'affichage. On propose de les rattacher.
+function findOrphanPhasesHtml(){
+  var data=D();
+  var registeredPk={};
+  data.forEach(function(r){if(r.t==='ph')registeredPk[r.pk]=true;});
+  var orphanPks={};
+  data.forEach(function(r){
+    if(r.t!=='ph'&&r.pk&&!registeredPk[r.pk])orphanPks[r.pk]=true;
+  });
+  var orphanList=Object.keys(orphanPks);
+  if(!orphanList.length)return '';
+  var realPhases=Object.keys(registeredPk);
+  var rows=orphanList.map(function(opk){
+    var nb=data.filter(function(r){return r.pk===opk;}).length;
+    var match=realPhases.find(function(rp){return opk.indexOf(rp)===0||rp.indexOf(opk)===0;})||realPhases[0]||'';
+    var opts=realPhases.map(function(rp){return '<option value="'+escHtml(rp)+'"'+(rp===match?' selected':'')+'>'+escHtml(rp)+'</option>';}).join('');
+    var selId='orphan-target-'+opk.replace(/[^a-zA-Z0-9]/g,'_');
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
+      +'<span style="font-size:11px;color:var(--tx2)">"<strong>'+escHtml(opk)+'</strong>" ('+nb+' ligne(s), aucune vraie phase) \u2192 rattacher \u00e0 :</span>'
+      +'<select id="'+selId+'" style="font-size:10px;border:1px solid var(--bd);border-radius:4px;padding:2px 6px;background:var(--bg2);color:var(--tx)">'+opts+'</select>'
+      +'<button class="btn" style="font-size:10px;padding:3px 10px" onclick="repairOrphanPhase(\''+opk.replace(/'/g,"\\'")+'\',document.getElementById(\''+selId+'\').value)">R\u00e9parer</button>'
+      +'</div>';
+  }).join('');
+  return '<div style="margin:0 20px 12px;padding:12px 16px;background:#3D2800;border:2px solid #D97706;border-radius:var(--r2)">'
+    +'<div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:8px">\u26A0 '+orphanList.length+' phase(s) fant\u00f4me(s) d\u00e9tect\u00e9e(s) \u2014 probablement issues d\'une duplication qui a mal recopi\u00e9 le nom de la phase :</div>'
+    +rows+'</div>';
+}
+function repairOrphanPhase(orphanPk,targetPk){
+  var data=D();
+  var orphanRows=data.filter(function(r){return r.pk===orphanPk;});
+  if(!orphanRows.length)return;
+  if(!targetPk){alert('Choisissez une phase de destination.');return;}
+  if(!confirm('Rattacher '+orphanRows.length+' ligne(s) de "'+orphanPk+'" \u00e0 la phase "'+targetPk+'" ?\n\nElles seront plac\u00e9es \u00e0 la suite du contenu existant de cette phase.'))return;
+  orphanRows.forEach(function(r){r.pk=targetPk;});
+  var withoutOrphans=data.filter(function(r){return orphanRows.indexOf(r)<0;});
+  var targetPhIdx=withoutOrphans.findIndex(function(r){return r.t==='ph'&&r.pk===targetPk;});
+  if(targetPhIdx<0){alert('Phase de destination introuvable.');return;}
+  var insertAt=targetPhIdx+1;
+  while(insertAt<withoutOrphans.length&&withoutOrphans[insertAt].pk===targetPk)insertAt++;
+  withoutOrphans.splice.apply(withoutOrphans,[insertAt,0].concat(orphanRows));
+  currP().data=withoutOrphans;
+  saveNow();
+  renderGantt();
+  renderPlanEditor();
+}
+
 function openPlanEditor(){
   var el=document.getElementById('plan-editor');
   if(!el)return;
@@ -8850,6 +8855,59 @@ function renderPlanEditor(){
   hint.textContent='Ajoutez, renommez, r\u00E9ordonnez ou supprimez des phases, sous-phases et activit\u00E9s.';
   body.appendChild(hint);
 
+  // ── Barre de sélection multiple (déplacer plusieurs sous-phases/ensembles ensemble) ──
+  var multiBar=document.createElement('div');
+  multiBar.id='ped-multibar';
+  multiBar.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px';
+  var multiToggleBtn=document.createElement('button');
+  multiToggleBtn.className='btn'+(window._pedMultiSelActive?' btn-a':'');
+  multiToggleBtn.textContent=window._pedMultiSelActive?'\u2611 S\u00E9lection multiple (activ\u00E9e)':'\u2610 S\u00E9lection multiple';
+  multiToggleBtn.onclick=pedToggleMultiSelect;
+  multiBar.appendChild(multiToggleBtn);
+  var selCount=Object.keys(window._pedMultiSel||{}).length;
+  if(window._pedMultiSelActive&&selCount){
+    var selInfo=document.createElement('span');
+    selInfo.style.cssText='font-size:11px;font-weight:700;color:var(--ac)';
+    selInfo.textContent=selCount+' \u00E9l\u00E9ment(s) s\u00E9lectionn\u00E9(s)';
+    multiBar.appendChild(selInfo);
+    // Construire la liste des cibles possibles : uniquement dans la même phase que la sélection
+    var _selRows=Object.keys(window._pedMultiSel).map(function(id){return D().find(function(r){return r.id===id;});}).filter(Boolean);
+    var _selPks=Array.from(new Set(_selRows.map(function(r){return r.pk;})));
+    if(_selPks.length>1){
+      var warnMulti=document.createElement('span');
+      warnMulti.style.cssText='font-size:10px;color:var(--rd);font-weight:700';
+      warnMulti.textContent='\u26A0 La s\u00E9lection m\u00E9lange plusieurs phases \u2014 impossible de d\u00E9placer';
+      multiBar.appendChild(warnMulti);
+    }else{
+      var targetPk=_selPks[0];
+      var targetSel=document.createElement('select');
+      targetSel.id='ped-multi-target';
+      targetSel.style.cssText='font-size:10px;border:1px solid var(--bd);border-radius:4px;padding:3px 6px;background:var(--bg2);color:var(--tx)';
+      var _selIdsSet={};Object.keys(window._pedMultiSel).forEach(function(id){_selIdsSet[id]=true;});
+      D().filter(function(r){return r.pk===targetPk&&(r.t==='ens'||r.t==='sb')&&!_selIdsSet[r.id];}).forEach(function(r){
+        var opt=document.createElement('option');
+        opt.value=r.id;
+        opt.textContent='Apr\u00E8s : '+(r.t==='ens'?'\u25B8 ':'\u25C6 ')+r.lb;
+        targetSel.appendChild(opt);
+      });
+      multiBar.appendChild(targetSel);
+      var moveBtn=document.createElement('button');
+      moveBtn.className='btn btn-a';
+      moveBtn.textContent='\u2192 D\u00E9placer la s\u00E9lection ici';
+      moveBtn.onclick=function(){
+        var tSel=document.getElementById('ped-multi-target');
+        if(tSel&&tSel.value)pedMoveSelectionTo(tSel.value);
+      };
+      multiBar.appendChild(moveBtn);
+    }
+    var clearBtn=document.createElement('button');
+    clearBtn.className='btn btn-g';
+    clearBtn.textContent='Annuler la s\u00E9lection';
+    clearBtn.onclick=function(){window._pedMultiSel={};renderPlanEditor();};
+    multiBar.appendChild(clearBtn);
+  }
+  if(window._pedMultiSelActive)body.appendChild(multiBar);
+
   // Phase list
   var list=document.createElement('div');
   list.id='ped-list';
@@ -8923,6 +8981,12 @@ function renderPlanEditor(){
   // Assemble
   box.innerHTML='';
   box.appendChild(hdr);
+  var _orphanWarn=findOrphanPhasesHtml();
+  if(_orphanWarn){
+    var _ow=document.createElement('div');
+    _ow.innerHTML=_orphanWarn;
+    box.appendChild(_ow);
+  }
   box.appendChild(body);
   box.appendChild(footer);
 
@@ -9068,6 +9132,14 @@ function buildPhaseList(container){
       if(row.t==='ens'){
         curEnsCtx=row.id;
         item.className='ped-sb';
+        if(window._pedMultiSelActive){
+          var cbEns=document.createElement('input');
+          cbEns.type='checkbox';
+          cbEns.checked=!!(window._pedMultiSel&&window._pedMultiSel[row.id]);
+          cbEns.style.cssText='margin-right:6px;cursor:pointer;flex-shrink:0';
+          (function(_id){cbEns.onchange=function(){pedToggleSelectRow(_id,this.checked);};})(row.id);
+          item.appendChild(cbEns);
+        }
         var lbl=document.createElement('span');
         lbl.style.flex='1';
         lbl.textContent='\u25B8 '+row.lb;
@@ -9095,6 +9167,14 @@ function buildPhaseList(container){
         var _inEns=!!curEnsCtx;
         item.className='ped-sb';
         if(_inEns)item.style.cssText='margin-left:22px;opacity:.94';
+        if(window._pedMultiSelActive){
+          var cbSb=document.createElement('input');
+          cbSb.type='checkbox';
+          cbSb.checked=!!(window._pedMultiSel&&window._pedMultiSel[row.id]);
+          cbSb.style.cssText='margin-right:6px;cursor:pointer;flex-shrink:0';
+          (function(_id){cbSb.onchange=function(){pedToggleSelectRow(_id,this.checked);};})(row.id);
+          item.appendChild(cbSb);
+        }
         var lbl=document.createElement('span');
         lbl.style.flex='1';
         lbl.textContent='\u25C6 '+row.lb;
@@ -9204,6 +9284,66 @@ function pedRefreshList(){
 
 // ── Drag & Drop dans l'éditeur de planning ─────────────────────────
 var _pedDragId=null;
+
+// ── Sélection multiple : déplacer plusieurs sous-phases/ensembles ensemble ──
+function pedToggleMultiSelect(){
+  window._pedMultiSelActive=!window._pedMultiSelActive;
+  window._pedMultiSel={};
+  renderPlanEditor();
+}
+function pedToggleSelectRow(id,checked){
+  if(!window._pedMultiSel)window._pedMultiSel={};
+  if(checked)window._pedMultiSel[id]=true;
+  else delete window._pedMultiSel[id];
+  renderPlanEditor();
+}
+function _pedExtractBlock(data,rowId){
+  var idx=data.findIndex(function(r){return r.id===rowId;});
+  if(idx<0)return null;
+  var row=data[idx];
+  if(row.t!=='ens'&&row.t!=='sb')return {row:row,block:[row]};
+  var boundary=row.t==='ens'?['ph','ens']:['sb','ph','ens'];
+  var children=[];
+  var j=idx+1;
+  while(j<data.length&&boundary.indexOf(data[j].t)<0){children.push(data[j]);j++;}
+  return {row:row,block:[row].concat(children)};
+}
+function pedMoveSelectionTo(targetId){
+  var data=D();
+  var selIds=Object.keys(window._pedMultiSel||{});
+  if(!selIds.length)return;
+  var _selIdsSet={};selIds.forEach(function(id){_selIdsSet[id]=true;});
+  // Extraire les blocs sélectionnés, dans leur ordre d'apparition d'origine
+  var orderedSelRows=data.filter(function(r){return _selIdsSet[r.id]&&(r.t==='ens'||r.t==='sb');});
+  var extractedIds={};
+  var allBlocks=[];
+  orderedSelRows.forEach(function(r){
+    if(extractedIds[r.id])return; // déjà inclus (ex: sous-phase à l'intérieur d'un ensemble sélectionné)
+    var ext=_pedExtractBlock(data,r.id);
+    if(!ext)return;
+    ext.block.forEach(function(b){extractedIds[b.id]=true;});
+    allBlocks.push(ext.block);
+  });
+  if(!allBlocks.length)return;
+  var flatBlock=allBlocks.reduce(function(a,b){return a.concat(b);},[]);
+  var remaining=data.filter(function(r){return !extractedIds[r.id];});
+  var newTi=remaining.findIndex(function(r){return r.id===targetId;});
+  if(newTi<0){alert('Position de destination introuvable (peut-\u00EAtre incluse dans la s\u00E9lection).');return;}
+  var insertAt=newTi+1;
+  if(remaining[newTi].t==='sb'||remaining[newTi].t==='ens'){
+    var tb=remaining[newTi].t==='ens'?['ph','ens']:['sb','ph','ens'];
+    var k=newTi+1;
+    while(k<remaining.length&&tb.indexOf(remaining[k].t)<0)k++;
+    insertAt=k;
+  }
+  remaining.splice.apply(remaining,[insertAt,0].concat(flatBlock));
+  currP().data=remaining;
+  window._pedMultiSel={};
+  window._pedMultiSelActive=false;
+  saveNow();
+  renderPlanEditor();
+  refreshAllTabs();
+}
 
 function pedMoveTo(dragId, targetId){
   if(dragId===targetId)return;
@@ -10398,7 +10538,7 @@ function syncFichesToGantt(){
       });
     });
     p.data.forEach(function(r){
-      if(r.t!=='act')return;
+      if(r.t!=='act'&&r.t!=='sb')return; // heures comptées sur la tâche OU la sous-phase, selon ce qui est ciblé
       var data=actMap[r.id];
       if(!data)return;
       r.hReel=Math.round(data.totalH*10)/10;
@@ -11975,7 +12115,7 @@ function renderRecap(){
     html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Budget Heures par Phase</h3>';
     html+='<table class="rt"><thead><tr><th>Phase</th><th>Budget H</th><th>Pr&eacute;vu H</th><th>R&eacute;el H</th><th>Ecart Bud/Pr&eacute;vu</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
     D().filter(function(r){return r.t==='ph';}).forEach(function(ph_r){
-      var _a=D().filter(function(r){return r.t==='act'&&r.pk===ph_r.pk;});
+      var _a=D().filter(function(r){return (r.t==='act'||r.t==='sb')&&r.pk===ph_r.pk;});
       var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
       var _rv=Math.round(_a.reduce(function(s,a){return s+(+a.hReel||0);},0)*10)/10;
       var _bv=ph_r.budgetH||0;
@@ -12004,7 +12144,7 @@ function renderRecap(){
       var _a=[];
       for(var _bj=_ensIdxB+1;_bj<_allRowsEns.length;_bj++){
         var _br=_allRowsEns[_bj];if(_br.t==='ph'||_br.t==='ens')break;
-        if(_br.t==='act')_a.push(_br);
+        if(_br.t==='act'||_br.t==='sb')_a.push(_br);
       }
       var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
       var _rv=Math.round(_a.reduce(function(s,a){return s+(+a.hReel||0);},0)*10)/10;
@@ -12021,6 +12161,40 @@ function renderRecap(){
       html+='<td>'+_pv+'H</td><td>'+_rv+'H</td>';
       html+='<td style="font-weight:700;color:'+_cp+'">'+(_dp>0?'+':'')+_dp+'H</td>';
       html+='<td style="font-weight:700;color:'+_cr+'">'+(_dr>0?'+':'')+_dr+'H</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table>';
+  }
+  // Budget par sous-phase — avec détail des personnes (qui a travaillé dessus et combien d'heures)
+  var _hBudSb=D().some(function(r){return r.t==='sb'&&r.budgetH>0;});
+  if(_hBudSb){
+    html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Budget Heures par Sous-phase</h3>';
+    html+='<table class="rt"><thead><tr><th>Sous-phase</th><th>Phase / Ensemble</th><th>Budget H</th><th>R&eacute;el H</th><th>Ecart</th><th>Qui a travaill&eacute; dessus</th></tr></thead><tbody>';
+    var _allRowsSb=D();
+    _allRowsSb.filter(function(r){return r.t==='sb'&&r.budgetH>0;}).forEach(function(sb_r){
+      var _sbIdxB=_allRowsSb.indexOf(sb_r);
+      // Retrouver la phase et l'ensemble parent (en remontant depuis cette ligne)
+      var _parentPh='',_parentEns='';
+      for(var _pj=_sbIdxB;_pj>=0;_pj--){
+        var _pr=_allRowsSb[_pj];
+        if(_pr.t==='ens'&&!_parentEns)_parentEns=_pr.lb;
+        if(_pr.t==='ph'){_parentPh=_pr.lb;break;}
+      }
+      var _rv=Math.round((+sb_r.hReel||0)*10)/10;
+      var _bv=sb_r.budgetH||0;
+      var _dr=Math.round((_rv-_bv)*10)/10;
+      var _cr=_dr>0?'#DC2626':_dr<0?'#059669':'var(--tx2)';
+      var _persons=(sb_r.p||[]).filter(function(pp){return pp.name&&pp.name.trim();});
+      var _persDetail=_persons.length
+        ?_persons.map(function(pp){return '<span style="display:inline-block;background:var(--bg3);border-radius:10px;padding:1px 8px;margin:1px 3px 1px 0;font-size:10px;font-weight:700">'+pp.name+' &middot; '+pp.heures+'H</span>';}).join('')
+        :'<span style="color:var(--tx3);font-style:italic;font-size:10px">Personne encore renseign&eacute;</span>';
+      html+='<tr>';
+      html+='<td style="font-weight:700">'+sb_r.lb+'</td>';
+      html+='<td style="color:var(--tx3);font-size:11px">'+_parentPh+(_parentEns?' \u25B8 '+_parentEns:'')+'</td>';
+      html+='<td style="font-weight:700">'+_bv+'H</td>';
+      html+='<td>'+_rv+'H</td>';
+      html+='<td style="font-weight:700;color:'+_cr+'">'+(_dr>0?'+':'')+_dr+'H</td>';
+      html+='<td>'+_persDetail+'</td>';
       html+='</tr>';
     });
     html+='</tbody></table>';
