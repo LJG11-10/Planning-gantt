@@ -668,7 +668,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
 /* Planning editor */
 #plan-editor{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
 #plan-editor.open{display:flex}
-#ped-box{background:var(--bg2);border-radius:var(--r2);width:min(720px,98vw);max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.25);display:flex;flex-direction:column}
+#ped-box{background:var(--bg2);border-radius:var(--r2);width:min(1100px,98vw);max-height:95vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.25);display:flex;flex-direction:column}
 #ped-hdr{padding:14px 18px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg2);z-index:1}
 #ped-hdr h2{font-size:14px;font-weight:700}
 #ped-body{padding:14px 18px;flex:1}
@@ -7000,6 +7000,27 @@ function saveNow(){
 }
 function currP(){return STORE.projects[STORE.current]||{data:[],budget:500,sk1:200,sk2:200,fh:{}};}
 function D(){return (currP()||{}).data||[];}
+// Vue "groupée" des lignes pour l'affichage GANTT uniquement : si des lignes
+// d'une même phase (pk) sont physiquement éparpillées dans le tableau (ex:
+// après une duplication mal recopiée), elles sont regroupées virtuellement
+// ici pour l'affichage — SANS jamais toucher aux vraies données stockées
+// (D() reste inchangée pour toute la logique d'édition/déplacement).
+function _groupedRowsForDisplay(rows){
+  var firstIdx={};
+  rows.forEach(function(r,i){if(!(r.pk in firstIdx))firstIdx[r.pk]=i;});
+  return rows.map(function(r,i){return {r:r,i:i};})
+    .sort(function(a,b){
+      var fa=firstIdx[a.r.pk],fb=firstIdx[b.r.pk];
+      if(fa!==fb)return fa-fb;
+      // Au sein d'une même phase : la ligne d'en-tête ('ph') passe toujours en premier
+      var pa=a.r.t==='ph'?-1:a.i;
+      var pb=b.r.t==='ph'?-1:b.i;
+      if(pa===-1&&pb!==-1)return -1;
+      if(pb===-1&&pa!==-1)return 1;
+      return a.i-b.i;
+    })
+    .map(function(x){return x.r;});
+}
 function acts(){return D().filter(r=>r.t==='act');}
 function totalUsed(){
   // Heures pointées = somme des fiches d'heure de l'affaire courante
@@ -8473,7 +8494,7 @@ function renderGantt(){
   </thead><tbody>`;
 
   let _skipToken=null; // si un ensemble est replié, on saute tout jusqu'à la prochaine borne (ens/ph)
-  D().forEach(row=>{
+  _groupedRowsForDisplay(D()).forEach(row=>{
     const ph=PH_get(row.pk);
     if(row.t!=='ph'&&row.t!=='ens'&&_skipToken)return; // contenu d'un ensemble replié : masqué
     if(row.t==='ph'){
@@ -8906,7 +8927,7 @@ function renderPlanEditor(){
     clearBtn.onclick=function(){window._pedMultiSel={};renderPlanEditor();};
     multiBar.appendChild(clearBtn);
   }
-  if(window._pedMultiSelActive)body.appendChild(multiBar);
+  body.appendChild(multiBar);
 
   // Phase list
   var list=document.createElement('div');
@@ -9044,6 +9065,7 @@ function buildPhaseList(container){
     // Phase header
     var phHdr=document.createElement('div');
     phHdr.className='ped-ph-hdr';
+    phHdr.dataset.phHdr=pk;
     phHdr.style.background=ph.h;
 
     var phTitle=document.createElement('span');
@@ -9137,13 +9159,15 @@ function buildPhaseList(container){
           cbEns.type='checkbox';
           cbEns.checked=!!(window._pedMultiSel&&window._pedMultiSel[row.id]);
           cbEns.style.cssText='margin-right:6px;cursor:pointer;flex-shrink:0';
+          cbEns.addEventListener('mousedown',function(e){e.stopPropagation();});
+          cbEns.addEventListener('click',function(e){e.stopPropagation();});
           (function(_id){cbEns.onchange=function(){pedToggleSelectRow(_id,this.checked);};})(row.id);
           item.appendChild(cbEns);
         }
         var lbl=document.createElement('span');
         lbl.style.flex='1';
         lbl.textContent='\u25B8 '+row.lb;
-        item.draggable=true;
+        item.draggable=!window._pedMultiSelActive;
         item.dataset.dragId=row.id;
         var ensHandle=document.createElement('span');
         ensHandle.textContent='\u2630';
@@ -9172,6 +9196,8 @@ function buildPhaseList(container){
           cbSb.type='checkbox';
           cbSb.checked=!!(window._pedMultiSel&&window._pedMultiSel[row.id]);
           cbSb.style.cssText='margin-right:6px;cursor:pointer;flex-shrink:0';
+          cbSb.addEventListener('mousedown',function(e){e.stopPropagation();});
+          cbSb.addEventListener('click',function(e){e.stopPropagation();});
           (function(_id){cbSb.onchange=function(){pedToggleSelectRow(_id,this.checked);};})(row.id);
           item.appendChild(cbSb);
         }
@@ -9179,7 +9205,7 @@ function buildPhaseList(container){
         lbl.style.flex='1';
         lbl.textContent='\u25C6 '+row.lb;
         // Drag-and-drop pour sous-phases
-        item.draggable=true;
+        item.draggable=!window._pedMultiSelActive;
         item.dataset.dragId=row.id;
         var sbHandle=document.createElement('span');
         sbHandle.textContent='\u2630';
@@ -9504,6 +9530,23 @@ function pedDup(id){
   saveNow();renderPlanEditor();refreshAllTabs();
 }
 
+// Déplace le formulaire (unique, partagé) juste après l'élément concerné,
+// pour qu'il s'ouvre directement à l'endroit cliqué au lieu d'apparaître
+// tout en bas de la liste (loin si beaucoup de phases/ensembles/sous-phases).
+function _pedRelocateFormNear(anchorEl){
+  var fa=document.getElementById('ped-form-area');
+  if(!fa||!anchorEl||!anchorEl.parentNode)return;
+  anchorEl.parentNode.insertBefore(fa,anchorEl.nextSibling);
+}
+function _pedFindRowEl(id){
+  return document.querySelector('[data-drag-id="'+id+'"]');
+}
+function _pedFindPhaseHdrEl(pk){
+  var all=document.querySelectorAll('[data-ph-hdr]');
+  for(var i=0;i<all.length;i++){if(all[i].dataset.phHdr===pk)return all[i];}
+  return null;
+}
+
 function pedRename(id){
   var r=D().find(function(x){return x.id===id;});if(!r)return;
   if(r.t==='sb'||r.t==='ens'){pedShowEditSubForm(id);return;}
@@ -9514,7 +9557,9 @@ function pedRename(id){
 }
 function pedShowEditSubForm(id){
   var r=D().find(function(x){return x.id===id;});if(!r)return;
-  var fa=document.getElementById('ped-form-area');if(!fa)return;fa.innerHTML='';
+  var fa=document.getElementById('ped-form-area');if(!fa)return;
+  _pedRelocateFormNear(_pedFindRowEl(id));
+  fa.innerHTML='';
   var d=document.createElement('div');d.className='ped-form';
   var _typeLbl=r.t==='ens'?'l\'ensemble':'la sous-phase';
   d.innerHTML='<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Modifier '+_typeLbl+'</div>';
@@ -9531,7 +9576,9 @@ function pedShowEditSubForm(id){
   inp.focus();
 }
 function pedShowEditPhaseForm(pk,ph,isCustom){
-  var fa=document.getElementById('ped-form-area');if(!fa)return;fa.innerHTML='';
+  var fa=document.getElementById('ped-form-area');if(!fa)return;
+  _pedRelocateFormNear(_pedFindPhaseHdrEl(pk));
+  fa.innerHTML='';
   var d=document.createElement('div');d.className='ped-form';
   d.innerHTML='<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Modifier la phase : '+pk+'</div>';
   function addF(lbl,id,type,val){
@@ -9801,6 +9848,7 @@ function pedShowEditForm(id){
   if(!r)return;
   var fa=document.getElementById('ped-form-area');
   if(!fa)return;
+  _pedRelocateFormNear(_pedFindRowEl(id));
   fa.innerHTML='';
   var d=document.createElement('div');d.className='pf-box';
   var ttl=document.createElement('div');ttl.className='pf-ttl';
