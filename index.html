@@ -9216,6 +9216,53 @@ function findOrphanPhasesHtml(){
     +'<div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:8px">\u26A0 '+orphanList.length+' phase(s) fant\u00f4me(s) d\u00e9tect\u00e9e(s) \u2014 probablement issues d\'une duplication qui a mal recopi\u00e9 le nom de la phase :</div>'
     +rows+'</div>';
 }
+// Détecte les sous-phases dont l'en-tête a un pk (phase) différent de celui
+// de ses propres tâches — typiquement causé par un déplacement qui n'a mis à
+// jour qu'une partie du bloc. Contrairement aux phases fantômes (aucune vraie
+// ligne 'ph'), ici la position est correcte, seule l'étiquette de phase de
+// l'en-tête est fausse : la réparation ne fait donc QUE corriger l'étiquette,
+// sans rien déplacer physiquement (pour ne jamais perturber l'ordre existant).
+function findMismatchedSbHtml(){
+  var data=D();
+  var mismatches=[];
+  for(var i=0;i<data.length;i++){
+    var r=data[i];
+    if(r.t!=='sb')continue;
+    var j=i+1;
+    var childPks={};
+    while(j<data.length&&['sb','ph','ens','ensend'].indexOf(data[j].t)<0){
+      if(data[j].t==='act')childPks[data[j].pk]=(childPks[data[j].pk]||0)+1;
+      j++;
+    }
+    var childPkKeys=Object.keys(childPks);
+    if(!childPkKeys.length)continue;
+    var majorityPk=childPkKeys.sort(function(a,b){return childPks[b]-childPks[a];})[0];
+    if(r.pk!==majorityPk){
+      var nbEnfants=childPkKeys.reduce(function(s,k){return s+childPks[k];},0);
+      mismatches.push({sbId:r.id,sbLb:r.lb,currentPk:r.pk,shouldBePk:majorityPk,nbEnfants:nbEnfants});
+    }
+  }
+  if(!mismatches.length)return '';
+  var rows=mismatches.map(function(m){
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
+      +'<span style="font-size:11px;color:var(--tx2)">"<strong>'+escHtml(m.sbLb)+'</strong>" est \u00E9tiquet\u00E9e <strong>'+escHtml(m.currentPk)+'</strong> mais ses '+m.nbEnfants+' t\u00E2che(s) sont dans <strong>'+escHtml(m.shouldBePk)+'</strong> (dates/barres conserv\u00E9es, rien ne bouge)</span>'
+      +'<button class="btn" style="font-size:10px;padding:3px 10px" onclick="repairMismatchedSb(\''+m.sbId+'\',\''+m.shouldBePk.replace(/'/g,"\\'")+'\')">R\u00e9parer</button>'
+      +'</div>';
+  }).join('');
+  return '<div style="margin:0 20px 12px;padding:12px 16px;background:#3D2800;border:2px solid #D97706;border-radius:var(--r2)">'
+    +'<div style="font-size:12px;font-weight:700;color:#FBBF24;margin-bottom:8px">\u26A0 '+mismatches.length+' sous-phase(s) dont l\u2019en-t\u00EAte n\u2019est pas dans la m\u00EAme phase que ses propres t\u00E2ches :</div>'
+    +rows+'</div>';
+}
+function repairMismatchedSb(sbId,correctPk){
+  var r=D().find(function(x){return x.id===sbId;});
+  if(!r)return;
+  if(!confirm('Rattacher l\u2019en-t\u00EAte de la sous-phase "'+r.lb+'" \u00E0 la phase "'+correctPk+'" (comme ses t\u00E2ches) ?\n\nRien ne sera d\u00E9plac\u00E9, ni aucune date ni pi\u00E8ce jointe touch\u00E9e \u2014 juste l\u2019\u00E9tiquette corrig\u00E9e.'))return;
+  r.pk=correctPk;
+  saveNow();
+  renderPlanEditor();
+  refreshAllTabs();
+}
+
 function repairOrphanPhase(orphanPk,targetPk){
   var data=D();
   var orphanRows=data.filter(function(r){return r.pk===orphanPk;});
@@ -9471,6 +9518,12 @@ function renderPlanEditor(){
     var _ow=document.createElement('div');
     _ow.innerHTML=_orphanWarn;
     box.appendChild(_ow);
+  }
+  var _mismatchWarn=findMismatchedSbHtml();
+  if(_mismatchWarn){
+    var _mw=document.createElement('div');
+    _mw.innerHTML=_mismatchWarn;
+    box.appendChild(_mw);
   }
   box.appendChild(body);
   box.appendChild(footer);
