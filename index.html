@@ -73,6 +73,40 @@
   // Fusion fine des tâches (lignes) d'une affaire : jamais de perte, même si
   // le local et le distant ont chacun des modifications sur des tâches
   // différentes de la même affaire au même moment.
+  // ── Horodatage automatique des lignes modifiées ────────────────────────
+  // Plutôt que de devoir "instrumenter" chaque endroit du code qui modifie
+  // une ligne (risque d'en oublier), on compare le contenu actuel de chaque
+  // ligne à sa dernière version connue à chaque sauvegarde : si ça a changé,
+  // on horodate. Ça permet, lors d'une fusion avec le serveur, de savoir
+  // quelle version (la vôtre ou celle d'un collègue) est la plus récente,
+  // au lieu de toujours garder la version locale par défaut.
+  window._rowSnapshots=window._rowSnapshots||{};
+  function _refreshRowSnapshots(){
+    window._rowSnapshots={};
+    if(!STORE||!STORE.projects)return;
+    Object.keys(STORE.projects).forEach(function(aff){
+      (STORE.projects[aff].data||[]).forEach(function(r){
+        if(!r||!r.id)return;
+        var cmp=Object.assign({},r);delete cmp._modAt;
+        window._rowSnapshots[aff+'::'+r.id]=JSON.stringify(cmp);
+      });
+    });
+  }
+  function _stampModifiedRows(){
+    if(!STORE||!STORE.current||!STORE.projects[STORE.current])return;
+    var aff=STORE.current;
+    (STORE.projects[aff].data||[]).forEach(function(r){
+      if(!r||!r.id)return;
+      var key=aff+'::'+r.id;
+      var cmp=Object.assign({},r);delete cmp._modAt;
+      var json=JSON.stringify(cmp);
+      if(window._rowSnapshots[key]!==undefined&&window._rowSnapshots[key]!==json){
+        r._modAt=Date.now();
+      }
+      window._rowSnapshots[key]=json;
+    });
+  }
+
   function _mergeProjectData(remoteData,localData,deletedIds){
     if(!Array.isArray(remoteData))remoteData=[];
     if(!Array.isArray(localData))localData=[];
@@ -87,7 +121,19 @@
     }).map(function(r){
       if(r&&r.id){
         seen[r.id]=true;
-        if(localMap[r.id])return localMap[r.id]; // le local (potentiellement pas encore envoyé) prime
+        var lr=localMap[r.id];
+        if(lr){
+          // Les deux côtés ont cette ligne : celle qui a été modifiée le plus
+          // récemment gagne (grâce à l'horodatage). Si un seul côté a un
+          // horodatage (l'autre n'a jamais été touché depuis le chargement),
+          // c'est celui qui a l'horodatage qui gagne — il représente une vraie
+          // modification récente. Si aucun horodatage nulle part (ancienne
+          // ligne jamais retouchée), on garde le comportement historique
+          // (le local prime, par sécurité).
+          var lt=lr._modAt||0,rt=r._modAt||0;
+          if(lt||rt)return lt>=rt?lr:r;
+          return lr;
+        }
       }
       return r;
     });
@@ -250,6 +296,7 @@
     if(STORE.conges){Object.keys(_delAll2).forEach(function(nm){delete STORE.conges[nm];});}
     localStorage.setItem(SK,JSON.stringify(STORE));
     try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}
+    if(typeof _refreshRowSnapshots==='function')_refreshRowSnapshots();
     }catch(_e2){
       console.error('Erreur _applyRemote (synchronisation ignorée pour ce cycle) :',_e2);
       return;
@@ -2656,6 +2703,7 @@ function loadStore(){
     // Uploader immédiatement sur Supabase (fusion des données de tout le monde)
     supaSave(STORE);
     localStorage.setItem(SK,JSON.stringify(STORE));
+    if(typeof _refreshRowSnapshots==='function')_refreshRowSnapshots();
     renderProjSel();
     var first=STORE.current||Object.keys(STORE.projects)[0];
     if(first)switchProjet(first);
@@ -7079,6 +7127,9 @@ document.addEventListener('keydown',function(e){
 function saveNow(){
   // Sauvegarder l'état actuel dans l'historique avant modification
   _undoPush();
+  // Horodater les lignes qui ont réellement changé depuis le dernier
+  // enregistrement — pour départager les conflits de synchronisation.
+  if(typeof _stampModifiedRows==='function')_stampModifiedRows();
   // sync sbar inputs
   const p=currP();
   // Budget manuel : ne pas recalculer automatiquement
@@ -7273,6 +7324,20 @@ function affColor(affKey){
   var hash=0;
   for(var i=0;i<s.length;i++){hash=((hash<<5)-hash+s.charCodeAt(i))|0;}
   return AFF_COLOR_PALETTE[Math.abs(hash)%AFF_COLOR_PALETTE.length];
+}
+
+// Une phase est considérée "chantier" si son nom contient CHANTIER
+// (couvre "CHANTIER", "CHANTIER PAE", etc. — vos noms de phase réels)
+function _isChantierPhase(pk){return pk&&pk.toUpperCase().indexOf('CHANTIER')>=0;}
+// Effectif saisi manuellement sur une sous-phase, pour une semaine donnée
+function sbSetHeadcount(sbId,week,value){
+  var r=D().find(function(x){return x.id===sbId;});
+  if(!r)return;
+  if(!r.headcount)r.headcount={};
+  var n=parseInt(value,10);
+  if(!value||isNaN(n)||n<=0)delete r.headcount[week];
+  else r.headcount[week]=n;
+  saveNow();
 }
 
 function sbSetBudget(sbId,current){
@@ -8367,6 +8432,25 @@ function renderPortfolio(){
     });
     return wks;
   }
+  // Une phase est considérée "chantier" si son nom contient CHANTIER
+  // (fonction globale _isChantierPhase, définie une seule fois)
+  // Effectif (personnes distinctes) par semaine pour un ensemble de tâches :
+  // une personne compte pour une semaine si sa tâche y est active (prévu OU réel)
+  function _weeklyHeadcount(acts){
+    var byWeek={};
+    acts.forEach(function(a){
+      var names=(a.p||[]).filter(function(pp){return pp.name&&pp.name.trim();}).map(function(pp){return pp.name.trim();});
+      if(!names.length)return;
+      var activeW=Object.assign({},getBarWeeks([a],'prev'),getBarWeeks([a],'reel'));
+      Object.keys(activeW).forEach(function(w){
+        if(!byWeek[w])byWeek[w]={};
+        names.forEach(function(nm){byWeek[w][nm]=true;});
+      });
+    });
+    var counts={};
+    Object.keys(byWeek).forEach(function(w){counts[w]=Object.keys(byWeek[w]).length;});
+    return counts;
+  }
 
   // Calcul de la plage de semaines globale
   var allWkSet={};
@@ -8376,6 +8460,12 @@ function renderPortfolio(){
     var rw=getBarWeeks(acts,'reel');
     Object.keys(pw).forEach(function(w){allWkSet[w]=true;});
     Object.keys(rw).forEach(function(w){allWkSet[w]=true;});
+    // Semaines avec un effectif chantier saisi manuellement : à inclure même
+    // si aucune tâche n'y est encore planifiée (cas typique : anticiper un
+    // recrutement sur une semaine future, avant toute tâche placée dessus).
+    (STORE.projects[aff].data||[]).filter(function(r){return r.t==='sb'&&_isChantierPhase(r.pk);}).forEach(function(sb){
+      Object.keys(sb.headcount||{}).forEach(function(w){if(sb.headcount[w]>0)allWkSet[w]=true;});
+    });
   });
   var allWks=Object.keys(allWkSet).map(Number).sort(function(a,b){return a-b;});
   if(!allWks.length){allWks=[];for(var i=1;i<=52;i++)allWks.push(i);}
@@ -8420,9 +8510,38 @@ function renderPortfolio(){
     var isN=wh2===todayWk;
     var d2=wkD(wh2);
     var dayStr=d2&&CW>=28?d2.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):'';
-    html+='<th style="width:'+CW+'px;min-width:'+CW+'px;text-align:center;padding:2px 1px;font-size:8px;font-weight:'+(isN?900:500)+';color:'+(isN?'var(--ac)':'var(--tx3)')+';border-bottom:2px solid '+(isN?'var(--ac)':'var(--bd)')+';border-left:1px solid var(--bd2);background:'+(isN?'rgba(99,102,241,.07)':'var(--bg2)')+'"><div>S'+wh2+'</div>'+(dayStr?'<div style="font-size:7px;opacity:.7">'+dayStr+'</div>':'')+'</th>';
+    html+='<th style="width:'+CW+'px;min-width:'+CW+'px;text-align:center;padding:2px 1px;font-size:8px;font-weight:'+(isN?900:500)+';color:'+(isN?'var(--ac)':'var(--tx3)')+';border-bottom:2px solid '+(isN?'var(--ac)':'var(--bd)')+';border-left:1px solid var(--bd2);background:'+(isN?'rgba(99,102,241,.07)':'var(--bg2)')+'"><div>S'+isoWeekOf(wh2)+'</div>'+(dayStr?'<div style="font-size:7px;opacity:.7">'+dayStr+'</div>':'')+'</th>';
   }
   html+='</tr></thead><tbody>';
+
+  // ── Ligne de synthèse : effectif CHANTIER cumulé, toutes affaires ─────
+  // C'est LA ligne à regarder pour anticiper les pics et recruter.
+  // Basée sur l'effectif saisi manuellement sur chaque sous-phase (pas sur les
+  // personnes assignées aux tâches — plus fiable pour anticiper l'avenir).
+  var totalHeadcount={};
+  affs.forEach(function(aff){
+    (STORE.projects[aff].data||[]).filter(function(r){return r.t==='sb'&&_isChantierPhase(r.pk);}).forEach(function(sb){
+      Object.keys(sb.headcount||{}).forEach(function(w){
+        totalHeadcount[w]=(totalHeadcount[w]||0)+(sb.headcount[w]||0);
+      });
+    });
+  });
+  var maxHC=Math.max(1,Math.max.apply(null,Object.values(totalHeadcount).concat([0])));
+  html+='<tr style="border-bottom:3px solid var(--C1);height:34px;background:linear-gradient(135deg,#FFFBEB,#FEF3C7)">';
+  html+='<td style="position:sticky;left:0;z-index:3;background:#FFFBEB;border-right:2px solid var(--C1);padding:0 8px">';
+  html+='<div style="display:flex;align-items:center;gap:6px;height:34px"><span style="font-size:15px">\u{1F477}</span>'
+    +'<span style="font-weight:900;font-size:11px;color:#9A6410">EFFECTIF CHANTIER<br><span style="font-weight:600;font-size:8px;color:#B08030">Toutes affaires cumul\u00E9es</span></span></div></td>';
+  for(var whc=minWk;whc<=maxWk;whc++){
+    var isNhc=whc===todayWk;
+    var hc=totalHeadcount[whc]||0;
+    var intensity=hc/maxHC;
+    var bgHc=hc?'rgba(154,100,16,'+(0.15+intensity*0.55)+')':'transparent';
+    var txHc=hc?(intensity>0.55?'#fff':'#7A5008'):'var(--tx3)';
+    html+='<td style="text-align:center;padding:2px 1px;border-left:1px solid var(--bd2);background:'+(isNhc?'rgba(99,102,241,.08)':'transparent')+'">'
+      +(hc?'<div style="display:inline-block;min-width:20px;padding:3px 0;border-radius:5px;background:'+bgHc+';color:'+txHc+';font-weight:900;font-size:11px">'+hc+'</div>':'<span style="color:var(--tx3);font-size:9px">\u2014</span>')
+      +'</td>';
+  }
+  html+='</tr>';
 
   // ── Lignes ───────────────────────────────────────────────────────
   affs.forEach(function(aff){
@@ -8485,6 +8604,15 @@ function renderPortfolio(){
       var pka=allActs.filter(function(a){return a.pk===pk;});
       var phPrevWks=getBarWeeks(pka,'prev');
       var phReelWks=getBarWeeks(pka,'reel');
+      var isChantier=_isChantierPhase(pk);
+      var phHeadcountByWk={};
+      if(isChantier){
+        (p.data||[]).filter(function(r){return r.t==='sb'&&r.pk===pk;}).forEach(function(sb){
+          Object.keys(sb.headcount||{}).forEach(function(w){
+            phHeadcountByWk[w]=(phHeadcountByWk[w]||0)+(sb.headcount[w]||0);
+          });
+        });
+      }
 
       // Personnes de cette phase
       var phPers={};
@@ -8495,7 +8623,7 @@ function renderPortfolio(){
       html+='<td style="position:sticky;left:0;z-index:2;background:var(--bg2);border-right:2px solid var(--bd);padding:0 8px 0 20px">';
       html+='<div style="display:flex;align-items:center;gap:5px;height:28px">';
       html+='<div style="width:8px;height:8px;border-radius:2px;background:'+ph.h+';flex-shrink:0"></div>';
-      html+='<span style="font-size:10px;font-weight:600;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">'+pk+'</span>';
+      html+='<span style="font-size:10px;font-weight:600;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">'+pk+(isChantier?' \u{1F477}':'')+'</span>';
       if(phNbP)html+='<span style="font-size:8px;color:var(--tx3)">👤'+phNbP+'</span>';
       html+='</div></td>';
 
@@ -8504,11 +8632,13 @@ function renderPortfolio(){
         var hasPp=!!phPrevWks[wp];
         var hasRp=!!phReelWks[wp];
         var cell3='';
+        var wpHC=phHeadcountByWk[wp]||0;
         if(hasPp){
           var ps=(!!phPrevWks[wp-1]),pe=(!!phPrevWks[wp+1]);
           var br3=(ps?'0':'6')+'px '+(pe?'0':'6')+'px '+(pe?'0':'6')+'px '+(ps?'0':'6')+'px';
-          cell3+='<div style="height:10px;margin:0 1px 1px;background:'+ph.h+';border-radius:'+br3+';opacity:.85;box-shadow:0 1px 3px rgba(0,0,0,.1)">'
-            +'<div style="height:40%;background:rgba(255,255,255,.3);border-radius:inherit 0 0 inherit"></div></div>';
+          cell3+='<div style="height:'+(isChantier&&wpHC?'16':'10')+'px;margin:0 1px 1px;background:'+ph.h+';border-radius:'+br3+';opacity:.85;box-shadow:0 1px 3px rgba(0,0,0,.1);position:relative;display:flex;align-items:center;justify-content:center">'
+            +(isChantier&&wpHC?'<span style="font-size:9px;font-weight:900;color:#fff;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,.4)">'+wpHC+'</span>':'<div style="position:absolute;inset:0;height:40%;background:rgba(255,255,255,.3);border-radius:inherit 0 0 inherit"></div>')
+            +'</div>';
         }
         if(hasRp){
           var rs=(!!phReelWks[wp-1]),re2=(!!phReelWks[wp+1]);
@@ -8650,6 +8780,16 @@ function renderGantt(){
       const _sbPctBadge=_sbPct>0?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.12);color:${ph.t}">${_sbPct}%</span>`:'';
       const _sbBudget=row.budgetH||0;
       const _sbBudBadge=`<span onclick="event.stopPropagation();sbSetBudget('${row.id}',${_sbBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.18);border-radius:3px;cursor:pointer" title="Budget sous-phase">${_sbBudget>0?'B:'+_sbBudget+'H':'+ Budget'}</span>`;
+      if(_isChantierPhase(row.pk)){
+        // Sous-phase d'une phase chantier : une case éditable par semaine pour
+        // saisir manuellement l'effectif prévu (utile pour anticiper le recrutement).
+        let _sbWeekCells='';
+        for(let _w=1;_w<=52;_w++){
+          const _hc=(row.headcount&&row.headcount[_w])||'';
+          _sbWeekCells+=`<td colspan="7" style="background:${ph.s};opacity:.92;height:19px;border-left:1px solid rgba(0,0,0,.06);text-align:center;padding:0"><input type="number" min="0" max="99" value="${_hc}" placeholder="\u00B7" title="Effectif pr\u00E9vu semaine ${isoWeekOf(_w)}" oninput="sbSetHeadcount('${row.id}',${_w},this.value)" onclick="event.stopPropagation()" style="width:22px;border:none;background:transparent;text-align:center;font-size:10px;font-weight:800;color:${ph.t};outline:none;padding:0;-moz-appearance:textfield"></td>`;
+        }
+        html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};opacity:.92;padding:0 12px 0 34px;font-size:11px;font-weight:600;height:19px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.08)">\u25C6 \u{1F477} &nbsp;${row.lb}${_sbPctBadge}${_sbBudBadge}</td>${_sbWeekCells}</tr>`;return;
+      }
       html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};opacity:.92;padding:0 12px 0 34px;font-size:11px;font-weight:600;height:19px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.08)">\u25C6 &nbsp;${row.lb}${_sbPctBadge}${_sbBudBadge}</td><td colspan="${2+NC}" style="background:${ph.s};opacity:.92;height:19px"></td></tr>`;return;
     }
     const nb=row.p.filter(p=>p.name.trim()).length;
