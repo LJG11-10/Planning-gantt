@@ -9331,51 +9331,53 @@ function renderPlanEditor(){
     selInfo.style.cssText='font-size:11px;font-weight:700;color:var(--ac)';
     selInfo.textContent=selCount+' \u00E9l\u00E9ment(s) s\u00E9lectionn\u00E9(s)';
     multiBar.appendChild(selInfo);
-    // Construire la liste des cibles possibles : uniquement dans la même phase que la sélection
-    var _selRows=Object.keys(window._pedMultiSel).map(function(id){return D().find(function(r){return r.id===id;});}).filter(Boolean);
-    var _selPks=Array.from(new Set(_selRows.map(function(r){return r.pk;})));
-    if(_selPks.length>1){
-      var warnMulti=document.createElement('span');
-      warnMulti.style.cssText='font-size:10px;color:var(--rd);font-weight:700';
-      warnMulti.textContent='\u26A0 La s\u00E9lection m\u00E9lange plusieurs phases \u2014 impossible de d\u00E9placer';
-      multiBar.appendChild(warnMulti);
-    }else{
-      var targetPk=_selPks[0];
-      var _selIdsSet={};Object.keys(window._pedMultiSel).forEach(function(id){_selIdsSet[id]=true;});
-      var _phRowForTarget=D().find(function(r){return r.t==='ph'&&r.pk===targetPk;});
-      var _targetCandidates=D().filter(function(r){return r.pk===targetPk&&(r.t==='ens'||r.t==='sb')&&!_selIdsSet[r.id];});
-      if(!_phRowForTarget&&!_targetCandidates.length){
-        var warnNoTarget=document.createElement('span');
-        warnNoTarget.style.cssText='font-size:10px;color:var(--rd);font-weight:700';
-        warnNoTarget.textContent='\u26A0 Aucune destination disponible dans cette phase';
-        multiBar.appendChild(warnNoTarget);
-      }else{
-        var targetSel=document.createElement('select');
-        targetSel.id='ped-multi-target';
-        targetSel.style.cssText='font-size:10px;border:1px solid var(--bd);border-radius:4px;padding:3px 6px;background:var(--bg2);color:var(--tx)';
-        if(_phRowForTarget){
-          var optPh=document.createElement('option');
-          optPh.value=_phRowForTarget.id;
-          optPh.textContent='\u25B6 Au d\u00E9but de la phase';
-          targetSel.appendChild(optPh);
-        }
-        _targetCandidates.forEach(function(r){
-          var opt=document.createElement('option');
-          opt.value=r.id;
-          opt.textContent='Apr\u00E8s : '+(r.t==='ens'?'\u25B8 ':'\u25C6 ')+r.lb;
-          targetSel.appendChild(opt);
-        });
-        multiBar.appendChild(targetSel);
-        var moveBtn=document.createElement('button');
-        moveBtn.className='btn btn-a';
-        moveBtn.textContent='\u2192 D\u00E9placer la s\u00E9lection ici';
-        moveBtn.onclick=function(){
-          var tSel=document.getElementById('ped-multi-target');
-          if(tSel&&tSel.value)pedMoveSelectionTo(tSel.value);
-          else alert('Aucune destination s\u00E9lectionn\u00E9e.');
-        };
-        multiBar.appendChild(moveBtn);
+    // Destinations possibles : n'importe où dans l'affaire, toutes phases
+    // confondues — regroupées par phase pour s'y retrouver.
+    var _selIdsSet={};Object.keys(window._pedMultiSel).forEach(function(id){_selIdsSet[id]=true;});
+    var _allDataForTargets=D();
+    var _phasesForTargets=Array.from(new Set(_allDataForTargets.map(function(r){return r.pk;}).filter(Boolean)));
+    var _anyTarget=false;
+    var targetSel=document.createElement('select');
+    targetSel.id='ped-multi-target';
+    targetSel.style.cssText='font-size:10px;border:1px solid var(--bd);border-radius:4px;padding:3px 6px;background:var(--bg2);color:var(--tx);max-width:260px';
+    _phasesForTargets.forEach(function(pk){
+      var _phRowForTarget=_allDataForTargets.find(function(r){return r.t==='ph'&&r.pk===pk;});
+      var _targetCandidates=_allDataForTargets.filter(function(r){return r.pk===pk&&(r.t==='ens'||r.t==='sb')&&!_selIdsSet[r.id];});
+      if(!_phRowForTarget&&!_targetCandidates.length)return;
+      var grp=document.createElement('optgroup');
+      grp.label=pk;
+      if(_phRowForTarget){
+        var optPh=document.createElement('option');
+        optPh.value=_phRowForTarget.id;
+        optPh.textContent='\u25B6 Au d\u00E9but de la phase';
+        grp.appendChild(optPh);
+        _anyTarget=true;
       }
+      _targetCandidates.forEach(function(r){
+        var opt=document.createElement('option');
+        opt.value=r.id;
+        opt.textContent='Apr\u00E8s : '+(r.t==='ens'?'\u25B8 ':'\u25C6 ')+r.lb;
+        grp.appendChild(opt);
+        _anyTarget=true;
+      });
+      targetSel.appendChild(grp);
+    });
+    if(!_anyTarget){
+      var warnNoTarget=document.createElement('span');
+      warnNoTarget.style.cssText='font-size:10px;color:var(--rd);font-weight:700';
+      warnNoTarget.textContent='\u26A0 Aucune destination disponible';
+      multiBar.appendChild(warnNoTarget);
+    }else{
+      multiBar.appendChild(targetSel);
+      var moveBtn=document.createElement('button');
+      moveBtn.className='btn btn-a';
+      moveBtn.textContent='\u2192 D\u00E9placer la s\u00E9lection ici';
+      moveBtn.onclick=function(){
+        var tSel=document.getElementById('ped-multi-target');
+        if(tSel&&tSel.value)pedMoveSelectionTo(tSel.value);
+        else alert('Aucune destination s\u00E9lectionn\u00E9e.');
+      };
+      multiBar.appendChild(moveBtn);
     }
     var delSelBtn=document.createElement('button');
     delSelBtn.className='btn';
@@ -9867,6 +9869,8 @@ function pedMoveSelectionTo(targetId){
   var remaining=data.filter(function(r){return !extractedIds[r.id];});
   var newTi=remaining.findIndex(function(r){return r.id===targetId;});
   if(newTi<0){alert('Position de destination introuvable (peut-\u00EAtre incluse dans la s\u00E9lection).');return;}
+  var targetPk=remaining[newTi].pk;
+  flatBlock.forEach(function(r){r.pk=targetPk;}); // rattacher à la phase de destination (même si différente)
   var insertAt=newTi+1;
   if(remaining[newTi].t==='sb'||remaining[newTi].t==='ens'){
     var tb=remaining[newTi].t==='ens'?['ph','ens','ensend']:['sb','ph','ens','ensend'];
@@ -9876,11 +9880,34 @@ function pedMoveSelectionTo(targetId){
   }
   remaining.splice.apply(remaining,[insertAt,0].concat(flatBlock));
   currP().data=remaining;
+  var _movedIds=flatBlock.map(function(r){return r.id;});
+  var _movedCount=allBlocks.length;
   window._pedMultiSel={};
   window._pedMultiSelActive=false;
   saveNow();
   renderPlanEditor();
   refreshAllTabs();
+  // Confirmation visuelle explicite : défiler jusqu'au premier élément déplacé
+  // et le faire clignoter, + message clair — pour qu'il n'y ait plus jamais
+  // d'ambiguïté sur si le déplacement a fonctionné ou pas.
+  setTimeout(function(){
+    var firstEl=document.querySelector('[data-drag-id="'+_movedIds[0]+'"]');
+    if(firstEl){
+      firstEl.scrollIntoView({behavior:'smooth',block:'center'});
+      var _origBg=firstEl.style.background,_origTrans=firstEl.style.transition;
+      firstEl.style.transition='background 0.3s';
+      firstEl.style.background='#FEF08A';
+      setTimeout(function(){firstEl.style.background='#86EFAC';},600);
+      setTimeout(function(){firstEl.style.background=_origBg;firstEl.style.transition=_origTrans;},1800);
+    }
+    var sv=document.getElementById('sv');
+    if(sv){
+      sv.textContent='\u2713 '+_movedCount+' \u00E9l\u00E9ment(s) d\u00E9plac\u00E9(s)';
+      sv.style.display='inline';
+      clearTimeout(window._pedMoveMsgT);
+      window._pedMoveMsgT=setTimeout(function(){sv.style.display='none';},3000);
+    }
+  },150);
 }
 
 function pedDeleteSelection(){
@@ -9932,8 +9959,7 @@ function pedMoveTo(dragId, targetId){
   var ti=data.findIndex(function(r){return r.id===targetId;});
   if(fi<0||ti<0)return;
   var srcRow=data[fi], tgtRow=data[ti];
-  // Ne pas sortir de la phase
-  if(srcRow.pk!==tgtRow.pk)return;
+  var targetPk=tgtRow.pk; // peut être différente de srcRow.pk : on déplace alors aussi vers cette phase
   if(srcRow.t==='sb'||srcRow.t==='ens'){
     // Sous-phase ou ensemble : déplacer avec tous ses enfants
     // (un ensemble contient des sous-phases, s'arrête au prochain ens/ph ;
@@ -9943,6 +9969,7 @@ function pedMoveTo(dragId, targetId){
     var j=fi+1;
     while(j<data.length&&boundary.indexOf(data[j].t)<0){children.push(data[j]);j++;}
     var block=[srcRow].concat(children);
+    block.forEach(function(r){r.pk=targetPk;}); // rattacher à la phase de destination
     data.splice(fi,block.length);
     var newTi=data.findIndex(function(r){return r.id===targetId;});
     if(newTi<0)newTi=data.length;
@@ -9957,8 +9984,9 @@ function pedMoveTo(dragId, targetId){
     }
     data.splice.apply(data,[insertAt,0].concat(block));
   } else {
-    // Tâche : déplacer seulement la ligne
+    // Tâche : déplacer seulement la ligne, et la rattacher à la phase de destination
     var row=data.splice(fi,1)[0];
+    row.pk=targetPk;
     var newTi2=data.findIndex(function(r){return r.id===targetId;});
     data.splice(fi<ti?newTi2+1:newTi2,0,row);
   }
