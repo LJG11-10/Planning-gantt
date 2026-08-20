@@ -54,6 +54,13 @@
       } else {
         try{var {data:_m}=await supa.storage.from(BUCKET).list('',{search:FILE});
         if(_m&&_m[0])_lastEtag=_m[0].updated_at||_m[0].created_at;}catch(e2){}
+        // Prévenir tout le monde INSTANTANÉMENT qu'une nouvelle version existe,
+        // au lieu d'attendre que chacun le remarque au prochain cycle de 3s.
+        // La vérification toutes les 3s reste active en parallèle comme filet
+        // de sécurité (si cette notification est perdue pour une raison ou
+        // une autre — réseau, onglet endormi, etc. — rien n'est perdu, la
+        // vérification périodique existante prend toujours le relais).
+        try{ if(_syncChannel)_syncChannel.send({type:'broadcast',event:'data-changed',payload:{sid:SESSION_ID,ts:Date.now()}}); }catch(e3){}
       }
     }catch(e){
       _showMsg('Erreur sync: '+e.message,'#DC2626');
@@ -66,13 +73,57 @@
     _syncTimeout=setTimeout(function(){supaSave(STORE);},800);
   }
 
-  var _pollInterval=null,_lastEtag=null;
+  var _pollInterval=null,_lastEtag=null,_syncChannel=null;
 
-  // Empêche le polling d'écraser/fermer un panneau de modification en cours d'édition
-  // (panneau tâche ouvert, popup heures/jour ouverte, ou focus actif dans un champ du planning)
-  // Fusion fine des tâches (lignes) d'une affaire : jamais de perte, même si
-  // le local et le distant ont chacun des modifications sur des tâches
-  // différentes de la même affaire au même moment.
+  // Vérifie et applique une nouvelle version distante (partagé entre le
+  // déclenchement instantané et la vérification périodique de sécurité).
+  function _checkAndApplyRemote(){
+    if(!supa)return;
+    if(_isEditingUI())return;
+    supa.storage.from(BUCKET).list('',{search:FILE})
+      .then(function(res){
+        if(!res||!res.data||!res.data.length)return;
+        var meta=res.data.find(function(f){return f.name===FILE;});
+        if(!meta)return;
+        var etag=meta.updated_at||meta.created_at;
+        if(_lastEtag&&etag===_lastEtag)return; // pas changé
+        if(_lastSaveSid===SESSION_ID){
+          _lastSaveSid=null;
+          _lastEtag=etag;
+          return;
+        }
+        if(_isEditingUI())return;
+        _lastEtag=etag;
+        supaLoad().then(function(remote){
+          if(remote&&!_isEditingUI())_applyRemote(remote);
+        });
+      });
+  }
+
+  function startRealtime(){
+    if(!supa)return;
+    // ── Notification instantanée (rapide) ────────────────────────────────
+    // Dès qu'un collègue enregistre, on est prévenu immédiatement au lieu
+    // d'attendre le prochain cycle de vérification.
+    try{
+      if(_syncChannel){try{supa.removeChannel(_syncChannel);}catch(e){}}
+      _syncChannel=supa.channel('planning-sync');
+      _syncChannel.on('broadcast',{event:'data-changed'},function(msg){
+        if(msg&&msg.payload&&msg.payload.sid===SESSION_ID)return; // notre propre sauvegarde
+        _checkAndApplyRemote();
+      }).subscribe();
+    }catch(e){console.error('Realtime indisponible, la vérification périodique reste active:',e);}
+    // ── Vérification périodique (filet de sécurité) ──────────────────────
+    // Continue de tourner même si la notification instantanée ci-dessus
+    // fonctionne parfaitement — en cas de message manqué (réseau, onglet mis
+    // en veille, etc.), rien n'est perdu, ce filet prend toujours le relais.
+    if(_pollInterval)clearInterval(_pollInterval);
+    _pollInterval=setInterval(function(){
+      if(!supa)return;
+      try{ if(typeof _refreshTodayIfNeeded==='function')_refreshTodayIfNeeded(); }catch(e){}
+      _checkAndApplyRemote();
+    },3000);
+  }
   // ── Horodatage automatique des lignes modifiées ────────────────────────
   // Plutôt que de devoir "instrumenter" chaque endroit du code qui modifie
   // une ligne (risque d'en oublier), on compare le contenu actuel de chaque
@@ -81,6 +132,7 @@
   // quelle version (la vôtre ou celle d'un collègue) est la plus récente,
   // au lieu de toujours garder la version locale par défaut.
   window._rowSnapshots=window._rowSnapshots||{};
+  var _META_FIELDS=['customPhases','budget','infos','documents','fh','sk1','sk2','persons'];
   function _refreshRowSnapshots(){
     window._rowSnapshots={};
     if(!STORE||!STORE.projects)return;
@@ -90,6 +142,9 @@
         var cmp=Object.assign({},r);delete cmp._modAt;
         window._rowSnapshots[aff+'::'+r.id]=JSON.stringify(cmp);
       });
+      var _cmpMeta={};
+      _META_FIELDS.forEach(function(f){_cmpMeta[f]=STORE.projects[aff][f];});
+      window._rowSnapshots[aff+'::__meta__']=JSON.stringify(_cmpMeta);
     });
   }
   function _stampModifiedRows(){
@@ -105,6 +160,38 @@
       }
       window._rowSnapshots[key]=json;
     });
+    _stampModifiedMeta(aff);
+  }
+  // Champs d'une affaire qui ne sont PAS dans .data (donc pas couverts par
+  // l'horodatage ligne par ligne ci-dessus) : couleurs de phase personnalisées,
+  // budget, infos affaire (contacts/responsables), documents de l'onglet
+  // Modifications, réglages skid... Même principe : si le contenu a changé
+  // depuis le dernier enregistrement, on horodate — pour que la fusion sache
+  // quelle version (la vôtre ou celle d'un collègue) est la plus récente,
+  // au lieu de toujours faire gagner un côté en bloc.
+  function _stampModifiedMeta(aff){
+    var p=STORE.projects[aff];
+    if(!p)return;
+    var key=aff+'::__meta__';
+    var cmp={};
+    _META_FIELDS.forEach(function(f){cmp[f]=p[f];});
+    var json=JSON.stringify(cmp);
+    if(window._rowSnapshots[key]!==undefined&&window._rowSnapshots[key]!==json){
+      p._metaModAt=Date.now();
+    }
+    window._rowSnapshots[key]=json;
+  }
+  // Applique, pour une affaire présente des deux côtés, l'ensemble des champs
+  // "métadonnées" de celui qui a l'horodatage le plus récent — au lieu de
+  // toujours prendre ceux du distant (comportement précédent, qui pouvait
+  // écraser silencieusement un changement local pas encore envoyé).
+  function _mergeProjectMeta(remoteProj,localProj){
+    if(!remoteProj||!localProj)return;
+    var lt=localProj._metaModAt||0,rt=remoteProj._metaModAt||0;
+    if(lt>=rt){
+      _META_FIELDS.forEach(function(f){if(localProj[f]!==undefined)remoteProj[f]=localProj[f];});
+      remoteProj._metaModAt=lt;
+    }
   }
 
   function _mergeProjectData(remoteData,localData,deletedIds){
@@ -159,41 +246,6 @@
     return false;
   }
 
-  function startRealtime(){
-    if(!supa)return;
-    // Polling toutes les 3s : telecharger le fichier et comparer
-    if(_pollInterval)clearInterval(_pollInterval);
-    _pollInterval=setInterval(function(){
-      if(!supa)return;
-      try{ if(typeof _refreshTodayIfNeeded==='function')_refreshTodayIfNeeded(); }catch(e){}
-      // Ne rien faire tant qu'un panneau/popup d'édition est ouvert : on retente au cycle suivant
-      if(_isEditingUI())return;
-      // Verifier si le fichier a change via les metadonnees
-      supa.storage.from(BUCKET).list('',{search:FILE})
-        .then(function(res){
-          if(!res||!res.data||!res.data.length)return;
-          var meta=res.data.find(function(f){return f.name===FILE;});
-          if(!meta)return;
-          var etag=meta.updated_at||meta.created_at;
-          if(_lastEtag&&etag===_lastEtag)return; // pas change
-          // Si le changement d'etag vient de notre propre sauvegarde, ignorer
-          // (evite d'ecraser les modifs en cours du panneau expand)
-          if(_lastSaveSid===SESSION_ID){
-            _lastSaveSid=null;
-            _lastEtag=etag;
-            return;
-          }
-          // Re-vérifier juste avant d'appliquer : une édition a pu démarrer pendant le fetch
-          if(_isEditingUI())return;
-          _lastEtag=etag;
-          // Telecharger et appliquer
-          supaLoad().then(function(remote){
-            if(remote&&!_isEditingUI())_applyRemote(remote);
-          });
-        });
-    },3000);
-  }
-
   function _applyRemote(remote){
     if(!_isValidStore(remote)){console.warn('donnees vides ignorees');return;}
     try{
@@ -238,6 +290,10 @@
           // ligne au lieu de faire gagner un côté en bloc (jamais de perte).
           remote.projects[aff].data=_mergeProjectData(remote.projects[aff].data,STORE.projects[aff].data,_delRowsMerged);
           remote.projects[aff]._deletedRowIds=_delRowsMerged;
+          // Couleurs de phase, budget, infos affaire, documents... : prendre
+          // l'ensemble le plus récent (local ou distant) au lieu de toujours
+          // garder celui du distant en bloc.
+          _mergeProjectMeta(remote.projects[aff],STORE.projects[aff]);
         }
       });
     }
@@ -275,10 +331,18 @@
     // pas encore envoyé au serveur) prend le dessus entrée par entrée — jamais
     // semaine entière par semaine entière, pour ne perdre le travail de
     // personne quand deux personnes modifient la même semaine en parallèle.
+    // Les entrées supprimées (par qui que ce soit) ne doivent jamais ressusciter.
+    var _delWpKeys=Object.assign({},STORE._deletedWeekPlanKeys||{},remote._deletedWeekPlanKeys||{});
     STORE.weekPlan=STORE.weekPlan||{};
     Object.keys(_localWeekPlan).forEach(function(wk){
-      STORE.weekPlan[wk]=Object.assign({},STORE.weekPlan[wk]||{},_localWeekPlan[wk]);
+      var _mergedWk=Object.assign({},STORE.weekPlan[wk]||{},_localWeekPlan[wk]);
+      Object.keys(_mergedWk).forEach(function(k){if(_delWpKeys[wk+'::'+k])delete _mergedWk[k];});
+      STORE.weekPlan[wk]=_mergedWk;
     });
+    Object.keys(STORE.weekPlan).forEach(function(wk){
+      Object.keys(STORE.weekPlan[wk]||{}).forEach(function(k){if(_delWpKeys[wk+'::'+k])delete STORE.weekPlan[wk][k];});
+    });
+    STORE._deletedWeekPlanKeys=_delWpKeys;
     STORE.absences=Object.assign({},STORE.absences||{},_localAbsences);
     STORE.conges=Object.assign({},STORE.conges||{},_localConges);
     // Retirer du weekPlan/absences/conges toute entrée d'une personne supprimée
@@ -2622,6 +2686,11 @@ function loadStore(){
           var _merged=Object.assign({},remote.projects[k],localProjs[k]);
           _merged.data=_mergeProjectData(remote.projects[k].data,localProjs[k].data,_delRowsMerged0);
           _merged._deletedRowIds=_delRowsMerged0;
+          // Couleurs de phase, budget, infos affaire, documents... : repartir
+          // des valeurs distantes puis prendre l'ensemble le plus récent (local
+          // ou distant) selon l'horodatage — pas toujours le local en bloc.
+          _META_FIELDS.concat(['_metaModAt']).forEach(function(f){_merged[f]=remote.projects[k][f];});
+          _mergeProjectMeta(_merged,localProjs[k]);
           _filtProjs[k]=_merged;
         }else{
           _filtProjs[k]=remote.projects[k];
@@ -2650,14 +2719,22 @@ function loadStore(){
         // Fusion fine entrée par entrée (pas semaine entière par semaine entière) :
         // le remote sert de base, le local prend le dessus clé par clé — pour ne
         // jamais perdre le travail d'une autre personne sur la même semaine.
+        // Les entrées supprimées (par qui que ce soit) ne doivent jamais ressusciter.
+        var _delWpKeys0=Object.assign({},STORE._deletedWeekPlanKeys||{},remote._deletedWeekPlanKeys||{});
         var _localWP0=STORE.weekPlan||{};
         STORE.weekPlan={};
         Object.keys(_filtWP).forEach(function(wk){
-          STORE.weekPlan[wk]=Object.assign({},_filtWP[wk],_localWP0[wk]||{});
+          var _mw=Object.assign({},_filtWP[wk],_localWP0[wk]||{});
+          Object.keys(_mw).forEach(function(k){if(_delWpKeys0[wk+'::'+k])delete _mw[k];});
+          STORE.weekPlan[wk]=_mw;
         });
         Object.keys(_localWP0).forEach(function(wk){
           if(!STORE.weekPlan[wk])STORE.weekPlan[wk]=_localWP0[wk];
         });
+        Object.keys(STORE.weekPlan).forEach(function(wk){
+          Object.keys(STORE.weekPlan[wk]||{}).forEach(function(k){if(_delWpKeys0[wk+'::'+k])delete STORE.weekPlan[wk][k];});
+        });
+        STORE._deletedWeekPlanKeys=_delWpKeys0;
       }
 
       // Absences : filtrer les personnes supprimées
@@ -5651,8 +5728,8 @@ function dbBuildPlanningGrid(){
   function buildActOpts(aff,selId,phaseFilter){if(!aff)return '<option value="">-- Choisir activite --</option>';var o='<option value="">-- Choisir activite --</option>';var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];var sbBase='';var ensLbl='';dat.forEach(function(r){if(r.t==='ens'){sbBase=r.lb;ensLbl='';return;}if(r.t==='sb'){ensLbl=r.lb;return;}if(r.t!=='act')return;if(r.done&&r.id!==selId)return;if(phaseFilter&&phaseFilter.indexOf(r.pk)<0)return;var sb=sbBase+(ensLbl?' ▸ '+ensLbl:'');var _ph2=PH_get(r.pk);var _bg2=(_ph2&&_ph2.b)||'';var _xd2=(_ph2&&_ph2.xd)||'#333';o+='<option value="'+r.id+'"'+(selId===r.id?' selected':'')+(_bg2?' style="background:'+_bg2+';color:'+_xd2+'"':'')+'>'+(sb?sb+' ▸ ':'')+r.lb+(r.done?' ✓':'')+'</option>';});return o;}
   function getSavedEntries(nm,di){var key=nm+'::'+di;var val=STORE.weekPlan[selWk][key];if(!val)return [];if(Array.isArray(val))return val;return [val];}
   function getCellRows(nm,di){var saved=getSavedEntries(nm,di);var extraKey=nm+'::'+di;var extra=window._wpExtra[extraKey]||0;var rows=saved.slice();for(var i=0;i<extra;i++)rows.push({aff:'',actId:'',comment:''});if(!rows.length)rows.push({aff:'',actId:'',comment:''});return rows;}
-  function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length)STORE.weekPlan[selWk][key]=clean;else delete STORE.weekPlan[selWk][key];localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
-  function removeEntry(nm,di,ei){var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved.splice(ei,1);var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length)STORE.weekPlan[selWk][key]=clean;else delete STORE.weekPlan[selWk][key];localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}else{if(extra>0)window._wpExtra[key]=extra-1;}dbBuildPlanningGrid();}
+  function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length){STORE.weekPlan[selWk][key]=clean;}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
+  function removeEntry(nm,di,ei){var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved.splice(ei,1);var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length){STORE.weekPlan[selWk][key]=clean;}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}else{if(extra>0)window._wpExtra[key]=extra-1;}dbBuildPlanningGrid();}
   window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];as.innerHTML=buildActOpts(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null);as.style.display=sel.value?'block':'none';}};
   window._wpActChange=function(sel){
   var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;
@@ -8808,8 +8885,24 @@ function renderGantt(){
   </thead><tbody>`;
 
   let _skipToken=null; // si un ensemble est replié, on saute tout jusqu'à la prochaine borne (ens/ph)
+  // Phases "orphelines" (des lignes sans vraie ligne d'en-tête 'ph', typiquement
+  // issues d'une duplication accidentelle) : l'éditeur les affiche comme leur
+  // propre section, le GANTT doit faire pareil pour rester cohérent.
+  const _seenPhGantt={};
+  D().forEach(function(r){if(r.t==='ph')_seenPhGantt[r.pk]=true;});
+  const _orphanPksGantt={};
+  D().forEach(function(r){if(r.t!=='ph'&&r.pk&&!_seenPhGantt[r.pk])_orphanPksGantt[r.pk]=true;});
+  const _orphanHeaderShown={};
   D().forEach(row=>{
     const ph=PH_get(row.pk);
+    if(row.pk&&_orphanPksGantt[row.pk]&&!_orphanHeaderShown[row.pk]){
+      _orphanHeaderShown[row.pk]=true;
+      _skipToken=null;
+      const _phActsO=D().filter(function(r){return r.t==='act'&&r.pk===row.pk;});
+      const _phPrevO=_phActsO.reduce(function(s,a){return s+(+a.hPrev||0);},0);
+      const _phReelO=_phActsO.reduce(function(s,a){return s+(+a.hReel||0);},0);
+      html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.h};padding:0 12px;font-size:13px;font-weight:700;color:#fff;height:25px;letter-spacing:1px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.25);display:flex;align-items:center">▶ &nbsp;${row.pk}<span style="margin-left:10px;font-size:9px;font-weight:700;background:rgba(255,255,255,.3);padding:1px 8px;border-radius:10px" title="Cette phase n'a pas de vraie ligne d'en-tête — ouvrez l'éditeur de planning pour la réparer">⚠ À réparer</span>${_phPrevO>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">P:${_phPrevO}H</span>`:''}${_phReelO>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">R:${_phReelO}H</span>`:''}</td><td colspan="${2+NC}" style="background:${ph.h};height:25px"></td></tr>`;
+    }
     if(row.t!=='ph'&&row.t!=='ens'&&_skipToken)return; // contenu d'un ensemble replié : masqué
     if(row.t==='ph'){
       _skipToken=null;
