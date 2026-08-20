@@ -9401,9 +9401,16 @@ function renderPlanEditor(){
         _anyTarget=true;
       }
       _targetCandidates.forEach(function(r){
+        if(r.t==='ens'){
+          var optEnsStart=document.createElement('option');
+          optEnsStart.value='__ensstart__'+r.id;
+          optEnsStart.textContent='\u25B6 Au d\u00E9but de \u25B8 '+r.lb;
+          grp.appendChild(optEnsStart);
+          _anyTarget=true;
+        }
         var opt=document.createElement('option');
         opt.value=r.id;
-        opt.textContent='Apr\u00E8s : '+(r.t==='ens'?'\u25B8 ':'\u25C6 ')+r.lb;
+        opt.textContent=(r.t==='ens'?'\u00C0 la fin de \u25B8 ':'Apr\u00E8s : \u25C6 ')+r.lb;
         grp.appendChild(opt);
         _anyTarget=true;
       });
@@ -9920,17 +9927,21 @@ function pedMoveSelectionTo(targetId){
   if(!allBlocks.length)return;
   var flatBlock=allBlocks.reduce(function(a,b){return a.concat(b);},[]);
   var remaining=data.filter(function(r){return !extractedIds[r.id];});
-  var newTi=remaining.findIndex(function(r){return r.id===targetId;});
+  var isEnsStart=targetId.indexOf('__ensstart__')===0;
+  var realTargetId=isEnsStart?targetId.slice('__ensstart__'.length):targetId;
+  var newTi=remaining.findIndex(function(r){return r.id===realTargetId;});
   if(newTi<0){alert('Position de destination introuvable (peut-\u00EAtre incluse dans la s\u00E9lection).');return;}
   var targetPk=remaining[newTi].pk;
   flatBlock.forEach(function(r){r.pk=targetPk;}); // rattacher à la phase de destination (même si différente)
   var insertAt=newTi+1;
-  if(remaining[newTi].t==='sb'||remaining[newTi].t==='ens'){
+  if(!isEnsStart&&(remaining[newTi].t==='sb'||remaining[newTi].t==='ens')){
     var tb=remaining[newTi].t==='ens'?['ph','ens','ensend']:['sb','ph','ens','ensend'];
     var k=newTi+1;
     while(k<remaining.length&&tb.indexOf(remaining[k].t)<0)k++;
     insertAt=k;
   }
+  // isEnsStart : insertAt reste newTi+1 (juste après l'en-tête de l'ensemble,
+  // avant tout son contenu existant) — pas de saut jusqu'à la fin.
   remaining.splice.apply(remaining,[insertAt,0].concat(flatBlock));
   currP().data=remaining;
   var _movedIds=flatBlock.map(function(r){return r.id;});
