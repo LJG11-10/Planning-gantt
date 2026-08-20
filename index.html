@@ -17,6 +17,24 @@
   function _isValidStore(s){
     return s && s.projects && Object.keys(s.projects).length > 0;
   }
+  // Garde-fou global : certaines lignes anciennes ou corrompues (venues d'une
+  // duplication ratée, d'un import, etc.) peuvent se retrouver sans le champ
+  // .p (liste des personnes/heures) sur une tâche. Sans ce champ, le GANTT
+  // plante en plein milieu de son affichage (erreur JS), ce qui peut laisser
+  // l'écran dans un état à moitié rendu, incohérent avec l'éditeur. On corrige
+  // ça une fois pour toutes, à la source, à chaque chargement/synchronisation,
+  // plutôt que de devoir protéger chaque endroit du code qui lit .p (risque
+  // d'en oublier, comme ça vient d'arriver).
+  function _sanitizeProjectsData(projects){
+    if(!projects)return;
+    Object.keys(projects).forEach(function(aff){
+      var data=projects[aff]&&projects[aff].data;
+      if(!Array.isArray(data))return;
+      data.forEach(function(r){
+        if(r&&r.t==='act'&&(!r.p||!Array.isArray(r.p)))r.p=[];
+      });
+    });
+  }
 
   function _showMsg(msg, color){
     var el=document.createElement('div');
@@ -362,6 +380,7 @@
     }
     if(STORE.absences){Object.keys(_delAll2).forEach(function(nm){delete STORE.absences[nm];});}
     if(STORE.conges){Object.keys(_delAll2).forEach(function(nm){delete STORE.conges[nm];});}
+    _sanitizeProjectsData(STORE.projects);
     localStorage.setItem(SK,JSON.stringify(STORE));
     try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}
     if(typeof _refreshRowSnapshots==='function')_refreshRowSnapshots();
@@ -2634,6 +2653,7 @@ function loadStore(){
     STORE={projects:{'Affaire 1':{data:freshData(),budget:500,sk1:200,sk2:200,fh:{}}},current:'Affaire 1'};
   }
   if(!STORE.settings)STORE.settings={};
+  _sanitizeProjectsData(STORE.projects);
   // Charge depuis Supabase en arrière-plan et met à jour si plus récent
   checkPasswordReset();
   window.addEventListener('hashchange', checkPasswordReset);
@@ -2782,6 +2802,7 @@ function loadStore(){
       _showMsg&&_showMsg('Erreur de synchronisation — vos données locales sont conservées','#DC2626');
     }
     // Uploader immédiatement sur Supabase (fusion des données de tout le monde)
+    _sanitizeProjectsData(STORE.projects);
     supaSave(STORE);
     localStorage.setItem(SK,JSON.stringify(STORE));
     if(typeof _refreshRowSnapshots==='function')_refreshRowSnapshots();
@@ -8903,6 +8924,7 @@ function renderGantt(){
       const _phReelO=_phActsO.reduce(function(s,a){return s+(+a.hReel||0);},0);
       html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.h};padding:0 12px;font-size:13px;font-weight:700;color:#fff;height:25px;letter-spacing:1px;white-space:nowrap;border-right:2px solid rgba(255,255,255,.25);display:flex;align-items:center">▶ &nbsp;${row.pk}<span style="margin-left:10px;font-size:9px;font-weight:700;background:rgba(255,255,255,.3);padding:1px 8px;border-radius:10px" title="Cette phase n'a pas de vraie ligne d'en-tête — ouvrez l'éditeur de planning pour la réparer">⚠ À réparer</span>${_phPrevO>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">P:${_phPrevO}H</span>`:''}${_phReelO>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">R:${_phReelO}H</span>`:''}</td><td colspan="${2+NC}" style="background:${ph.h};height:25px"></td></tr>`;
     }
+    if(row.t==='ensend')return; // marqueur invisible : ferme un ensemble, rien à afficher
     if(row.t!=='ph'&&row.t!=='ens'&&_skipToken)return; // contenu d'un ensemble replié : masqué
     if(row.t==='ph'){
       _skipToken=null;
@@ -8977,6 +8999,7 @@ function renderGantt(){
       }
       html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};opacity:.92;padding:0 12px 0 34px;font-size:11px;font-weight:600;height:19px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.08)">\u25C6 &nbsp;${row.lb}${_sbPctBadge}${_sbBudBadge}</td><td colspan="${2+NC}" style="background:${ph.s};opacity:.92;height:19px"></td></tr>`;return;
     }
+    if(!row.p||!Array.isArray(row.p))row.p=[]; // garde-fou : jamais planter le GANTT sur une ligne corrompue
     const nb=row.p.filter(p=>p.name.trim()).length;
     const isE=EXP===row.id,done=!!row.done;
     const tH=row.p.reduce((s,p)=>s+(+p.heures||0),0);
@@ -9318,25 +9341,41 @@ function renderPlanEditor(){
       multiBar.appendChild(warnMulti);
     }else{
       var targetPk=_selPks[0];
-      var targetSel=document.createElement('select');
-      targetSel.id='ped-multi-target';
-      targetSel.style.cssText='font-size:10px;border:1px solid var(--bd);border-radius:4px;padding:3px 6px;background:var(--bg2);color:var(--tx)';
       var _selIdsSet={};Object.keys(window._pedMultiSel).forEach(function(id){_selIdsSet[id]=true;});
-      D().filter(function(r){return r.pk===targetPk&&(r.t==='ens'||r.t==='sb')&&!_selIdsSet[r.id];}).forEach(function(r){
-        var opt=document.createElement('option');
-        opt.value=r.id;
-        opt.textContent='Apr\u00E8s : '+(r.t==='ens'?'\u25B8 ':'\u25C6 ')+r.lb;
-        targetSel.appendChild(opt);
-      });
-      multiBar.appendChild(targetSel);
-      var moveBtn=document.createElement('button');
-      moveBtn.className='btn btn-a';
-      moveBtn.textContent='\u2192 D\u00E9placer la s\u00E9lection ici';
-      moveBtn.onclick=function(){
-        var tSel=document.getElementById('ped-multi-target');
-        if(tSel&&tSel.value)pedMoveSelectionTo(tSel.value);
-      };
-      multiBar.appendChild(moveBtn);
+      var _phRowForTarget=D().find(function(r){return r.t==='ph'&&r.pk===targetPk;});
+      var _targetCandidates=D().filter(function(r){return r.pk===targetPk&&(r.t==='ens'||r.t==='sb')&&!_selIdsSet[r.id];});
+      if(!_phRowForTarget&&!_targetCandidates.length){
+        var warnNoTarget=document.createElement('span');
+        warnNoTarget.style.cssText='font-size:10px;color:var(--rd);font-weight:700';
+        warnNoTarget.textContent='\u26A0 Aucune destination disponible dans cette phase';
+        multiBar.appendChild(warnNoTarget);
+      }else{
+        var targetSel=document.createElement('select');
+        targetSel.id='ped-multi-target';
+        targetSel.style.cssText='font-size:10px;border:1px solid var(--bd);border-radius:4px;padding:3px 6px;background:var(--bg2);color:var(--tx)';
+        if(_phRowForTarget){
+          var optPh=document.createElement('option');
+          optPh.value=_phRowForTarget.id;
+          optPh.textContent='\u25B6 Au d\u00E9but de la phase';
+          targetSel.appendChild(optPh);
+        }
+        _targetCandidates.forEach(function(r){
+          var opt=document.createElement('option');
+          opt.value=r.id;
+          opt.textContent='Apr\u00E8s : '+(r.t==='ens'?'\u25B8 ':'\u25C6 ')+r.lb;
+          targetSel.appendChild(opt);
+        });
+        multiBar.appendChild(targetSel);
+        var moveBtn=document.createElement('button');
+        moveBtn.className='btn btn-a';
+        moveBtn.textContent='\u2192 D\u00E9placer la s\u00E9lection ici';
+        moveBtn.onclick=function(){
+          var tSel=document.getElementById('ped-multi-target');
+          if(tSel&&tSel.value)pedMoveSelectionTo(tSel.value);
+          else alert('Aucune destination s\u00E9lectionn\u00E9e.');
+        };
+        multiBar.appendChild(moveBtn);
+      }
     }
     var delSelBtn=document.createElement('button');
     delSelBtn.className='btn';
@@ -9587,6 +9626,13 @@ function buildPhaseList(container){
     rows.forEach(function(row){
      try{
       if(row.t==='ph')return;
+      if(row.t==='ensend'){
+        // Marqueur invisible : ferme l'ensemble courant, tout ce qui suit
+        // redevient au niveau de la phase (jusqu'au prochain ens/ph).
+        curEnsCtx=null;
+        curTaskIndent=0;
+        return;
+      }
       var item=document.createElement('div');
       if(row.t==='ens'){
         curEnsCtx=row.id;
@@ -9654,6 +9700,14 @@ function buildPhaseList(container){
         item.insertBefore(sbHandle,item.firstChild);
         item.appendChild(lbl);
         item.appendChild(makeBtn('\u29C9','dup-sb','Dupliquer (avec tâches)',row.id,'ped-ico'));
+        if(_inEns){
+          var outBtn=document.createElement('button');
+          outBtn.className='ped-ico';
+          outBtn.title='Sortir cette sous-phase (et tout ce qui suit) de l\u2019ensemble \u2014 redevient directement rattach\u00E9 \u00e0 la phase';
+          outBtn.textContent='\u{1F6AA}';
+          (function(_rid){outBtn.onclick=function(e){e.stopPropagation();pedEndEnsembleBefore(_rid);};})(row.id);
+          item.appendChild(outBtn);
+        }
         item.appendChild(makeBtn('\u270E','rename','Renommer',row.id,'ped-ico'));
         item.appendChild(makeBtn('\u2715','del','Supprimer',row.id,'ped-ico'));
         phBody.appendChild(item);
@@ -9786,7 +9840,7 @@ function _pedExtractBlock(data,rowId){
     return {row:row,block:[row].concat(childrenPh)};
   }
   if(row.t!=='ens'&&row.t!=='sb')return {row:row,block:[row]};
-  var boundary=row.t==='ens'?['ph','ens']:['sb','ph','ens'];
+  var boundary=row.t==='ens'?['ph','ens','ensend']:['sb','ph','ens','ensend'];
   var children=[];
   var j=idx+1;
   while(j<data.length&&boundary.indexOf(data[j].t)<0){children.push(data[j]);j++;}
@@ -9815,7 +9869,7 @@ function pedMoveSelectionTo(targetId){
   if(newTi<0){alert('Position de destination introuvable (peut-\u00EAtre incluse dans la s\u00E9lection).');return;}
   var insertAt=newTi+1;
   if(remaining[newTi].t==='sb'||remaining[newTi].t==='ens'){
-    var tb=remaining[newTi].t==='ens'?['ph','ens']:['sb','ph','ens'];
+    var tb=remaining[newTi].t==='ens'?['ph','ens','ensend']:['sb','ph','ens','ensend'];
     var k=newTi+1;
     while(k<remaining.length&&tb.indexOf(remaining[k].t)<0)k++;
     insertAt=k;
@@ -9858,6 +9912,19 @@ function pedDeleteSelection(){
   refreshAllTabs();
 }
 
+// Insère un marqueur "fin d'ensemble" juste avant la ligne donnée : elle (et
+// tout ce qui suit, jusqu'au prochain ens/ph) redevient rattachée directement
+// à la phase, au lieu d'être considérée comme faisant partie de l'ensemble
+// précédent — c'est ça qui rend le déplacement/positionnement non ambigu.
+function pedEndEnsembleBefore(rowId){
+  var data=D();
+  var idx=data.findIndex(function(r){return r.id===rowId;});
+  if(idx<0)return;
+  var marker={id:'ensend_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),t:'ensend',pk:data[idx].pk};
+  data.splice(idx,0,marker);
+  saveNow();renderPlanEditor();refreshAllTabs();
+}
+
 function pedMoveTo(dragId, targetId){
   if(dragId===targetId)return;
   var data=D();
@@ -9871,7 +9938,7 @@ function pedMoveTo(dragId, targetId){
     // Sous-phase ou ensemble : déplacer avec tous ses enfants
     // (un ensemble contient des sous-phases, s'arrête au prochain ens/ph ;
     // une sous-phase contient des tâches, s'arrête au prochain sb/ens/ph)
-    var boundary=srcRow.t==='ens'?['ph','ens']:['sb','ph','ens'];
+    var boundary=srcRow.t==='ens'?['ph','ens','ensend']:['sb','ph','ens','ensend'];
     var children=[];
     var j=fi+1;
     while(j<data.length&&boundary.indexOf(data[j].t)<0){children.push(data[j]);j++;}
@@ -9883,7 +9950,7 @@ function pedMoveTo(dragId, targetId){
     var insertAt=fi<ti?newTi+1:newTi;
     // Si la cible est elle-même un groupe (sb ou ens), insérer après elle ET ses enfants
     if(data[newTi]&&(data[newTi].t==='sb'||data[newTi].t==='ens')){
-      var tgtBoundary=data[newTi].t==='ens'?['ph','ens']:['sb','ph','ens'];
+      var tgtBoundary=data[newTi].t==='ens'?['ph','ens','ensend']:['sb','ph','ens','ensend'];
       var k=newTi+1;
       while(k<data.length&&tgtBoundary.indexOf(data[k].t)<0)k++;
       if(fi<ti)insertAt=k;
