@@ -5119,11 +5119,34 @@ function showClientDownloadModal(){
   var defFrom=acts.length?Math.max(1,Math.min.apply(null,acts.map(function(a){return a.s||1;}))): 1;
   var defTo=acts.length?Math.min(52,Math.max.apply(null,acts.map(function(a){return a.e||a.s||52;}))):52;
   function wkToISO(wk){var d=new Date(2026,0,5);d.setDate(d.getDate()+(wk-1)*7);return d.toISOString().slice(0,10);}
+
+  // ── Construire la liste Phase ▸ Ensemble à cocher ──────────────────
+  var _cdlStruct=[];
+  var _cdlCurPh=null;
+  (STORE.projects[aff].data||[]).forEach(function(r){
+    if(r.t==='ph'){_cdlCurPh={pk:r.pk,ensembles:[]};_cdlStruct.push(_cdlCurPh);return;}
+    if(r.t==='ens'&&_cdlCurPh){_cdlCurPh.ensembles.push({id:r.id,lb:r.lb});return;}
+  });
+  var checklistHtml=_cdlStruct.map(function(phEntry){
+    var phSafe=phEntry.pk.replace(/'/g,"\\'");
+    var rows='<label style="display:flex;align-items:center;gap:6px;padding:4px 0;cursor:pointer">'
+      +'<input type="checkbox" class="_cdl-ph-cb" data-pk="'+escHtml(phEntry.pk)+'" checked onchange="_cdlTogglePhase(this)" style="cursor:pointer">'
+      +'<span style="font-weight:800;font-size:12px;color:var(--tx)">'+escHtml(phEntry.pk)+'</span></label>';
+    if(phEntry.ensembles.length){
+      rows+=phEntry.ensembles.map(function(ens){
+        return '<label style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 24px;cursor:pointer">'
+          +'<input type="checkbox" class="_cdl-ens-cb" data-pk="'+escHtml(phEntry.pk)+'" data-id="'+ens.id+'" checked onchange="_cdlSyncPhaseState()" style="cursor:pointer">'
+          +'<span style="font-size:11px;color:var(--tx2)">\u25B8 '+escHtml(ens.lb)+'</span></label>';
+      }).join('');
+    }
+    return rows;
+  }).join('<div style="height:1px;background:var(--bd);margin:6px 0"></div>');
+
   var modal=document.createElement('div');
   modal.id='_cdl_modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
   var inner=document.createElement('div');
-  inner.style.cssText='background:var(--bg2);border-radius:16px;padding:32px;min-width:360px;box-shadow:0 20px 60px rgba(0,0,0,.3)';
+  inner.style.cssText='background:var(--bg2);border-radius:16px;padding:32px;min-width:420px;max-width:90vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)';
   inner.innerHTML=''
     +'<div style="font-size:16px;font-weight:900;color:var(--tx);margin-bottom:6px">&#128229; Export client</div>'
     +'<div style="font-size:12px;color:var(--tx3);margin-bottom:20px">Choisissez la plage de semaines à afficher dans le GANTT</div>'
@@ -5134,7 +5157,10 @@ function showClientDownloadModal(){
     +'<div><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">DATE FIN</div>'
     +'<input type="date" id="_cdl_to" value="'+wkToISO(defTo)+'" style="border:2px solid var(--bd);border-radius:8px;padding:6px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx)"></div>'
     +'</div>'
-    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:20px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Seules les tâches dans cette plage apparaîtront sur le GANTT exporté</div>'
+    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:16px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Seules les tâches dans cette plage apparaîtront sur le GANTT exporté</div>'
+    +(checklistHtml?('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:12px;font-weight:800;color:var(--tx)">Phases / Sous-ensembles à inclure</div>'
+      +'<button type="button" onclick="_cdlToggleAll(true)" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg3);cursor:pointer;font-family:inherit">Tout cocher</button></div>'
+      +'<div style="max-height:220px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:10px 14px;margin-bottom:20px;background:var(--bg3)">'+checklistHtml+'</div>'):'')
     +'<div style="display:flex;gap:8px;justify-content:flex-end">'
     +'<button id="_cdl_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid var(--bd);background:var(--bg3);font-family:inherit;font-size:13px;cursor:pointer">Annuler</button>'
     +'<button id="_cdl_ok" style="padding:8px 24px;border-radius:8px;border:none;background:var(--ac);color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">&#128229; Télécharger</button>'
@@ -5150,9 +5176,31 @@ function showClientDownloadModal(){
     window._clientGanttFrom=Math.max(1,Math.min(52,Math.floor((new Date(f)-base)/604800000)+1));
     window._clientGanttTo=Math.max(1,Math.min(52,Math.floor((new Date(t)-base)/604800000)+1));
     if(window._clientGanttFrom>window._clientGanttTo)window._clientGanttTo=window._clientGanttFrom;
+    // Construire le filtre à partir des cases cochées
+    var selPhases={},selEns={};
+    document.querySelectorAll('._cdl-ph-cb').forEach(function(cb){selPhases[cb.dataset.pk]=cb.checked;});
+    document.querySelectorAll('._cdl-ens-cb').forEach(function(cb){selEns[cb.dataset.id]=cb.checked;});
+    window._clientFilter={phases:selPhases,ensembles:selEns};
     modal.remove();
     downloadPlanning('client');
   };
+}
+// Décocher/recocher tous les ensembles d'une phase quand on (dé)coche la phase
+function _cdlTogglePhase(cb){
+  var pk=cb.dataset.pk;
+  document.querySelectorAll('._cdl-ens-cb').forEach(function(ecb){if(ecb.dataset.pk===pk)ecb.checked=cb.checked;});
+}
+// Si tous les ensembles d'une phase sont décochés à la main, décocher la phase aussi (et vice-versa)
+function _cdlSyncPhaseState(){
+  document.querySelectorAll('._cdl-ph-cb').forEach(function(phcb){
+    var ecbs=Array.from(document.querySelectorAll('._cdl-ens-cb')).filter(function(e){return e.dataset.pk===phcb.dataset.pk;});
+    if(!ecbs.length)return;
+    var anyChecked=ecbs.some(function(e){return e.checked;});
+    phcb.checked=anyChecked;
+  });
+}
+function _cdlToggleAll(state){
+  document.querySelectorAll('._cdl-ph-cb,._cdl-ens-cb').forEach(function(cb){cb.checked=state;});
 }
 
 function downloadPlanning(mode){
@@ -5166,6 +5214,31 @@ function downloadPlanning(mode){
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
   var acts=(p.data||[]).filter(function(r){return r.t==='act';});
+  // Filtrer selon les phases/sous-ensembles cochés dans l'export client
+  if(mode==='client'&&window._clientFilter){
+    var _cf=window._clientFilter;
+    var _cfCurEns=null;
+    var _includedActIds={};
+    (p.data||[]).forEach(function(r){
+      if(r.t==='ph'){_cfCurEns=null;return;}
+      if(r.t==='ens'){_cfCurEns=r.id;return;}
+      if(r.t==='sb')return;
+      if(r.t!=='act')return;
+      var phOk=_cf.phases[r.pk]!==false;
+      var ensOk=_cfCurEns?(_cf.ensembles[_cfCurEns]!==false):true;
+      if(phOk&&ensOk)_includedActIds[r.id]=true;
+    });
+    acts=acts.filter(function(a){return _includedActIds[a.id];});
+  }
+  // Helper partagé : une ligne (phase+ensemble éventuel) doit-elle apparaître
+  // dans l'export client ? (toujours vrai en mode interne, ou si pas de filtre)
+  function _clientRowIncluded(pk,ensId){
+    if(mode!=='client'||!window._clientFilter)return true;
+    var _cf=window._clientFilter;
+    if(_cf.phases[pk]===false)return false;
+    if(ensId&&_cf.ensembles[ensId]===false)return false;
+    return true;
+  }
   var forts=p.fortuites||[];
   var totP=acts.reduce(function(s,a){return s+(+a.hPrev||0);},0);
   var totR=acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
@@ -5212,12 +5285,14 @@ function downloadPlanning(mode){
     body+='<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #BFDBFE;font-size:10px;font-weight:700;color:#1F4E79;white-space:nowrap">'+h+'</th>';
   });
   body+='</tr></thead><tbody>';
-  var curSbBaseZ='',curEnsLblZ='';
+  var curSbBaseZ='',curEnsLblZ='',curEnsIdZ=null;
   var prevPk='';
   (p.data||[]).forEach(function(r,ri){
-    if(r.t==='ens'){curSbBaseZ=r.lb;curEnsLblZ='';return;}
+    if(r.t==='ph'){curEnsIdZ=null;return;}
+    if(r.t==='ens'){curSbBaseZ=r.lb;curEnsLblZ='';curEnsIdZ=r.id;return;}
     if(r.t==='sb'){curEnsLblZ=r.lb;return;}
     if(r.t!=='act'){curSbBaseZ='';curEnsLblZ='';return;}
+    if(!_clientRowIncluded(r.pk,curEnsIdZ))return;
     var curSb=curSbBaseZ+(curEnsLblZ?' ▸ '+curEnsLblZ:'');
     var hP=+r.hPrev||0;
     var hR=Math.round((+r.hReel||0)*10)/10;
@@ -5229,8 +5304,8 @@ function downloadPlanning(mode){
       +'<td style="padding:7px 10px;font-weight:700;color:#2563EB;white-space:nowrap">'+(isNewPk?esc(r.pk):'')+'</td>'
       +'<td style="padding:7px 10px;color:#7C3AED;font-size:10px">'+esc(curSb)+'</td>'
       +'<td style="padding:7px 10px;font-weight:'+(r.done?700:400)+'">'+esc(r.lb)+(r.done?' ✓':'')+'</td>'
-      +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.s||'—')+'</td>'
-      +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.e||'—')+'</td>'
+      +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.s?isoWeekOf(r.s):'—')+'</td>'
+      +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.e?isoWeekOf(r.e):'—')+'</td>'
 
       +(mode!=='client'
         ?('<td style="padding:7px 10px;text-align:center;font-weight:700;color:#D97706">'+hP+'H</td>'
@@ -5368,22 +5443,36 @@ function downloadPlanning(mode){
     html+='<th style="background:#2563EB;color:rgba(255,255,255,.9);padding:4px 8px;font-size:9px;text-align:left;border:1px solid #3B82F6">Semaine</th>';
     for(var w=fromW;w<=toW;w++){
       var isTW=TODAY&&TODAY.w===w;
-      html+='<th style="background:'+(isTW?'#FDE047':'#2563EB')+';color:'+(isTW?'#1F4E79':'rgba(255,255,255,.8)')+';padding:3px 1px;text-align:center;font-size:8px;font-weight:700;border:1px solid #3B82F6">'+w+'</th>';
+      html+='<th style="background:'+(isTW?'#FDE047':'#2563EB')+';color:'+(isTW?'#1F4E79':'rgba(255,255,255,.8)')+';padding:3px 1px;text-align:center;font-size:8px;font-weight:700;border:1px solid #3B82F6">'+isoWeekOf(w)+'</th>';
     }
     html+='</tr></thead><tbody>';
 
     // Activity rows
-    var curSbBaseW=''; var curEnsLblW=''; var curPk='';
+    var curSbBaseW=''; var curEnsLblW=''; var curPk=''; var curEnsIdW=null;
     (p.data||[]).forEach(function(r){
-      if(r.t==='ens'){curSbBaseW=r.lb;curEnsLblW='';return;}
-      if(r.t==='sb'){curEnsLblW=r.lb;return;}
       if(r.t==='ph'){
-        curPk=r.pk||r.lb; curSbBaseW='';curEnsLblW='';
+        curPk=r.pk||r.lb; curSbBaseW='';curEnsLblW='';curEnsIdW=null;
+        if(!_clientRowIncluded(curPk,null))return;
         var phC=getPHC(curPk);
-        html+='<tr><td colspan="'+(numW+1)+'" style="background:'+phC.h+';color:#fff;padding:5px 8px;font-weight:800;font-size:11px;letter-spacing:.3px;border-top:2px solid rgba(0,0,0,.15)">■ '+esc(curPk)+'</td></tr>';
+        html+='<tr><td colspan="'+(numW+1)+'" style="background:'+phC.h+';color:#fff;padding:6px 8px;font-weight:800;font-size:12px;letter-spacing:.4px;border-top:3px solid rgba(0,0,0,.2)">■ '+esc(curPk)+'</td></tr>';
+        return;
+      }
+      if(r.t==='ens'){
+        curSbBaseW=r.lb;curEnsLblW='';curEnsIdW=r.id;
+        if(!_clientRowIncluded(curPk,r.id))return;
+        var phC=getPHC(curPk);
+        html+='<tr><td colspan="'+(numW+1)+'" style="background:'+phC.xl+';color:'+phC.h+';padding:4px 8px 4px 18px;font-weight:800;font-size:10px;letter-spacing:.3px;border-top:1px solid rgba(0,0,0,.08)">\u25B8 '+esc(r.lb)+'</td></tr>';
+        return;
+      }
+      if(r.t==='sb'){
+        curEnsLblW=r.lb;
+        if(!_clientRowIncluded(curPk,curEnsIdW))return;
+        var phC=getPHC(curPk);
+        html+='<tr><td colspan="'+(numW+1)+'" style="background:#F3F4F6;color:#4B5563;padding:3px 8px 3px 30px;font-weight:700;font-size:9px;letter-spacing:.2px">\u25C6 '+esc(r.lb)+'</td></tr>';
         return;
       }
       if(r.t!=='act')return;
+      if(!_clientRowIncluded(r.pk,curEnsIdW))return;
       var curSb=curSbBaseW+(curEnsLblW?' ▸ '+curEnsLblW:'');
 
       var phC=getPHC(r.pk||curPk);
@@ -5399,10 +5488,9 @@ function downloadPlanning(mode){
 
       html+='<tr>';
       html+='<td style="padding:0;border:1px solid #E5E7EB;background:'+(r.done?'#F0FDF4':'#FAFAFA')+';overflow:hidden">'
-        +'<div style="padding:2px 4px 1px 5px;border-left:3px solid '+phC.h+'">'
+        +'<div style="padding:2px 4px 1px 42px;border-left:3px solid '+phC.h+'">'
         +'<div style="font-size:9px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(r.done?'#059669':'#1A1917')+'">'
         +(r.done?'✓ ':'')+lbl+'</div>'
-        +(curSb?'<div style="font-size:7px;color:#9CA3AF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(curSb)+'</div>':'')
         +(mode!=='client'?'<div style="font-size:8px;color:#6B7280">'+hP+'H'+(nb?' · '+nb+'👤':'')+'</div>':'')
         +'</div></td>';
 
@@ -9153,6 +9241,12 @@ function renderPlanEditor(){
       };
       multiBar.appendChild(moveBtn);
     }
+    var delSelBtn=document.createElement('button');
+    delSelBtn.className='btn';
+    delSelBtn.style.cssText='background:var(--rd2);color:var(--rd);border:1px solid var(--rd)';
+    delSelBtn.textContent='\u{1F5D1} Supprimer la s\u00E9lection';
+    delSelBtn.onclick=pedDeleteSelection;
+    multiBar.appendChild(delSelBtn);
     var clearBtn=document.createElement('button');
     clearBtn.className='btn btn-g';
     clearBtn.textContent='Annuler la s\u00E9lection';
@@ -9305,6 +9399,17 @@ function buildPhaseList(container){
     var phTitle=document.createElement('span');
     phTitle.textContent='\u25B6 '+pk;
     var _phRow=D().find(function(r){return r.pk===pk&&r.t==='ph';});
+    if(window._pedMultiSelActive&&_phRow){
+      var cbPh=document.createElement('input');
+      cbPh.type='checkbox';
+      cbPh.checked=!!(window._pedMultiSel&&window._pedMultiSel[_phRow.id]);
+      cbPh.title='S\u00E9lectionner toute la phase (avec tout son contenu)';
+      cbPh.style.cssText='margin-right:8px;cursor:pointer;flex-shrink:0';
+      cbPh.addEventListener('mousedown',function(e){e.stopPropagation();});
+      cbPh.addEventListener('click',function(e){e.stopPropagation();});
+      (function(_id){cbPh.onchange=function(){pedToggleSelectRow(_id,this.checked);};})(_phRow.id);
+      phHdr.appendChild(cbPh);
+    }
     var _bWrap=document.createElement('span');
     _bWrap.style.cssText='display:inline-flex;align-items:center;gap:4px;margin-left:10px;background:rgba(255,255,255,.2);border-radius:4px;padding:1px 6px';
     _bWrap.innerHTML='<span style="font-size:9px;color:#fff;opacity:.9">Budget H:</span>';
@@ -9460,6 +9565,16 @@ function buildPhaseList(container){
         item.className='ped-act';
         if(curTaskIndent)item.style.marginLeft=curTaskIndent+'px';
         if(!row.p||!Array.isArray(row.p))row.p=[]; // garde-fou : champ manquant/corrompu sur d'anciennes données
+        if(window._pedMultiSelActive){
+          var cbAct=document.createElement('input');
+          cbAct.type='checkbox';
+          cbAct.checked=!!(window._pedMultiSel&&window._pedMultiSel[row.id]);
+          cbAct.style.cssText='margin-right:6px;cursor:pointer;flex-shrink:0';
+          cbAct.addEventListener('mousedown',function(e){e.stopPropagation();});
+          cbAct.addEventListener('click',function(e){e.stopPropagation();});
+          (function(_id){cbAct.onchange=function(){pedToggleSelectRow(_id,this.checked);};})(row.id);
+          item.appendChild(cbAct);
+        }
         var tot=row.p.reduce(function(s,p){return s+(+p.heures||0);},0);
         var lbl=document.createElement('span');
         lbl.className='act-lbl';
@@ -9471,7 +9586,7 @@ function buildPhaseList(container){
         var durLbl=row.dDur!=null?row.dDur+'j':((row.e-row.s)*5+5)+'j';
         info.textContent=startLbl+' · '+durLbl+(tot?' · '+tot+'H':'');
         // Handle drag-and-drop
-        item.draggable=true;
+        item.draggable=!window._pedMultiSelActive;
         item.dataset.dragId=row.id;
         var handle=document.createElement('span');
         handle.textContent='\u2630';
@@ -9566,6 +9681,13 @@ function _pedExtractBlock(data,rowId){
   var idx=data.findIndex(function(r){return r.id===rowId;});
   if(idx<0)return null;
   var row=data[idx];
+  if(row.t==='ph'){
+    // Une phase entière : tout ce qui suit jusqu'à la prochaine phase lui appartient
+    var childrenPh=[];
+    var jp=idx+1;
+    while(jp<data.length&&data[jp].t!=='ph'){childrenPh.push(data[jp]);jp++;}
+    return {row:row,block:[row].concat(childrenPh)};
+  }
   if(row.t!=='ens'&&row.t!=='sb')return {row:row,block:[row]};
   var boundary=row.t==='ens'?['ph','ens']:['sb','ph','ens'];
   var children=[];
@@ -9579,7 +9701,7 @@ function pedMoveSelectionTo(targetId){
   if(!selIds.length)return;
   var _selIdsSet={};selIds.forEach(function(id){_selIdsSet[id]=true;});
   // Extraire les blocs sélectionnés, dans leur ordre d'apparition d'origine
-  var orderedSelRows=data.filter(function(r){return _selIdsSet[r.id]&&(r.t==='ens'||r.t==='sb');});
+  var orderedSelRows=data.filter(function(r){return _selIdsSet[r.id]&&(r.t==='ens'||r.t==='sb'||r.t==='act'||r.t==='ph');});
   var extractedIds={};
   var allBlocks=[];
   orderedSelRows.forEach(function(r){
@@ -9603,6 +9725,35 @@ function pedMoveSelectionTo(targetId){
   }
   remaining.splice.apply(remaining,[insertAt,0].concat(flatBlock));
   currP().data=remaining;
+  window._pedMultiSel={};
+  window._pedMultiSelActive=false;
+  saveNow();
+  renderPlanEditor();
+  refreshAllTabs();
+}
+
+function pedDeleteSelection(){
+  var data=D();
+  var selIds=Object.keys(window._pedMultiSel||{});
+  if(!selIds.length)return;
+  var _selIdsSet={};selIds.forEach(function(id){_selIdsSet[id]=true;});
+  var orderedSelRows=data.filter(function(r){return _selIdsSet[r.id]&&(r.t==='ens'||r.t==='sb'||r.t==='act'||r.t==='ph');});
+  var extractedIds={};
+  var totalRows=0;
+  orderedSelRows.forEach(function(r){
+    if(extractedIds[r.id])return;
+    var ext=_pedExtractBlock(data,r.id);
+    if(!ext)return;
+    ext.block.forEach(function(b){if(!extractedIds[b.id]){extractedIds[b.id]=true;totalRows++;}});
+  });
+  if(!totalRows)return;
+  if(!confirm('Supprimer d\u00E9finitivement '+totalRows+' ligne(s) (et tout leur contenu) ?\n\nCette action est irr\u00E9versible.'))return;
+  var idsToDelete=Object.keys(extractedIds);
+  currP().data=data.filter(function(r){return !extractedIds[r.id];});
+  // Même protection anti-résurrection que les suppressions individuelles :
+  // empêche une vieille copie serveur pas encore à jour de faire revenir
+  // ces lignes lors d'une prochaine synchronisation.
+  _pedTombstoneRows(idsToDelete);
   window._pedMultiSel={};
   window._pedMultiSelActive=false;
   saveNow();
@@ -10403,6 +10554,19 @@ function pedConfirmAddPhase(){
       }
       if(row.t==='sb'){
         curSubDay=row.lb;
+        if(_isChantierPhase(row.pk)){
+          // Sous-phase d'une phase chantier : une case éditable par semaine
+          // (groupée par blocs de 5 jours), même mécanisme que la vue semaine.
+          const _weeksInViewD=[...new Set(days.map(function(dd){return dd.w;}))];
+          let _sbDayCells='';
+          _weeksInViewD.forEach(function(_w){
+            const _hc=(row.headcount&&row.headcount[_w])||'';
+            _sbDayCells+=`<td colspan="5" style="background:${ph.f||ph.s};opacity:.9;height:20px;border-left:1px solid rgba(255,255,255,.1);text-align:center;padding:0"><input type="number" min="0" max="99" value="${_hc}" placeholder="\u00B7" title="Effectif pr\u00E9vu semaine ${isoWeekOf(_w)}" oninput="sbSetHeadcount('${row.id}',${_w},this.value)" onclick="event.stopPropagation()" style="width:22px;border:none;background:transparent;text-align:center;font-size:9px;font-weight:800;color:${ph.t||'#fff'};outline:none;padding:0"></td>`;
+          });
+          tbody+=`<tr style="height:20px">
+            <td style="background:${ph.f||ph.s};opacity:.9;color:${ph.t||'#fff'};font-size:9px;font-weight:600;padding:3px 12px 3px 32px;position:sticky;left:0;z-index:9;white-space:nowrap;width:220px;min-width:220px;border-right:1px solid rgba(255,255,255,.15);letter-spacing:.4px">\u25C6 \u{1F477} ${row.lb}</td>${_sbDayCells}</tr>`;
+          return;
+        }
         tbody+=`<tr style="height:20px">
           <td style="background:${ph.f||ph.s};opacity:.9;color:${ph.t||'#fff'};font-size:9px;font-weight:600;padding:3px 12px 3px 32px;position:sticky;left:0;z-index:9;white-space:nowrap;width:220px;min-width:220px;border-right:1px solid rgba(255,255,255,.15);letter-spacing:.4px">\u25C6 ${row.lb}</td>
           <td colspan="${days.length}" style="background:${ph.f||ph.s};opacity:.9;height:20px"></td>
