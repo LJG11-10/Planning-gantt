@@ -33,6 +33,24 @@
       data.forEach(function(r){
         if(r&&r.t==='act'&&(!r.p||!Array.isArray(r.p)))r.p=[];
       });
+      // Répare automatiquement les en-têtes de sous-phase dont la phase (pk)
+      // ne correspond pas à celle de leurs propres tâches — cause de la
+      // "phase fantôme" récurrente. Avant, il fallait cliquer sur "Réparer"
+      // manuellement à chaque fois ; maintenant c'est corrigé silencieusement
+      // dès le chargement, avant même que ça soit visible à l'écran.
+      for(var i=0;i<data.length;i++){
+        var row=data[i];
+        if(!row||row.t!=='sb')continue;
+        var j=i+1,childPks={};
+        while(j<data.length&&['sb','ph','ens','ensend'].indexOf(data[j].t)<0){
+          if(data[j].t==='act')childPks[data[j].pk]=(childPks[data[j].pk]||0)+1;
+          j++;
+        }
+        var childPkKeys=Object.keys(childPks);
+        if(!childPkKeys.length)continue;
+        var majorityPk=childPkKeys.sort(function(a,b){return childPks[b]-childPks[a];})[0];
+        if(row.pk!==majorityPk)row.pk=majorityPk;
+      }
     });
   }
 
@@ -1978,7 +1996,9 @@ function downloadDXF(text, filename) {
 
 <div id="sbar">
   <span class="lbl">AFFAIRE</span>
-  <div style="display:flex;align-items:center;gap:4px"><div style="display:flex;flex-direction:column;gap:2px"><input id="sel-aff-search" type="text" placeholder="🔍 Rechercher..." autocomplete="off" style="border:1px solid var(--bd);border-radius:var(--r);padding:2px 6px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;width:100%"><select id="sel-aff" onchange="switchProjet(this.value)" style="border:2px solid var(--ac);border-radius:var(--r);padding:3px 6px;font-size:11px;font-weight:700;font-family:inherit;background:var(--ac2);color:var(--ac);outline:none;min-width:200px;max-width:350px"></select></div></div>
+  <div style="display:flex;align-items:center;gap:4px"><div style="display:flex;flex-direction:column;gap:2px"><input id="sel-aff-search" type="text" placeholder="🔍 Rechercher..." autocomplete="off" style="border:1px solid var(--bd);border-radius:var(--r);padding:2px 6px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;width:100%"><select id="sel-aff" onchange="switchProjet(this.value)" style="border:2px solid var(--ac);border-radius:var(--r);padding:3px 6px;font-size:11px;font-weight:700;font-family:inherit;background:var(--ac2);color:var(--ac);outline:none;min-width:200px;max-width:350px"></select></div>
+  <select id="planning-year-sel" onchange="setPlanningYear(this.value)" title="Année du planning — conditionne toutes les semaines/dates du site" style="border:2px solid var(--bd);border-radius:var(--r);padding:3px 8px;font-size:11px;font-weight:700;font-family:inherit;background:var(--bg3);color:var(--tx2);outline:none;cursor:pointer"></select></div>
+  <script>(function(){var _ys=document.getElementById('planning-year-sel');if(_ys){var _cur=new Date().getFullYear();var _saved=parseInt(localStorage.getItem('plan26v5_year'),10);if(!(_saved>=2020&&_saved<=2099))_saved=2026;for(var _y=_cur-1;_y<=_cur+3;_y++){var _o=document.createElement('option');_o.value=_y;_o.textContent=_y;if(_y===_saved)_o.selected=true;_ys.appendChild(_o);}}})();</script>
   <button class="btn-np" onclick="openModal('new')">+ Nouvelle</button>
   <button class="btn-da" onclick="openAffaireInfos()" title="Infos affaire">ℹ️</button>
   <button class="btn-da" onclick="openModal('del')">🗑</button>
@@ -2367,20 +2387,102 @@ const DS=['L','M','M','J','V','S','D'];
 // ═══════════════════════════════
 // JOURS FÉRIÉS FRANÇAIS 2025-2026
 // ═══════════════════════════════
-const JOURS_FERIES=new Set([
-  // 2026 — jours fériés tombant un jour ouvré (planning S1=Jan 5, 2026)
-  '2026-04-06', // Lundi de Pâques (S14)
-  '2026-05-01', // Fête du Travail vendredi (S17)
-  '2026-05-08', // Victoire 1945 vendredi (S18)
-  '2026-05-14', // Ascension jeudi (S19)
-  '2026-05-25', // Lundi de Pentecôte (S21)
-  '2026-07-14', // Fête Nationale mardi (S28)
-  '2026-08-17', // Assomption lundi (S33)
-  '2026-11-11', // Armistice mercredi (S45)
-  '2026-12-25', // Noël vendredi (S51)
-]);;
-// Week 1 of 2025 starts Mon Jan 6
-const W1_2025=new Date(2026,0,5); // W1 of 2026 = Mon Jan 5, 2026
+// Calcul algorithmique des jours fériés français (fonctionne pour n'importe
+// quelle année, contrairement à une liste figée qui devait être refaite à la
+// main chaque année). Basé sur l'algorithme de Meeus/Jones/Butcher pour la
+// date de Pâques, dont dérivent Lundi de Pâques, Ascension et Pentecôte.
+function _easterSunday(year){
+  var a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4;
+  var f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30;
+  var i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7;
+  var m=Math.floor((a+11*h+22*l)/451);
+  var month=Math.floor((h+l-7*m+114)/31);
+  var day=((h+l-7*m+114)%31)+1;
+  return new Date(year,month-1,day);
+}
+var _ferieCache={};
+function _frenchHolidaysForYear(year){
+  if(_ferieCache[year])return _ferieCache[year];
+  var easter=_easterSunday(year);
+  var set=new Set();
+  function key(dt){return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
+  function addFixed(m,d){set.add(year+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0'));}
+  function addOffset(days){var dt=new Date(easter);dt.setDate(dt.getDate()+days);set.add(key(dt));}
+  addFixed(1,1);   // Jour de l'an
+  addOffset(1);    // Lundi de Pâques
+  addFixed(5,1);   // Fête du Travail
+  addFixed(5,8);   // Victoire 1945
+  addOffset(39);   // Ascension
+  addOffset(50);   // Lundi de Pentecôte
+  addFixed(7,14);  // Fête Nationale
+  addFixed(8,15);  // Assomption
+  addFixed(11,1);  // Toussaint
+  addFixed(11,11); // Armistice
+  addFixed(12,25); // Noël
+  _ferieCache[year]=set;
+  return set;
+}
+// Année actuellement sélectionnée pour tout le planning (GANTT, Planning
+// Réunion, téléchargements...). Persistée pour rester d'une session à l'autre.
+let PLANNING_YEAR=(function(){
+  try{var v=+localStorage.getItem('plan26v5_year');if(v>=2020&&v<=2099)return v;}catch(e){}
+  return 2026;
+})();
+// Ancre "semaine interne 1" = lundi de la semaine ISO 2 de l'année choisie
+// (règle déduite de la référence existante : S1 interne = 5 janvier 2026,
+// qui est bien le lundi de la semaine ISO 2 de 2026). Fonctionne pour
+// n'importe quelle année, calculé algorithmiquement, pas de liste à refaire
+// à la main chaque année.
+function _mondayOfIsoWeek1(year){
+  var jan4=new Date(year,0,4);
+  var day=jan4.getDay()||7; // 1=lundi ... 7=dimanche
+  var monday=new Date(jan4);
+  monday.setDate(jan4.getDate()-day+1);
+  return monday;
+}
+function _planningWeek1Anchor(year){
+  var mon1=_mondayOfIsoWeek1(year);
+  var anchor=new Date(mon1);
+  anchor.setDate(mon1.getDate()+7);
+  return anchor;
+}
+// IMPORTANT : l'ancre W1_2025 reste TOUJOURS fixée sur 2026 — elle ne change
+// JAMAIS avec l'année sélectionnée. C'est ce qui garantit que chaque numéro
+// de semaine interne correspond à un vrai point unique dans le temps : la
+// semaine 43 de 2026 n'est jamais la même chose que "la semaine 43 vue en
+// 2027" — ce sont deux semaines différentes, avec des numéros différents,
+// exactement comme un vrai calendrier. Changer d'année ne fait que déplacer
+// la FENÊTRE affichée (via PLANNING_YEAR_OFFSET ci-dessous), jamais
+// réinterpréter les numéros déjà utilisés par des tâches existantes.
+const W1_2025=_planningWeek1Anchor(2026);
+// Décalage (en nombre de semaines internes) entre l'année de référence (2026)
+// et l'année actuellement choisie. Calculé à partir de la vraie différence de
+// dates (pas juste "+52 par an"), pour rester juste même les années à 53
+// semaines ISO.
+function _yearWeekOffset(year){
+  var yearAnchor=_planningWeek1Anchor(year);
+  var diffDays=_daysBetween(W1_2025,yearAnchor);
+  return Math.round(diffDays/7);
+}
+let PLANNING_YEAR_OFFSET=_yearWeekOffset(PLANNING_YEAR);
+// Change l'année active pour tout le site : ne touche à AUCUNE tâche
+// existante, déplace seulement la fenêtre de semaines affichée par défaut
+// (GANTT, Planning Réunion, éditeur...) vers celle de la nouvelle année.
+function setPlanningYear(year){
+  year=+year;
+  if(!(year>=2020&&year<=2099))return;
+  PLANNING_YEAR=year;
+  PLANNING_YEAR_OFFSET=_yearWeekOffset(year);
+  // Réinitialiser la position de navigation de la Vue Jour, sinon elle
+  // resterait bloquée sur la plage de semaines de l'ancienne année.
+  if(window._gdStartW!==undefined)window._gdStartW=PLANNING_YEAR_OFFSET+1;
+  try{localStorage.setItem('plan26v5_year',String(year));}catch(e){}
+  if(typeof renderGantt==='function')renderGantt();
+  if(typeof refreshAllTabs==='function')refreshAllTabs();
+  if(typeof renderProjSel==='function')renderProjSel();
+  var _ysel=document.getElementById('planning-year-sel');
+  if(_ysel)_ysel.value=String(year);
+}
 function weekDayToDate(w,di){
   var d=new Date(W1_2025);
   d.setDate(W1_2025.getDate()+(w-1)*7+di);
@@ -2435,7 +2537,7 @@ function refreshAffaireDateRange(){
 function isFerie(d){
   var dt=d instanceof Date?d:new Date(d);
   var k=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
-  return JOURS_FERIES.has(k);
+  return _frenchHolidaysForYear(dt.getFullYear()).has(k);
 }
 function weekHasFerie(w){
   for(var di=0;di<5;di++){if(isFerie(weekDayToDate(w,di)))return true;}
@@ -2448,6 +2550,34 @@ const MG=[
   {l:'Mai',s:18,e:21},{l:'Juin',s:22,e:26},{l:'Juillet',s:27,e:30},{l:'Août',s:31,e:35},
   {l:'Septembre',s:36,e:39},{l:'Octobre',s:40,e:44},{l:'Novembre',s:45,e:48},{l:'Décembre',s:49,e:52},
 ];
+// Calcule les groupes de mois (pour l'en-tête du GANTT) dynamiquement à
+// partir d'un décalage de semaines donné — contrairement à MG ci-dessus qui
+// était figé pour 2026 uniquement, ceci reste juste pour n'importe quelle
+// année choisie (les frontières semaine/mois se décalent légèrement chaque
+// année, ce n'est jamais exactement pareil).
+// Calcule les groupes de mois (pour l'en-tête du GANTT) dynamiquement pour
+// une plage de semaines donnée — contrairement à MG plus haut qui était figé
+// pour 2026 uniquement, ceci reste juste pour n'importe quelle année/plage
+// (les frontières semaine/mois se décalent légèrement chaque année, ce n'est
+// jamais exactement pareil).
+function _computeMonthGroupsRange(fromW,toW){
+  var monNames=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var groups=[];
+  var curMonth=null,curStart=null;
+  for(var w=fromW;w<=toW;w++){
+    var mo=weekDayToDate(w,0).getMonth();
+    if(mo!==curMonth){
+      if(curMonth!==null)groups.push({l:monNames[curMonth],s:curStart,e:w-1});
+      curMonth=mo;curStart=w;
+    }
+  }
+  if(curMonth!==null)groups.push({l:monNames[curMonth],s:curStart,e:toW});
+  return groups;
+}
+// Version pratique pour "52 semaines à partir d'un décalage d'année" (le cas le plus courant)
+function _computeMonthGroups(offset){
+  return _computeMonthGroupsRange(offset+1,offset+52);
+}
 
 function isoDate(w,d,h){
   const base=wkD(w);base.setDate(base.getDate()+d);
@@ -2520,11 +2650,13 @@ function todayInfo(){
   const n=new Date();const dw=n.getDay();
   if(dw===0||dw===6)return null;
   const di=dw-1;
-  // Use same base as weekDayToDate: W1_2025 = Monday Jan 6, 2025
-  const W1=new Date(2026,0,5); // Same as W1_2025 constant
-  const days=_daysBetween(W1,n);
+  // W1_2025 est maintenant une ancre FIXE (toujours 2026) : "w" représente
+  // une vraie position absolue et continue dans le temps, pas limitée à une
+  // année précise — la semaine 105 par exemple correspond bien à une semaine
+  // réelle de 2027, distincte de toute semaine de 2026.
+  const days=_daysBetween(W1_2025,n);
   const w=Math.floor(days/7)+1;
-  if(w<1||w>52)return null;
+  if(w<1||w>1000)return null; // garde-fou large, pas une vraie limite d'année
   return{w,di};
 }
 // IMPORTANT : TODAY n'est plus une valeur stockée qui peut devenir périmée.
@@ -4633,7 +4765,7 @@ function navRefreshArchBtn(){
 function exportData(){
   const b=new Blob([JSON.stringify(STORE,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(b);
-  a.download=`planning_${STORE.current||'2026'}.json`;a.click();
+  a.download=`planning_${STORE.current||PLANNING_YEAR}.json`;a.click();
 }
 
 
@@ -5043,7 +5175,7 @@ function absAddPeriod(person,type){
   var icon=isSchool?'\uD83C\uDFEB':'\uD83C\uDFED';
   var label=isSchool?'École':'Entreprise';
   var opts='';
-  for(var w=1;w<=52;w++){
+  for(var w=PLANNING_YEAR_OFFSET+1;w<=PLANNING_YEAR_OFFSET+52;w++){
     var d2=weekDayToDate(w,0);
     var ml=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'][d2.getMonth()];
     opts+='<option value="'+w+'">S'+isoWeekOf(w)+' — '+ml+' '+d2.getDate()+'</option>';
@@ -5221,9 +5353,23 @@ function showClientDownloadModal(){
   var aff=STORE.current;
   if(!aff){alert('Aucune affaire sélectionnée');return;}
   var acts=(STORE.projects[aff]&&STORE.projects[aff].data||[]).filter(function(r){return r.t==='act';});
-  var defFrom=acts.length?Math.max(1,Math.min.apply(null,acts.map(function(a){return a.s||1;}))): 1;
-  var defTo=acts.length?Math.min(52,Math.max.apply(null,acts.map(function(a){return a.e||a.s||52;}))):52;
-  function wkToISO(wk){var d=new Date(2026,0,5);d.setDate(d.getDate()+(wk-1)*7);return d.toISOString().slice(0,10);}
+  // Calculer la plage de semaines à partir des VRAIES barres de couleur posées
+  // (prévu ou réel) — pas juste "premières/dernières tâches" au sens large,
+  // pour ne pas inclure des tâches jamais planifiées.
+  function _actWeeks(a){
+    var wks=[];
+    if(a.s>0){wks.push(a.s);if(a.e)wks.push(a.e);}
+    (a.prevDays||[]).forEach(function(d5){wks.push(Math.floor(d5/5)+1);});
+    (a.reelDays||[]).forEach(function(d5){wks.push(Math.floor(d5/5)+1);});
+    return wks;
+  }
+  var _allActWeeks=acts.reduce(function(arr,a){return arr.concat(_actWeeks(a));},[]);
+  // IMPORTANT : ne plus limiter à 52 — un chantier peut légitimement déborder
+  // sur l'année suivante (semaines > 52 en interne), il ne faut jamais couper
+  // ces vraies tâches déjà placées.
+  var defFrom=_allActWeeks.length?Math.min.apply(null,_allActWeeks):(PLANNING_YEAR_OFFSET+1);
+  var defTo=_allActWeeks.length?Math.max.apply(null,_allActWeeks):(PLANNING_YEAR_OFFSET+52);
+  var _nextYearOffset=_yearWeekOffset(PLANNING_YEAR+1);
 
   // ── Construire la liste Phase ▸ Ensemble à cocher ──────────────────
   var _cdlStruct=[];
@@ -5254,15 +5400,11 @@ function showClientDownloadModal(){
   inner.style.cssText='background:var(--bg2);border-radius:16px;padding:32px;min-width:420px;max-width:90vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)';
   inner.innerHTML=''
     +'<div style="font-size:16px;font-weight:900;color:var(--tx);margin-bottom:6px">&#128229; Export client</div>'
-    +'<div style="font-size:12px;color:var(--tx3);margin-bottom:20px">Choisissez la plage de semaines à afficher dans le GANTT</div>'
-    +'<div style="display:flex;gap:12px;margin-bottom:16px;align-items:flex-end">'
-    +'<div><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">DATE DÉBUT</div>'
-    +'<input type="date" id="_cdl_from" value="'+wkToISO(defFrom)+'" style="border:2px solid var(--bd);border-radius:8px;padding:6px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx)"></div>'
-    +'<div style="font-weight:700;color:var(--tx3);padding-bottom:8px">&#8594;</div>'
-    +'<div><div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:4px">DATE FIN</div>'
-    +'<input type="date" id="_cdl_to" value="'+wkToISO(defTo)+'" style="border:2px solid var(--bd);border-radius:8px;padding:6px 10px;font-size:13px;font-family:inherit;background:var(--bg2);color:var(--tx)"></div>'
-    +'</div>'
-    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:16px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Seules les tâches dans cette plage apparaîtront sur le GANTT exporté</div>'
+    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:14px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Le GANTT affichera automatiquement toute la p\u00E9riode ayant des t\u00E2ches planifi\u00E9es \u2014 vous pourrez ajuster les semaines affich\u00E9es directement dans le document une fois t\u00E9l\u00E9charg\u00E9. Le tableau r\u00E9capitulatif, lui, liste toujours <strong>toutes</strong> les t\u00E2ches.</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;margin-bottom:20px;padding:8px 10px;background:var(--bg3);border-radius:8px;cursor:pointer">'
+    +'<input type="checkbox" id="_cdl_nextyear" style="cursor:pointer">'
+    +'<span style="font-size:12px;color:var(--tx)">Inclure aussi l\u2019ann\u00E9e '+(PLANNING_YEAR+1)+' dans le GANTT <span style="color:var(--tx3)">(chantier qui d\u00E9borde sur l\u2019ann\u00E9e suivante)</span></span>'
+    +'</label>'
     +(checklistHtml?('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:12px;font-weight:800;color:var(--tx)">Phases / Sous-ensembles à inclure</div>'
       +'<button type="button" onclick="_cdlToggleAll(true)" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg3);cursor:pointer;font-family:inherit">Tout cocher</button></div>'
       +'<div style="max-height:220px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:10px 14px;margin-bottom:20px;background:var(--bg3)">'+checklistHtml+'</div>'):'')
@@ -5275,11 +5417,10 @@ function showClientDownloadModal(){
   modal.onclick=function(e){if(e.target===modal)modal.remove();};
   document.getElementById('_cdl_cancel').onclick=function(){modal.remove();};
   document.getElementById('_cdl_ok').onclick=function(){
-    var f=document.getElementById('_cdl_from').value;
-    var t=document.getElementById('_cdl_to').value;
-    var base=new Date(2026,0,5);
-    window._clientGanttFrom=Math.max(1,Math.min(52,Math.floor((new Date(f)-base)/604800000)+1));
-    window._clientGanttTo=Math.max(1,Math.min(52,Math.floor((new Date(t)-base)/604800000)+1));
+    window._clientGanttFrom=defFrom;
+    window._clientGanttTo=defTo;
+    var _includeNextYear=document.getElementById('_cdl_nextyear')&&document.getElementById('_cdl_nextyear').checked;
+    if(_includeNextYear)window._clientGanttTo=Math.max(window._clientGanttTo,_nextYearOffset+52);
     if(window._clientGanttFrom>window._clientGanttTo)window._clientGanttTo=window._clientGanttFrom;
     // Construire le filtre à partir des cases cochées
     var selPhases={},selEns={};
@@ -5530,11 +5671,8 @@ function downloadPlanning(mode){
   };
   function getPHC(pk){return PH_COLORS[pk]||{h:'#374151',xl:'#D1D5DB',xd:'#6B7280'};}
 
-  var MG3=[{l:'Janvier',s:1,e:4},{l:'Février',s:5,e:8},{l:'Mars',s:9,e:13},{l:'Avril',s:14,e:17},
-    {l:'Mai',s:18,e:21},{l:'Juin',s:22,e:26},{l:'Juillet',s:27,e:30},{l:'Août',s:31,e:35},
-    {l:'Septembre',s:36,e:39},{l:'Octobre',s:40,e:44},{l:'Novembre',s:45,e:48},{l:'Décembre',s:49,e:52}];
-
   function buildGanttHalf(fromW, toW, pageTitle){
+    var MG3=_computeMonthGroupsRange(fromW,toW);
     var numW=toW-fromW+1;
     var COL=26;
     var ACT_W=210;
@@ -5545,10 +5683,10 @@ function downloadPlanning(mode){
     html+='<div style="font-size:12px;color:#888;margin-bottom:10px">'+dateStr+'</div>';
     html+='</div>';
 
-    html+='<table style="border-collapse:collapse;table-layout:fixed;width:100%">';
+    html+='<table style="border-collapse:collapse;table-layout:fixed;width:100%" id="gantt-table">';
     // Colgroup
     html+='<colgroup><col style="width:'+ACT_W+'px">';
-    for(var w=fromW;w<=toW;w++) html+='<col style="width:'+COL+'px">';
+    for(var w=fromW;w<=toW;w++) html+='<col class="wk-c-'+w+'" style="width:'+COL+'px">';
     html+='</colgroup>';
 
     // Month header
@@ -5567,7 +5705,7 @@ function downloadPlanning(mode){
     html+='<th style="background:#2563EB;color:rgba(255,255,255,.9);padding:6px 10px;font-size:12px;text-align:left;border:1px solid #3B82F6">Semaine</th>';
     for(var w=fromW;w<=toW;w++){
       var isTW=TODAY&&TODAY.w===w;
-      html+='<th style="background:'+(isTW?'#FDE047':'#2563EB')+';color:'+(isTW?'#1F4E79':'rgba(255,255,255,.8)')+';padding:5px 1px;text-align:center;font-size:11px;font-weight:700;border:1px solid #3B82F6">'+isoWeekOf(w)+'</th>';
+      html+='<th class="wk-c-'+w+'" style="background:'+(isTW?'#FDE047':'#2563EB')+';color:'+(isTW?'#1F4E79':'rgba(255,255,255,.8)')+';padding:5px 1px;text-align:center;font-size:11px;font-weight:700;border:1px solid #3B82F6">'+isoWeekOf(w)+'</th>';
     }
     html+='</tr></thead><tbody>';
 
@@ -5615,8 +5753,20 @@ function downloadPlanning(mode){
       var hP=+r.hPrev||0;
       var nb=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim();}).length;
       var lbl=esc(r.lb);
+      // Précalculer les semaines où cette tâche a une barre (prévu ou réel),
+      // pour permettre le filtrage par semaine côté document interactif.
+      var _taskWeeksWithBar=[];
+      for(var _ww=fromW;_ww<=toW;_ww++){
+        var _absS0=(_ww-1)*5,_absE0=(_ww-1)*5+4;
+        var _hasBar0=r.s>0||(r.prevDays&&r.prevDays.length)||(r.reelDays&&r.reelDays.length);
+        var _ps20=r.prevDays&&r.prevDays.length?Math.min.apply(null,r.prevDays):prevS;
+        var _pe20=r.prevDays&&r.prevDays.length?Math.max.apply(null,r.prevDays):prevE;
+        var _rs20=r.reelDays&&r.reelDays.length?Math.min.apply(null,r.reelDays):reelS;
+        var _re20=r.reelDays&&r.reelDays.length?Math.max.apply(null,r.reelDays):reelE;
+        if((_hasBar0&&_ps20>=0&&_absE0>=_ps20&&_absS0<=_pe20)||(_hasBar0&&_rs20>=0&&_absE0>=_rs20&&_absS0<=_re20))_taskWeeksWithBar.push(_ww);
+      }
 
-      html+='<tr class="'+_ganttRowClasses+'">';
+      html+='<tr class="'+_ganttRowClasses+'" id="gantt-row-'+r.id+'" data-weeks="'+_taskWeeksWithBar.join(',')+'">';
       html+='<td style="padding:0;border:1px solid #E5E7EB;background:'+(r.done?'#F0FDF4':'#FAFAFA')+';overflow:hidden">'
         +'<div style="padding:4px 6px 3px 48px;border-left:3px solid '+phC.h+'">'
         +'<div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(r.done?'#059669':'#1A1917')+'">'
@@ -5638,10 +5788,10 @@ function downloadPlanning(mode){
         var isTW=TODAY&&TODAY.w===w;
 
         if(!inP&&!inR){
-          html+='<td style="padding:0;border:1px solid #E5E7EB;background:'+(isTW?'#FFFBEB':'#fff')+'"></td>';
+          html+='<td class="wk-c-'+w+'" style="padding:0;border:1px solid #E5E7EB;background:'+(isTW?'#FFFBEB':'#fff')+'"></td>';
           continue;
         }
-        html+='<td style="padding:0;border:1px solid #E5E7EB;vertical-align:top">';
+        html+='<td class="wk-c-'+w+'" style="padding:0;border:1px solid #E5E7EB;vertical-align:top">';
         // Prévu
         html+='<div style="height:11px;background:'+(inP?phC.xl:'transparent')+';display:flex;align-items:center;justify-content:center">';
         if(inP&&absS===prevS) html+='<span style="font-size:6px;font-weight:900;color:'+phC.h+'">P</span>';
@@ -5672,21 +5822,92 @@ function downloadPlanning(mode){
     return html;
   }
 
-  var _fw=mode==='client'?(window._clientGanttFrom||1):1;
-  var _tw=mode==='client'?(window._clientGanttTo||52):52;
+  var _fw=mode==='client'?(window._clientGanttFrom||(PLANNING_YEAR_OFFSET+1)):(PLANNING_YEAR_OFFSET+1);
+  var _tw=mode==='client'?(window._clientGanttTo||(PLANNING_YEAR_OFFSET+52)):(PLANNING_YEAR_OFFSET+52);
+  // Le GANTT interne (avant filtrage par le sélecteur interactif) doit
+  // couvrir toute la plage réellement utilisée par les tâches — pas juste
+  // "1 à 52", qui ne voudrait plus rien dire pour une affaire dont les
+  // tâches sont en 2027 (semaines > 52). On prend une marge raisonnable
+  // autour de la plage déjà calculée (_fw/_tw), jamais moins qu'une année
+  // pleine, pour que le sélecteur interactif ait de la place pour naviguer.
+  var _ganttSpanFrom=Math.max(1,Math.min(_fw,PLANNING_YEAR_OFFSET+1)-4);
+  // La marge ne doit jamais pousser au-delà de la fin de l'année dans
+  // laquelle tombe déjà _tw, sinon on se retrouve avec une 3e section quasi
+  // vide (ex: un petit bout de 2028 qui ne sert à rien).
+  var _twYearEnd=(function(){var y=PLANNING_YEAR;while(_yearWeekOffset(y+1)<_tw)y++;return _yearWeekOffset(y+1);})();
+  var _ganttSpanTo=Math.min(_twYearEnd,Math.max(_tw,PLANNING_YEAR_OFFSET+52)+4);
+  // Découpe une plage de semaines internes par année civile — plus parlant
+  // qu'un seul GANTT continu qui passerait de "S52" à "S53" sans qu'on sache
+  // que ça correspond à un changement d'année. Chaque année devient sa
+  // propre section, avec sa propre numérotation de semaines (S1, S2...).
+  function _splitRangeByYear(fromW,toW){
+    var segments=[];
+    var y=PLANNING_YEAR;
+    while(_yearWeekOffset(y)+1>fromW)y--;
+    while(_yearWeekOffset(y+1)+1<=fromW)y++;
+    var curW=fromW;
+    while(curW<=toW){
+      var yEnd=_yearWeekOffset(y+1); // dernière semaine interne de l'année y
+      var segEnd=Math.min(toW,yEnd);
+      segments.push({year:y,from:curW,to:segEnd});
+      curW=segEnd+1;y++;
+    }
+    return segments;
+  }
   var ganttPage=mode==='client'
-    ?'<div class="gantt-page">'+buildGanttHalf(_fw,_tw,'GANTT S'+_fw+' → S'+_tw)+'</div>'
-    :'<div class="gantt-page">'+buildGanttHalf(1,26,'GANTT S1 → S26 (Janvier – Juin)')+'</div>'
-     +'<div class="gantt-page">'+buildGanttHalf(27,52,'GANTT S27 → S52 (Juillet – Décembre)')+'</div>';
+    ?_splitRangeByYear(_ganttSpanFrom,_ganttSpanTo).map(function(seg){
+        return '<div class="gantt-page">'+buildGanttHalf(seg.from,seg.to,'GANTT '+seg.year+' — S1 → S'+(seg.to-seg.from+1))+'</div>';
+      }).join('')
+    :'<div class="gantt-page">'+buildGanttHalf(PLANNING_YEAR_OFFSET+1,PLANNING_YEAR_OFFSET+26,'GANTT S1 → S26 (Janvier – Juin)')+'</div>'
+     +'<div class="gantt-page">'+buildGanttHalf(PLANNING_YEAR_OFFSET+27,PLANNING_YEAR_OFFSET+52,'GANTT S27 → S52 (Juillet – Décembre)')+'</div>';
+  var _ganttPageSizeCss=mode==='client'?'A3 landscape':'A4 landscape';
+  // Largeur imprimable exacte (papier moins les marges de 7mm de chaque
+  // côté) — en millimètres, sans ambiguïté possible avec un pourcentage qui
+  // dépendrait mal du contexte d'impression. A3 paysage = 420mm ; A4 paysage = 297mm.
+  var _ganttPrintWidthMm=(mode==='client'?420:297)-14;
+  var _weekPickerHtml=mode==='client'
+    ?'<div class="no-print" style="margin:0 0 12px;padding:12px 20px;background:#EFF6FF;border-radius:10px;display:flex;gap:14px;align-items:center;border:1px solid #BFDBFE;flex-wrap:wrap">'
+      +'<span style="font-size:12px;font-weight:700;color:#1F4E79">📅 Semaines affichées sur le GANTT :</span>'
+      +'<label style="font-size:12px;color:#374151">De <input type="number" id="pc-wk-from" min="'+_ganttSpanFrom+'" max="'+_ganttSpanTo+'" value="'+_fw+'" style="width:54px;padding:4px 6px;border:1px solid #BFDBFE;border-radius:6px;font-family:inherit;font-size:12px"></label>'
+      +'<label style="font-size:12px;color:#374151">à <input type="number" id="pc-wk-to" min="'+_ganttSpanFrom+'" max="'+_ganttSpanTo+'" value="'+_tw+'" style="width:54px;padding:4px 6px;border:1px solid #BFDBFE;border-radius:6px;font-family:inherit;font-size:12px"></label>'
+      +'<button onclick="_pcApplyWeekRange()" style="padding:6px 16px;background:#2563EB;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Appliquer</button>'
+      +'<span style="font-size:11px;color:#6B7280">Les tâches sans barre dans cette plage sont masquées ; l\'impression du GANTT respecte cette sélection.</span>'
+      +'</div>'
+    :'';
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
-    +'<title>'+esc(aff)+' — Planning 2026</title>'
-    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px;max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}@media print{@page{size:A4 portrait;margin:12mm}@page gantt-page-size{size:A4 landscape;margin:7mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;width:100%!important;border-collapse:collapse}tr{page-break-inside:avoid}.no-print{display:none}.gantt-page{page:gantt-page-size;page-break-before:always;padding:4px;max-width:none!important}.recap-page{page-break-after:always}.pc-hidden{display:table-row!important}.pc-arrow{display:none}}</style>'
+    +'<title>'+esc(aff)+' — Planning '+PLANNING_YEAR+'</title>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%}.pc-hidden{display:none}.wk-hide{display:none}[data-weeks].wk-row-hide{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}@media print{@page{size:A4 portrait;margin:12mm}@page gantt-page-size{size:'+_ganttPageSizeCss+';margin:7mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none}.gantt-page{page:gantt-page-size;page-break-before:always;padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}.recap-page{page-break-after:always;max-width:100%}.pc-hidden{display:table-row!important}.pc-arrow{display:none}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}}</style>'
     +'</head><body>'
-    +'<div class="no-print" style="margin-bottom:24px;padding:12px 20px;background:#EFF6FF;border-radius:10px;display:flex;gap:12px;align-items:center;border:1px solid #BFDBFE">'
-    +'<button onclick="window.print()" style="padding:10px 22px;background:#1F4E79;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer / PDF</button>'
+    +'<div class="no-print" style="margin-bottom:16px;padding:12px 20px;background:#EFF6FF;border-radius:10px;display:flex;gap:12px;align-items:center;border:1px solid #BFDBFE;flex-wrap:wrap">'
+    +'<button onclick="_pcPrintRecap()" style="padding:10px 22px;background:#1F4E79;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le récap (A4 portrait)</button>'
+    +(mode==='client'?'<button onclick="_pcPrintGantt()" style="padding:10px 22px;background:#7C3AED;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le GANTT (A3 paysage)</button>':'<button onclick="_pcPrintGantt()" style="padding:10px 22px;background:#7C3AED;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le GANTT (A4 paysage)</button>')
     +'<span style="font-size:12px;color:#2563EB;font-weight:600">Rapport complet · '+esc(aff)+' · '+dateStr+'</span>'
-    +'</div><div class="recap-page">'+body+'</div>'+ganttPage
-    +'<script>function _pcToggle(h){var g=h.dataset.group;var c=!h.classList.contains("pc-collapsed");h.classList.toggle("pc-collapsed",c);var a=h.querySelector(".pc-arrow");if(a)a.textContent=c?"\u25B6":"\u25BC";document.querySelectorAll(".pc-c-"+g).forEach(function(r){r.classList.toggle("pc-hidden",c);});}<'+'/script>'
+    +'</div>'
+    +'<div class="recap-page">'+body+'</div>'
+    +_weekPickerHtml+ganttPage
+    +'<script>'
+    +'function _pcToggle(h){var g=h.dataset.group;var c=!h.classList.contains("pc-collapsed");h.classList.toggle("pc-collapsed",c);var a=h.querySelector(".pc-arrow");if(a)a.textContent=c?"\u25B6":"\u25BC";document.querySelectorAll(".pc-c-"+g).forEach(function(r){r.classList.toggle("pc-hidden",c);});}'
+    +'function _pcPrintRecap(){document.body.classList.add("pc-print-recap");window.print();setTimeout(function(){document.body.classList.remove("pc-print-recap");},400);}'
+    +'function _pcPrintGantt(){document.body.classList.add("pc-print-gantt");window.print();setTimeout(function(){document.body.classList.remove("pc-print-gantt");},400);}'
+    +'function _pcApplyWeekRange(){'
+      +'var fEl=document.getElementById("pc-wk-from"),tEl=document.getElementById("pc-wk-to");'
+      +'if(!fEl||!tEl)return;'
+      +'var _spanMin='+_ganttSpanFrom+',_spanMax='+_ganttSpanTo+';'
+      +'var fw=parseInt(fEl.value,10)||_spanMin,tw=parseInt(tEl.value,10)||_spanMax;'
+      +'if(fw>tw){var t=fw;fw=tw;tw=t;}'
+      +'fw=Math.max(_spanMin,Math.min(_spanMax,fw));tw=Math.max(_spanMin,Math.min(_spanMax,tw));'
+      +'for(var w=_spanMin;w<=_spanMax;w++){'
+        +'var hide=(w<fw||w>tw);'
+        +'document.querySelectorAll(".wk-c-"+w).forEach(function(el){if(el.tagName==="COL"){el.style.visibility=hide?"collapse":"";}else{el.classList.toggle("wk-hide",hide);}});'
+      +'}'
+      +'document.querySelectorAll("[data-weeks]").forEach(function(row){'
+        +'var wks=(row.dataset.weeks||"").split(",").filter(Boolean).map(Number);'
+        +'var anyVisible=wks.some(function(w){return w>=fw&&w<=tw;});'
+        +'row.classList.toggle("wk-row-hide",!anyVisible);'
+      +'});'
+    +'}'
+    +(mode==='client'?'_pcApplyWeekRange();':'')
+    +'<'+'/script>'
     +'</body></html>';
 
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
@@ -6214,7 +6435,7 @@ function dbFortuites(){
         // Calcul écart en jours ouvrés depuis l'orig
         var ecartJ='';
         if(f.origS!=null&&decDate){
-          var origDate=new Date(2026,0,5);origDate.setDate(origDate.getDate()+(f.origS-1)*7+(f.origDStart||0));
+          var origDate=new Date(W1_2025);origDate.setDate(origDate.getDate()+(f.origS-1)*7+(f.origDStart||0));
           var diffMs=decDate.getTime()-origDate.getTime();
           var diffJ=Math.round(diffMs/86400000);
           ecartJ=diffJ>0?'+'+diffJ+' j':diffJ+'j';
@@ -6333,7 +6554,7 @@ function getCongesDays(name){
 
 function buildCongesCalendar(name){
   var days=getCongesDays(name);
-  var year=2026;
+  var year=PLANNING_YEAR;
   var moisFr=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
   var jourFr=['D','L','M','M','J','V','S'];
   var html='';
@@ -6474,7 +6695,7 @@ function renderAbsences(){
       var schoolWks=absData.school||[],companyWks=absData.company||[];
       var months=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
       var weekToMonth={},monthToWeeks={};
-      for(var wk=1;wk<=52;wk++){var d=weekDayToDate(wk,0);var mo=d.getMonth();weekToMonth[wk]=mo;if(!monthToWeeks[mo])monthToWeeks[mo]=[];monthToWeeks[mo].push(wk);}
+      for(var wk=PLANNING_YEAR_OFFSET+1;wk<=PLANNING_YEAR_OFFSET+52;wk++){var d=weekDayToDate(wk,0);var mo=d.getMonth();weekToMonth[wk]=mo;if(!monthToWeeks[mo])monthToWeeks[mo]=[];monthToWeeks[mo].push(wk);}
       var nS=schoolWks.length,nC=companyWks.length,total=nS+nC;
       var pctS=total?Math.round(nS/total*100):0,pctC=total?100-pctS:0;
       var personTabs2='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">';
@@ -7272,8 +7493,8 @@ function renderFiche(){
   // Add-week row
   var usedSet={}; weeks.forEach(function(w){usedSet[w]=true;});
   var wkOptsHtml='<option value="">— Choisir une semaine —</option>';
-  for(var ww=1;ww<=52;ww++){
-    if(!usedSet[ww])wkOptsHtml+='<option value="'+ww+'">S'+ww+' — '+fmt(wkD(ww))+'</option>';
+  for(var ww=PLANNING_YEAR_OFFSET+1;ww<=PLANNING_YEAR_OFFSET+52;ww++){
+    if(!usedSet[ww])wkOptsHtml+='<option value="'+ww+'">S'+isoWeekOf(ww)+' — '+fmt(wkD(ww))+'</option>';
   }
 
   fw.innerHTML=ctrl+header+summaryHtml+blocksHtml
@@ -8714,10 +8935,10 @@ function renderPortfolio(){
     });
   });
   var allWks=Object.keys(allWkSet).map(Number).sort(function(a,b){return a-b;});
-  if(!allWks.length){allWks=[];for(var i=1;i<=52;i++)allWks.push(i);}
+  if(!allWks.length){allWks=[];for(var i=PLANNING_YEAR_OFFSET+1;i<=PLANNING_YEAR_OFFSET+52;i++)allWks.push(i);}
 
   var minWk=Math.max(1,allWks[0]-2);
-  var maxWk=Math.min(52,allWks[allWks.length-1]+2);
+  var maxWk=allWks[allWks.length-1]+2;
   var NW=maxWk-minWk+1;
   var CW=Math.max(20,Math.min(38,Math.floor((wrap.offsetWidth-280)/NW)));
   var todayWk=TODAY?TODAY.w:null;
@@ -8909,16 +9130,18 @@ function renderGantt(){
   refreshAffaireDateRange();
   const DW=ZOOM_DW,NC=52*7;
   const wrap=document.getElementById('gw');
+  const _wOff=PLANNING_YEAR_OFFSET;
+  const _MG=_computeMonthGroups(_wOff);
   // Mois
   let mH='';
-  MG.forEach(m=>{
+  _MG.forEach(m=>{
     const n=m.e-m.s+1;
     mH+=`<th colspan="${n*7}" style="background:var(--bg2);font-size:9px;font-weight:600;color:var(--tx2);text-align:center;border-bottom:1px solid var(--bd);border-right:1px solid var(--bd)">${m.l}</th>`;
   });
   // Semaines
   let wH='';
-  for(let w=1;w<=52;w++){
-    const sep=MG.some(m=>m.e===w)?'border-right:1px solid var(--bd)':'';
+  for(let w=_wOff+1;w<=_wOff+52;w++){
+    const sep=_MG.some(m=>m.e===w)?'border-right:1px solid var(--bd)':'';
     const isTW=TODAY&&TODAY.w===w;
     const hasFerie=weekHasFerie(w);
     const bg=hasFerie?'#FEE2E2':isTW?'#FEF3C7':'var(--ac2)';
@@ -8930,8 +9153,8 @@ function renderGantt(){
   }
   // Jours
   let dH='';
-  for(let w=1;w<=52;w++){
-    const sep=MG.some(m=>m.e===w);
+  for(let w=_wOff+1;w<=_wOff+52;w++){
+    const sep=_MG.some(m=>m.e===w);
     DS.forEach((d,di)=>{
       const isTD=TODAY&&TODAY.w===w&&TODAY.di===di;
       const isFerieCol=isFerie(weekDayToDate(w,di));
@@ -9047,7 +9270,7 @@ function renderGantt(){
         // Sous-phase d'une phase chantier : une case éditable par semaine pour
         // saisir manuellement l'effectif prévu (utile pour anticiper le recrutement).
         let _sbWeekCells='';
-        for(let _w=1;_w<=52;_w++){
+        for(let _w=_wOff+1;_w<=_wOff+52;_w++){
           const _hc=(row.headcount&&row.headcount[_w])||'';
           _sbWeekCells+=`<td colspan="7" style="background:${ph.s};opacity:.92;height:19px;border-left:1px solid rgba(0,0,0,.06);text-align:center;padding:0"><input type="number" min="0" max="99" value="${_hc}" placeholder="\u00B7" title="Effectif pr\u00E9vu semaine ${isoWeekOf(_w)}" oninput="sbSetHeadcount('${row.id}',${_w},this.value)" onclick="event.stopPropagation()" style="width:22px;border:none;background:transparent;text-align:center;font-size:10px;font-weight:800;color:${ph.t};outline:none;padding:0;-moz-appearance:textfield"></td>`;
         }
@@ -9072,8 +9295,8 @@ function renderGantt(){
     const reelStartDay=_reelSet.length?_reelSet[0]:0;
     _reelSet.length?_reelSet[_reelSet.length-1]:0; // fin réelle
 
-    for(let w=1;w<=52;w++){
-      const sep=MG.some(m=>m.e===w);
+    for(let w=_wOff+1;w<=_wOff+52;w++){
+      const sep=_MG.some(m=>m.e===w);
       const isTW=TODAY&&TODAY.w===w;
 
       for(let d=0;d<7;d++){
@@ -10784,11 +11007,12 @@ function pedConfirmAddPhase(){
   if(!wrap)return;
   refreshAffaireDateRange();
 
-  if(!window._gdStartW)window._gdStartW=1;
+  if(!window._gdStartW)window._gdStartW=PLANNING_YEAR_OFFSET+1;
   if(!window._gdNbW)window._gdNbW=52;
   const startW=window._gdStartW;
   const nbW=window._gdNbW;
-  const endW=Math.min(52,startW+nbW-1);
+  const _yMin=PLANNING_YEAR_OFFSET+1,_yMax=PLANNING_YEAR_OFFSET+52;
+  const endW=Math.min(_yMax,startW+nbW-1);
 
   // Build list of days
   const days=[];
@@ -10808,13 +11032,13 @@ function pedConfirmAddPhase(){
 
   // Navigation bar
   const nav=`<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--bd);flex-wrap:wrap;">
-    <button onclick="window._gdStartW=Math.max(1,window._gdStartW-${nbW});_reRenderGanttKeepScroll()" style="padding:3px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-size:13px;font-family:inherit">◀</button>
+    <button onclick="window._gdStartW=Math.max(${_yMin},window._gdStartW-${nbW});_reRenderGanttKeepScroll()" style="padding:3px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-size:13px;font-family:inherit">◀</button>
     <span style="font-size:11px;font-weight:700;color:var(--ac)">S${isoWeekOf(startW)} → S${isoWeekOf(endW)} &nbsp;·&nbsp; ${fmt(wkD(startW))} au ${fmt(ddD(endW,4))}</span>
-    <button onclick="window._gdStartW=Math.min(52-${nbW-1},window._gdStartW+${nbW});_reRenderGanttKeepScroll()" style="padding:3px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-size:13px;font-family:inherit">▶</button>
-    <button onclick="window._gdStartW=TODAY?TODAY.w:1;renderGantt()" style="padding:3px 9px;border:1px solid var(--ac);border-radius:var(--r);background:var(--ac2);color:var(--ac);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit">📍 Aujourd'hui</button>
+    <button onclick="window._gdStartW=Math.min(${_yMax-(nbW-1)},window._gdStartW+${nbW});_reRenderGanttKeepScroll()" style="padding:3px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-size:13px;font-family:inherit">▶</button>
+    <button onclick="window._gdStartW=TODAY?TODAY.w:${_yMin};renderGantt()" style="padding:3px 9px;border:1px solid var(--ac);border-radius:var(--r);background:var(--ac2);color:var(--ac);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit">📍 Aujourd'hui</button>
     <div style="display:flex;align-items:center;gap:4px;margin-left:4px">
       <span style="font-size:9px;color:var(--tx3)">Semaines:</span>
-      ${[4,8,12,52].map(n=>`<button onclick="window._gdNbW=n;window._gdStartW=(n===52?1:window._gdStartW);renderGantt()" style="padding:2px 7px;border:1px solid var(--bd);border-radius:var(--r);background:${nbW===n?'var(--ac)':'var(--bg3)'};color:${nbW===n?'#fff':'var(--tx2)'};cursor:pointer;font-size:10px;font-weight:700;font-family:inherit">${n}</button>`).join('')}
+      ${[4,8,12,52].map(n=>`<button onclick="window._gdNbW=n;window._gdStartW=(n===52?${_yMin}:window._gdStartW);renderGantt()" style="padding:2px 7px;border:1px solid var(--bd);border-radius:var(--r);background:${nbW===n?'var(--ac)':'var(--bg3)'};color:${nbW===n?'#fff':'var(--tx2)'};cursor:pointer;font-size:10px;font-weight:700;font-family:inherit">${n}</button>`).join('')}
     </div>
   </div>`;
 
