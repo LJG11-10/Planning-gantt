@@ -51,6 +51,29 @@
         var majorityPk=childPkKeys.sort(function(a,b){return childPks[b]-childPks[a];})[0];
         if(row.pk!==majorityPk)row.pk=majorityPk;
       }
+      // Répare aussi automatiquement les lignes dont le pk ne correspond à
+      // AUCUNE vraie phase existante (ex: "CHANTIER" alors que seule
+      // "CHANTIER PAE" existe réellement) — c'est ce qui causait le bandeau
+      // "À réparer" qui revenait sans arrêt : la cause de fond (une
+      // duplication qui ne met pas à jour le pk) continuait de créer de
+      // nouvelles lignes orphelines à chaque fois. Comme ça tourne
+      // silencieusement à chaque chargement, ça se répare tout seul dès
+      // maintenant, plus besoin de recliquer sur "Réparer" à répétition. On
+      // ne corrige QUE quand il y a une correspondance évidente et unique
+      // (le nom orphelin est le préfixe exact d'une vraie phase, ou
+      // l'inverse) — sinon on laisse le bandeau manuel, pour ne jamais
+      // deviner à tort.
+      var realPhasesNow=[];
+      data.forEach(function(r){if(r&&r.t==='ph'&&realPhasesNow.indexOf(r.pk)<0)realPhasesNow.push(r.pk);});
+      if(realPhasesNow.length){
+        var realPhSet={};
+        realPhasesNow.forEach(function(p){realPhSet[p]=true;});
+        data.forEach(function(r){
+          if(!r||r.t==='ph'||!r.pk||realPhSet[r.pk])return;
+          var candidates=realPhasesNow.filter(function(rp){return rp.indexOf(r.pk)===0||r.pk.indexOf(rp)===0;});
+          if(candidates.length===1)r.pk=candidates[0];
+        });
+      }
     });
   }
 
@@ -9454,7 +9477,8 @@ function findOrphanPhasesHtml(){
     return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
       +'<span style="font-size:11px;color:var(--tx2)">"<strong>'+escHtml(opk)+'</strong>" ('+nb+' ligne(s), aucune vraie phase) \u2192 rattacher \u00e0 :</span>'
       +'<select id="'+selId+'" style="font-size:10px;border:1px solid var(--bd);border-radius:4px;padding:2px 6px;background:var(--bg2);color:var(--tx)">'+opts+'</select>'
-      +'<button class="btn" style="font-size:10px;padding:3px 10px" onclick="repairOrphanPhase(\''+opk.replace(/'/g,"\\'")+'\',document.getElementById(\''+selId+'\').value)">R\u00e9parer</button>'
+      +'<button class="btn" style="font-size:10px;padding:3px 10px;background:var(--ac);color:#fff" title="Corrige seulement l\'étiquette, ne déplace rien, ne touche pas aux dates" onclick="repairOrphanPhaseInPlace(\''+opk.replace(/'/g,"\\'")+'\',document.getElementById(\''+selId+'\').value)">R\u00e9parer (sans rien d\u00e9placer)</button>'
+      +'<button class="btn" style="font-size:10px;padding:3px 10px" title="Corrige l\'étiquette ET déplace les lignes en fin de la phase cible" onclick="repairOrphanPhase(\''+opk.replace(/'/g,"\\'")+'\',document.getElementById(\''+selId+'\').value)">R\u00e9organiser aussi</button>'
       +'</div>';
   }).join('');
   return '<div style="margin:0 20px 12px;padding:12px 16px;background:#3D2800;border:2px solid #D97706;border-radius:var(--r2)">'
@@ -9513,7 +9537,7 @@ function repairOrphanPhase(orphanPk,targetPk){
   var orphanRows=data.filter(function(r){return r.pk===orphanPk;});
   if(!orphanRows.length)return;
   if(!targetPk){alert('Choisissez une phase de destination.');return;}
-  if(!confirm('Rattacher '+orphanRows.length+' ligne(s) de "'+orphanPk+'" \u00e0 la phase "'+targetPk+'" ?\n\nElles seront plac\u00e9es \u00e0 la suite du contenu existant de cette phase.'))return;
+  if(!confirm('Rattacher '+orphanRows.length+' ligne(s) de "'+orphanPk+'" \u00e0 la phase "'+targetPk+'" ?\n\nElles seront placées à la suite du contenu existant de cette phase (donc déplacées dans la liste).'))return;
   orphanRows.forEach(function(r){r.pk=targetPk;});
   var withoutOrphans=data.filter(function(r){return orphanRows.indexOf(r)<0;});
   var targetPhIdx=withoutOrphans.findIndex(function(r){return r.t==='ph'&&r.pk===targetPk;});
@@ -9522,6 +9546,22 @@ function repairOrphanPhase(orphanPk,targetPk){
   while(insertAt<withoutOrphans.length&&withoutOrphans[insertAt].pk===targetPk)insertAt++;
   withoutOrphans.splice.apply(withoutOrphans,[insertAt,0].concat(orphanRows));
   currP().data=withoutOrphans;
+  saveNow();
+  renderGantt();
+  renderPlanEditor();
+}
+// Version prudente : corrige UNIQUEMENT l'étiquette de phase (pk) des lignes
+// concernées, sans déplacer ni réordonner quoi que ce soit dans la liste, et
+// sans toucher aux dates/heures/barres de couleurs de ces lignes. C'est la
+// version à privilégier quand on ne veut prendre aucun risque sur des
+// données sur lesquelles on a beaucoup travaillé.
+function repairOrphanPhaseInPlace(orphanPk,targetPk){
+  var data=D();
+  var orphanRows=data.filter(function(r){return r.pk===orphanPk;});
+  if(!orphanRows.length)return;
+  if(!targetPk){alert('Choisissez une phase de destination.');return;}
+  if(!confirm('Corriger l\'étiquette de '+orphanRows.length+' ligne(s) de "'+orphanPk+'" vers "'+targetPk+'" ?\n\nAucune ligne ne sera déplacée ni réordonnée, et aucune date/barre de couleur ne sera modifiée — seule l\'étiquette de phase est corrigée, en place.'))return;
+  orphanRows.forEach(function(r){r.pk=targetPk;});
   saveNow();
   renderGantt();
   renderPlanEditor();
