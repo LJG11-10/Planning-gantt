@@ -5668,13 +5668,32 @@ function downloadPlanning(mode){
   }
 
   // ── Pages GANTT (2 pages : S1-S26 et S27-S52) ──────────────────────
-  var PH_COLORS={
-    'ÉTUDE':         {h:'#1F4E79',xl:'#BFDBFE',xd:'#2563EB'},
-    'TABLEAUTERIE':  {h:'#374151',xl:'#D1D5DB',xd:'#6B7280'},
-    'AUTOMATISME':   {h:'#7C3AED',xl:'#DDD6FE',xd:'#7C3AED'},
-    'CHANTIER':      {h:'#C05A00',xl:'#FED7AA',xd:'#EA580C'},
-    'MISE EN SERVICE':{h:'#065F46',xl:'#A7F3D0',xd:'#059669'},
-  };
+  // Couleurs de phase : reprises directement de celles réellement utilisées
+  // sur le site pour cette affaire (getPH(), qui inclut les couleurs
+  // personnalisées éventuelles) — pas une palette figée à part, qui
+  // finissait par ne plus du tout correspondre à ce qui est affiché
+  // ailleurs. Les variables CSS (var(--E1) etc.) sont résolues en vraies
+  // couleurs ici, puisque le document téléchargé est autonome et n'a pas
+  // accès à ces variables.
+  function _resolveCssColorForDl(val){
+    if(!val||typeof val!=='string'||val.indexOf('var(')!==0)return val;
+    var m=val.match(/var\((--[a-zA-Z0-9-]+)\)/);
+    if(!m)return val;
+    var computed=getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim();
+    return computed||val;
+  }
+  var PH_COLORS={};
+  (function(){
+    var _liveish=getPH();
+    Object.keys(_liveish).forEach(function(pk){
+      var c=_liveish[pk];
+      PH_COLORS[pk]={
+        h:_resolveCssColorForDl(c.h)||'#374151',
+        xl:_resolveCssColorForDl(c.xl)||'#D1D5DB',
+        xd:_resolveCssColorForDl(c.xd)||'#6B7280'
+      };
+    });
+  })();
   function getPHC(pk){return PH_COLORS[pk]||{h:'#374151',xl:'#D1D5DB',xd:'#6B7280'};}
 
   function buildGanttHalf(fromW, toW, pageTitle){
@@ -5685,7 +5704,7 @@ function downloadPlanning(mode){
     var html='';
 
     html+='<div style="margin-bottom:10px">';
-    html+='<div style="font-size:17px;font-weight:900;color:#1F4E79">'+esc(aff)+(_infHdr.numeroClient?' <span style="font-size:12px;font-weight:700;color:#2563EB">&middot; N&deg; client : '+esc(_infHdr.numeroClient)+'</span>':'')+' — '+pageTitle+'</div>';
+    html+='<div style="font-size:19px;font-weight:900;color:#1F4E79">'+esc((STORE.projects[aff]&&STORE.projects[aff].infos&&STORE.projects[aff].infos.libelle)||aff)+'</div>';
     html+='<div style="font-size:12px;color:#888;margin-bottom:10px">'+dateStr+'</div>';
     html+='</div>';
 
@@ -5706,22 +5725,22 @@ function downloadPlanning(mode){
     // Month header — reste visible en haut pendant le défilement vertical
     html+='<thead>';
     html+='<tr>';
-    html+='<th style="position:sticky;top:0;left:0;z-index:4;background:#1F4E79;color:#fff;padding:7px 10px;text-align:left;font-size:14px;font-weight:700;border:1px solid #2563EB">ACTIVITÉ</th>';
+    html+='<th class="gsh" style="position:sticky;top:0;left:0;z-index:4;background:#1F4E79;color:#fff;padding:7px 10px;text-align:left;font-size:14px;font-weight:700;border:1px solid #2563EB">ACTIVITÉ</th>';
     MG3.forEach(function(m){
       var s=Math.max(m.s,fromW),e=Math.min(m.e,toW);
       if(s>e)return;
-      html+='<th colspan="'+(e-s+1)+'" style="position:sticky;top:0;z-index:3;background:#1F4E79;color:#fff;padding:7px 4px;text-align:center;font-size:13px;font-weight:700;border:1px solid #2563EB">'+m.l+'</th>';
+      html+='<th class="gsh" colspan="'+(e-s+1)+'" style="position:sticky;top:0;z-index:3;background:#1F4E79;color:#fff;padding:7px 4px;text-align:center;font-size:13px;font-weight:700;border:1px solid #2563EB">'+m.l+'</th>';
     });
     html+='</tr>';
 
     // Week numbers row — reste visible juste en dessous de la ligne des mois
     html+='<tr>';
-    html+='<th style="position:sticky;top:30px;left:0;z-index:4;background:#2563EB;color:rgba(255,255,255,.9);padding:6px 10px;font-size:12px;text-align:left;border:1px solid #3B82F6">Semaine</th>';
+    html+='<th class="gsh" style="position:sticky;top:30px;left:0;z-index:4;background:#2563EB;color:rgba(255,255,255,.9);padding:6px 10px;font-size:12px;text-align:left;border:1px solid #3B82F6">Semaine</th>';
     for(var w=fromW;w<=toW;w++){
       var isTW=TODAY&&TODAY.w===w;
       var _yStart=_yearStarts[w];
       var _yBand=_yStart?'border-left:4px solid #F59E0B!important':'';
-      html+='<th class="wk-c-'+w+'" style="position:sticky;top:30px;z-index:3;background:'+(isTW?'#FDE047':'#2563EB')+';color:'+(isTW?'#1F4E79':'rgba(255,255,255,.8)')+';padding:5px 1px;text-align:center;font-size:11px;font-weight:700;border:1px solid #3B82F6;'+_yBand+'" title="'+(_yStart?'D\u00E9but '+_yStart:'')+'">'+(_yStart?'<div style="font-size:7px;color:#F59E0B;font-weight:900;white-space:nowrap">\u25B6 '+_yStart+'</div>':'')+'S'+isoWeekOf(w)+'</th>';
+      html+='<th class="wk-c-'+w+' gsh" style="position:sticky;top:30px;z-index:3;background:'+(isTW?'#FDE047':'#2563EB')+';color:'+(isTW?'#1F4E79':'rgba(255,255,255,.8)')+';padding:5px 1px;text-align:center;font-size:11px;font-weight:700;border:1px solid #3B82F6;'+_yBand+'" title="'+(_yStart?'D\u00E9but '+_yStart:'')+'">'+(_yStart?'<div style="font-size:7px;color:#F59E0B;font-weight:900;white-space:nowrap">\u25B6 '+_yStart+'</div>':'')+'S'+isoWeekOf(w)+'</th>';
     }
     html+='</tr></thead><tbody>';
 
@@ -5788,7 +5807,7 @@ function downloadPlanning(mode){
       }
 
       html+='<tr class="'+_ganttRowClasses+'" id="gantt-row-'+r.id+'" data-weeks="'+_taskWeeksWithBar.join(',')+'"'+(r.done?' data-always-show="1"':'')+'>';
-      html+='<td style="position:sticky;left:0;z-index:2;padding:0;border:1px solid #E5E7EB;background:'+(r.done?'#F0FDF4':'#FAFAFA')+';overflow:hidden">'
+      html+='<td class="gsh" style="position:sticky;left:0;z-index:2;padding:0;border:1px solid #E5E7EB;background:'+(r.done?'#F0FDF4':'#FAFAFA')+';overflow:hidden">'
         +'<div style="padding:4px 6px 3px 48px;border-left:3px solid '+phC.h+'">'
         +'<div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(r.done?'#059669':'#1A1917')+'">'
         +(r.done?'✓ ':'')+lbl+'</div>'
@@ -5875,19 +5894,21 @@ function downloadPlanning(mode){
   var _ganttPrintWidthMm=(mode==='client'?420:297)-14;
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
     +'<title>'+esc(aff)+' — Planning '+PLANNING_YEAR+'</title>'
-    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow:auto;max-height:78vh;border:1px solid #E5E7EB;border-radius:8px}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}@media print{@page{size:A4 portrait;margin:12mm}@page gantt-page-size{size:'+_ganttPageSizeCss+';margin:7mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none}.gantt-page{page:gantt-page-size;page-break-before:always;padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important;max-height:none!important;overflow:visible!important;border:none!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}.recap-page{page-break-after:always;max-width:100%}.pc-hidden{display:table-row!important}.pc-arrow{display:none}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}}</style>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow:auto;max-height:78vh;border:1px solid #E5E7EB;border-radius:8px}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}.print-only{display:none}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none!important}.print-only{display:block!important;margin-bottom:12px;font-size:18px;font-weight:800;color:#1F4E79}.gantt-page{padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important;max-height:none!important;overflow:visible!important;border:none!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}.recap-page{max-width:100%}.pc-arrow{display:none}.gsh{position:static!important;top:auto!important;left:auto!important}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}}</style>'
+    +'<style id="_pc_page_size">@media print{@page{size:A4 portrait;margin:12mm}}</style>'
     +'</head><body>'
     +'<div class="no-print" style="margin-bottom:16px;padding:12px 20px;background:#EFF6FF;border-radius:10px;display:flex;gap:12px;align-items:center;border:1px solid #BFDBFE;flex-wrap:wrap">'
     +'<button onclick="_pcPrintRecap()" style="padding:10px 22px;background:#1F4E79;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le récap (A4 portrait)</button>'
     +(mode==='client'?'<button onclick="_pcPrintGantt()" style="padding:10px 22px;background:#7C3AED;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le GANTT (A3 paysage)</button>':'<button onclick="_pcPrintGantt()" style="padding:10px 22px;background:#7C3AED;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le GANTT (A4 paysage)</button>')
     +'<span style="font-size:12px;color:#2563EB;font-weight:600">Rapport complet · '+esc(aff)+' · '+dateStr+'</span>'
     +'</div>'
+    +'<div class="print-only">'+esc((STORE.projects[aff]&&STORE.projects[aff].infos&&STORE.projects[aff].infos.libelle)||aff)+'</div>'
     +'<div class="recap-page">'+body+'</div>'
     +ganttPage
     +'<script>'
     +'function _pcToggle(h){var g=h.dataset.group;var c=!h.classList.contains("pc-collapsed");h.classList.toggle("pc-collapsed",c);var a=h.querySelector(".pc-arrow");if(a)a.textContent=c?"\u25B6":"\u25BC";document.querySelectorAll(".pc-c-"+g).forEach(function(r){r.classList.toggle("pc-hidden",c);});}'
-    +'function _pcPrintRecap(){document.body.classList.add("pc-print-recap");window.print();setTimeout(function(){document.body.classList.remove("pc-print-recap");},400);}'
-    +'function _pcPrintGantt(){document.body.classList.add("pc-print-gantt");window.print();setTimeout(function(){document.body.classList.remove("pc-print-gantt");},400);}'
+    +'function _pcPrintRecap(){var st=document.getElementById("_pc_page_size");if(st)st.textContent="@media print{@page{size:A4 portrait;margin:12mm}}";document.body.classList.add("pc-print-recap");window.print();setTimeout(function(){document.body.classList.remove("pc-print-recap");},400);}'
+    +'function _pcPrintGantt(){var st=document.getElementById("_pc_page_size");if(st)st.textContent="@media print{@page{size:'+_ganttPageSizeCss+';margin:7mm}}";document.body.classList.add("pc-print-gantt");window.print();setTimeout(function(){document.body.classList.remove("pc-print-gantt");},400);}'
     +'<'+'/script>'
     +'</body></html>';
 
@@ -5987,9 +6008,25 @@ function dbBuildPlanningGrid(){
     var _entryDiv=sel.closest('div');
     if(_entryDiv){
       var _c=sel.value?affColor(sel.value):null;
-      _entryDiv.style.background=_c?_c.f:'var(--bg2)';
-      _entryDiv.style.borderColor=_c?_c.xl:'var(--bd)';
+      _entryDiv.style.background=_c?_c.f:'var(--bg3)';
       _entryDiv.style.borderLeft='4px solid '+(_c?_c.h:'var(--bd)');
+      var _txColor=_c?_c.xd:'var(--tx)';
+      _entryDiv.querySelectorAll('select,textarea').forEach(function(el){el.style.color=_txColor;});
+      var _txarea=_entryDiv.querySelector('textarea');
+      if(_txarea)_txarea.style.borderTopColor=_c?_c.xl:'var(--bd)';
+      // Mettre à jour l'étiquette de nom complet (texte enroulable au-dessus
+      // du select) — sinon elle restait bloquée sur l'ancienne affaire même
+      // après avoir changé ou vidé la sélection.
+      var _lbl=_entryDiv.querySelector('.wp-aff-label');
+      if(_lbl){
+        _lbl.textContent=sel.value?getAffLabelShort(sel.value):'';
+        _lbl.style.display=sel.value?'block':'none';
+        _lbl.style.color=_txColor;
+      }
+      sel.style.fontSize=sel.value?'9px':'11px';
+      sel.style.fontWeight=sel.value?'400':'800';
+      sel.style.opacity=sel.value?'.6':'1';
+      sel.style.height=sel.value?'14px':'';
     }
   };
   window._wpActChange=function(sel){
@@ -6117,10 +6154,10 @@ function dbBuildPlanningGrid(){
   +'<button onclick="dbDownloadWeek(\'download\')" style="padding:5px 11px;border-radius:var(--r);border:1px solid var(--ac);background:var(--ac);cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;color:#fff">&#128229; T&eacute;l&eacute;charger</button>';
   html+='</div></div>';
   if(!persons.length){html+='<div style="text-align:center;padding:40px;color:var(--tx3)">Aucune personne trouvee.</div></div>';grid.innerHTML=html;return;}
-  html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:800px">';
+  html+='<div style="overflow-x:auto;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)"><table style="width:100%;border-collapse:separate;border-spacing:0;min-width:800px;background:var(--bg2)">';
   html+='<thead><tr style="background:linear-gradient(135deg,var(--ac),#4B3FC7)">';
-  html+='<th style="padding:12px 16px;text-align:left;font-size:12px;font-weight:800;color:#fff;min-width:130px;border-right:2px solid rgba(255,255,255,.2)">&#128100; Personne</th>';
-  var _dayAccents=['#3B82F6','#6366F1','#8B5CF6','#EC4899','#F59E0B'];DN.forEach(function(d,di){var dd='';if(dLun){var dt=new Date(dLun.getTime()+di*86400000);dd='<br><span style="font-size:10px;opacity:.85">'+dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+'</span>';}html+='<th style="padding:12px 6px;text-align:center;font-size:12px;font-weight:800;color:#fff;min-width:165px;border-left:1px solid rgba(255,255,255,.15)"><span style="display:inline-block;background:rgba(255,255,255,.18);border-radius:20px;padding:2px 10px">'+d+'</span>'+dd+'</th>';});
+  html+='<th style="padding:14px 16px;text-align:left;font-size:12px;font-weight:800;color:#fff;min-width:150px;border-top-left-radius:16px">&#128100; Personne</th>';
+  var _dayAccents=['#3B82F6','#6366F1','#8B5CF6','#EC4899','#F59E0B'];DN.forEach(function(d,di){var dd='';if(dLun){var dt=new Date(dLun.getTime()+di*86400000);dd='<br><span style="font-size:10px;opacity:.85;font-weight:600">'+dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+'</span>';}var _isLastDay=di===DN.length-1;html+='<th style="padding:12px 6px;text-align:center;font-size:12px;font-weight:800;color:#fff;min-width:165px'+(_isLastDay?';border-top-right-radius:16px':'')+'"><span style="display:inline-block;background:rgba(255,255,255,.22);border-radius:20px;padding:4px 14px">'+d+'</span>'+dd+'</th>';});
   html+='</tr></thead><tbody>';
   var _hiddenSepShown=false;
   persons.forEach(function(nm,pi){
@@ -6133,11 +6170,14 @@ function dbBuildPlanningGrid(){
     }
     html+='<tr data-nm="'+nmEsc+'" style="border-bottom:1px solid var(--bd);background:'+(_isHidden?'#FAFAFA':(pi%2===0?'#fff':'var(--bg3)'))+'">';
     var _habs=_gp2&&_gp2.habilitations&&_gp2.habilitations.length
-      ?'<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:2px">'+_gp2.habilitations.map(function(h){return '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;background:var(--ac3);color:var(--ac);border:1px solid var(--ac3)">'+h+'</span>';}).join('')+'</div>'
+      ?'<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:2px">'+_gp2.habilitations.map(function(h){return '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;background:var(--ac3);color:var(--ac);border:1px solid var(--ac3)">'+h+'</span>';}).join('')+'</div>'
       :'';
-    html+='<td style="padding:'+(_isHidden?'6px 16px':'10px 16px')+';font-weight:800;font-size:13px;white-space:nowrap;border-right:3px solid var(--ac3);vertical-align:top;background:'+(_isHidden?'var(--bg3)':'linear-gradient(135deg,var(--ac2),var(--ac3))')+';color:'+(_isHidden?'var(--tx3)':'var(--ac)')+'">'
-      +'<label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Cocher pour masquer cette personne cette semaine (elle ne travaille que rarement)">'
-      +'<input type="checkbox" data-nm="'+nmEsc+'" onchange="window._wpToggleHidden(this)"'+(_isHidden?' checked':'')+' style="width:14px;height:14px;cursor:pointer;flex-shrink:0">'
+    var _avColor=personAvatarColor(nm),_avInit=personInitials(nm);
+    var _avatarHtml='<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:'+(_isHidden?'var(--bd)':_avColor)+';color:#fff;font-size:10px;font-weight:800;flex-shrink:0;letter-spacing:.3px">'+_avInit+'</span>';
+    html+='<td style="padding:'+(_isHidden?'8px 16px':'12px 16px')+';font-weight:800;font-size:13px;white-space:nowrap;vertical-align:top;background:'+(_isHidden?'var(--bg3)':'var(--bg2)')+';color:'+(_isHidden?'var(--tx3)':'var(--tx)')+';border-bottom:1px solid var(--bd)">'
+      +'<label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="Cocher pour masquer cette personne cette semaine (elle ne travaille que rarement)">'
+      +'<input type="checkbox" data-nm="'+nmEsc+'" onchange="window._wpToggleHidden(this)"'+(_isHidden?' checked':'')+' style="width:13px;height:13px;cursor:pointer;flex-shrink:0;accent-color:var(--ac)">'
+      +_avatarHtml
       +'<span>'+nm+'</span></label>'+(_isHidden?'':_habs)+'</td>';
     if(_isHidden){
       html+='<td colspan="'+DN.length+'" style="padding:6px 16px;text-align:left;color:var(--tx3);font-size:10px;font-style:italic;background:#FAFAFA">Masqu\u00E9 cette semaine</td>';
@@ -6153,24 +6193,26 @@ function dbBuildPlanningGrid(){
       // Vérifier alternant à l'école pour CETTE semaine
       var _absData=STORE.absences&&STORE.absences[nm];
       var _isEcole=_absData&&(_absData.school||[]).indexOf(selWk)>=0;
-      if(_isConge){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#FEE2E2,#FECACA);border:1px solid #FCA5A5;vertical-align:middle"><div style="font-size:20px">🏖</div><div style="font-size:11px;font-weight:800;color:#DC2626;margin-top:2px">Congé</div></td>';return;}
-      if(_isEcole){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,var(--ac2),var(--ac3));border:1px solid var(--ac3);vertical-align:middle"><div style="font-size:20px">🏫</div><div style="font-size:11px;font-weight:800;color:var(--ac);margin-top:2px">École</div></td>';return;}
+      if(_isConge){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#FEE2E2,#FECACA);border-bottom:1px solid var(--bd);vertical-align:middle"><div style="font-size:20px">🏖</div><div style="font-size:11px;font-weight:800;color:#DC2626;margin-top:2px">Congé</div></td>';return;}
+      if(_isEcole){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,var(--ac2),var(--ac3));border-bottom:1px solid var(--bd);vertical-align:middle"><div style="font-size:20px">🏫</div><div style="font-size:11px;font-weight:800;color:var(--ac);margin-top:2px">École</div></td>';return;}
       var rows=getCellRows(nm,di);var totalRows=rows.length;
-      html+='<td style="padding:4px;border:1px solid var(--bd);vertical-align:top;background:#fff">';
+      html+='<td style="padding:6px;border-bottom:1px solid var(--bd);vertical-align:top;background:var(--bg2)">';
       rows.forEach(function(entry,ei){
         var sAff=entry.aff||'',sAct=entry.actId||'',sComment=entry.comment||'';
         var _entryColor=sAff?affColor(sAff):null;
-        html+='<div style="margin-bottom:3px;background:'+(_entryColor?_entryColor.f:'var(--bg2)')+';border:1px solid '+(_entryColor?_entryColor.xl:'var(--bd)')+';border-left:4px solid '+(_entryColor?_entryColor.h:'var(--bd)')+';border-radius:4px;padding:3px;position:relative">';
-        if(totalRows>1)html+='<span class="wp-rm" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpRemove(this)" style="position:absolute;top:2px;right:3px;font-size:11px;color:#aaa;cursor:pointer;line-height:1;font-weight:700;padding:1px 2px">x</span>';
-        if(sAff)html+='<span data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpToggleDupPicker(this)" title="Dupliquer vers d\'autres jours" style="position:absolute;top:2px;right:'+(totalRows>1?'20':'3')+'px;font-size:11px;color:var(--ac);cursor:pointer;line-height:1;font-weight:700;padding:1px 2px">\u29C9</span>';
-        html+='<select class="wp-aff" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpAffChange(this)" style="width:100%;border:none;border-bottom:1px solid var(--bd);padding:2px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;margin-bottom:2px">'+buildAffOpts(sAff)+'</select>';
-        html+='<select id="wpa-'+nmKey+'-'+di+'-'+ei+'" class="wp-act" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpActChange(this)" style="width:100%;border:none;padding:2px;font-size:10px;font-family:inherit;background:transparent;color:var(--tx);outline:none;display:'+(sAff?'block':'none')+'">';
+        html+='<div style="margin-bottom:5px;background:'+(_entryColor?_entryColor.f:'var(--bg3)')+';border-left:4px solid '+(_entryColor?_entryColor.h:'var(--bd)')+';border-radius:10px;padding:6px 8px;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
+        if(totalRows>1)html+='<span class="wp-rm" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpRemove(this)" style="position:absolute;top:3px;right:4px;font-size:11px;color:#aaa;cursor:pointer;line-height:1;font-weight:700;padding:1px 2px">x</span>';
+        if(sAff)html+='<span data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpToggleDupPicker(this)" title="Dupliquer vers d\'autres jours" style="position:absolute;top:3px;right:'+(totalRows>1?'21':'4')+'px;font-size:11px;color:'+(_entryColor?_entryColor.h:'var(--ac)')+';cursor:pointer;line-height:1;font-weight:700;padding:1px 2px">\u29C9</span>';
+        var _affFullLabel=sAff?getAffLabelShort(sAff):'';
+        html+='<div class="wp-aff-label" style="font-size:11px;font-weight:800;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';white-space:normal;overflow-wrap:break-word;word-break:break-word;line-height:1.3;padding-right:16px;margin-bottom:1px;display:'+(sAff?'block':'none')+'">'+escHtml(_affFullLabel)+'</div>';
+        html+='<select class="wp-aff" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpAffChange(this)" style="width:100%;border:none;padding:1px 16px 2px 0;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;appearance:none;-webkit-appearance:none;'+(sAff?'font-size:9px;opacity:.6;height:14px':'font-size:11px;font-weight:800')+'">'+buildAffOpts(sAff)+'</select>';
+        html+='<select id="wpa-'+nmKey+'-'+di+'-'+ei+'" class="wp-act" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpActChange(this)" style="width:100%;border:none;padding:1px 16px 2px 0;font-size:10px;font-weight:600;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;opacity:.85;appearance:none;-webkit-appearance:none;display:'+(sAff?'block':'none')+'">';
         if(sAff)html+=buildActOpts(sAff,sAct,_gp2?_getServicePhases(_gp2.service||''):null);
         html+='</select>';
-        html+='<textarea class="wp-comment" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpCommentChange(this)" onblur="window._wpCommentChange(this)" placeholder="Commentaire..." style="width:100%;border:none;border-top:1px dashed var(--bd);padding:2px;font-size:10px;font-family:inherit;background:transparent;color:var(--tx);outline:none;resize:none;min-height:28px;overflow:hidden" rows="1">'+sComment.replace(/</g,'&lt;')+'</textarea>';
+        html+='<textarea class="wp-comment" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpCommentChange(this)" onblur="window._wpCommentChange(this)" placeholder="Commentaire..." style="width:100%;border:none;border-top:1px dashed '+(_entryColor?_entryColor.xl:'var(--bd)')+';margin-top:2px;padding:2px 0 0;font-size:10px;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;resize:none;min-height:26px;overflow:hidden" rows="1">'+sComment.replace(/</g,'&lt;')+'</textarea>';
         html+='</div>';
       });
-      html+='<div style="text-align:center;margin-top:5px"><span class="wp-add" data-nm="'+nmEsc+'" data-di="'+di+'" onclick="window._wpAddEntry(this)" style="font-size:11px;color:var(--ac);cursor:pointer;font-weight:700;padding:3px 12px;border-radius:20px;border:1.5px dashed var(--ac3);display:inline-block;background:var(--ac2)">+ Ajouter</span></div>';
+      html+='<div style="text-align:center;margin-top:2px"><span class="wp-add" data-nm="'+nmEsc+'" data-di="'+di+'" onclick="window._wpAddEntry(this)" style="font-size:11px;color:var(--ac);cursor:pointer;font-weight:700;padding:3px 12px;border-radius:20px;border:1.5px dashed var(--ac3);display:inline-block;background:var(--ac2)">+ Ajouter</span></div>';
       // GANTT → Planning Réunion : afficher les tâches GANTT de cette personne cette semaine
       var _savedForCell=getSavedEntries(nm,di);
       Object.keys(STORE.projects).forEach(function(affG){
@@ -6207,7 +6249,7 @@ function dbBuildPlanningGrid(){
           var _badgeComment=(window._gcBadgeComments&&window._gcBadgeComments[_badgeKey])||'';
           var _showComment=window._gcBadgeOpen&&window._gcBadgeOpen===_badgeKey;
           var _nmE=nm.replace(/"/g,'&quot;');
-          html+='<div style="background:'+ac.f+';border:1px solid '+ac.xl+';border-left:3px solid '+ac.h+';border-radius:4px;padding:3px 6px;font-size:10px;color:'+ac.xd+';margin-top:3px">';
+          html+='<div style="background:'+ac.f+';border-left:3px solid '+ac.h+';border-radius:10px;padding:5px 8px;font-size:10px;color:'+ac.xd+';margin-top:4px;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
           html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px">';
           html+='<span style="min-width:0"><span style="font-weight:800;white-space:normal;overflow-wrap:break-word;word-break:break-word">'+escHtml(affFullG)+'</span><br><span style="font-weight:600;white-space:normal;overflow-wrap:break-word;word-break:break-word">⚙ '+escHtml(actG.lb)+'</span></span>';
           html+='<span onclick="gcBadgeToggle(\''+_badgeKey+'\')" style="cursor:pointer;font-size:10px;margin-left:6px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.1);font-weight:700;flex-shrink:0">'+(_badgeComment?'💬':'+ note')+'</span>';
@@ -6300,16 +6342,25 @@ function dbDownloadWeek(dlMode){
     var totalEntries=0;
     for(var di2=0;di2<5;di2++)totalEntries+=(dayMap[di2]||[]).length||1;
     var firstRow=true;
+    var _avColorDl=personAvatarColor(nm),_avInitDl=personInitials(nm);
+    var _avatarHtmlDl='<span class="av" style="background:'+_avColorDl+'">'+_avInitDl+'</span>';
     for(var di=0;di<5;di++){
       var dayEntries=dayMap[di]||[];
       var dtStr=new Date(dStart.getTime()+di*86400000).toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
       var rowspan=Math.max(1,dayEntries.length);
       if(!dayEntries.length){
-        rows+='<tr>'+(firstRow?'<td class="nm" rowspan="'+totalEntries+'">'+esc(nm)+'</td>':'')+'<td class="day">'+dtStr+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="aff"></td></tr>';
+        rows+='<tr>'+(firstRow?'<td class="nm" rowspan="'+totalEntries+'">'+_avatarHtmlDl+'<span>'+esc(nm)+'</span></td>':'')+'<td class="day">'+dtStr+'</td><td class="act"><span class="empty">— Rien de planifié —</span></td></tr>';
         firstRow=false;
       } else {
         dayEntries.forEach(function(e,ei){
-          rows+='<tr>'+(firstRow&&ei===0?'<td class="nm" rowspan="'+totalEntries+'">'+esc(nm)+'</td>':'')+(ei===0?'<td class="day" rowspan="'+rowspan+'">'+dtStr+'</td>':'')+'<td class="act">'+(e.actPk?'<span class="pk">'+esc(e.actPk)+'</span>':'')+esc(e.actLb||'—')+(e.comment?'<div style="font-size:9px;color:#6B7280;margin-top:2px;font-style:italic">&#128172; '+esc(e.comment)+'</div>':'')+'</td><td class="aff">'+esc(getAffLabel(e.aff))+'</td></tr>';
+          var _c=affColor(e.aff);
+          var _affFull=esc(getAffLabel(e.aff));
+          rows+='<tr>'+(firstRow&&ei===0?'<td class="nm" rowspan="'+totalEntries+'">'+_avatarHtmlDl+'<span>'+esc(nm)+'</span></td>':'')+(ei===0?'<td class="day" rowspan="'+rowspan+'">'+dtStr+'</td>':'')
+            +'<td class="act-cell"><div class="card" style="background:'+_c.f+';border-left-color:'+_c.h+'">'
+            +'<div class="card-aff" style="color:'+_c.xd+'">'+_affFull+'</div>'
+            +(e.actLb?'<div class="card-act" style="color:'+_c.xd+'">'+(e.actPk?'<span class="pk" style="background:'+_c.xl+';color:'+_c.xd+'">'+esc(e.actPk)+'</span>':'')+esc(e.actLb)+'</div>':'')
+            +(e.comment?'<div class="card-comment">&#128172; '+esc(e.comment)+'</div>':'')
+            +'</div></td></tr>';
           if(ei===0)firstRow=false;
         });
       }
@@ -6317,21 +6368,28 @@ function dbDownloadWeek(dlMode){
     rows+='<tr class="sep-row"><td colspan="3"></td></tr>';
   });
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Planning reunion S'+isoWeekOf(selWk)+'</title>'
-    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}'
-    +'h1{font-size:20px;font-weight:900;color:#1F4E79;margin-bottom:4px}.meta{font-size:11px;color:#666;margin-bottom:20px}'
-    +'table{width:100%;border-collapse:collapse;border:1px solid #CBD5E1}'
-    +'th{background:#1F4E79;color:#fff;padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.5px}'
-    +'td{padding:7px 10px;border-bottom:1px solid #E5E7EB;vertical-align:middle}'
-    +'.nm{font-weight:900;color:#1F4E79;background:#EFF6FF;width:140px;border-right:2px solid #BFDBFE;font-size:12px}'
-    +'.day{font-weight:700;color:#374151;background:#F8FAFF;width:150px;font-size:11px;border-right:1px solid #E5E7EB}'
-    +'.act{color:#111;font-size:11px}.aff{font-size:10px;color:#6B7280;font-style:italic;width:150px;border-left:1px solid #E5E7EB}'
-    +'.pk{background:#DBEAFE;color:#1E40AF;border-radius:4px;padding:1px 6px;font-size:9px;font-weight:700;margin-right:5px}'
-    +'.sep-row td{padding:2px;background:#F0F4F8;border-bottom:2px solid #BFDBFE}'
-    +'@media print{@page{size:A4 landscape;margin:10mm 10mm 16mm 10mm;@bottom-center{content:"Page " counter(page) " / " counter(pages);font-size:9pt;color:#666;font-family:Arial,sans-serif}}body{padding:0}}</style>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px;background:#F8F7FC}'
+    +'h1{font-size:20px;font-weight:900;color:#1F4E79;margin-bottom:4px;display:flex;align-items:center;gap:8px}'
+    +'.meta{font-size:11px;color:#666;margin-bottom:20px}'
+    +'table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}'
+    +'th{background:linear-gradient(135deg,#1F4E79,#2563EB);color:#fff;padding:10px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.5px}'
+    +'td{padding:8px 10px;border-bottom:1px solid #EEF1F6;vertical-align:middle}'
+    +'.nm{font-weight:800;color:#1F4E79;background:#F8FAFF;width:150px;font-size:12px;display:flex;align-items:center;gap:8px}'
+    +'.av{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;color:#fff;font-size:9px;font-weight:800;flex-shrink:0}'
+    +'.day{font-weight:700;color:#374151;background:#FAFBFF;width:135px;font-size:11px;text-transform:capitalize}'
+    +'.act-cell{padding:5px 8px}'
+    +'.card{border-radius:10px;border-left:4px solid;padding:6px 10px;box-shadow:0 1px 2px rgba(0,0,0,.05)}'
+    +'.card-aff{font-size:11px;font-weight:800;margin-bottom:2px}'
+    +'.card-act{font-size:10px;font-weight:600;opacity:.85}'
+    +'.card-comment{font-size:9px;color:#6B7280;margin-top:3px;font-style:italic}'
+    +'.act .empty{color:#B0B7C3;font-style:italic;font-size:11px}'
+    +'.pk{border-radius:5px;padding:1px 6px;font-size:9px;font-weight:700;margin-right:5px}'
+    +'.sep-row td{padding:3px;background:#F8F7FC;border-bottom:none}'
+    +'@media print{body{background:#fff;padding:0}table{box-shadow:none;border-radius:0}@page{size:A4 landscape;margin:10mm 10mm 16mm 10mm;@bottom-center{content:"Page " counter(page) " / " counter(pages);font-size:9pt;color:#666;font-family:Arial,sans-serif}}}</style>'
     +'</head><body>'
     +'<h1>&#128197; Planning reunion — '+wkLabel+'</h1>'
     +'<div class="meta">Edite le '+dateEd+' · Planning Petrole</div>'
-    +'<table><thead><tr><th>Personne</th><th>Jour</th><th>Activite</th><th>Affaire</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<table><thead><tr><th>Personne</th><th>Jour</th><th>Activité</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'</body></html>';
   if(dlMode==='download'){
     // Télécharger comme fichier HTML
@@ -7772,6 +7830,23 @@ function affColor(affKey){
   var hash=0;
   for(var i=0;i<s.length;i++){hash=((hash<<5)-hash+s.charCodeAt(i))|0;}
   return AFF_COLOR_PALETTE[Math.abs(hash)%AFF_COLOR_PALETTE.length];
+}
+// Avatar coloré par personne (initiales sur fond de couleur stable) — pour
+// Planning Réunion. Palette volontairement différente de celle des chantiers
+// (AFF_COLOR_PALETTE), pour bien distinguer "couleur de la personne" et
+// "couleur du chantier" au premier coup d'œil.
+const _PERSON_AVATAR_PALETTE=['#FB923C','#38BDF8','#C084FC','#4ADE80','#FB7185','#2DD4BF','#FACC15','#818CF8','#F472B6','#A3E635'];
+function personAvatarColor(name){
+  var s=String(name||'');
+  var hash=0;
+  for(var i=0;i<s.length;i++){hash=((hash<<5)-hash+s.charCodeAt(i))|0;}
+  return _PERSON_AVATAR_PALETTE[Math.abs(hash)%_PERSON_AVATAR_PALETTE.length];
+}
+function personInitials(name){
+  var parts=String(name||'').trim().split(/\s+/).filter(Boolean);
+  if(!parts.length)return '?';
+  if(parts.length===1)return parts[0].slice(0,2).toUpperCase();
+  return (parts[0][0]+parts[parts.length-1][0]).toUpperCase();
 }
 
 // Une phase est considérée "chantier" si son nom contient CHANTIER
@@ -9443,6 +9518,26 @@ function setZoom(mode){
   if(lbl){lbl.textContent=ZOOM_DW+'px';lbl.dataset.mode=mode||'manual';}
   renderGantt();
 }
+// Zoom au Ctrl+molette, uniquement quand la souris est sur le GANTT — le
+// reste de la page (et le zoom navigateur classique) n'est jamais affecté.
+// Posé au niveau document (qui existe toujours dès le début, contrairement à
+// #gw qui pourrait ne pas encore exister selon l'ordre de chargement), avec
+// vérification que la souris est bien dans la zone du GANTT — plus robuste
+// qu'un écouteur posé directement sur #gw, qui pourrait être court-circuité
+// par un élément imbriqué (barre de défilement interne, etc.).
+(function(){
+  var _lastZoomWheel=0;
+  document.addEventListener('wheel',function(e){
+    if(!e.ctrlKey)return;
+    var _gwZoomEl=document.getElementById('gw');
+    if(!_gwZoomEl||!_gwZoomEl.contains(e.target))return;
+    e.preventDefault(); // bloque le zoom de toute la page du navigateur
+    var now=Date.now();
+    if(now-_lastZoomWheel<70)return; // léger frein pour rester fluide au défilement rapide
+    _lastZoomWheel=now;
+    setZoom(e.deltaY<0?'in':'out');
+  },{passive:false});
+})();
 // ═══════════════════════════════
 // ÉDITEUR DE PLANNING (phases / sous-phases / activités)
 
