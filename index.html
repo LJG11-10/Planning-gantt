@@ -6034,7 +6034,7 @@ function dbBuildPlanningGrid(){
   function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
   function removeEntry(nm,di,ei){var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved.splice(ei,1);var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}else{if(extra>0)window._wpExtra[key]=extra-1;}dbBuildPlanningGrid();}
   window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];as.innerHTML=buildActOpts(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null);as.style.display=sel.value?'block':'none';}
-    var _entryDiv=sel.closest('div');
+    var _entryDiv=sel.closest('.wp-entry');
     if(_entryDiv){
       var _c=sel.value?affColor(sel.value):null;
       _entryDiv.style.background=_c?_c.f:'var(--bg3)';
@@ -6056,6 +6056,48 @@ function dbBuildPlanningGrid(){
       sel.style.fontWeight=sel.value?'400':'800';
       sel.style.opacity=sel.value?'.6':'1';
       sel.style.height=sel.value?'14px':'';
+      // Ajouter la barre d'outils (dupliquer/supprimer) si elle n'existe pas
+      // encore — sinon elle n'apparaissait qu'après un rechargement complet
+      // de la case (ex: masquer/démasquer la personne), jamais juste après
+      // avoir choisi un chantier pour la première fois sur une case vide.
+      var _toolbar=_entryDiv.querySelector('.wp-toolbar');
+      if(sel.value&&!_toolbar){
+        _toolbar=document.createElement('div');
+        _toolbar.className='wp-toolbar';
+        _toolbar.style.cssText='display:flex;justify-content:space-between;align-items:center;min-height:16px;margin-bottom:2px';
+        var _dupSpan=document.createElement('span');
+        _dupSpan.dataset.nm=sel.dataset.nm;_dupSpan.dataset.di=sel.dataset.di;_dupSpan.dataset.ei=sel.dataset.ei;
+        _dupSpan.title="Dupliquer vers d'autres jours";
+        _dupSpan.style.cssText='font-size:12px;color:'+_c.h+';cursor:pointer;line-height:1;font-weight:700;padding:2px 4px;border-radius:4px';
+        _dupSpan.textContent='\u29C9';
+        _dupSpan.onclick=function(){window._wpToggleDupPicker(this);};
+        var _rmSpan=document.createElement('span');
+        _rmSpan.className='wp-rm';
+        _rmSpan.dataset.nm=sel.dataset.nm;_rmSpan.dataset.di=sel.dataset.di;_rmSpan.dataset.ei=sel.dataset.ei;
+        _rmSpan.title='Supprimer cette entrée';
+        _rmSpan.style.cssText='font-size:12px;color:#999;cursor:pointer;line-height:1;font-weight:700;padding:2px 4px;border-radius:4px';
+        _rmSpan.textContent='\u2715';
+        _rmSpan.onclick=function(){window._wpRemove(this);};
+        _toolbar.appendChild(_dupSpan);
+        _toolbar.appendChild(_rmSpan);
+        _entryDiv.insertBefore(_toolbar,_entryDiv.firstChild);
+      }else if(_toolbar){
+        // Chantier changé : mettre à jour la couleur du bouton dupliquer,
+        // et l'ajouter/retirer s'il apparaît/disparaît selon la sélection.
+        var _dupBtn=_toolbar.querySelector('[title="Dupliquer vers d\'autres jours"]');
+        if(sel.value&&_dupBtn){_dupBtn.style.color=_c.h;}
+        else if(sel.value&&!_dupBtn){
+          _dupBtn=document.createElement('span');
+          _dupBtn.dataset.nm=sel.dataset.nm;_dupBtn.dataset.di=sel.dataset.di;_dupBtn.dataset.ei=sel.dataset.ei;
+          _dupBtn.title="Dupliquer vers d'autres jours";
+          _dupBtn.style.cssText='font-size:12px;color:'+_c.h+';cursor:pointer;line-height:1;font-weight:700;padding:2px 4px;border-radius:4px';
+          _dupBtn.textContent='\u29C9';
+          _dupBtn.onclick=function(){window._wpToggleDupPicker(this);};
+          _toolbar.insertBefore(_dupBtn,_toolbar.firstChild);
+        }else if(!sel.value&&_dupBtn){
+          _dupBtn.remove();
+        }
+      }
     }
   };
   window._wpActChange=function(sel){
@@ -6236,7 +6278,7 @@ function dbBuildPlanningGrid(){
         // avec le rendu natif des menus déroulants, quel que soit le
         // navigateur. Dupliquer à gauche, supprimer à droite.
         if(sAff||sComment){
-          html+='<div style="display:flex;justify-content:space-between;align-items:center;min-height:16px;margin-bottom:2px">';
+          html+='<div class="wp-toolbar" style="display:flex;justify-content:space-between;align-items:center;min-height:16px;margin-bottom:2px">';
           html+=sAff?'<span data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpToggleDupPicker(this)" title="Dupliquer vers d\'autres jours" style="font-size:12px;color:'+(_entryColor?_entryColor.h:'var(--ac)')+';cursor:pointer;line-height:1;font-weight:700;padding:2px 4px;border-radius:4px">\u29C9</span>':'<span></span>';
           html+='<span class="wp-rm" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpRemove(this)" title="Supprimer cette entrée" style="font-size:12px;color:#999;cursor:pointer;line-height:1;font-weight:700;padding:2px 4px;border-radius:4px">\u2715</span>';
           html+='</div>';
