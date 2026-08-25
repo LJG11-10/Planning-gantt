@@ -3156,6 +3156,15 @@ function renderEquipeInto(containerId){
   var el=document.getElementById(containerId);
   if(el)el.innerHTML=dbEquipe();
 }
+// dbEquipe() est utilisée à deux endroits différents (Tableau de bord ET
+// onglet Personnel), avec des conteneurs différents — ce petit aiguillage
+// rafraîchit le bon des deux selon le contexte actuellement affiché, pour
+// que les boutons de navigation (semaine précédente/suivante/aujourd'hui)
+// fonctionnent correctement peu importe d'où on est parti.
+function _dbEquipeRefresh(){
+  if(window._dbtab==='equipe'&&document.getElementById('dbw'))renderDashboard();
+  else renderEquipeInto('pers-equipe');
+}
 function renderFicheInto(cid){
   // Remonter le contenu de tab-fiche dans pers-fiche
   var src=document.getElementById('fw');
@@ -3627,7 +3636,7 @@ function renderOverview(){
   if(!cont)return;
 
   // ── Semaine courante ───────────────────────────────────────────────
-  var curWk=window._dbwk||(TODAY?TODAY.w+1:2);
+  var curWk=window._dbwk||(TODAY?TODAY.w:2);
   var wpWk=STORE.weekPlan&&STORE.weekPlan[curWk]||{};
   var gp=STORE.globalPersons||{};
   var del=STORE._deletedPersons||{};
@@ -3725,7 +3734,7 @@ function renderOverview(){
       var vals=wpWk[key];
       if(!vals)continue;
       if(!Array.isArray(vals))vals=[vals];
-      vals.forEach(function(v){if(v&&(v.affId||v.actId))allEntries.push({di:di,v:v});});
+      vals.forEach(function(v){if(v&&(v.aff||v.affId||v.actId))allEntries.push({di:di,v:v});});
     }
     if(!allEntries.length)return;
     hasPlanning=true;
@@ -3925,9 +3934,9 @@ function renderDashboard(){
 
 
 function dbEquipe(){
-  // Même semaine par défaut que Planning réunion (semaine à venir), pour que ce qui vient
-  // d'être planifié en réunion apparaisse directement ici sans changer de semaine.
-  if(!window._eqWk)window._eqWk=TODAY?TODAY.w+1:2;
+  // Semaine en cours par défaut, pour voir immédiatement qui est affecté où
+  // cette semaine, suivant ce qui a été rempli dans Planning réunion.
+  if(!window._eqWk)window._eqWk=TODAY?TODAY.w:2;
   var selWk=window._eqWk;
   var DN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 
@@ -3977,12 +3986,12 @@ function dbEquipe(){
   var wkLabel='S'+isoWeekOf(selWk)+' — '+fmt2(dLun)+' au '+fmt2(dVen);
 
   var nav='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 16px;background:var(--bg3);border-radius:var(--r2);border:1px solid var(--bd)">'
-    +'<button onclick="window._eqWk=Math.max(1,window._eqWk-1);renderEquipeInto(\'pers-equipe\')" style="padding:6px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-weight:700;font-size:14px">&#8249;</button>'
+    +'<button onclick="window._eqWk=Math.max(1,window._eqWk-1);_dbEquipeRefresh()" style="padding:6px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-weight:700;font-size:14px">&#8249;</button>'
     +'<div style="font-size:14px;font-weight:800;color:var(--tx)">'+wkLabel
     +(TODAY&&TODAY.w===selWk?' <span style="background:var(--ac);color:#fff;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700">Cette semaine</span>':'')
     +'</div>'
-    +'<button onclick="window._eqWk=Math.min(52,window._eqWk+1);renderEquipeInto(\'pers-equipe\')" style="padding:6px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-weight:700;font-size:14px">&#8250;</button>'
-    +(TODAY?'<button onclick="window._eqWk=TODAY.w;renderEquipeInto(\'pers-equipe\')" style="padding:6px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-size:11px;font-weight:700;margin-left:8px">Auj.</button>':'')
+    +'<button onclick="window._eqWk=Math.min(52,window._eqWk+1);_dbEquipeRefresh()" style="padding:6px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-weight:700;font-size:14px">&#8250;</button>'
+    +(TODAY?'<button onclick="window._eqWk=TODAY.w;_dbEquipeRefresh()" style="padding:6px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-size:11px;font-weight:700;margin-left:8px">Auj.</button>':'')
     +'<div style="margin-left:auto;font-size:11px;color:var(--tx3)">'+personOrder.length+' personne'+(personOrder.length>1?'s':'')+'</div>'
     +'</div>';
 
@@ -5704,8 +5713,8 @@ function downloadPlanning(mode){
     var html='';
 
     html+='<div style="margin-bottom:10px">';
-    html+='<div style="font-size:19px;font-weight:900;color:#1F4E79">'+esc((STORE.projects[aff]&&STORE.projects[aff].infos&&STORE.projects[aff].infos.libelle)||aff)+'</div>';
-    html+='<div style="font-size:12px;color:#888;margin-bottom:10px">'+dateStr+'</div>';
+    html+='<div style="font-size:14px;color:#2563EB;font-weight:800">'+esc(_infHdr.numero||aff)+(_infHdr.numeroClient?' &middot; N&deg; client : '+esc(_infHdr.numeroClient):'')+'</div>';
+    html+='<div style="font-size:12px;color:#888;margin-top:3px">'+dateStr+'</div>';
     html+='</div>';
 
     html+='<table style="border-collapse:collapse;table-layout:fixed;width:'+(ACT_W+numW*COL)+'px" id="gantt-table">';
@@ -5894,7 +5903,7 @@ function downloadPlanning(mode){
   var _ganttPrintWidthMm=(mode==='client'?420:297)-14;
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
     +'<title>'+esc(aff)+' — Planning '+PLANNING_YEAR+'</title>'
-    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow:auto;max-height:78vh;border:1px solid #E5E7EB;border-radius:8px}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}.print-only{display:none}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none!important}.print-only{display:block!important;margin-bottom:12px;font-size:18px;font-weight:800;color:#1F4E79}.gantt-page{padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important;max-height:none!important;overflow:visible!important;border:none!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}.recap-page{max-width:100%}.pc-arrow{display:none}.gsh{position:static!important;top:auto!important;left:auto!important}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}}</style>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow:auto;max-height:78vh;border:1px solid #E5E7EB;border-radius:8px}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}.print-only{display:none}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none!important}.print-only{display:block!important;margin-bottom:14px;font-size:26px;font-weight:900;color:#1F4E79}.gantt-page{padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important;max-height:none!important;overflow:visible!important;border:none!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}.recap-page{max-width:100%}.pc-arrow{display:none}.gsh{position:static!important;top:auto!important;left:auto!important}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}}</style>'
     +'<style id="_pc_page_size">@media print{@page{size:A4 portrait;margin:12mm}}</style>'
     +'</head><body>'
     +'<div class="no-print" style="margin-bottom:16px;padding:12px 20px;background:#EFF6FF;border-radius:10px;display:flex;gap:12px;align-items:center;border:1px solid #BFDBFE;flex-wrap:wrap">'
@@ -5902,7 +5911,8 @@ function downloadPlanning(mode){
     +(mode==='client'?'<button onclick="_pcPrintGantt()" style="padding:10px 22px;background:#7C3AED;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le GANTT (A3 paysage)</button>':'<button onclick="_pcPrintGantt()" style="padding:10px 22px;background:#7C3AED;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le GANTT (A4 paysage)</button>')
     +'<span style="font-size:12px;color:#2563EB;font-weight:600">Rapport complet · '+esc(aff)+' · '+dateStr+'</span>'
     +'</div>'
-    +'<div class="print-only">'+esc((STORE.projects[aff]&&STORE.projects[aff].infos&&STORE.projects[aff].infos.libelle)||aff)+'</div>'
+    +'<div class="print-only"><div>'+esc((STORE.projects[aff]&&STORE.projects[aff].infos&&STORE.projects[aff].infos.libelle)||aff)+'</div>'
+    +'<div style="font-size:12px;font-weight:700;color:#2563EB;margin-top:2px">'+esc(_infHdr.numero||aff)+(_infHdr.numeroClient?' &middot; N&deg; client : '+esc(_infHdr.numeroClient):'')+'</div></div>'
     +'<div class="recap-page">'+body+'</div>'
     +ganttPage
     +'<script>'
