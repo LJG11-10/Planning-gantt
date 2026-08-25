@@ -6079,7 +6079,7 @@ function dbBuildPlanningGrid(){
   window._wpAddEntry=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di;var key=nm+'::'+di;window._wpExtra[key]=(window._wpExtra[key]||0)+1;dbBuildPlanningGrid();};
   window._wpRemove=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di,ei=+btn.dataset.ei;removeEntry(nm,di,ei);};
   window._wpToggleDupPicker=function(btn){
-    var wrap=btn.closest('div');
+    var wrap=btn.closest('.wp-entry');
     var existing=wrap.querySelector('.wp-dup-picker');
     if(existing){existing.remove();return;}
     var nm=btn.dataset.nm,di=+btn.dataset.di,ei=+btn.dataset.ei;
@@ -6229,13 +6229,22 @@ function dbBuildPlanningGrid(){
       rows.forEach(function(entry,ei){
         var sAff=entry.aff||'',sAct=entry.actId||'',sComment=entry.comment||'';
         var _entryColor=sAff?affColor(sAff):null;
-        html+='<div style="margin-bottom:5px;background:'+(_entryColor?_entryColor.f:'var(--bg3)')+';border-left:4px solid '+(_entryColor?_entryColor.h:'var(--bd)')+';border-radius:10px;padding:6px 8px;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
-        if(totalRows>1)html+='<span class="wp-rm" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpRemove(this)" style="position:absolute;top:3px;right:4px;z-index:5;font-size:11px;color:#aaa;cursor:pointer;line-height:1;font-weight:700;padding:1px 2px">x</span>';
-        if(sAff)html+='<span data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpToggleDupPicker(this)" title="Dupliquer vers d\'autres jours" style="position:absolute;top:3px;left:6px;z-index:5;font-size:11px;color:'+(_entryColor?_entryColor.h:'var(--ac)')+';cursor:pointer;line-height:1;font-weight:700;padding:1px 2px">\u29C9</span>';
+        html+='<div class="wp-entry" style="margin-bottom:5px;background:'+(_entryColor?_entryColor.f:'var(--bg3)')+';border-left:4px solid '+(_entryColor?_entryColor.h:'var(--bd)')+';border-radius:10px;padding:6px 8px;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
+        // Barre d'outils dédiée, en flux normal (pas en position absolue par-
+        // dessus le contenu) : le contenu (menus déroulants, texte) démarre
+        // TOUJOURS en dessous, donc plus jamais de chevauchement possible
+        // avec le rendu natif des menus déroulants, quel que soit le
+        // navigateur. Dupliquer à gauche, supprimer à droite.
+        if(sAff||sComment){
+          html+='<div style="display:flex;justify-content:space-between;align-items:center;min-height:16px;margin-bottom:2px">';
+          html+=sAff?'<span data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpToggleDupPicker(this)" title="Dupliquer vers d\'autres jours" style="font-size:12px;color:'+(_entryColor?_entryColor.h:'var(--ac)')+';cursor:pointer;line-height:1;font-weight:700;padding:2px 4px;border-radius:4px">\u29C9</span>':'<span></span>';
+          html+='<span class="wp-rm" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onclick="window._wpRemove(this)" title="Supprimer cette entrée" style="font-size:12px;color:#999;cursor:pointer;line-height:1;font-weight:700;padding:2px 4px;border-radius:4px">\u2715</span>';
+          html+='</div>';
+        }
         var _affFullLabel=sAff?getAffLabelShort(sAff):'';
-        html+='<div class="wp-aff-label" style="font-size:11px;font-weight:800;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';white-space:normal;overflow-wrap:break-word;word-break:break-word;line-height:1.3;padding-right:16px;margin-bottom:1px;display:'+(sAff?'block':'none')+'">'+escHtml(_affFullLabel)+'</div>';
-        html+='<select class="wp-aff" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpAffChange(this)" style="width:100%;border:none;padding:1px 16px 2px 0;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;appearance:none;-webkit-appearance:none;'+(sAff?'font-size:9px;opacity:.6;height:14px':'font-size:11px;font-weight:800')+'">'+buildAffOpts(sAff)+'</select>';
-        html+='<select id="wpa-'+nmKey+'-'+di+'-'+ei+'" class="wp-act" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpActChange(this)" style="width:100%;border:none;padding:1px 16px 2px 0;font-size:10px;font-weight:600;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;opacity:.85;appearance:none;-webkit-appearance:none;display:'+(sAff?'block':'none')+'">';
+        html+='<div class="wp-aff-label" style="font-size:11px;font-weight:800;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';white-space:normal;overflow-wrap:break-word;word-break:break-word;line-height:1.3;margin-bottom:1px;display:'+(sAff?'block':'none')+'">'+escHtml(_affFullLabel)+'</div>';
+        html+='<select class="wp-aff" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpAffChange(this)" style="width:100%;border:none;padding:1px 0 2px 0;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;appearance:none;-webkit-appearance:none;'+(sAff?'font-size:9px;opacity:.6;height:14px':'font-size:11px;font-weight:800')+'">'+buildAffOpts(sAff)+'</select>';
+        html+='<select id="wpa-'+nmKey+'-'+di+'-'+ei+'" class="wp-act" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpActChange(this)" style="width:100%;border:none;padding:1px 0 2px 0;font-size:10px;font-weight:600;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;opacity:.85;appearance:none;-webkit-appearance:none;display:'+(sAff?'block':'none')+'">';
         if(sAff)html+=buildActOpts(sAff,sAct,_gp2?_getServicePhases(_gp2.service||''):null);
         html+='</select>';
         html+='<textarea class="wp-comment" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpCommentChange(this)" onblur="window._wpCommentChange(this)" placeholder="Commentaire..." style="width:100%;border:none;border-top:1px dashed '+(_entryColor?_entryColor.xl:'var(--bd)')+';margin-top:2px;padding:2px 0 0;font-size:10px;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;resize:none;min-height:26px;overflow:hidden" rows="1">'+sComment.replace(/</g,'&lt;')+'</textarea>';
