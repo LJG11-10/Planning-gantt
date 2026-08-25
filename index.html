@@ -5994,16 +5994,15 @@ function dbBuildPlanningGrid(){
   var _base;
   // L'annuaire globalPersons est la seule source de vérité
   // Les personnes supprimées (dans _deletedPersons) sont exclues partout
-  // Planning réunion : les personnes catégorisées "Chantier", PLUS les
-  // alternants/stagiaires peu importe leur service (un alternant peut être
-  // rattaché à un autre service tout en devant apparaître ici pour que son
-  // statut "à l'école" soit visible).
+  // Planning réunion : uniquement les personnes catégorisées "Chantier" dans
+  // l'annuaire — y compris les alternants/stagiaires, mais seulement s'ils
+  // sont eux-mêmes rattachés au service Chantier. Un alternant rattaché à un
+  // autre service (ex: Projet) n'apparaît pas ici.
   if(_gp&&Object.keys(_gp).length){
     _base=Object.keys(_gp).filter(function(nm){
       if(!nm||!nm.trim()||_del[nm])return false;
       var p=_gp[nm];
-      if(!p)return false;
-      return p.service==='els_chantier'||p.type==='Alternant'||p.type==='Stagiaire';
+      return p&&p.service==='els_chantier';
     });
   }else{
     // Fallback si globalPersons vide : chercher dans les tâches (pas d'info de service disponible)
