@@ -6028,19 +6028,64 @@ function dbBuildPlanningGrid(){
   return _base.sort();
 }
   function buildAffOpts(selAff){var o='<option value="">-- Choisir affaire --</option>';affs.forEach(function(a){o+='<option value="'+a+'"'+(selAff===a?' selected':'')+' title="'+getAffLabel(a).replace(/"/g,'&quot;')+'">'+getAffLabelShort(a)+'</option>';});return o;}
-  function buildActOpts(aff,selId,phaseFilter){if(!aff)return '<option value="">-- Choisir activite --</option>';var o='<option value="">-- Choisir activite --</option>';var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];var sbBase='';var ensLbl='';dat.forEach(function(r){if(r.t==='ens'){sbBase=r.lb;ensLbl='';return;}if(r.t==='sb'){ensLbl=r.lb;return;}if(r.t!=='act')return;if(r.done&&r.id!==selId)return;if(phaseFilter&&phaseFilter.indexOf(r.pk)<0)return;var sb=sbBase+(ensLbl?' ▸ '+ensLbl:'');var _ph2=PH_get(r.pk);var _bg2=(_ph2&&_ph2.b)||'';var _xd2=(_ph2&&_ph2.xd)||'#333';o+='<option value="'+r.id+'"'+(selId===r.id?' selected':'')+(_bg2?' style="background:'+_bg2+';color:'+_xd2+'"':'')+'>'+(sb?sb+' ▸ ':'')+r.lb+(r.done?' ✓':'')+'</option>';});return o;}
+  // Construit un menu d'activité arborescent et repliable (Ensemble ▸
+  // Sous-phase ▸ Tâche), pour remplacer la longue liste plate d'une liste
+  // déroulante classique — plus lisible dès qu'une affaire a beaucoup de
+  // tâches. Retourne {label, panel} : le libellé de la tâche actuellement
+  // choisie (pour l'affichage fermé), et le HTML du panneau déroulant.
+  function buildActTree(aff,selId,phaseFilter,widgetId){
+    if(!aff)return {label:'',panel:''};
+    var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];
+    var label='';
+    var panel='';
+    var curPh=null,curEnsOk=true,gid=0;
+    var openEns=null,openSb=null;
+    dat.forEach(function(r){
+      if(r.t==='ph'){curPh=r.pk;return;}
+      if(r.t==='ens'){
+        curEnsOk=!phaseFilter||phaseFilter.some(function(pf){return curPh&&curPh.indexOf(pf)===0;});
+        if(openSb)panel+='</div>';
+        if(openEns)panel+='</div>';
+        openSb=null;
+        if(!curEnsOk){openEns=null;return;}
+        openEns='g'+(gid++);
+        panel+='<div class="wpat-hdr" data-g="'+openEns+'" onclick="_wpTreeFold(this,event)" style="cursor:pointer;font-weight:800;font-size:10px;color:var(--ac);padding:4px 6px;background:var(--ac2);border-radius:4px;margin-top:3px"><span class="wpat-arrow">\u25BC</span> \u25B8 '+escHtml(r.lb)+'</div><div class="wpat-c-'+openEns+'" style="padding-left:8px">';
+        return;
+      }
+      if(r.t==='sb'){
+        if(!curEnsOk)return;
+        if(openSb)panel+='</div>';
+        openSb='g'+(gid++);
+        panel+='<div class="wpat-hdr'+(openEns?' wpat-c-'+openEns:'')+'" data-g="'+openSb+'" onclick="_wpTreeFold(this,event)" style="cursor:pointer;font-weight:700;font-size:9px;color:var(--tx2);padding:3px 6px;margin-top:2px"><span class="wpat-arrow">\u25BC</span> \u25C6 '+escHtml(r.lb)+'</div><div class="wpat-c-'+openSb+'" style="padding-left:8px">';
+        return;
+      }
+      if(r.t!=='act')return;
+      if(!curEnsOk)return;
+      if(r.done&&r.id!==selId)return;
+      if(phaseFilter&&!phaseFilter.some(function(pf){return r.pk&&r.pk.indexOf(pf)===0;}))return;
+      var _cls=[openEns?'wpat-c-'+openEns:'',openSb?'wpat-c-'+openSb:''].filter(Boolean).join(' ');
+      var _isSel=selId===r.id;
+      if(_isSel)label=r.lb+(r.done?' ✓':'');
+      panel+='<div class="wpat-item'+(_cls?' '+_cls:'')+'" data-id="'+r.id+'" data-lb="'+escHtml(r.lb+(r.done?' ✓':''))+'" onclick="_wpActPick(this,event)" style="cursor:pointer;font-size:10px;padding:3px 6px;border-radius:4px;'+(_isSel?'background:var(--ac);color:#fff;font-weight:700':'color:var(--tx)')+'">'+escHtml(r.lb)+(r.done?' ✓':'')+'</div>';
+    });
+    if(openSb)panel+='</div>';
+    if(openEns)panel+='</div>';
+    if(!panel)panel='<div style="padding:10px;text-align:center;font-size:10px;color:var(--tx3)">Aucune activité disponible</div>';
+    return {label:label,panel:panel};
+  }
+  function buildActOpts(aff,selId,phaseFilter){if(!aff)return '<option value="">-- Choisir activite --</option>';var o='<option value="">-- Choisir activite --</option>';var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];var sbBase='';var ensLbl='';dat.forEach(function(r){if(r.t==='ens'){sbBase=r.lb;ensLbl='';return;}if(r.t==='sb'){ensLbl=r.lb;return;}if(r.t!=='act')return;if(r.done&&r.id!==selId)return;if(phaseFilter&&!phaseFilter.some(function(pf){return r.pk&&r.pk.indexOf(pf)===0;}))return;var sb=sbBase+(ensLbl?' ▸ '+ensLbl:'');var _ph2=PH_get(r.pk);var _bg2=(_ph2&&_ph2.b)||'';var _xd2=(_ph2&&_ph2.xd)||'#333';o+='<option value="'+r.id+'"'+(selId===r.id?' selected':'')+(_bg2?' style="background:'+_bg2+';color:'+_xd2+'"':'')+'>'+(sb?sb+' ▸ ':'')+r.lb+(r.done?' ✓':'')+'</option>';});return o;}
   function getSavedEntries(nm,di){var key=nm+'::'+di;var val=STORE.weekPlan[selWk][key];if(!val)return [];if(Array.isArray(val))return val;return [val];}
   function getCellRows(nm,di){var saved=getSavedEntries(nm,di);var extraKey=nm+'::'+di;var extra=window._wpExtra[extraKey]||0;var rows=saved.slice();for(var i=0;i<extra;i++)rows.push({aff:'',actId:'',comment:''});if(!rows.length)rows.push({aff:'',actId:'',comment:''});return rows;}
   function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
   function removeEntry(nm,di,ei){var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved.splice(ei,1);var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}else{if(extra>0)window._wpExtra[key]=extra-1;}dbBuildPlanningGrid();}
-  window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];as.innerHTML=buildActOpts(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null);as.style.display=sel.value?'block':'none';}
+  window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];var _newTree=sel.value?buildActTree(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null):{label:'',panel:''};as.textContent=_newTree.label||'-- Choisir activite --';as.dataset.actid='';as.style.display=sel.value?'block':'none';var _panel=as.nextElementSibling;if(_panel&&_panel.classList.contains('wpat-panel')){_panel.innerHTML=_newTree.panel;_panel.style.display='none';}}
     var _entryDiv=sel.closest('.wp-entry');
     if(_entryDiv){
       var _c=sel.value?affColor(sel.value):null;
       _entryDiv.style.background=_c?_c.f:'var(--bg3)';
       _entryDiv.style.borderLeft='4px solid '+(_c?_c.h:'var(--bd)');
       var _txColor=_c?_c.xd:'var(--tx)';
-      _entryDiv.querySelectorAll('select,textarea').forEach(function(el){el.style.color=_txColor;});
+      _entryDiv.querySelectorAll('select,textarea,.wpat-trigger').forEach(function(el){el.style.color=_txColor;});
       var _txarea=_entryDiv.querySelector('textarea');
       if(_txarea)_txarea.style.borderTopColor=_c?_c.xl:'var(--bd)';
       // Mettre à jour l'étiquette de nom complet (texte enroulable au-dessus
@@ -6101,14 +6146,18 @@ function dbBuildPlanningGrid(){
     }
   };
   window._wpActChange=function(sel){
-  var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;
-  saveCellEntry(nm,di,ei,'actId',sel.value);
+  _wpSetActivity(sel.dataset.nm,+sel.dataset.di,+sel.dataset.ei,sel.value);
+};
+  // Cœur de la sélection d'activité — utilisé à la fois par l'ancien select
+  // (si jamais réutilisé) et par le nouveau menu arborescent repliable.
+  function _wpSetActivity(nm,di,ei,actId){
+  saveCellEntry(nm,di,ei,'actId',actId);
   // Planning Réunion → GANTT : ajouter la personne à la tâche si pas déjà là
   var saved=getSavedEntries(nm,di);
   var entry=saved[ei]||{};
-  if(sel.value&&entry.aff&&STORE.projects[entry.aff]){
+  if(actId&&entry.aff&&STORE.projects[entry.aff]){
     var proj=STORE.projects[entry.aff];
-    var act=(proj.data||[]).find(function(r){return r.id===sel.value;});
+    var act=(proj.data||[]).find(function(r){return r.id===actId;});
     if(act){
       if(!act.p)act.p=[];
       if(!act.p.some(function(p){return p.name===nm;}))
@@ -6118,6 +6167,55 @@ function dbBuildPlanningGrid(){
   }
 };
   window._wpCommentChange=function(ta){var nm=ta.dataset.nm,di=+ta.dataset.di,ei=+ta.dataset.ei;saveCellEntry(nm,di,ei,'comment',ta.value);};
+  // Ouvre/ferme le panneau d'activités arborescent. Un seul panneau ouvert à
+  // la fois, pour éviter d'avoir plusieurs arbres dépliés en même temps sur
+  // l'écran.
+  window._wpActPickerToggle=function(trigger){
+    var panel=trigger.nextElementSibling;
+    if(!panel||!panel.classList.contains('wpat-panel'))return;
+    var wasOpen=panel.style.display!=='none';
+    document.querySelectorAll('.wpat-panel').forEach(function(p){p.style.display='none';});
+    panel.style.display=wasOpen?'none':'block';
+  };
+  // Plie/déplie un groupe (ensemble ou sous-phase) DANS le panneau concerné
+  // uniquement — jamais les autres panneaux ouverts ailleurs sur la page.
+  window._wpTreeFold=function(hdr,ev){
+    if(ev)ev.stopPropagation();
+    var g=hdr.dataset.g;
+    var panel=hdr.closest('.wpat-panel');
+    if(!panel)return;
+    var collapsed=hdr.classList.toggle('wpat-collapsed');
+    var arrow=hdr.querySelector('.wpat-arrow');
+    if(arrow)arrow.textContent=collapsed?'\u25B6':'\u25BC';
+    panel.querySelectorAll('.wpat-c-'+g).forEach(function(el){el.style.display=collapsed?'none':'';});
+  };
+  // Choisir une tâche dans l'arbre : ferme le panneau, met à jour
+  // l'affichage, et déclenche la même sauvegarde qu'avant.
+  window._wpActPick=function(item,ev){
+    if(ev)ev.stopPropagation();
+    var panel=item.closest('.wpat-panel');
+    if(!panel)return;
+    var trigger=panel.previousElementSibling;
+    var actId=item.dataset.id,lb=item.dataset.lb;
+    panel.querySelectorAll('.wpat-item').forEach(function(el){
+      el.style.background=el===item?'var(--ac)':'transparent';
+      el.style.color=el===item?'#fff':'var(--tx)';
+      el.style.fontWeight=el===item?'700':'400';
+    });
+    if(trigger){trigger.textContent=lb||'-- Choisir activite --';trigger.dataset.actid=actId;}
+    panel.style.display='none';
+    _wpSetActivity(panel.dataset.nm,+panel.dataset.di,+panel.dataset.ei,actId);
+  };
+  // Fermer le panneau ouvert si on clique n'importe où en dehors de lui —
+  // posé une seule fois (verrou), sinon un nouvel écouteur s'ajouterait à
+  // chaque rendu de la grille.
+  if(!window._wpatOutsideClickBound){
+    window._wpatOutsideClickBound=true;
+    document.addEventListener('click',function(e){
+      if(e.target.closest&&(e.target.closest('.wpat-panel')||e.target.closest('.wpat-trigger')))return;
+      document.querySelectorAll('.wpat-panel').forEach(function(p){p.style.display='none';});
+    });
+  }
   window._wpAddEntry=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di;var key=nm+'::'+di;window._wpExtra[key]=(window._wpExtra[key]||0)+1;dbBuildPlanningGrid();};
   window._wpRemove=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di,ei=+btn.dataset.ei;removeEntry(nm,di,ei);};
   window._wpToggleDupPicker=function(btn){
@@ -6286,9 +6384,9 @@ function dbBuildPlanningGrid(){
         var _affFullLabel=sAff?getAffLabelShort(sAff):'';
         html+='<div class="wp-aff-label" style="font-size:11px;font-weight:800;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';white-space:normal;overflow-wrap:break-word;word-break:break-word;line-height:1.3;margin-bottom:1px;display:'+(sAff?'block':'none')+'">'+escHtml(_affFullLabel)+'</div>';
         html+='<select class="wp-aff" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpAffChange(this)" style="width:100%;border:none;padding:1px 0 2px 0;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;appearance:none;-webkit-appearance:none;'+(sAff?'font-size:9px;opacity:.6;height:14px':'font-size:11px;font-weight:800')+'">'+buildAffOpts(sAff)+'</select>';
-        html+='<select id="wpa-'+nmKey+'-'+di+'-'+ei+'" class="wp-act" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpActChange(this)" style="width:100%;border:none;padding:1px 0 2px 0;font-size:10px;font-weight:600;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;opacity:.85;appearance:none;-webkit-appearance:none;display:'+(sAff?'block':'none')+'">';
-        if(sAff)html+=buildActOpts(sAff,sAct,_gp2?_getServicePhases(_gp2.service||''):null);
-        html+='</select>';
+        var _actTree=sAff?buildActTree(sAff,sAct,_gp2?_getServicePhases(_gp2.service||''):null):{label:'',panel:''};
+        html+='<div id="wpa-'+nmKey+'-'+di+'-'+ei+'" class="wp-act wpat-trigger" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" data-actid="'+escHtml(sAct)+'" onclick="window._wpActPickerToggle(this)" style="width:100%;padding:1px 0 2px 0;font-size:10px;font-weight:600;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';cursor:pointer;opacity:.85;display:'+(sAff?'block':'none')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_actTree.label)||'-- Choisir activite --')+'</div>';
+        html+='<div class="wpat-panel" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" style="display:none;max-height:220px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;padding:4px;background:var(--bg2);box-shadow:0 4px 12px rgba(0,0,0,.12);position:relative;z-index:20;margin-top:2px">'+_actTree.panel+'</div>';
         html+='<textarea class="wp-comment" data-nm="'+nmEsc+'" data-di="'+di+'" data-ei="'+ei+'" onchange="window._wpCommentChange(this)" onblur="window._wpCommentChange(this)" placeholder="Commentaire..." style="width:100%;border:none;border-top:1px dashed '+(_entryColor?_entryColor.xl:'var(--bd)')+';margin-top:2px;padding:2px 0 0;font-size:10px;font-family:inherit;background:transparent;color:'+(_entryColor?_entryColor.xd:'var(--tx)')+';outline:none;resize:none;min-height:26px;overflow:hidden" rows="1">'+sComment.replace(/</g,'&lt;')+'</textarea>';
         html+='</div>';
       });
