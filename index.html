@@ -5558,10 +5558,10 @@ function downloadPlanning(mode){
 
   // ── Tableau des activités ─────────────────────────
   body+='<h2 style="font-size:15px;font-weight:800;color:#1F4E79;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #BFDBFE">📋 Activités ('+acts.length+')</h2>';
-  var _nbColsRecap=mode==='client'?5:8;
+  var _nbColsRecap=mode==='client'?4:8;
   body+='<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:28px">';
   body+='<thead><tr style="background:#EFF6FF">';
-  (mode==='client'?['Activité','Début','Fin','Personnes','Statut']:['Activité','Début','Fin','H Prév.','H Réel','Écart','Personnes','Statut']).forEach(function(h){
+  (mode==='client'?['Activité','Début','Fin','Statut']:['Activité','Début','Fin','H Prév.','H Réel','Écart','Personnes','Statut']).forEach(function(h){
     body+='<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #BFDBFE;font-size:10px;font-weight:700;color:#1F4E79;white-space:nowrap">'+h+'</th>';
   });
   body+='</tr></thead><tbody>';
@@ -5608,7 +5608,7 @@ function downloadPlanning(mode){
           +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:#059669">'+hR+'H</td>'
           +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:'+(d>0?'#DC2626':d<0?'#059669':'#888')+'">'+(d===0?'—':(d>0?'+':'')+d+'H')+'</td>'
           +'<td style="padding:7px 10px;font-size:10px;color:#555">'+persons+'</td>')
-        :('<td style="padding:7px 10px;font-size:10px;color:#555">'+persons+'</td>'))
+        :'')
       +'<td style="padding:7px 10px;text-align:center;white-space:nowrap">'+(r.done?'<span style="background:#DCFCE7;color:#15803D;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700">✓ Terminé</span>':'<span style="background:#FEF3C7;color:#92400E;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700">En cours</span>')+'</td>'
       +'</tr>';
   });
@@ -5621,11 +5621,12 @@ function downloadPlanning(mode){
   }
   body+='</tbody></table>';
 
-  // ── Personnes impliquées ──────────────────────────
+  // ── Personnes impliquées (uniquement pour l'usage interne, pas le
+  // téléchargement client — on n'affiche pas les noms de l'équipe au client) ──
   var persMap={};
   acts.forEach(function(a){(a.p||[]).forEach(function(pp){if(pp.name&&pp.name.trim())persMap[pp.name]=(persMap[pp.name]||0)+1;});});
   var pers=Object.keys(persMap);
-  if(pers.length){
+  if(pers.length&&mode!=='client'){
     body+='<h2 style="font-size:15px;font-weight:800;color:#1F4E79;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #BFDBFE">👥 Équipe ('+pers.length+' personne'+(pers.length>1?'s':'')+')</h2>';
     body+='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:28px">';
     pers.sort().forEach(function(nm){
@@ -5634,7 +5635,7 @@ function downloadPlanning(mode){
       body+='<div style="background:#F0F4F8;border-radius:10px;padding:10px 16px;border:1px solid #DDE3EA">'
         +'<div style="font-weight:700;font-size:12px;color:#1F4E79">'+esc(nm)+'</div>'
         +(type?'<div style="font-size:10px;color:#7C3AED;margin-top:2px">'+esc(type)+'</div>':'')
-        +(mode!=='client'?'<div style="font-size:11px;color:#888;margin-top:4px">'+persMap[nm]+' tâche'+(persMap[nm]>1?'s':'')+'</div>':'')+'</div>';
+        +'<div style="font-size:11px;color:#888;margin-top:4px">'+persMap[nm]+' tâche'+(persMap[nm]>1?'s':'')+'</div></div>';
     });
     body+='</div>';
   }
@@ -5935,6 +5936,30 @@ function downloadPlanning(mode){
     +'function _pcToggle(h){var g=h.dataset.group;var c=!h.classList.contains("pc-collapsed");h.classList.toggle("pc-collapsed",c);var a=h.querySelector(".pc-arrow");if(a)a.textContent=c?"\u25B6":"\u25BC";document.querySelectorAll(".pc-c-"+g).forEach(function(r){r.classList.toggle("pc-hidden",c);});}'
     +'function _pcPrintRecap(){var st=document.getElementById("_pc_page_size");if(st)st.textContent="@media print{@page{size:A4 portrait;margin:12mm}}";document.body.classList.add("pc-print-recap");window.print();setTimeout(function(){document.body.classList.remove("pc-print-recap");},400);}'
     +'function _pcPrintGantt(){var st=document.getElementById("_pc_page_size");if(st)st.textContent="@media print{@page{size:'+_ganttPageSizeCss+';margin:7mm}}";document.body.classList.add("pc-print-gantt");window.print();setTimeout(function(){document.body.classList.remove("pc-print-gantt");},400);}'
+    // Zoom au Ctrl+molette sur le GANTT de ce document téléchargé — même
+    // principe que sur le site : uniquement quand la souris est sur le
+    // GANTT, jamais sur le reste de la page, et le zoom classique du
+    // navigateur est bloqué pendant ce geste précis.
+    +'var _ganttZoomCol=26;'
+    +'function _ganttSetZoom(delta){'
+      +'_ganttZoomCol=Math.max(8,Math.min(50,_ganttZoomCol+delta));'
+      +'document.querySelectorAll(\'#gantt-table col[class*="wk-c-"]\').forEach(function(c){c.style.width=_ganttZoomCol+"px";});'
+      +'var table=document.getElementById("gantt-table");'
+      +'if(table){var numCols=table.querySelectorAll(\'col[class*="wk-c-"]\').length;table.style.width=(210+numCols*_ganttZoomCol)+"px";}'
+    +'}'
+    +'(function(){'
+      +'var _lastGanttZoomWheel=0;'
+      +'document.addEventListener("wheel",function(e){'
+        +'if(!e.ctrlKey)return;'
+        +'var gp=document.querySelector(".gantt-page");'
+        +'if(!gp||!gp.contains(e.target))return;'
+        +'e.preventDefault();'
+        +'var now=Date.now();'
+        +'if(now-_lastGanttZoomWheel<70)return;'
+        +'_lastGanttZoomWheel=now;'
+        +'_ganttSetZoom(e.deltaY<0?2:-2);'
+      +'},{passive:false});'
+    +'})();'
     +'<'+'/script>'
     +'</body></html>';
 
@@ -6025,7 +6050,19 @@ function dbBuildPlanningGrid(){
       if(_del[nm]&&_base.indexOf(nm)<0)_base.push(nm);
     });
   }
-  return _base.sort();
+  // Tri par type de contrat (ELS d'abord, puis sous-traitants, puis
+  // intérimaires, le reste ensuite), et alphabétique à l'intérieur de
+  // chaque groupe — plus facile à parcourir d'un coup d'œil pour le chef de
+  // chantier qu'un simple ordre alphabétique mélangeant tous les types.
+  var _typeOrder={'ELS':0,'S-T':1,'Interim':2};
+  return _base.sort(function(a,b){
+    var ta=_typeOrder[(_gp[a]&&_gp[a].type)||''];
+    var tb=_typeOrder[(_gp[b]&&_gp[b].type)||''];
+    if(ta===undefined)ta=99;
+    if(tb===undefined)tb=99;
+    if(ta!==tb)return ta-tb;
+    return a.localeCompare(b);
+  });
 }
   function buildAffOpts(selAff){var o='<option value="">-- Choisir affaire --</option>';affs.forEach(function(a){o+='<option value="'+a+'"'+(selAff===a?' selected':'')+' title="'+getAffLabel(a).replace(/"/g,'&quot;')+'">'+getAffLabelShort(a)+'</option>';});return o;}
   // Construit un menu d'activité arborescent et repliable (Ensemble ▸
@@ -6343,11 +6380,18 @@ function dbBuildPlanningGrid(){
       :'';
     var _avColor=personAvatarColor(nm),_avInit=personInitials(nm);
     var _avatarHtml='<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:'+(_isHidden?'var(--bd)':_avColor)+';color:#fff;font-size:10px;font-weight:800;flex-shrink:0;letter-spacing:.3px">'+_avInit+'</span>';
-    html+='<td style="padding:'+(_isHidden?'8px 16px':'12px 16px')+';font-weight:800;font-size:13px;white-space:nowrap;vertical-align:top;background:'+(_isHidden?'var(--bg3)':'var(--bg2)')+';color:'+(_isHidden?'var(--tx3)':'var(--tx)')+';border-bottom:1px solid var(--bd)">'
+    // Badge de catégorie (ELS / sous-traitant / intérim), pour repérer d'un
+    // coup d'œil quelle catégorie regroupe quelles personnes dans la liste.
+    var _typeColors={'ELS':{bg:'#DBEAFE',tx:'#1D4ED8'},'S-T':{bg:'#FEF3C7',tx:'#B45309'},'Interim':{bg:'#EDE9FE',tx:'#6D28D9'}};
+    var _pType=_gp2&&_gp2.type;
+    var _tColor=_typeColors[_pType];
+    var _typeBadge=(_pType&&_tColor&&!_isHidden)?'<span style="font-size:8px;font-weight:800;padding:1px 6px;border-radius:8px;background:'+_tColor.bg+';color:'+_tColor.tx+';letter-spacing:.3px;flex-shrink:0">'+_pType+'</span>':'';
+    var _rowBorderColor=(_pType&&_tColor&&!_isHidden)?_tColor.tx:'transparent';
+    html+='<td style="padding:'+(_isHidden?'8px 16px':'12px 16px')+';font-weight:800;font-size:13px;white-space:nowrap;vertical-align:top;background:'+(_isHidden?'var(--bg3)':'var(--bg2)')+';color:'+(_isHidden?'var(--tx3)':'var(--tx)')+';border-bottom:1px solid var(--bd);border-left:4px solid '+_rowBorderColor+'">'
       +'<label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="Cocher pour masquer cette personne cette semaine (elle ne travaille que rarement)">'
       +'<input type="checkbox" data-nm="'+nmEsc+'" onchange="window._wpToggleHidden(this)"'+(_isHidden?' checked':'')+' style="width:13px;height:13px;cursor:pointer;flex-shrink:0;accent-color:var(--ac)">'
       +_avatarHtml
-      +'<span>'+nm+'</span></label>'+(_isHidden?'':_habs)+'</td>';
+      +'<span>'+nm+'</span>'+_typeBadge+'</label>'+(_isHidden?'':_habs)+'</td>';
     if(_isHidden){
       html+='<td colspan="'+DN.length+'" style="padding:6px 16px;text-align:left;color:var(--tx3);font-size:10px;font-style:italic;background:#FAFAFA">Masqu\u00E9 cette semaine</td>';
       html+='</tr>';
@@ -9576,7 +9620,7 @@ function renderGantt(){
           continue;
         }
         if(!inAny){
-          dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" title="Clic haut=Prévu / Clic bas=Réel" style="background:var(--bg2);${sepBdr}${todBdr};cursor:crosshair"></td>`;
+          dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d},event)" onmousemove="gcMove(event)" title="Clic haut=Prévu / Clic bas=Réel" style="background:var(--bg2);${sepBdr}${todBdr};cursor:crosshair"></td>`;
           continue;
         }
 
@@ -9584,7 +9628,7 @@ function renderGantt(){
         const prevBg=inPrev?ph.xl:'transparent';
         const reelBg=inReel?ph.xd:'transparent';
 
-        dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d})" title="Clic haut=Prévu / Clic bas=Réel" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
+        dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d},event)" onmousemove="gcMove(event)" title="Clic haut=Prévu / Clic bas=Réel" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
           <div style="height:32px;margin:3px 0 2px;background:${prevBg};border-radius:${prevRad};${inPrev?'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
             ${isFirstPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55);padding-left:2px">P</span>`:''}
           </div>
@@ -12506,12 +12550,42 @@ function gcDown(rid, w, d, ev){
   _gc.removeMode=(_days.indexOf(_d5)>=0); // true = on efface, false = on colorie
   _gc.active=true; _gc.rid=rid;
   _gc.w1=w; _gc.d1=d; _gc.w2=w; _gc.d2=d;
+  // On compare uniquement la zone de DÉPART à la zone ACTUELLE (celle où se
+  // trouve la souris à l'instant présent) — pas tout le trajet parcouru
+  // entre les deux. Ça permet de faire tout le chemin horizontal en restant
+  // en haut (même avec de petits écarts naturels de la main) et de ne
+  // basculer sur "les deux barres" qu'en amenant délibérément la souris de
+  // l'autre côté juste avant de relâcher.
+  _gc.startZone=window._ganttBarMode;
+  _gc.curZone=window._ganttBarMode;
   gcHighlight();
 }
 
-function gcEnter(rid, w, d){
+function gcEnter(rid, w, d, ev){
   if(!_gc.active||_gc.rid!==rid)return;
   _gc.w2=w; _gc.d2=d;
+  if(ev&&ev.currentTarget){
+    var rect=ev.currentTarget.getBoundingClientRect();
+    var relY=ev.clientY-rect.top;
+    var cellH=rect.height||80;
+    _gc.curZone=(relY<cellH/2)?'prev':'reel';
+  }
+  gcHighlight();
+}
+
+// Suivi en continu de la position verticale de la souris, y compris SANS
+// changer de case (ex: rester sur la même semaine et juste descendre) — sans
+// ça, la zone actuelle ne se mettait à jour qu'en changeant de case, ce qui
+// obligeait à aussi bouger horizontalement pour que le passage aux deux
+// barres (orange) se déclenche.
+function gcMove(ev){
+  if(!_gc.active||!ev||!ev.currentTarget)return;
+  var rect=ev.currentTarget.getBoundingClientRect();
+  var relY=ev.clientY-rect.top;
+  var cellH=rect.height||80;
+  var _newZone=(relY<cellH/2)?'prev':'reel';
+  if(_newZone===_gc.curZone)return; // rien de changé, pas la peine de redessiner
+  _gc.curZone=_newZone;
   gcHighlight();
 }
 
@@ -12522,12 +12596,14 @@ function gcHighlight(){
   var d2b=(_gc.w1<_gc.w2)?_gc.d2:(_gc.w1>_gc.w2)?_gc.d1:Math.max(_gc.d1,_gc.d2);
   var startD5=(w1b-1)*5+d1b;
   var endD5=(w2b-1)*5+d2b;
+  var _bothZones=_gc.curZone&&_gc.startZone&&(_gc.curZone!==_gc.startZone);
   document.querySelectorAll('.gcell[data-rid="'+_gc.rid+'"]').forEach(function(td){
     var tw=+td.dataset.w, td_d=+td.dataset.d;
     if(td_d>=5){td.style.outline='';return;}
     var td5=(tw-1)*5+td_d;
     var _hlColor=_gc.removeMode
       ?'rgba(220,38,38,.7)'  // rouge = suppression
+      :_bothZones?'rgba(217,119,6,.75)'  // orange = les deux (prévu ET réel) seront posés
       :(window._ganttBarMode==='reel')?'rgba(22,163,74,.7)':'rgba(124,58,237,.6)';
     td.style.outline=(td5>=startD5&&td5<=endD5)?'2px inset '+_hlColor:'';
   });
@@ -12537,8 +12613,6 @@ function gcCommit(){
   if(!_gc.rid)return;
   var r=D().find(function(x){return x.id===_gc.rid;});
   if(!r)return;
-  var mode=window._ganttBarMode||'prev';
-  var key=mode==='reel'?'reelDays':'prevDays';
   // Normaliser direction drag
   var w1b=Math.min(_gc.w1,_gc.w2), w2b=Math.max(_gc.w1,_gc.w2);
   var d1b=(_gc.w1<_gc.w2)?_gc.d1:(_gc.w1>_gc.w2)?_gc.d2:Math.min(_gc.d1,_gc.d2);
@@ -12546,29 +12620,33 @@ function gcCommit(){
   var startD5=(w1b-1)*5+d1b;
   var endD5=(w2b-1)*5+d2b;
   var isSingleClick=(startD5===endD5);
-
-  // Initialiser le tableau si nécessaire (compat ancien format)
-  if(!r[key])r[key]=getTaskDays5(r, mode);
-
-  if(isSingleClick){
-    // Clic simple : toggle ce jour précis uniquement
-    var ix=r[key].indexOf(startD5);
-    if(ix>=0){
-      r[key].splice(ix,1); // déjà coloré → retirer
+  // Applique l'ajout/suppression/bascule à UN tableau précis (prevDays ou
+  // reelDays) — extrait pour pouvoir l'appeler une ou deux fois selon que
+  // les deux zones ont été visitées pendant le glissement.
+  function _applyToKey(key){
+    if(!r[key])r[key]=getTaskDays5(r,key==='reelDays'?'reel':'prev');
+    if(isSingleClick){
+      var ix=r[key].indexOf(startD5);
+      if(ix>=0)r[key].splice(ix,1);
+      else r[key].push(startD5);
+    } else if(_gc.removeMode){
+      for(var i=startD5;i<=endD5;i++){
+        var _ri=r[key].indexOf(i);
+        if(_ri>=0)r[key].splice(_ri,1);
+      }
     } else {
-      r[key].push(startD5); // vide → colorier
+      for(var i=startD5;i<=endD5;i++){
+        if(r[key].indexOf(i)<0)r[key].push(i);
+      }
     }
-  } else if(_gc.removeMode){
-    // Drag sur cellules colorées → retirer tous les jours de la plage
-    for(var i=startD5;i<=endD5;i++){
-      var _ri=r[key].indexOf(i);
-      if(_ri>=0)r[key].splice(_ri,1);
-    }
+  }
+  var _bothZones=!isSingleClick&&_gc.curZone&&_gc.startZone&&(_gc.curZone!==_gc.startZone);
+  if(_bothZones){
+    _applyToKey('prevDays');
+    _applyToKey('reelDays');
   } else {
-    // Drag sur cellules vides → ajouter tous les jours de la plage
-    for(var i=startD5;i<=endD5;i++){
-      if(r[key].indexOf(i)<0)r[key].push(i);
-    }
+    var mode=window._ganttBarMode||'prev';
+    _applyToKey(mode==='reel'?'reelDays':'prevDays');
   }
   _syncTaskMeta(r);
   saveNow();renderGantt();
@@ -12578,7 +12656,7 @@ document.addEventListener('mouseup', function(){
   if(!_gc.active)return;
   document.querySelectorAll('.gcell').forEach(function(td){td.style.outline='';});
   gcCommit();
-  _gc.active=false; _gc.rid=null; _gc.removeMode=false;
+  _gc.active=false; _gc.rid=null; _gc.removeMode=false; _gc.startZone=null; _gc.curZone=null;
 });
 
 // ── Commentaires sur badges GANTT→PR ────────────────────────────────
