@@ -3631,6 +3631,15 @@ function openPersonProfile(nm){
 }
 
 
+// Convertit une couleur hex (#RRGGBB) en rgba() transparent — utilisé pour
+// teinter les entrées de l'aperçu "Planning semaine" selon la couleur du
+// chantier, sans casser le fond dégradé foncé de la carte.
+function _hexToRgba(hex,alpha){
+  var h=String(hex||'').replace('#','');
+  if(h.length!==6)return 'rgba(255,255,255,'+alpha+')';
+  var r=parseInt(h.substring(0,2),16),g=parseInt(h.substring(2,4),16),b=parseInt(h.substring(4,6),16);
+  return 'rgba('+r+','+g+','+b+','+alpha+')';
+}
 function renderOverview(){
   var cont=document.getElementById('tdb-overview');
   if(!cont)return;
@@ -3651,11 +3660,15 @@ function renderOverview(){
     return a?a.lb:'';
   }
 
-  // Helper : label court affaire
+  // Helper : label court affaire — numéro ELS, numéro client et libellé
   function getAffShort(affId){
     if(!affId)return '';
     var inf=(STORE.projects[affId]&&STORE.projects[affId].infos)||{};
-    return inf.numeroClient||affId;
+    if(!inf.libelle)return inf.numero||affId;
+    var lbl=(inf.numero||affId);
+    if(inf.numeroClient)lbl+=' · '+inf.numeroClient;
+    lbl+=' — '+inf.libelle;
+    return lbl;
   }
 
   // Helper : couleur de phase d'une activité
@@ -3745,13 +3758,16 @@ function renderOverview(){
     html+='<span style="font-size:12px;font-weight:800;color:#fff">'+escHtml(nm)+'</span>';
     html+='</div>';
     allEntries.forEach(function(e){
-      var actLbl=getActLabel(e.v.affId||e.v.aff,e.v.actId);
-      var affShort=getAffShort(e.v.affId||e.v.aff);
-      var bg=getActBg(e.v.affId||e.v.aff,e.v.actId);
-      html+='<div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:5px;padding:5px 8px;background:rgba(255,255,255,.08);border-radius:7px;border-left:3px solid rgba(255,255,255,.4)">';
+      var _affKey=e.v.affId||e.v.aff;
+      var actLbl=getActLabel(_affKey,e.v.actId);
+      var affShort=getAffShort(_affKey);
+      var _c=_affKey?affColor(_affKey):null;
+      var _entryBg=_c?_hexToRgba(_c.h,.28):'rgba(255,255,255,.08)';
+      var _entryBorder=_c?_c.h:'rgba(255,255,255,.4)';
+      html+='<div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:5px;padding:5px 8px;background:'+_entryBg+';border-radius:7px;border-left:4px solid '+_entryBorder+'">';
       html+='<span style="font-size:9px;font-weight:800;color:rgba(255,255,255,.7);min-width:22px;padding-top:1px">'+DN[e.di]+'</span>';
       html+='<div style="flex:1;min-width:0">';
-      if(affShort)html+='<div style="font-size:9px;color:rgba(255,255,255,.6);font-weight:700">'+escHtml(affShort)+'</div>';
+      if(affShort)html+='<div style="font-size:9px;color:rgba(255,255,255,.85);font-weight:800">'+escHtml(affShort)+'</div>';
       if(actLbl)html+='<div style="font-size:10px;color:#fff;font-weight:700">'+escHtml(actLbl)+'</div>';
       if(e.v.comment&&e.v.comment.trim())html+='<div style="font-size:9px;color:rgba(255,255,255,.75);font-style:italic;margin-top:2px">💬 '+escHtml(e.v.comment)+'</div>';
       html+='</div></div>';
