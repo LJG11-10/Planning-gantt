@@ -2271,6 +2271,7 @@ async function loadRoleAndStart() {
     if (firstProj) switchProjet(firstProj);
     setTimeout(navRefreshArchBtn, 100);
     applyRoleRestrictions();
+    checkAndSendRetardAlerts();
   } catch(e) {
     setLoginLoading(false);
     showLoginMsg("Erreur lors du chargement du rôle.");
@@ -12223,6 +12224,82 @@ function checkAndSendMondayRappel(){
   fetch(SUPA_URL,{method:'POST',
     headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
     body:JSON.stringify(payload)}).catch(function(){});
+}
+
+// Détecte les tâches en retard dont la phase a des responsables configurés
+// ("🔔 Alertes retard"), et envoie un email — une seule fois par tâche,
+// jamais renvoyé ensuite même si elle reste en retard les semaines
+// suivantes. Se déclenche une fois par chargement du site (pas à chaque
+// re-rendu), donc au pire une fois par jour pour un même utilisateur — mais
+// comme la tâche est marquée après envoi et cette info est synchronisée sur
+// Supabase, un collègue qui ouvre le site ensuite ne renverra pas le même
+// email en double.
+function checkAndSendRetardAlerts(){
+  if(window._retardAlertsChecked)return; // déjà vérifié pendant cette session
+  window._retardAlertsChecked=true;
+  var todayMs=new Date().setHours(0,0,0,0);
+  var toNotify={}; // clé = liste d'emails triée -> tableau de {aff, act, ph}
+  var anyToSend=false;
+  Object.keys(STORE.projects||{}).forEach(function(affK){
+    var proj=STORE.projects[affK];
+    if(!proj||proj.closed)return;
+    var data=proj.data||[];
+    var phByPk={};
+    data.forEach(function(r){if(r.t==='ph')phByPk[r.pk]=r;});
+    data.filter(function(r){return r.t==='act'&&!r.done;}).forEach(function(a){
+      if(a.retardAlertSent)return; // déjà notifié une fois pour cette tâche
+      var days=a.reelDays&&a.reelDays.length?a.reelDays:(a.prevDays||[]);
+      if(!days||!days.length)return;
+      var lastDay=Math.max.apply(null,days);
+      var d;
+      try{d=weekDayToDate(lastDay);}catch(e){return;}
+      if(!d||d.getTime()>=todayMs)return; // pas en retard
+      var phRow=phByPk[a.pk];
+      if(!phRow||!phRow.notifResps||!phRow.notifResps.length)return; // pas de responsables configurés sur cette phase
+      var resps=(proj.infos&&proj.infos.responsables)||{};
+      var emailSet={};
+      phRow.notifResps.forEach(function(rk){
+        var cts=_getContacts(resps[rk]);
+        cts.forEach(function(ct){if(ct.email)emailSet[ct.email.trim()]=true;});
+      });
+      var emailList=Object.keys(emailSet);
+      if(!emailList.length)return; // catégories cochées mais aucun email renseigné
+      var key=emailList.slice().sort().join(',');
+      if(!toNotify[key])toNotify[key]=[];
+      toNotify[key].push({aff:affK,act:a,ph:phRow});
+      anyToSend=true;
+    });
+  });
+  if(!anyToSend)return;
+  var SUPA_URL='https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels';
+  var SUPA_KEY='sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
+  Object.keys(toNotify).forEach(function(emailKey){
+    var items=toNotify[emailKey];
+    var emailList=emailKey.split(',');
+    var rappelsPayload=items.map(function(it){
+      var inf=STORE.projects[it.aff].infos||{};
+      var affLbl=(inf.numero||it.aff)+(inf.libelle?' — '+inf.libelle:'');
+      return {
+        aff:it.aff,actLb:it.act.lb,actPk:it.act.pk||'',wk:it.act.s||0,
+        weekLabel:affLbl,
+        hPrev:it.act.hPrev||0,hReel:it.act.hReel||0,
+        persons:(it.act.p||[]).filter(function(p){return p.name;}).map(function(p){return p.name;}),
+        rappels:['⚠️ Tâche en retard sur la phase '+it.ph.pk],
+        done:false
+      };
+    });
+    var payload={emails:emailList,semaine:(TODAY?TODAY.w:1),rappels:rappelsPayload,forceEnvoi:true,typeAlerte:'retard'};
+    fetch(SUPA_URL,{method:'POST',
+      headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+      body:JSON.stringify(payload)
+    }).then(function(res){return res.json();}).then(function(data){
+      if(data&&data.ok){
+        // Marquer chaque tâche notifiée pour ne plus jamais la renvoyer
+        items.forEach(function(it){it.act.retardAlertSent=true;});
+        saveNow();
+      }
+    }).catch(function(){});
+  });
 }
 
 
