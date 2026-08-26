@@ -12234,6 +12234,26 @@ function checkAndSendMondayRappel(){
 // comme la tâche est marquée après envoi et cette info est synchronisée sur
 // Supabase, un collègue qui ouvre le site ensuite ne renverra pas le même
 // email en double.
+// Remet à zéro le marquage "déjà notifié" sur TOUTES les tâches de TOUTES
+// les affaires — à utiliser si un envoi a été marqué comme réussi par erreur
+// (ex: le serveur a répondu "succès" alors que Brevo bloquait l'envoi en
+// coulisses). Après ça, un nouvel appel à checkAndSendRetardAlerts()
+// détectera à nouveau toutes les vraies tâches en retard. Depuis la
+// console (F12) : resetAllRetardAlerts()
+function resetAllRetardAlerts(){
+  var count=0;
+  Object.keys(STORE.projects||{}).forEach(function(affK){
+    var proj=STORE.projects[affK];
+    if(!proj)return;
+    (proj.data||[]).forEach(function(r){
+      if(r.t==='act'&&r.retardAlertSent){delete r.retardAlertSent;count++;}
+    });
+  });
+  saveNow();
+  console.log('✅ '+count+' tâche(s) remise(s) à zéro. Vous pouvez maintenant relancer checkAndSendRetardAlerts(true).');
+  return count;
+}
+
 function checkAndSendRetardAlerts(force){
   if(!force){
     if(window._retardAlertsChecked)return; // déjà vérifié pendant cette session
