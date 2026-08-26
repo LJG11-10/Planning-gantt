@@ -6205,28 +6205,6 @@ function dbBuildPlanningGrid(){
   }
 };
   window._wpCommentChange=function(ta){var nm=ta.dataset.nm,di=+ta.dataset.di,ei=+ta.dataset.ei;saveCellEntry(nm,di,ei,'comment',ta.value);};
-  // Ouvre/ferme le panneau d'activités arborescent. Un seul panneau ouvert à
-  // la fois, pour éviter d'avoir plusieurs arbres dépliés en même temps sur
-  // l'écran.
-  window._wpActPickerToggle=function(trigger){
-    var panel=trigger.nextElementSibling;
-    if(!panel||!panel.classList.contains('wpat-panel'))return;
-    var wasOpen=panel.style.display!=='none';
-    document.querySelectorAll('.wpat-panel').forEach(function(p){p.style.display='none';});
-    panel.style.display=wasOpen?'none':'block';
-  };
-  // Plie/déplie un groupe (ensemble ou sous-phase) DANS le panneau concerné
-  // uniquement — jamais les autres panneaux ouverts ailleurs sur la page.
-  window._wpTreeFold=function(hdr,ev){
-    if(ev)ev.stopPropagation();
-    var g=hdr.dataset.g;
-    var panel=hdr.closest('.wpat-panel');
-    if(!panel)return;
-    var collapsed=hdr.classList.toggle('wpat-collapsed');
-    var arrow=hdr.querySelector('.wpat-arrow');
-    if(arrow)arrow.textContent=collapsed?'\u25B6':'\u25BC';
-    panel.querySelectorAll('.wpat-c-'+g).forEach(function(el){el.style.display=collapsed?'none':'';});
-  };
   // Choisir une tâche dans l'arbre : ferme le panneau, met à jour
   // l'affichage, et déclenche la même sauvegarde qu'avant.
   window._wpActPick=function(item,ev){
@@ -6244,16 +6222,6 @@ function dbBuildPlanningGrid(){
     panel.style.display='none';
     _wpSetActivity(panel.dataset.nm,+panel.dataset.di,+panel.dataset.ei,actId);
   };
-  // Fermer le panneau ouvert si on clique n'importe où en dehors de lui —
-  // posé une seule fois (verrou), sinon un nouvel écouteur s'ajouterait à
-  // chaque rendu de la grille.
-  if(!window._wpatOutsideClickBound){
-    window._wpatOutsideClickBound=true;
-    document.addEventListener('click',function(e){
-      if(e.target.closest&&(e.target.closest('.wpat-panel')||e.target.closest('.wpat-trigger')))return;
-      document.querySelectorAll('.wpat-panel').forEach(function(p){p.style.display='none';});
-    });
-  }
   window._wpAddEntry=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di;var key=nm+'::'+di;window._wpExtra[key]=(window._wpExtra[key]||0)+1;dbBuildPlanningGrid();};
   window._wpRemove=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di,ei=+btn.dataset.ei;removeEntry(nm,di,ei);};
   window._wpToggleDupPicker=function(btn){
@@ -7030,6 +6998,87 @@ function _getServicePhases(service){
 // Construit le contenu HTML d'une case jour (affaire/activité/heures) pour une
 // personne et un jour donnés. Le nom est intégré directement dans les appels
 // (pas via window._fhNm) pour pouvoir afficher plusieurs personnes à la fois.
+// Construit un menu Phase ▸ Ensemble ▸ Sous-phase arborescent et repliable
+// pour la Feuille d'heures — même principe visuel que Planning Réunion,
+// mais s'arrête au niveau sous-phase (pas besoin d'aller jusqu'à la tâche
+// ici). Retourne {label, panel} : le libellé de la sous-phase actuellement
+// choisie, et le HTML du panneau déroulant.
+// Ouvre/ferme un panneau d'arbre repliable (activité ou sous-phase). Un seul
+// panneau ouvert à la fois. Fonction générique, utilisée à la fois par
+// Planning Réunion et la Feuille d'heures — définie en portée globale pour
+// être toujours disponible, peu importe quel onglet est visité en premier.
+window._wpActPickerToggle=function(trigger){
+  var panel=trigger.nextElementSibling;
+  if(!panel||!panel.classList.contains('wpat-panel'))return;
+  var wasOpen=panel.style.display!=='none';
+  document.querySelectorAll('.wpat-panel').forEach(function(p){p.style.display='none';});
+  panel.style.display=wasOpen?'none':'block';
+};
+// Plie/déplie un groupe (ensemble ou sous-phase) DANS le panneau concerné
+// uniquement — jamais les autres panneaux ouverts ailleurs sur la page.
+window._wpTreeFold=function(hdr,ev){
+  if(ev)ev.stopPropagation();
+  var g=hdr.dataset.g;
+  var panel=hdr.closest('.wpat-panel');
+  if(!panel)return;
+  var collapsed=hdr.classList.toggle('wpat-collapsed');
+  var arrow=hdr.querySelector('.wpat-arrow');
+  if(arrow)arrow.textContent=collapsed?'\u25B6':'\u25BC';
+  panel.querySelectorAll('.wpat-c-'+g).forEach(function(el){el.style.display=collapsed?'none':'';});
+};
+// Fermer le panneau ouvert si on clique n'importe où en dehors de lui —
+// posé une seule fois (verrou), sinon un nouvel écouteur s'ajouterait à
+// chaque rendu de la grille.
+if(!window._wpatOutsideClickBound){
+  window._wpatOutsideClickBound=true;
+  document.addEventListener('click',function(e){
+    if(e.target.closest&&(e.target.closest('.wpat-panel')||e.target.closest('.wpat-trigger')))return;
+    document.querySelectorAll('.wpat-panel').forEach(function(p){p.style.display='none';});
+  });
+}
+
+function buildSbTree(aff,selId){
+  if(!aff)return {label:'',panel:''};
+  var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];
+  var label='';
+  var panel='';
+  var curPh=null,gid=0,openEns=null;
+  dat.forEach(function(r){
+    if(r.t==='ph'){curPh=r.pk;if(openEns)panel+='</div>';openEns=null;return;}
+    if(r.t==='ens'){
+      if(openEns)panel+='</div>';
+      openEns='g'+(gid++);
+      panel+='<div class="wpat-hdr" data-g="'+openEns+'" onclick="_wpTreeFold(this,event)" style="cursor:pointer;font-weight:800;font-size:10px;color:var(--ac);padding:4px 6px;background:var(--ac2);border-radius:4px;margin-top:3px"><span class="wpat-arrow">\u25BC</span> \u25B8 '+escHtml((curPh?curPh+' \u25B8 ':'')+r.lb)+'</div><div class="wpat-c-'+openEns+'" style="padding-left:8px">';
+      return;
+    }
+    if(r.t!=='sb')return;
+    var _isSel=selId===r.id;
+    if(_isSel)label=r.lb;
+    var _cls=openEns?'wpat-c-'+openEns:'';
+    panel+='<div class="wpat-item'+(_cls?' '+_cls:'')+'" data-id="'+r.id+'" data-lb="'+escHtml(r.lb)+'" onclick="_fhSbPick(this,event)" style="cursor:pointer;font-size:10px;padding:3px 6px;border-radius:4px;'+(_isSel?'background:var(--ac);color:#fff;font-weight:700':'color:var(--tx)')+'">'+escHtml(r.lb)+'</div>';
+  });
+  if(openEns)panel+='</div>';
+  if(!panel)panel='<div style="padding:10px;text-align:center;font-size:10px;color:var(--tx3)">Aucune sous-phase disponible</div>';
+  return {label:label,panel:panel};
+}
+// Choisir une sous-phase dans l'arbre de la Feuille d'heures : ferme le
+// panneau, met à jour l'affichage, et enregistre via fhLineSet.
+window._fhSbPick=function(item,ev){
+  if(ev)ev.stopPropagation();
+  var panel=item.closest('.wpat-panel');
+  if(!panel)return;
+  var trigger=panel.previousElementSibling;
+  var sbId=item.dataset.id,lb=item.dataset.lb;
+  panel.querySelectorAll('.wpat-item').forEach(function(el){
+    el.style.background=el===item?'var(--ac)':'transparent';
+    el.style.color=el===item?'#fff':'var(--tx)';
+    el.style.fontWeight=el===item?'700':'400';
+  });
+  if(trigger)trigger.textContent=lb||'— Choisir une sous-phase —';
+  panel.style.display='none';
+  fhLineSet(panel.dataset.aff,panel.dataset.nm,+panel.dataset.w,+panel.dataset.di,+panel.dataset.li,'actId',sbId);
+};
+
 function fhBuildDayCell(nm,aff,w,di,isTD){
   var nmEsc=nm.replace(/'/g,"\\'");
   var lines=fhGet(aff,nm,w,di);
@@ -7050,28 +7099,8 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
       affOpts+='<option value="'+a2+'"'+(ln.affId===a2?' selected':'')+'>'+getAffLabel(a2)+'</option>';
     });
     var selAff2=ln.affId||'';
-    var actOpts='<option value="">— Choisir une sous-phase —</option>';
-    if(selAff2){
-      var aData2=(STORE.projects[selAff2]&&STORE.projects[selAff2].data)||[];
-      var _curPk3b='',_curEns3b='',_groups3b=[];
-      aData2.forEach(function(r2){
-        if(r2.t==='ph'){_curPk3b=r2.pk;_curEns3b='';return;}
-        if(r2.t==='ens'){_curEns3b=r2.lb;return;}
-        if(r2.t!=='sb')return;
-        var _groupLbl=_curPk3b+(_curEns3b?' \u25B8 '+_curEns3b:'');
-        var _g=_groups3b.find(function(g){return g.label===_groupLbl;});
-        if(!_g){_g={label:_groupLbl,items:[]};_groups3b.push(_g);}
-        _g.items.push(r2);
-      });
-      _groups3b.forEach(function(g){
-        if(!g.items.length)return;
-        actOpts+='<optgroup label="'+escHtml(g.label)+'">';
-        g.items.forEach(function(sb2){
-          actOpts+='<option value="'+sb2.id+'"'+(ln.actId===sb2.id?' selected':'')+'>'+escHtml(sb2.lb)+'</option>';
-        });
-        actOpts+='</optgroup>';
-      });
-    }
+    var _sbTree=selAff2?buildSbTree(selAff2,ln.actId||''):{label:'',panel:''};
+    var _fhWidId='fhsb-'+nmEsc.replace(/[^a-z0-9]/gi,'_')+'-'+w+'-'+di+'-'+li;
     linesHtml+='<div style="background:'+(li%2?'var(--bg3)':'var(--bg2)')+';border:1px solid var(--bd);border-radius:4px;padding:5px;margin-bottom:4px">'
       +'<div style="font-size:8px;font-weight:700;color:var(--tx3);margin-bottom:2px">AFFAIRE</div>'
       +'<select onchange="fhLineSetAff(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+',this.value)" '
@@ -7079,9 +7108,8 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
       +affOpts+'</select>'
       +(selAff2
         ?'<div style="font-size:8px;font-weight:700;color:var(--ac);margin-bottom:2px">SOUS-PHASE (rempli automatiquement)</div>'
-         +'<select onchange="fhLineSet(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+',\'actId\',this.value)" '
-         +'style="width:100%;border:1px solid var(--ac);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;margin-bottom:5px">'
-         +actOpts+'</select>'
+         +'<div id="'+_fhWidId+'" class="wpat-trigger" data-aff="'+aff+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+li+'" onclick="window._wpActPickerToggle(this)" style="width:100%;border:1px solid var(--ac);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg2);color:var(--tx);cursor:pointer;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||'— Choisir une sous-phase —')+'</div>'
+         +'<div class="wpat-panel" data-aff="'+aff+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+li+'" style="display:none;max-height:200px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;padding:4px;background:var(--bg2);box-shadow:0 4px 12px rgba(0,0,0,.12);position:relative;z-index:20;margin-bottom:5px">'+_sbTree.panel+'</div>'
         :'')
       +'<div style="display:flex;align-items:center;gap:4px">'
       +'<span style="font-size:8px;color:var(--tx3);font-weight:700">HEURES</span>'
@@ -12240,116 +12268,51 @@ function checkAndSendMondayRappel(){
 // coulisses). Après ça, un nouvel appel à checkAndSendRetardAlerts()
 // détectera à nouveau toutes les vraies tâches en retard. Depuis la
 // console (F12) : resetAllRetardAlerts()
-function resetAllRetardAlerts(){
-  var count=0;
-  Object.keys(STORE.projects||{}).forEach(function(affK){
-    var proj=STORE.projects[affK];
-    if(!proj)return;
-    (proj.data||[]).forEach(function(r){
-      if(r.t==='act'&&r.retardAlertSent){delete r.retardAlertSent;count++;}
-    });
-  });
-  saveNow();
-  console.log('✅ '+count+' tâche(s) remise(s) à zéro. Vous pouvez maintenant relancer checkAndSendRetardAlerts(true).');
-  return count;
-}
-
+// Déclenche la fonction serveur dédiée "check-retards", qui fait TOUT
+// elle-même : elle lit les données directement sur Supabase (pas besoin de
+// lui envoyer quoi que ce soit), détecte les tâches en retard, résout les
+// emails des responsables par phase, et envoie un email au bon format —
+// une seule fois par jour et par tâche (elle gère ça en interne, avec la
+// date du jour). Cette fonction est d'ailleurs prévue pour tourner
+// automatiquement chaque matin à 8h côté serveur (à vérifier dans les
+// paramètres Supabase — voir Cron/Scheduled Functions), donc cet appel
+// depuis le site n'est qu'un filet de sécurité si jamais ce n'est pas
+// encore programmé là-bas.
 function checkAndSendRetardAlerts(force){
   if(!force){
     if(window._retardAlertsChecked)return; // déjà vérifié pendant cette session
     window._retardAlertsChecked=true;
     // Verrou persistant : au maximum une fois par jour, jamais à chaque
-    // ouverture du site — un appel automatique déclenché à chaque connexion
-    // a fini par ressembler à une activité suspecte pour Brevo (bloqué par
-    // leur vérification d'IP) et déclenchait une alerte de sécurité à
-    // chaque fois. Une fois par jour suffit largement pour l'usage voulu.
-    // Important : ce verrou n'est posé qu'APRÈS une vraie tentative
-    // d'envoi (voir plus bas) — pas avant — pour qu'un échec (ex: IP
-    // bloquée par Brevo) puisse être retenté dès la prochaine ouverture du
-    // site, plutôt que d'attendre bêtement le lendemain pour rien.
+    // ouverture du site. Posé seulement APRÈS une vraie réponse du serveur
+    // (pas avant), pour qu'un échec réseau puisse être retenté dès la
+    // prochaine ouverture plutôt que d'attendre le lendemain pour rien.
     var todayKeyRA=new Date().toISOString().slice(0,10);
     if(localStorage.getItem('retard_alerts_last_check')===todayKeyRA)return;
   }
-  var todayMs=new Date().setHours(0,0,0,0);
-  var toNotify={}; // clé = liste d'emails triée -> tableau de {aff, act, ph}
-  var anyToSend=false;
-  Object.keys(STORE.projects||{}).forEach(function(affK){
-    var proj=STORE.projects[affK];
-    if(!proj||proj.closed)return;
-    var data=proj.data||[];
-    var phByPk={};
-    data.forEach(function(r){if(r.t==='ph')phByPk[r.pk]=r;});
-    data.filter(function(r){return r.t==='act'&&!r.done;}).forEach(function(a){
-      if(a.retardAlertSent)return; // déjà notifié une fois pour cette tâche
-      var days=a.reelDays&&a.reelDays.length?a.reelDays:(a.prevDays||[]);
-      if(!days||!days.length)return;
-      var lastDay=Math.max.apply(null,days);
-      var d;
-      try{d=weekDayToDate(lastDay);}catch(e){return;}
-      if(!d||d.getTime()>=todayMs)return; // pas en retard
-      var phRow=phByPk[a.pk];
-      if(!phRow||!phRow.notifResps||!phRow.notifResps.length)return; // pas de responsables configurés sur cette phase
-      var resps=(proj.infos&&proj.infos.responsables)||{};
-      var emailSet={};
-      phRow.notifResps.forEach(function(rk){
-        var cts=_getContacts(resps[rk]);
-        cts.forEach(function(ct){if(ct.email)emailSet[ct.email.trim()]=true;});
-      });
-      var emailList=Object.keys(emailSet);
-      if(!emailList.length)return; // catégories cochées mais aucun email renseigné
-      var key=emailList.slice().sort().join(',');
-      if(!toNotify[key])toNotify[key]=[];
-      toNotify[key].push({aff:affK,act:a,ph:phRow});
-      anyToSend=true;
-    });
-  });
-  if(!anyToSend){
-    if(force)console.log('Aucune tâche en retard avec responsables/emails configurés à notifier.');
-    return;
-  }
-  var SUPA_URL='https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels';
+  var SUPA_URL='https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/check-retards';
   var SUPA_KEY='sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
   var todayKeyRA2=new Date().toISOString().slice(0,10);
-  Object.keys(toNotify).forEach(function(emailKey){
-    var items=toNotify[emailKey];
-    var emailList=emailKey.split(',');
-    var rappelsPayload=items.map(function(it){
-      var inf=STORE.projects[it.aff].infos||{};
-      var affLbl=(inf.numero||it.aff)+(inf.libelle?' — '+inf.libelle:'');
-      return {
-        aff:it.aff,actLb:it.act.lb,actPk:it.act.pk||'',wk:it.act.s||0,
-        weekLabel:affLbl,
-        hPrev:it.act.hPrev||0,hReel:it.act.hReel||0,
-        persons:(it.act.p||[]).filter(function(p){return p.name;}).map(function(p){return p.name;}),
-        rappels:['⚠️ Tâche en retard sur la phase '+it.ph.pk],
-        done:false
-      };
-    });
-    var payload={emails:emailList,semaine:(TODAY?TODAY.w:1),rappels:rappelsPayload,forceEnvoi:true,typeAlerte:'retard'};
-    fetch(SUPA_URL,{method:'POST',
-      headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-      body:JSON.stringify(payload)
-    }).then(function(res){return res.json();}).then(function(data){
-      // Le verrou du jour n'est posé qu'ICI, une fois qu'on a une vraie
-      // réponse (succès ou échec) — jamais avant l'envoi.
-      localStorage.setItem('retard_alerts_last_check',todayKeyRA2);
+  fetch(SUPA_URL,{method:'POST',
+    headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+    body:JSON.stringify({})
+  }).then(function(res){return res.json();}).then(function(data){
+    localStorage.setItem('retard_alerts_last_check',todayKeyRA2);
+    if(force){
       if(data&&data.ok){
-        items.forEach(function(it){it.act.retardAlertSent=true;});
-        saveNow();
-        if(force)console.log('✅ Alerte envoyée à : '+emailList.join(', '));
-      } else if(force){
-        console.log('❌ Échec de l\'envoi :',data&&data.error);
+        console.log('✅ '+data.mailsSent+' email(s) envoyé(s) — '+data.overdueCount+' tâche(s) en retard détectée(s) sur '+data.tasksChecked+' vérifiée(s).');
+        if(data.details&&data.details.length)data.details.forEach(function(l){console.log('   '+l);});
+      } else {
+        console.log('❌ Échec :',data&&data.error);
       }
-    }).catch(function(err){
-      // Un échec réseau (ex: IP bloquée par Brevo) NE pose PAS le verrou du
-      // jour, pour que ça puisse être retenté dès la prochaine ouverture.
-      if(force)console.log('❌ Erreur réseau :',err.message);
-    });
+    }
+  }).catch(function(err){
+    // Un échec réseau NE pose PAS le verrou du jour, pour que ça puisse
+    // être retenté dès la prochaine ouverture du site.
+    if(force)console.log('❌ Erreur réseau :',err.message);
   });
 }
 // Pour forcer un nouvel essai immédiat depuis la console (F12), sans
-// attendre le verrou du lendemain — utile juste après avoir corrigé un
-// souci d'envoi (ex: adresse IP à autoriser dans Brevo) :
+// attendre le verrou du lendemain :
 // checkAndSendRetardAlerts(true)
 
 
