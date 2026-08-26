@@ -7084,10 +7084,10 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
   var lines=fhGet(aff,nm,w,di);
   var dayT=lines.reduce(function(s,l){return s+(l.hours===''?0:+l.hours||0);},0);
   var meta=fhMetaGet(w,nm,di);
-  var metaHtml='<div style="display:flex;flex-direction:column;gap:2px;margin-bottom:5px;padding:4px;background:var(--bg4);border-radius:4px">'
-    +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer"><input type="checkbox" '+(meta.panier?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'panier\',this.checked)" style="cursor:pointer;width:12px;height:12px">\u{1F37D} Panier</label>'
-    +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer"><input type="checkbox" '+(meta.gd?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'gd\',this.checked)" style="cursor:pointer;width:12px;height:12px">\u{1F697} Gd d\u00e9pl.</label>'
-    +'<input type="text" value="'+meta.lieu.replace(/"/g,'&quot;')+'" placeholder="\u{1F4CD} Lieu" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" style="border:1px solid var(--bd);border-radius:3px;padding:2px 4px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'
+  var metaHtml='<div style="display:flex;flex-direction:column;gap:3px;margin-bottom:6px;padding:6px 8px;background:var(--bg4);border-radius:8px">'
+    +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer"><input type="checkbox" '+(meta.panier?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'panier\',this.checked)" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F37D} Panier</label>'
+    +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer"><input type="checkbox" '+(meta.gd?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'gd\',this.checked)" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F697} Gd d\u00e9pl.</label>'
+    +'<input type="text" value="'+meta.lieu.replace(/"/g,'&quot;')+'" placeholder="\u{1F4CD} Lieu" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'
     +'</div>';
   var linesHtml='';
   for(var li=0;li<lines.length;li++){
@@ -7101,36 +7101,40 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
     var selAff2=ln.affId||'';
     var _sbTree=selAff2?buildSbTree(selAff2,ln.actId||''):{label:'',panel:''};
     var _fhWidId='fhsb-'+nmEsc.replace(/[^a-z0-9]/gi,'_')+'-'+w+'-'+di+'-'+li;
-    linesHtml+='<div style="background:'+(li%2?'var(--bg3)':'var(--bg2)')+';border:1px solid var(--bd);border-radius:4px;padding:5px;margin-bottom:4px">'
-      +'<div style="font-size:8px;font-weight:700;color:var(--tx3);margin-bottom:2px">AFFAIRE</div>'
+    // Couleur par chantier — même palette et même fonction que Planning
+    // Réunion (affColor), pour que le même chantier ait toujours la même
+    // couleur peu importe où il apparaît sur le site.
+    var _c=selAff2?affColor(selAff2):null;
+    linesHtml+='<div style="background:'+(_c?_c.f:'var(--bg3)')+';border-left:4px solid '+(_c?_c.h:'var(--bd)')+';border-radius:10px;padding:7px 9px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.08)">'
+      +'<div style="font-size:8px;font-weight:800;color:'+(_c?_c.h:'var(--tx3)')+';letter-spacing:.3px;margin-bottom:3px">AFFAIRE</div>'
       +'<select onchange="fhLineSetAff(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+',this.value)" '
-      +'style="width:100%;border:1px solid var(--bd);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none;margin-bottom:5px">'
+      +'style="width:100%;border:none;border-radius:6px;padding:4px 6px;font-size:10px;font-weight:700;font-family:inherit;background:var(--bg2);color:'+(_c?_c.xd:'var(--tx)')+';outline:none;margin-bottom:6px">'
       +affOpts+'</select>'
       +(selAff2
-        ?'<div style="font-size:8px;font-weight:700;color:var(--ac);margin-bottom:2px">SOUS-PHASE (rempli automatiquement)</div>'
-         +'<div id="'+_fhWidId+'" class="wpat-trigger" data-aff="'+aff+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+li+'" onclick="window._wpActPickerToggle(this)" style="width:100%;border:1px solid var(--ac);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;background:var(--bg2);color:var(--tx);cursor:pointer;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||'— Choisir une sous-phase —')+'</div>'
-         +'<div class="wpat-panel" data-aff="'+aff+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+li+'" style="display:none;max-height:200px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;padding:4px;background:var(--bg2);box-shadow:0 4px 12px rgba(0,0,0,.12);position:relative;z-index:20;margin-bottom:5px">'+_sbTree.panel+'</div>'
+        ?'<div style="font-size:8px;font-weight:800;color:'+(_c?_c.h:'var(--ac)')+';letter-spacing:.3px;margin-bottom:3px">SOUS-PHASE (rempli automatiquement)</div>'
+         +'<div id="'+_fhWidId+'" class="wpat-trigger" data-aff="'+aff+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+li+'" onclick="window._wpActPickerToggle(this)" style="width:100%;border-radius:6px;padding:4px 6px;font-size:10px;font-family:inherit;background:var(--bg2);color:'+(_c?_c.xd:'var(--tx)')+';cursor:pointer;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||'— Choisir une sous-phase —')+'</div>'
+         +'<div class="wpat-panel" data-aff="'+aff+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+li+'" style="display:none;max-height:200px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:4px;background:var(--bg2);box-shadow:0 4px 12px rgba(0,0,0,.14);position:relative;z-index:20;margin-bottom:6px">'+_sbTree.panel+'</div>'
         :'')
-      +'<div style="display:flex;align-items:center;gap:4px">'
-      +'<span style="font-size:8px;color:var(--tx3);font-weight:700">HEURES</span>'
+      +'<div style="display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px dashed '+(_c?_c.xl:'var(--bd)')+'">'
+      +'<span style="font-size:8px;color:'+(_c?_c.xd:'var(--tx3)')+';font-weight:700">HEURES</span>'
       +'<input type="number" min="0" max="24" step="0.5" value="'+(ln.hours===''?'':ln.hours)+'" placeholder="0" '
-      +'style="flex:1;border:1px solid var(--bd);border-radius:3px;padding:3px 4px;font-size:12px;font-weight:700;font-family:\'Courier New\',monospace;color:var(--ac);background:'+(isTD?'#FEF9C3':'var(--bg2)')+';outline:none;text-align:center;min-width:0" '
+      +'style="flex:1;border:none;border-radius:6px;padding:4px;font-size:12px;font-weight:800;font-family:\'Courier New\',monospace;color:'+(_c?_c.h:'var(--ac)')+';background:'+(isTD?'#FEF9C3':'var(--bg2)')+';outline:none;text-align:center;min-width:0" '
       +'oninput="fhLineSet(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+',\'hours\',this.value)" '
       +'onblur="fhLineSet(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+',\'hours\',this.value)">'
-      +'<span style="font-size:9px;color:var(--tx3)">H</span>'
+      +'<span style="font-size:9px;color:'+(_c?_c.xd:'var(--tx3)')+'">H</span>'
       +'<button onmousedown="event.preventDefault();fhLineDel(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+')" '
-      +'style="background:none;border:1px solid var(--rd);border-radius:3px;cursor:pointer;color:var(--rd);font-size:10px;padding:1px 5px">\u2715</button>'
+      +'style="background:rgba(0,0,0,.06);border:none;border-radius:6px;cursor:pointer;color:var(--rd);font-size:10px;font-weight:700;padding:2px 6px">\u2715</button>'
       +'</div></div>';
   }
   var hasContent=lines.some(function(l){return l&&(l.affId||l.actId||l.hours);})||meta.panier||meta.gd||(meta.lieu&&meta.lieu.trim());
-  return '<div style="vertical-align:top;padding:4px;background:'+(isTD?'#FFFBEB':'inherit')+'">'
+  return '<div style="vertical-align:top;padding:6px;background:'+(isTD?'#FFFBEB':'inherit')+';border-radius:10px">'
     +metaHtml
     +linesHtml
     +'<button onclick="fhLineAdd(\''+aff+'\',\''+nmEsc+'\','+w+','+di+')" '
-    +'style="width:100%;background:var(--ac2);border:1px dashed var(--ac);border-radius:3px;color:var(--ac);font-size:10px;font-weight:700;cursor:pointer;padding:4px;font-family:inherit;margin-top:2px">+ Sous-phase</button>'
+    +'style="width:100%;background:var(--ac2);border:1.5px dashed var(--ac3);border-radius:20px;color:var(--ac);font-size:10px;font-weight:700;cursor:pointer;padding:5px;font-family:inherit;margin-top:3px">+ Sous-phase</button>'
     +(hasContent?'<button onclick="fhToggleDupPicker(this,\''+aff+'\',\''+nmEsc+'\','+w+','+di+')" '
-      +'style="width:100%;background:var(--bg3);border:1px dashed var(--tx3);border-radius:3px;color:var(--tx2);font-size:9px;font-weight:700;cursor:pointer;padding:3px;font-family:inherit;margin-top:2px">\u29C9 Dupliquer ce jour</button>':'')
-    +'<div style="text-align:center;font-family:\'Courier New\';font-size:11px;font-weight:700;color:'+(dayT?'var(--ac)':'var(--tx3)')+';margin-top:4px;padding-top:3px;border-top:1px solid var(--bd)">'+(dayT?dayT+'H':'—')+'</div>'
+      +'style="width:100%;background:var(--bg3);border:1.5px dashed var(--tx3);border-radius:20px;color:var(--tx2);font-size:9px;font-weight:700;cursor:pointer;padding:4px;font-family:inherit;margin-top:3px">\u29C9 Dupliquer ce jour</button>':'')
+    +'<div style="text-align:center;font-family:\'Courier New\';font-size:12px;font-weight:800;color:'+(dayT?'var(--ac)':'var(--tx3)')+';margin-top:5px;padding-top:4px;border-top:1px solid var(--bd)">'+(dayT?dayT+'H':'—')+'</div>'
     +'</div>';
 }
 function fhToggleDupPicker(btn,aff,nm,w,srcDi){
