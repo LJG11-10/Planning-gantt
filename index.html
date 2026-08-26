@@ -12234,9 +12234,22 @@ function checkAndSendMondayRappel(){
 // comme la tâche est marquée après envoi et cette info est synchronisée sur
 // Supabase, un collègue qui ouvre le site ensuite ne renverra pas le même
 // email en double.
-function checkAndSendRetardAlerts(){
-  if(window._retardAlertsChecked)return; // déjà vérifié pendant cette session
-  window._retardAlertsChecked=true;
+function checkAndSendRetardAlerts(force){
+  if(!force){
+    if(window._retardAlertsChecked)return; // déjà vérifié pendant cette session
+    window._retardAlertsChecked=true;
+    // Verrou persistant : au maximum une fois par jour, jamais à chaque
+    // ouverture du site — un appel automatique déclenché à chaque connexion
+    // a fini par ressembler à une activité suspecte pour Brevo (bloqué par
+    // leur vérification d'IP) et déclenchait une alerte de sécurité à
+    // chaque fois. Une fois par jour suffit largement pour l'usage voulu.
+    // Important : ce verrou n'est posé qu'APRÈS une vraie tentative
+    // d'envoi (voir plus bas) — pas avant — pour qu'un échec (ex: IP
+    // bloquée par Brevo) puisse être retenté dès la prochaine ouverture du
+    // site, plutôt que d'attendre bêtement le lendemain pour rien.
+    var todayKeyRA=new Date().toISOString().slice(0,10);
+    if(localStorage.getItem('retard_alerts_last_check')===todayKeyRA)return;
+  }
   var todayMs=new Date().setHours(0,0,0,0);
   var toNotify={}; // clé = liste d'emails triée -> tableau de {aff, act, ph}
   var anyToSend=false;
@@ -12270,9 +12283,13 @@ function checkAndSendRetardAlerts(){
       anyToSend=true;
     });
   });
-  if(!anyToSend)return;
+  if(!anyToSend){
+    if(force)console.log('Aucune tâche en retard avec responsables/emails configurés à notifier.');
+    return;
+  }
   var SUPA_URL='https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels';
   var SUPA_KEY='sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
+  var todayKeyRA2=new Date().toISOString().slice(0,10);
   Object.keys(toNotify).forEach(function(emailKey){
     var items=toNotify[emailKey];
     var emailList=emailKey.split(',');
@@ -12293,14 +12310,27 @@ function checkAndSendRetardAlerts(){
       headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
       body:JSON.stringify(payload)
     }).then(function(res){return res.json();}).then(function(data){
+      // Le verrou du jour n'est posé qu'ICI, une fois qu'on a une vraie
+      // réponse (succès ou échec) — jamais avant l'envoi.
+      localStorage.setItem('retard_alerts_last_check',todayKeyRA2);
       if(data&&data.ok){
-        // Marquer chaque tâche notifiée pour ne plus jamais la renvoyer
         items.forEach(function(it){it.act.retardAlertSent=true;});
         saveNow();
+        if(force)console.log('✅ Alerte envoyée à : '+emailList.join(', '));
+      } else if(force){
+        console.log('❌ Échec de l\'envoi :',data&&data.error);
       }
-    }).catch(function(){});
+    }).catch(function(err){
+      // Un échec réseau (ex: IP bloquée par Brevo) NE pose PAS le verrou du
+      // jour, pour que ça puisse être retenté dès la prochaine ouverture.
+      if(force)console.log('❌ Erreur réseau :',err.message);
+    });
   });
 }
+// Pour forcer un nouvel essai immédiat depuis la console (F12), sans
+// attendre le verrou du lendemain — utile juste après avoir corrigé un
+// souci d'envoi (ex: adresse IP à autoriser dans Brevo) :
+// checkAndSendRetardAlerts(true)
 
 
 function _reRenderGanttKeepScroll(){
