@@ -322,6 +322,16 @@
     if(STORE&&STORE._deletedAffaires){
       Object.keys(STORE._deletedAffaires).forEach(function(k){_localDeletedAff[k]=STORE._deletedAffaires[k];});
     }
+    // Capturer aussi les tombstones locaux du weekPlan AVANT tout
+    // remplacement — sinon, au moment où STORE=remote écrase tout un peu
+    // plus bas, un effacement tout juste fait localement (pas encore
+    // uploadé) perdait son propre tombstone, puisqu'il n'était lu qu'APRÈS
+    // cet écrasement (donc déjà remplacé par celui, éventuellement
+    // obsolète, du distant).
+    var _localDelWpKeys={};
+    if(STORE&&STORE._deletedWeekPlanKeys){
+      Object.keys(STORE._deletedWeekPlanKeys).forEach(function(k){_localDelWpKeys[k]=STORE._deletedWeekPlanKeys[k];});
+    }
     // ── Construire globalPersons depuis GP_KEY (source la plus fiable) ──
     var _localGP={};
     try{
@@ -394,15 +404,28 @@
     // semaine entière par semaine entière, pour ne perdre le travail de
     // personne quand deux personnes modifient la même semaine en parallèle.
     // Les entrées supprimées (par qui que ce soit) ne doivent jamais ressusciter.
-    var _delWpKeys=Object.assign({},STORE._deletedWeekPlanKeys||{},remote._deletedWeekPlanKeys||{});
+    var _delWpKeys=Object.assign({},_localDelWpKeys,remote._deletedWeekPlanKeys||{});
     STORE.weekPlan=STORE.weekPlan||{};
     Object.keys(_localWeekPlan).forEach(function(wk){
       var _mergedWk=Object.assign({},STORE.weekPlan[wk]||{},_localWeekPlan[wk]);
-      Object.keys(_mergedWk).forEach(function(k){if(_delWpKeys[wk+'::'+k])delete _mergedWk[k];});
+      Object.keys(_mergedWk).forEach(function(k){
+        // Ne jamais supprimer une entrée qui a des données LOCALES actives
+        // (non vides) juste à cause d'un tombstone — sinon, une saisie
+        // toute récente pouvait se faire effacer au rechargement si le
+        // tombstone distant (créé lors d'un effacement PRÉCÉDENT de cette
+        // même case) n'avait pas encore eu le temps d'être nettoyé côté
+        // serveur avant que la nouvelle saisie n'arrive.
+        var _hasActiveLocal=_localWeekPlan[wk]&&_localWeekPlan[wk][k]&&_localWeekPlan[wk][k].length;
+        if(_delWpKeys[wk+'::'+k]&&!_hasActiveLocal)delete _mergedWk[k];
+        else if(_hasActiveLocal)delete _delWpKeys[wk+'::'+k];
+      });
       STORE.weekPlan[wk]=_mergedWk;
     });
     Object.keys(STORE.weekPlan).forEach(function(wk){
-      Object.keys(STORE.weekPlan[wk]||{}).forEach(function(k){if(_delWpKeys[wk+'::'+k])delete STORE.weekPlan[wk][k];});
+      Object.keys(STORE.weekPlan[wk]||{}).forEach(function(k){
+        var _hasActiveLocal2=_localWeekPlan[wk]&&_localWeekPlan[wk][k]&&_localWeekPlan[wk][k].length;
+        if(_delWpKeys[wk+'::'+k]&&!_hasActiveLocal2)delete STORE.weekPlan[wk][k];
+      });
     });
     STORE._deletedWeekPlanKeys=_delWpKeys;
     STORE.absences=Object.assign({},STORE.absences||{},_localAbsences);
@@ -2890,14 +2913,21 @@ function loadStore(){
         STORE.weekPlan={};
         Object.keys(_filtWP).forEach(function(wk){
           var _mw=Object.assign({},_filtWP[wk],_localWP0[wk]||{});
-          Object.keys(_mw).forEach(function(k){if(_delWpKeys0[wk+'::'+k])delete _mw[k];});
+          Object.keys(_mw).forEach(function(k){
+            var _hasActiveLocal0=_localWP0[wk]&&_localWP0[wk][k]&&_localWP0[wk][k].length;
+            if(_delWpKeys0[wk+'::'+k]&&!_hasActiveLocal0)delete _mw[k];
+            else if(_hasActiveLocal0)delete _delWpKeys0[wk+'::'+k];
+          });
           STORE.weekPlan[wk]=_mw;
         });
         Object.keys(_localWP0).forEach(function(wk){
           if(!STORE.weekPlan[wk])STORE.weekPlan[wk]=_localWP0[wk];
         });
         Object.keys(STORE.weekPlan).forEach(function(wk){
-          Object.keys(STORE.weekPlan[wk]||{}).forEach(function(k){if(_delWpKeys0[wk+'::'+k])delete STORE.weekPlan[wk][k];});
+          Object.keys(STORE.weekPlan[wk]||{}).forEach(function(k){
+            var _hasActiveLocal1=_localWP0[wk]&&_localWP0[wk][k]&&_localWP0[wk][k].length;
+            if(_delWpKeys0[wk+'::'+k]&&!_hasActiveLocal1)delete STORE.weekPlan[wk][k];
+          });
         });
         STORE._deletedWeekPlanKeys=_delWpKeys0;
       }
