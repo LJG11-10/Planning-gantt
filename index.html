@@ -11851,6 +11851,11 @@ function fhLineSetAff(aff,nm,wk,d,ei,newAff){
   lines[ei].actId=''; // réinitialiser l'activité
   fhPut(a,nm,wk,d,lines);
   renderFiche();
+  // Re-synchroniser vers le GANTT — changer d'affaire vide la sous-phase
+  // choisie, donc les heures qui lui étaient associées doivent aussi être
+  // retirées de la tâche/sous-phase précédente, sinon elles restaient
+  // affichées à tort dans le récap.
+  if(typeof syncFichesToGantt==='function')syncFichesToGantt();
 }
 
 function fhLineSet(aff,nm,w,d,li,field,val){
@@ -11969,14 +11974,16 @@ function syncFichesToGantt(){
       if(r.t!=='act'&&r.t!=='sb')return; // heures comptées sur la tâche OU la sous-phase, selon ce qui est ciblé
       var data=actMap[r.id];
       if(!data){
-        // Aucune heure de Feuille d'heures pour cette tâche actuellement.
-        // Si son hReel/ses personnes avaient été fixés par une PRÉCÉDENTE
-        // synchronisation Feuille d'heures (marqué _hReelFromFH), on les
-        // remet à zéro — sinon supprimer la dernière ligne d'une Feuille
-        // d'heures laissait les heures affichées à tort. On ne touche
-        // JAMAIS à un hReel qui viendrait d'ailleurs (barres de couleurs du
-        // GANTT, saisie manuelle) : celui-là n'a jamais ce marqueur.
-        if(r._hReelFromFH){
+        // Aucune heure de Feuille d'heures pour cette ligne actuellement.
+        // Une SOUS-PHASE ('sb') n'a JAMAIS d'autre source possible d'heures
+        // que la Feuille d'heures (contrairement à une tâche, qui peut
+        // aussi venir des barres de couleurs du GANTT ou d'une saisie
+        // manuelle) — donc on la réinitialise toujours, même si son
+        // marqueur _hReelFromFH n'a jamais été posé (ex: heures saisies
+        // avant l'ajout de ce marqueur). Pour une tâche ('act'), on ne
+        // réinitialise que si ce marqueur est bien présent, pour ne jamais
+        // toucher un hReel qui viendrait d'ailleurs.
+        if(r.t==='sb'||r._hReelFromFH){
           r.hReel=0;
           r._hReelFromFH=false;
           r.p=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim()&&!pp.fromFH;});
