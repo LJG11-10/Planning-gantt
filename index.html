@@ -6040,11 +6040,14 @@ function dbBuildPlanningGrid(){
     });
     _base=Object.keys(ps);
   }
-  // Sur une semaine PASSÉE, réafficher les personnes supprimées de l'annuaire
-  // qui avaient bien été affectées cette semaine-là précisément (historique
-  // conservé : elle était vraiment là ce jour-là, même si elle est partie depuis).
+  // Sur une semaine PASSÉE OU LA SEMAINE EN COURS, réafficher les personnes
+  // supprimées de l'annuaire qui avaient bien été affectées cette
+  // semaine-là précisément (historique conservé : elle était vraiment là,
+  // même si elle est partie depuis) — y compris si la suppression a eu
+  // lieu pendant cette même semaine, pas seulement les semaines
+  // antérieures.
   var _curWkGAP=TODAY?TODAY.w:0;
-  if(selWk<_curWkGAP){
+  if(selWk<=_curWkGAP){
     var _wkDataHist=(STORE.weekPlan&&STORE.weekPlan[selWk])||{};
     Object.keys(_wkDataHist).forEach(function(key){
       var nm=key.split('::')[0];
@@ -7631,29 +7634,27 @@ function renderFiche(){
     +'<option value="">— Sélectionner —</option>'
     +persons.map(function(pp){return '<option value="'+pp+'"'+(pp===selNm?' selected':'')+'>'+pp+'</option>';}).join('')
     +'</select>'
-    +'<span class="lbl">SEMAINE</span>'
-    +'<select id="fc-wk" onchange="renderFiche()">'
-    +'<option value="all"'+(selWk==='all'?' selected':'')+'>Toutes</option>'
-    +availWks.map(function(w){return '<option value="'+w+'"'+(selWk==w?' selected':'')+'>S'+isoWeekOf(w)+' — '+fmt(wkD(w))+' au '+fmt(ddD(w,4))+'</option>';}).join('')
-    +'</select>'
     +'<button class="btn btn-g" onclick="fhImprimer()">🖨 Imprimer</button>'
     +'<button class="btn btn-a" onclick="fhTelecharger()" style="margin-left:6px">⬇ Télécharger</button>'
     +'<button class="btn" onclick="syncFichesToGantt()" style="background:#7C3AED;color:#fff;border:none" title="Reporter les heures des fiches sur le GANTT">⚡ Sync → GANTT</button>'
     +'</div>';
 
   var fw=document.getElementById('fw');
-  if(!selNm){
-    // ── Vue par défaut : toutes les personnes "chantier" de la semaine
-    // choisie (présentes en Planning réunion + ajoutées à la main), chacune
-    // avec sa vraie grille de saisie jour par jour (affaire/activité/heures —
-    // compte normalement dans le GANTT et le budget) + Panier/GD/Lieu ──
+  {
+    // ── Vue unique : la semaine choisie dans "SEMAINE AFFICHÉE", pour tout
+    // le monde si aucune personne n'est filtrée, ou juste la personne
+    // choisie sinon — toujours une seule semaine à la fois. Toutes les
+    // semaines restent consultables (rien n'est jamais perdu), juste une
+    // à la fois plutôt qu'un historique combiné. ──
     var weekView=window._fhWeekView||(TODAY?TODAY.w:1);
     window._fhWeekView=weekView;
     window._fhAff=STORE.current;
-    var wvPersons=fhWeekPersons(weekView);
+    var wvPersons=selNm?[selNm]:fhWeekPersons(weekView);
     var wvBlocks=wvPersons.map(function(nm2){return fhBuildPersonWeekBlock(nm2,weekView);}).join('');
     if(!wvBlocks)wvBlocks='<div style="padding:16px;text-align:center;color:var(--tx3);border:1px dashed var(--bd);border-radius:var(--r2)">Personne \u00e0 afficher pour cette semaine \u2014 ajoutez-en une ci-dessous, ou elles appara\u00eetront automatiquement d\u00e8s qu\'elles seront plac\u00e9es dans Planning r\u00e9union.</div>';
     // Dropdown pour ajouter une personne pas encore dans la liste
+    // (uniquement pertinent quand on regarde tout le monde, pas une
+    // personne déjà filtrée)
     var _wvShown={};wvPersons.forEach(function(n){_wvShown[n]=true;});
     var addOpts='<option value="">— Ajouter une personne —</option>'
       +persons.filter(function(pp){return !_wvShown[pp];}).map(function(pp){return '<option value="'+pp+'">'+pp+'</option>';}).join('');
@@ -7665,10 +7666,10 @@ function renderFiche(){
       +'</select>'
       +'</div>'
       +wvBlocks
-      +'<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
-      +'<select id="fc-addperson" style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+addOpts+'</select>'
-      +'<button class="btn btn-a" onclick="fhAddPersonToWeek('+weekView+')">+ Ajouter une personne</button>'
-      +'</div>';
+      +(selNm?'':('<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
+        +'<select id="fc-addperson" style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+addOpts+'</select>'
+        +'<button class="btn btn-a" onclick="fhAddPersonToWeek('+weekView+')">+ Ajouter une personne</button>'
+        +'</div>'));
     return;
   }
 
@@ -11856,6 +11857,11 @@ function fhLineDel(aff,nm,w,d,li){
   fhPut(aff,nm,w,d,lines);
   renderFiche();
   if(typeof updBudget==='function')updBudget();
+  // Re-synchroniser vers le GANTT après suppression — sinon les heures de
+  // la ligne supprimée restaient affichées à tort dans le récap, puisque
+  // seule la SAISIE d'heures redéclenchait cette synchronisation, jamais
+  // la suppression.
+  if(typeof syncFichesToGantt==='function')syncFichesToGantt();
 }
 function fhWeekAdd(aff,nm,w){
   var p=STORE.projects[aff];if(!p)return;
@@ -11871,6 +11877,7 @@ function fhWeekDel(aff,nm,w){
   if(p&&p.fh&&p.fh[nm])delete p.fh[nm][w];
   localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   renderFiche();
+  if(typeof syncFichesToGantt==='function')syncFichesToGantt();
 }
 function fhTotals(aff,nm,w){
   var wkT=0;
@@ -11924,16 +11931,37 @@ function syncFichesToGantt(){
     p.data.forEach(function(r){
       if(r.t!=='act'&&r.t!=='sb')return; // heures comptées sur la tâche OU la sous-phase, selon ce qui est ciblé
       var data=actMap[r.id];
-      if(!data)return;
+      if(!data){
+        // Aucune heure de Feuille d'heures pour cette tâche actuellement.
+        // Si son hReel/ses personnes avaient été fixés par une PRÉCÉDENTE
+        // synchronisation Feuille d'heures (marqué _hReelFromFH), on les
+        // remet à zéro — sinon supprimer la dernière ligne d'une Feuille
+        // d'heures laissait les heures affichées à tort. On ne touche
+        // JAMAIS à un hReel qui viendrait d'ailleurs (barres de couleurs du
+        // GANTT, saisie manuelle) : celui-là n'a jamais ce marqueur.
+        if(r._hReelFromFH){
+          r.hReel=0;
+          r._hReelFromFH=false;
+          r.p=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim()&&!pp.fromFH;});
+          if(!r.p.length)r.p=[{name:'',ent:'',heures:0}];
+        }
+        return;
+      }
       r.hReel=Math.round(data.totalH*10)/10;
+      r._hReelFromFH=true;
       var projPersons=p.persons||[];
       function getType(nm){var m=projPersons.find(function(ap){return ap.name===nm;});return m?m.type||'':'';}
       var newP=[];
       Object.keys(data.persons).forEach(function(nm){
-        newP.push({name:nm,ent:getType(nm),heures:Math.round(data.persons[nm]*10)/10});
+        newP.push({name:nm,ent:getType(nm),heures:Math.round(data.persons[nm]*10)/10,fromFH:true});
       });
+      // Ne conserver que les entrées qui n'ont JAMAIS été alimentées par une
+      // Feuille d'heures (ajoutées à la main directement sur le GANTT) —
+      // sinon, supprimer une ligne dans la Feuille d'heures (ex: le bouton
+      // "✕") ne retirait jamais les heures correspondantes ici, elles
+      // restaient affichées à tort après suppression.
       (r.p||[]).forEach(function(pp){
-        if(pp.name&&pp.name.trim()&&!data.persons[pp.name])newP.push(pp);
+        if(pp.name&&pp.name.trim()&&!data.persons[pp.name]&&!pp.fromFH)newP.push(pp);
       });
       r.p=newP.length?newP:[{name:'',ent:'',heures:0}];
     });
@@ -13327,11 +13355,21 @@ function effHP(a){
   return 0;
 }
 
+// Plie/déplie un groupe (phase, ensemble ou sous-phase) dans le récap
+// affaire courante — même principe que le pli/dépli du GANTT.
+function _recToggle(hdr){
+  var g=hdr.dataset.group;
+  var collapsed=hdr.classList.toggle('rec-collapsed');
+  var arrow=hdr.querySelector('.rec-arrow');
+  if(arrow)arrow.textContent=collapsed?'\u25B6':'\u25BC';
+  document.querySelectorAll('.rec-c-'+g).forEach(function(el){el.style.display=collapsed?'none':'';});
+}
+
 function renderRecap(){
   const maxP=Math.max(...D().filter(r=>r.t==='act').map(a=>a.p.length),1);
   const pc_hdr=Array.from({length:maxP},(_,i)=>`<th>P.${i+1}</th><th>Ent.</th><th>H</th>`).join('');
 
-  function aRow(r){
+  function aRow(r,extraCls){
     const ph=PH_get(r.pk),tot=r.p.reduce((s,p)=>s+(+p.heures||0),0);
     // Statut depuis le GANTT : done > retard réel > en cours > non planifié
     const _reelDays=r.reelDays&&r.reelDays.length?r.reelDays:[];
@@ -13368,7 +13406,7 @@ function renderRecap(){
       const wE=Math.floor(Math.max.apply(null,_prevDays)/5)+1;
       _dateStr='S'+isoWeekOf(wS)+(wS!==wE?'→S'+isoWeekOf(wE):'');
     } else if(r.s>0){_dateStr='S'+isoWeekOf(r.s)+(r.e&&r.e!==r.s?'→S'+isoWeekOf(r.e):'');}
-    return `<tr style="border-bottom:1px solid var(--bd);background:${_isOverdue?'rgba(254,226,226,.2)':r.done?'rgba(209,250,229,.1)':''}">
+    return `<tr class="${extraCls||''}" style="border-bottom:1px solid var(--bd);background:${_isOverdue?'rgba(254,226,226,.2)':r.done?'rgba(209,250,229,.1)':''}">
       <td style="padding:4px 8px;white-space:nowrap">${progBadge}${done}${r.lb}</td>${pc}
       <td style="text-align:right;font-weight:700;color:${tot?'var(--ac)':'var(--tx3)'};">${tot||'—'}</td>
       <td style="text-align:center;font-weight:700;color:var(--or)">${r.hPrev!=null&&r.hPrev>0?r.hPrev+'H':'—'}</td>
@@ -13378,19 +13416,24 @@ function renderRecap(){
     </tr>`;
   }
 
-  function subRow(lb,phColor,pct){
-    const cols=1+maxP*3+6; // activité + personnes + totaux
-    const pctBadge=pct>0?`<span style="margin-left:8px;font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:${phColor};color:#fff">${pct}%</span>`:'';
-    return `<tr><td colspan="${cols}" style="background:${phColor}22;padding:4px 12px;font-size:10px;font-weight:700;color:${phColor};letter-spacing:.5px;border-top:1px solid ${phColor}44">◆ &nbsp;${lb}${pctBadge}</td></tr>`;
+  var _recGid=0;
+
+  function subRow(lb,phColor,pct,gid,parentCls){
+    // ENSEMBLE — fond plein comme avant, mais plus petit.
+    const cols=1+maxP*3+6;
+    const pctBadge=pct>0?`<span style="margin-left:8px;font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:rgba(255,255,255,.25)">${pct}%</span>`:'';
+    return `<tr class="rec-hdr${parentCls?' '+parentCls:''}" data-group="${gid}" onclick="_recToggle(this)" style="cursor:pointer"><td colspan="${cols}" style="background:${phColor};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;letter-spacing:.3px;border-radius:5px;margin:3px 0"><span class="rec-arrow" style="display:inline-block;width:12px">▼</span>\u25A3 &nbsp;${lb}${pctBadge}</td></tr>`;
   }
 
-  function ensRow(lb,phColor,pct){
+  function ensRow(lb,phColor,pct,gid,parentCls){
+    // SOUS-PHASE — reste discrète, nettement en retrait par rapport à
+    // l'ensemble ci-dessus.
     const cols=1+maxP*3+6;
     const pctBadge=pct>0?`<span style="margin-left:8px;font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:${phColor};color:#fff">${pct}%</span>`:'';
-    return `<tr><td colspan="${cols}" style="background:${phColor}14;padding:3px 12px 3px 26px;font-size:9px;font-weight:700;color:${phColor};letter-spacing:.4px;border-top:1px solid ${phColor}33">▸ &nbsp;${lb}${pctBadge}</td></tr>`;
+    return `<tr class="rec-hdr${parentCls?' '+parentCls:''}" data-group="${gid}" onclick="_recToggle(this)" style="cursor:pointer"><td colspan="${cols}" style="background:${phColor}0D;padding:3px 12px 3px 34px;font-size:9px;font-weight:600;color:var(--tx2);letter-spacing:.3px;border-bottom:1px dashed ${phColor}33"><span class="rec-arrow" style="display:inline-block;width:12px;color:${phColor}">▼</span>▸ &nbsp;${lb}${pctBadge}</td></tr>`;
   }
 
-  function buildPhaseBlock(phKey){
+  function buildPhaseBlock(phKey,phGid){
     const ph=PH_get(phKey);
     // Get all rows for this phase in order from D() (preserves sub order)
     const rows=D().filter(r=>r.pk===phKey);
@@ -13398,6 +13441,7 @@ function renderRecap(){
     let totH=0,totPrev=0,totReel=0;
     const _phActsR=rows.filter(r=>r.t==='act');
     const _phPctR=calcWeightedProgress(_phActsR);
+    var _curGroupCls='rec-c-'+phGid; // classe(s) de groupe(s) actives pour la ligne en cours
     rows.forEach(r=>{
       if(r.t==='ens'){
         // Calcul % ensemble dans le recap (regroupe maintenant plusieurs sous-phases)
@@ -13407,7 +13451,9 @@ function renderRecap(){
           const _err=rows[_ej];if(_err.t==='ph'||_err.t==='ens')break;
           if(_err.t==='act')_ensActsR.push(_err);
         }
-        html+=subRow(r.lb,ph.h,calcWeightedProgress(_ensActsR));
+        const _ensGid='reg'+(_recGid++);
+        html+=subRow(r.lb,ph.h,calcWeightedProgress(_ensActsR),_ensGid,'rec-c-'+phGid);
+        _curGroupCls='rec-c-'+phGid+' rec-c-'+_ensGid;
       } else if(r.t==='sb'){
         // Calcul % sous-phase dans le recap (imbriquée dans un ensemble ou directement sous la phase)
         const _sbIdxR=rows.indexOf(r);
@@ -13416,9 +13462,11 @@ function renderRecap(){
           const _rr=rows[_sj];if(_rr.t==='sb'||_rr.t==='ph'||_rr.t==='ens')break;
           if(_rr.t==='act')_sbActsR.push(_rr);
         }
-        html+=ensRow(r.lb,ph.h,calcWeightedProgress(_sbActsR));
+        const _sbGid='reg'+(_recGid++);
+        html+=ensRow(r.lb,ph.h,calcWeightedProgress(_sbActsR),_sbGid,_curGroupCls);
+        _curGroupCls=_curGroupCls+' rec-c-'+_sbGid;
       } else if(r.t==='act'){
-        html+=aRow(r);
+        html+=aRow(r,_curGroupCls);
         totH+=r.p.reduce((s,p)=>s+(+p.heures||0),0);
         totPrev+=(+r.hPrev||0);
         if(r.hReel)totReel+=r.hReel;
@@ -13433,7 +13481,7 @@ function renderRecap(){
     },[]);
     if(_phModifs.length){
       var _mCols=1+maxP*3+6;
-      html+='<tr><td colspan="'+_mCols+'" style="padding:4px 8px 0">';
+      html+='<tr class="rec-c-'+phGid+'"><td colspan="'+_mCols+'" style="padding:4px 8px 0">';
       html+='<div style="background:var(--bg3);border-radius:var(--r2);border:1px solid var(--bd);overflow:hidden;margin-bottom:4px">';
       html+='<div style="background:var(--ac);color:#fff;padding:5px 12px;font-size:10px;font-weight:800;letter-spacing:.5px">🔧 MODIFICATIONS ('+_phModifs.length+')</div>';
       html+='<table style="width:100%;border-collapse:collapse">';
@@ -13452,7 +13500,7 @@ function renderRecap(){
     // Phase total row
     const emptyPc=Array.from({length:maxP*3},()=>'<td></td>').join('');
     const _phPctBadge=_phPctR>0?`<span style="margin-left:8px;font-size:10px;padding:1px 8px;border-radius:10px;background:${ph.h};color:#fff;font-weight:800">${_phPctR}%</span>`:'';
-    html+=`<tr style="background:${ph.h}22;border-top:2px solid ${ph.h}44;font-weight:700">
+    html+=`<tr class="rec-c-${phGid}" style="background:${ph.h}22;border-top:2px solid ${ph.h}44;font-weight:700">
       <td style="padding:4px 8px;color:${ph.h}">Total ${phKey}${_phPctBadge}</td>${emptyPc}
       <td style="text-align:right;color:var(--ac);font-weight:700">${totH||'—'}</td>
       <td style="text-align:center;color:var(--or);font-weight:700">${totPrev||'—'}</td>
@@ -13472,7 +13520,13 @@ function renderRecap(){
     <th style="text-align:center">Durée</th>
   </tr></thead>`;
 
-  const phases=Object.keys(getPH()).filter(function(pk){return D().some(function(r){return r.pk===pk&&r.t==='act';});});
+  // Phases présentes réellement dans les données de l'affaire — pas une
+  // liste figée (getPH() ne connaît que ÉTUDE/TABLEAUTERIE/AUTOMATISME/
+  // CHANTIER par défaut), ce qui faisait disparaître toute phase renommée
+  // ou personnalisée (ex: "CHANTIER PAE") de ce récap. On garde l'ordre
+  // d'apparition dans les données (celui du GANTT), pas un ordre alphabétique.
+  const phases=[];
+  D().forEach(function(r){if(r.t==='ph'&&phases.indexOf(r.pk)<0)phases.push(r.pk);});
 
   // ── Infos affaire ──────────────────────────────────────────────────
   const _pi=currP()&&currP().infos?currP().infos:{};
@@ -13540,12 +13594,13 @@ function renderRecap(){
     const ph=PH_get(pk);
     const hasActs=D().some(r=>r.pk===pk&&r.t==='act');
     if(!hasActs)return;
+    const _phGid='reg'+(_recGid++);
     html+=`<div style="margin-bottom:24px">
-      <div style="background:${ph.h};color:#fff;padding:8px 14px;border-radius:var(--r) var(--r) 0 0;font-size:11px;font-weight:700;letter-spacing:1px">▶ &nbsp;${pk}</div>
-      <div style="overflow-x:auto;border:1px solid ${ph.h}44;border-top:none;border-radius:0 0 var(--r) var(--r)">
+      <div class="rec-hdr" data-group="${_phGid}" onclick="_recToggle(this)" style="cursor:pointer;background:${ph.h};color:#fff;padding:8px 14px;border-radius:var(--r) var(--r) 0 0;font-size:11px;font-weight:700;letter-spacing:1px"><span class="rec-arrow" style="display:inline-block;width:14px">▼</span>&nbsp;${pk}</div>
+      <div class="rec-c-${_phGid}" style="overflow-x:auto;border:1px solid ${ph.h}44;border-top:none;border-radius:0 0 var(--r) var(--r)">
         <table class="rt" style="width:100%">
           ${tableHdr}
-          <tbody>${buildPhaseBlock(pk)}</tbody>
+          <tbody>${buildPhaseBlock(pk,_phGid)}</tbody>
         </table>
       </div>
     </div>`;
