@@ -3778,7 +3778,7 @@ function renderOverview(){
       var vals=wpWk[key];
       if(!vals)continue;
       if(!Array.isArray(vals))vals=[vals];
-      vals.forEach(function(v){if(v&&(v.aff||v.affId||v.actId))allEntries.push({di:di,v:v});});
+      vals.forEach(function(v){if(v&&(v.aff||v.affId||v.actId||(v.comment&&v.comment.trim())))allEntries.push({di:di,v:v});});
     }
     if(!allEntries.length)return;
     hasPlanning=true;
@@ -6147,8 +6147,8 @@ function dbBuildPlanningGrid(){
   function buildActOpts(aff,selId,phaseFilter){if(!aff)return '<option value="">-- Choisir activite --</option>';var o='<option value="">-- Choisir activite --</option>';var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];var sbBase='';var ensLbl='';dat.forEach(function(r){if(r.t==='ens'){sbBase=r.lb;ensLbl='';return;}if(r.t==='sb'){ensLbl=r.lb;return;}if(r.t!=='act')return;if(r.done&&r.id!==selId)return;if(phaseFilter&&!phaseFilter.some(function(pf){return r.pk&&r.pk.indexOf(pf)===0;}))return;var sb=sbBase+(ensLbl?' ▸ '+ensLbl:'');var _ph2=PH_get(r.pk);var _bg2=(_ph2&&_ph2.b)||'';var _xd2=(_ph2&&_ph2.xd)||'#333';o+='<option value="'+r.id+'"'+(selId===r.id?' selected':'')+(_bg2?' style="background:'+_bg2+';color:'+_xd2+'"':'')+'>'+(sb?sb+' ▸ ':'')+r.lb+(r.done?' ✓':'')+'</option>';});return o;}
   function getSavedEntries(nm,di){var key=nm+'::'+di;var val=STORE.weekPlan[selWk][key];if(!val)return [];if(Array.isArray(val))return val;return [val];}
   function getCellRows(nm,di){var saved=getSavedEntries(nm,di);var extraKey=nm+'::'+di;var extra=window._wpExtra[extraKey]||0;var rows=saved.slice();for(var i=0;i<extra;i++)rows.push({aff:'',actId:'',comment:''});if(!rows.length)rows.push({aff:'',actId:'',comment:''});return rows;}
-  function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
-  function removeEntry(nm,di,ei){var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved.splice(ei,1);var clean=saved.filter(function(e){return e.aff||e.actId;});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}else{if(extra>0)window._wpExtra[key]=extra-1;}dbBuildPlanningGrid();}
+  function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId||(e.comment&&e.comment.trim());});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
+  function removeEntry(nm,di,ei){var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved.splice(ei,1);var clean=saved.filter(function(e){return e.aff||e.actId||(e.comment&&e.comment.trim());});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}else{if(extra>0)window._wpExtra[key]=extra-1;}dbBuildPlanningGrid();}
   window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];var _newTree=sel.value?buildActTree(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null):{label:'',panel:''};as.textContent=_newTree.label||'-- Choisir activite --';as.dataset.actid='';as.style.display=sel.value?'block':'none';var _panel=as.nextElementSibling;if(_panel&&_panel.classList.contains('wpat-panel')){_panel.innerHTML=_newTree.panel;_panel.style.display='none';}}
     var _entryDiv=sel.closest('.wp-entry');
     if(_entryDiv){
@@ -6588,10 +6588,14 @@ function dbDownloadWeek(dlMode){
     // l'impression (page-break-inside:avoid) — le navigateur bascule
     // naturellement la ligne suivante en page suivante si elle ne rentre
     // plus, sans jamais couper une personne au milieu.
-    rows+='<tr class="person-row"><td class="nm">'+_avatarHtmlDl+'<span>'+esc(nm)+'</span></td>'+dayCellsHtml+'</tr>';
+    rows+='<tr class="person-row"><td class="nm"><div class="nm-inner">'+_avatarHtmlDl+'<span>'+esc(nm)+'</span></div></td>'+dayCellsHtml+'</tr>';
+    // Ligne de séparation dédiée entre chaque personne — bien plus fiable
+    // qu'une bordure posée sur les cellules, qui peut mal s'afficher selon
+    // le navigateur.
+    rows+='<tr class="sep-row"><td colspan="6" style="height:3px;padding:0;background:#1F2937;border:none"></td></tr>';
   });
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Planning reunion S'+isoWeekOf(selWk)+'</title>'
-    +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px;background:#F8F7FC}'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px;background:#F8F7FC}'
     +'h1{font-size:20px;font-weight:900;color:#1F4E79;margin-bottom:4px;display:flex;align-items:center;gap:8px}'
     +'.meta{font-size:11px;color:#666;margin-bottom:20px}'
     +'table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}'
@@ -6601,7 +6605,8 @@ function dbDownloadWeek(dlMode){
     +'td{padding:8px;border-bottom:1px solid #EEF1F6;vertical-align:top;border-right:1px solid #F3F4F6}'
     +'td:last-child{border-right:none}'
     +'tr.person-row{page-break-inside:avoid;break-inside:avoid}'
-    +'.nm{font-weight:800;color:#1F4E79;background:#F8FAFF;display:flex;align-items:center;gap:8px;vertical-align:middle;font-size:12px}'
+    +'.nm{font-weight:800;color:#000;background:#F8FAFF;vertical-align:middle;font-size:13px}'
+    +'.nm-inner{display:flex;align-items:center;gap:8px}'
     +'.av{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;color:#fff;font-size:10px;font-weight:800;flex-shrink:0}'
     +'.day-cell{background:#FEFEFF}'
     +'.card{border-radius:9px;border-left:4px solid;padding:6px 8px;box-shadow:0 1px 2px rgba(0,0,0,.05);margin-bottom:5px}'
@@ -6611,7 +6616,7 @@ function dbDownloadWeek(dlMode){
     +'.card-comment{font-size:8px;color:#6B7280;margin-top:3px;font-style:italic}'
     +'.empty{color:#B0B7C3;font-style:italic;font-size:10px}'
     +'.pk{border-radius:5px;padding:1px 5px;font-size:8px;font-weight:700;margin-right:4px}'
-    +'@media print{body{background:#fff;padding:0}table{box-shadow:none;border-radius:0}@page{size:A4 landscape;margin:10mm 10mm 16mm 10mm;@bottom-center{content:"Page " counter(page) " / " counter(pages);font-size:9pt;color:#666;font-family:Arial,sans-serif}}}</style>'
+    +'@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{background:#fff;padding:0}table{box-shadow:none;border-radius:0}@page{size:A4 landscape;margin:10mm 10mm 16mm 10mm;@bottom-center{content:"Page " counter(page) " / " counter(pages);font-size:9pt;color:#666;font-family:Arial,sans-serif}}}</style>'
     +'</head><body>'
     +'<h1>&#128197; Planning reunion — '+wkLabel+'</h1>'
     +'<div class="meta">Edite le '+dateEd+' · Planning Petrole</div>'
