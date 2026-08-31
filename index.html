@@ -302,7 +302,18 @@
       // ACTIVEMENT dans un champ de saisie de ces panneaux (en train d'écrire).
       var ae=document.activeElement;
       if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)){
-        if(ae.closest('#exp-panel-row')||ae.closest('#day-popup'))return true;
+        if(ae.closest('#exp-panel-row')||ae.closest('#day-popup')||ae.closest('#db-grid'))return true;
+      }
+      // Planning Réunion : le sélecteur d'activité arborescent (Phase ▸
+      // Ensemble ▸ Sous-phase) n'est pas un INPUT/SELECT classique — c'est un
+      // panneau ouvert (.wpat-panel) qu'on manipule en cliquant. Tant qu'il
+      // est ouvert, l'utilisateur est activement en train de choisir une
+      // tâche pour une case jour/personne : bloquer la synchro distante ici
+      // aussi, sinon une case tout juste cochée pouvait être écrasée avant
+      // même que le choix ne soit sauvegardé.
+      var _openPanels=document.querySelectorAll('#db-grid .wpat-panel');
+      for(var _pi=0;_pi<_openPanels.length;_pi++){
+        if(_openPanels[_pi].style.display==='block')return true;
       }
     }catch(e){}
     return false;
@@ -11841,6 +11852,11 @@ function fhPut(aff,nm,w,d,lines){
   if(!p.fh[nm][w])p.fh[nm][w]={};
   // Keep all lines including empty ones (user needs to see them to fill in)
   p.fh[nm][w][d]=lines.slice();
+  // Horodater : p.fh fait partie des _META_FIELDS fusionnés par horodatage
+  // (_mergeProjectMeta). Sans ce marqueur à jour, une synchro (toutes les 3s,
+  // ou au rechargement) pouvait juger une vieille copie distante de p.fh
+  // "plus récente" et écraser la suppression qu'on vient de faire ici.
+  p._metaModAt=Date.now();
   localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   // Auto-sync to GANTT on every fiche save
   syncFichesToGantt();
@@ -11922,6 +11938,7 @@ function fhWeekDel(aff,nm,w){
   if(!confirm('Supprimer la semaine S'+isoWeekOf(w)+' et toutes ses heures ?'))return;
   var p=STORE.projects[aff];
   if(p&&p.fh&&p.fh[nm])delete p.fh[nm][w];
+  if(p)p._metaModAt=Date.now();
   localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   renderFiche();
   if(typeof syncFichesToGantt==='function')syncFichesToGantt();
@@ -11993,11 +12010,13 @@ function syncFichesToGantt(){
           r._hReelFromFH=false;
           r.p=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim()&&!pp.fromFH;});
           if(!r.p.length)r.p=[{name:'',ent:'',heures:0}];
+          r._modAt=Date.now();
         }
         return;
       }
       r.hReel=Math.round(data.totalH*10)/10;
       r._hReelFromFH=true;
+      r._modAt=Date.now();
       var projPersons=p.persons||[];
       function getType(nm){var m=projPersons.find(function(ap){return ap.name===nm;});return m?m.type||'':'';}
       var newP=[];
