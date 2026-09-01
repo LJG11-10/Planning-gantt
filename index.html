@@ -9844,8 +9844,14 @@ function renderGantt(){
         // Couleurs : Prévue = clair, Réelle = foncé
         const prevBg=inPrev?ph.xl:'transparent';
         const reelBg=inReel?ph.xd:'transparent';
+        // Infobulle : commentaire s'il y en a un sur cette barre (clic droit
+        // pour en ajouter/modifier un), sinon le rappel d'usage habituel.
+        const _cmtParts=[];
+        if(inPrev&&row.barComments&&row.barComments.prev)_cmtParts.push('💬 Prévu : '+row.barComments.prev);
+        if(inReel&&row.barComments&&row.barComments.reel)_cmtParts.push('💬 Réel : '+row.barComments.reel);
+        const cellTitle=_cmtParts.length?_cmtParts.join(' — ').replace(/"/g,'&quot;'):'Clic haut=Prévu / Clic bas=Réel · Clic droit=Commentaire/Déplacer';
 
-        dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d},event)" onmousemove="gcMove(event)" title="Clic haut=Prévu / Clic bas=Réel" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
+        dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d},event)" onmousemove="gcMove(event)" oncontextmenu="gcContextMenu('${row.id}',${w},${d},event)" title="${cellTitle}" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
           <div style="height:32px;margin:3px 0 2px;background:${prevBg};border-radius:${prevRad};${inPrev?'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
             ${isFirstPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55);padding-left:2px">P</span>`:''}
           </div>
@@ -12856,7 +12862,166 @@ function wkendToggle(rid, absDay, ev){
   _reRenderGanttKeepScroll();
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Menu contextuel (clic droit) sur une barre GANTT : commentaire au survol
+// + "Déplacer tout" (décale toute la barre, prévu ou réel, en gardant sa
+// longueur). Réutilise volontairement les mêmes mécanismes que le reste du
+// GANTT (prevDays/reelDays + _syncTaskMeta + _reRenderGanttKeepScroll),
+// pour rester garanti compatible avec tout ce qui lit déjà ces champs
+// (téléchargements Planning interne/client, Planning Réunion, Récap...).
+// ═══════════════════════════════════════════════════════════════════════
+function gcContextMenu(rid,w,d,ev){
+  ev.preventDefault();
+  ev.stopPropagation();
+  if(window._gcMoveState){_gcCancelMove();return;}
+  var r=D().find(function(x){return x.id===rid;});
+  if(!r)return;
+  var rect=ev.currentTarget.getBoundingClientRect();
+  var relY=ev.clientY-rect.top;
+  var mode=(relY<rect.height/2)?'prev':'reel';
+  window._gcCtxTarget={rid:rid,mode:mode};
+  _gcShowContextMenu(ev.clientX,ev.clientY,r,mode);
+}
+function _gcShowContextMenu(x,y,r,mode){
+  _gcCloseContextMenu();
+  var modeLabel=mode==='prev'?'Prévu':'Réel';
+  var hasComment=!!(r.barComments&&r.barComments[mode]);
+  var menu=document.createElement('div');
+  menu.id='_gcCtxMenu';
+  var mw=220,mh=90;
+  var px=Math.min(x,window.innerWidth-mw-8);
+  var py=Math.min(y,window.innerHeight-mh-8);
+  menu.style.cssText='position:fixed;left:'+px+'px;top:'+py+'px;z-index:99999;background:var(--bg1,#fff);border:1px solid var(--bd);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);padding:6px;min-width:'+mw+'px;font-family:inherit;font-size:12px';
+  menu.innerHTML=
+    '<div style="padding:5px 10px 6px;font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.3px">Barre '+modeLabel+'</div>'
+    +'<button onclick="gcCtxComment()" style="display:flex;align-items:center;gap:7px;width:100%;text-align:left;padding:8px 10px;border:none;background:none;cursor:pointer;font-size:12px;border-radius:6px;font-family:inherit;color:var(--tx)">💬 '+(hasComment?'Modifier le commentaire':'Ajouter un commentaire')+'</button>'
+    +'<button onclick="gcCtxMoveAll()" style="display:flex;align-items:center;gap:7px;width:100%;text-align:left;padding:8px 10px;border:none;background:none;cursor:pointer;font-size:12px;border-radius:6px;font-family:inherit;color:var(--tx)">➡️ Déplacer tout</button>';
+  menu.querySelectorAll('button').forEach(function(b){
+    b.onmouseenter=function(){b.style.background='var(--bg3)';};
+    b.onmouseleave=function(){b.style.background='none';};
+  });
+  document.body.appendChild(menu);
+  setTimeout(function(){document.addEventListener('mousedown',_gcCtxOutsideClick);document.addEventListener('keydown',_gcCtxEscClose);},0);
+}
+function _gcCtxOutsideClick(ev){
+  var menu=document.getElementById('_gcCtxMenu');
+  if(menu&&!menu.contains(ev.target))_gcCloseContextMenu();
+}
+function _gcCtxEscClose(ev){if(ev.key==='Escape')_gcCloseContextMenu();}
+function _gcCloseContextMenu(){
+  var menu=document.getElementById('_gcCtxMenu');
+  if(menu)menu.remove();
+  document.removeEventListener('mousedown',_gcCtxOutsideClick);
+  document.removeEventListener('keydown',_gcCtxEscClose);
+}
+function gcCtxComment(){
+  var t=window._gcCtxTarget;
+  _gcCloseContextMenu();
+  if(!t)return;
+  var r=D().find(function(x){return x.id===t.rid;});
+  if(!r)return;
+  var cur=(r.barComments&&r.barComments[t.mode])||'';
+  var txt=prompt('Commentaire pour la barre '+(t.mode==='prev'?'Prévu':'Réel')+' de "'+(r.lb||'')+'" :',cur);
+  if(txt===null)return; // annulé, on ne touche à rien
+  txt=txt.trim();
+  if(!r.barComments)r.barComments={};
+  if(txt)r.barComments[t.mode]=txt;else delete r.barComments[t.mode];
+  saveNow();
+  _reRenderGanttKeepScroll();
+}
+window._gcMoveState=null;
+function gcCtxMoveAll(){
+  var t=window._gcCtxTarget;
+  _gcCloseContextMenu();
+  if(!t)return;
+  var r=D().find(function(x){return x.id===t.rid;});
+  if(!r)return;
+  // Capturer ICI, une fois pour toutes, la position ET la durée exactes de
+  // CHAQUE barre (Prévu et Réel) telles qu'affichées à l'instant du clic
+  // droit — y compris si Réel n'a jamais été peint à la main et se contente
+  // aujourd'hui de calquer Prévu (comportement normal du site). En les
+  // figeant maintenant, on garantit que chacune garde EXACTEMENT sa
+  // longueur actuelle pendant tout le déplacement, sans qu'aucune ne
+  // "suive" ou ne se redimensionne à cause de ce calque automatique.
+  var prevDays=getTaskDays5(r,'prev').slice().sort(function(a,b){return a-b;});
+  var reelDays=getTaskDays5(r,'reel').slice().sort(function(a,b){return a-b;});
+  if(!prevDays.length&&!reelDays.length){alert('Aucune barre à déplacer ici.');return;}
+  var anchor=prevDays.length?prevDays[0]:reelDays[0];
+  window._gcMoveState={rid:t.rid,prevDays:prevDays,reelDays:reelDays,anchor:anchor};
+  _gcShowMoveHint(r,prevDays.length,reelDays.length);
+  document.addEventListener('keydown',_gcMoveEscHandler);
+}
+function _gcShowMoveHint(r,prevCount,reelCount){
+  var old=document.getElementById('_gcMoveHint');
+  if(old)old.remove();
+  var parts=[];
+  if(prevCount)parts.push('Prévu '+prevCount+'j');
+  if(reelCount)parts.push('Réel '+reelCount+'j');
+  var hint=document.createElement('div');
+  hint.id='_gcMoveHint';
+  hint.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99999;background:#1F2937;color:#fff;padding:9px 10px 9px 18px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;gap:10px;font-family:inherit';
+  hint.innerHTML='📦 Déplacement de « '+esc0(r.lb||'')+' » ('+parts.join(' + ')+') — cliquez sur la nouvelle position<button onclick="_gcCancelMove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:999px;padding:4px 12px;cursor:pointer;font-size:11px;font-family:inherit">✕ Annuler (Échap)</button>';
+  document.body.appendChild(hint);
+}
+function _gcMoveEscHandler(ev){if(ev.key==='Escape')_gcCancelMove();}
+function _gcCancelMove(){
+  window._gcMoveState=null;
+  var h=document.getElementById('_gcMoveHint');
+  if(h)h.remove();
+  document.querySelectorAll('.gcell').forEach(function(td){td.style.outline='';});
+  document.removeEventListener('keydown',_gcMoveEscHandler);
+}
+// Aperçu : surligne, sur la ligne de la tâche, les cases où atterriraient
+// les DEUX barres (Prévu en bleu, Réel en vert) si on validait ici — chacune
+// garde sa longueur d'origine, et leur écart l'une par rapport à l'autre
+// reste identique (elles bougent comme un seul bloc rigide).
+function _gcMoveHighlight(targetW,targetD){
+  var ms=window._gcMoveState;
+  if(!ms)return;
+  document.querySelectorAll('.gcell[data-rid="'+ms.rid+'"]').forEach(function(td){td.style.outline='';});
+  var targetD5=(targetW-1)*5+targetD;
+  var offset=targetD5-ms.anchor;
+  function paint(days,color){
+    days.forEach(function(d0){
+      var d5=d0+offset;
+      if(d5<0)return;
+      var w2=Math.floor(d5/5)+1,d2=d5%5;
+      var cell=document.querySelector('.gcell[data-rid="'+ms.rid+'"][data-w="'+w2+'"][data-d="'+d2+'"]');
+      if(cell)cell.style.outline='2px inset '+color;
+    });
+  }
+  paint(ms.prevDays,'rgba(37,99,235,.8)');
+  paint(ms.reelDays,'rgba(22,163,74,.8)');
+}
+// Validation : déplace les deux barres capturées au clic droit, chacune
+// gardant strictement sa longueur d'origine, en conservant l'écart entre
+// elles (déplacement "en bloc rigide").
+function _gcCommitMove(targetW,targetD){
+  var ms=window._gcMoveState;
+  if(!ms)return;
+  var r=D().find(function(x){return x.id===ms.rid;});
+  if(r){
+    var targetD5=(targetW-1)*5+targetD;
+    var offset=targetD5-ms.anchor;
+    if(ms.prevDays.length)r.prevDays=ms.prevDays.map(function(d){return Math.max(0,d+offset);});
+    if(ms.reelDays.length)r.reelDays=ms.reelDays.map(function(d){return Math.max(0,d+offset);});
+    _syncTaskMeta(r);
+    saveNow();
+  }
+  window._gcMoveState=null;
+  var h=document.getElementById('_gcMoveHint');
+  if(h)h.remove();
+  document.removeEventListener('keydown',_gcMoveEscHandler);
+  renderGantt();
+}
+
 function gcDown(rid, w, d, ev){
+  if(ev&&ev.button!==0)return; // clic droit/molette : jamais de peinture/suppression, seul le clic gauche agit sur les barres
+  if(window._gcMoveState){ // un déplacement "glisser" est en cours : ce clic gauche valide la nouvelle position
+    if(ev)ev.stopPropagation();
+    _gcCommitMove(w,d);
+    return;
+  }
   if(ev)ev.stopPropagation();
   var rect=ev&&ev.currentTarget?ev.currentTarget.getBoundingClientRect():null;
   var relY=rect?(ev.clientY-rect.top):40;
@@ -12882,6 +13047,7 @@ function gcDown(rid, w, d, ev){
 }
 
 function gcEnter(rid, w, d, ev){
+  if(window._gcMoveState){_gcMoveHighlight(w,d);return;}
   if(!_gc.active||_gc.rid!==rid)return;
   _gc.w2=w; _gc.d2=d;
   if(ev&&ev.currentTarget){
