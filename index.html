@@ -9281,22 +9281,34 @@ function _pfAvatars(names){
   html+='</div>';
   return html;
 }
-// Rassemble les tâches ('act') qui suivent un marqueur ens/sb/ph donné, dans
-// l'ordre de p.data, jusqu'au prochain marqueur — même logique que dans le
-// GANTT d'une affaire, réutilisée ici pour calculer les barres de chaque
-// ensemble/sous-phase quand on déplie une phase.
+// Rassemble les tâches ('act') associées à un marqueur ens/sb donné.
+// Pour une SOUS-PHASE : tâches directement en dessous, jusqu'au prochain
+// marqueur (ens/sb/ph) — la sous-phase est le niveau le plus fin.
+// Pour un ENSEMBLE : TOUTES les tâches de TOUTES ses sous-phases imbriquées,
+// jusqu'au prochain ensemble ou phase — sans s'arrêter à la première
+// sous-phase rencontrée (sinon un ensemble n'a jamais de tâche "directe" et
+// disparaît à tort du dépliage, puisque ses tâches sont toujours nichées
+// sous ses sous-phases, jamais directement sous lui).
 function _pfRowActs(pData,startIdx){
+  var startRow=pData[startIdx];
   var acts=[];
   for(var i=startIdx+1;i<pData.length;i++){
     var r=pData[i];
-    if(r.t==='ph'||r.t==='ens'||r.t==='sb')break;
+    if(r.t==='ph')break;
+    if(startRow.t==='ens'&&r.t==='ens')break;
+    if(startRow.t==='sb'&&(r.t==='ens'||r.t==='sb'))break;
     if(r.t==='act')acts.push(r);
   }
   return acts;
 }
 window._pfExpandedPhases=window._pfExpandedPhases||{};
+window._pfExpandedEns=window._pfExpandedEns||{};
 function _pfTogglePhase(key){
   window._pfExpandedPhases[key]=!window._pfExpandedPhases[key];
+  renderPortfolio();
+}
+function _pfToggleEns(key){
+  window._pfExpandedEns[key]=!window._pfExpandedEns[key];
   renderPortfolio();
 }
 function renderPortfolio(){
@@ -9510,24 +9522,68 @@ function renderPortfolio(){
       // ── Déplié : Ensemble(s) et Sous-phase(s) de cette phase ───────
       if(isExp){
         var phIdx=p.data.indexOf(phRow);
+        var curEnsId=null,curEnsExp=true; // pas d'ensemble en cours = sous-phase directement sous la phase, toujours visible
         for(var di=phIdx+1;di<p.data.length;di++){
           var dr=p.data[di];
           if(dr.t==='ph')break;
           if(dr.t!=='ens'&&dr.t!=='sb')continue;
+
+          if(dr.t==='ens'){
+            var ensKey=aff+'::'+pk+'::'+dr.id;
+            curEnsId=dr.id;
+            curEnsExp=!!window._pfExpandedEns[ensKey];
+            var ensActs=_pfRowActs(p.data,di);
+            if(!ensActs.length)continue;
+            var ensPrevWks=getBarWeeks(ensActs,'prev');
+            var ensReelWks=getBarWeeks(ensActs,'reel');
+            var ensPers={};
+            ensActs.forEach(function(a){(a.p||[]).forEach(function(pp){if(pp.name)ensPers[pp.name]=true;});});
+
+            html+='<tr style="background:'+rowBg+';cursor:pointer" onclick="_pfToggleEns(\''+ensKey.replace(/'/g,"\\'")+'\')">';
+            html+='<td style="position:sticky;left:0;z-index:3;background:'+rowBg+';padding:5px 14px 5px 32px;border-top:1px solid #F7F8FA">';
+            html+='<div style="display:flex;align-items:center;gap:6px">';
+            html+='<span style="font-size:8px;color:var(--tx3);width:9px;flex-shrink:0">'+(curEnsExp?'▾':'▸')+'</span>';
+            html+='<span style="font-size:9.5px;font-weight:700;color:'+ph.h+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">'+esc0(dr.lb||dr.pk)+'</span>';
+            if(Object.keys(ensPers).length)html+=_pfAvatars(Object.keys(ensPers));
+            html+='</div></td>';
+
+            for(var we=minWk;we<=maxWk;we++){
+              var isNe=we===todayWk;
+              var hasPe=!!ensPrevWks[we],hasRe=!!ensReelWks[we];
+              var cellE='';
+              if(hasPe){
+                var pse=!ensPrevWks[we-1],pee=!ensPrevWks[we+1];
+                var brE=(pse?'4':'0')+'px '+(pee?'4':'0')+'px '+(pee?'4':'0')+'px '+(pse?'4':'0')+'px';
+                cellE+='<div style="height:7px;margin:0 1px 2px;background:'+ph.h+';opacity:.7;border-radius:'+brE+'"></div>';
+              }
+              if(hasRe){
+                var rse=!ensReelWks[we-1],ree=!ensReelWks[we+1];
+                cellE+='<div style="height:5px;margin:0 1px;background:#F59E0B;opacity:.75;border-radius:'+(rse?'3':'0')+'px '+(ree?'3':'0')+'px '+(ree?'3':'0')+'px '+(rse?'3':'0')+'px"></div>';
+              }
+              html+='<td style="padding:5px 0;border-top:1px solid #F7F8FA;background:'+(isNe?'rgba(99,102,241,.03)':'transparent')+'">'+cellE+'</td>';
+            }
+            html+='</tr>';
+            continue;
+          }
+
+          // dr.t==='sb' : n'afficher que si elle n'est pas sous un ensemble
+          // replié (curEnsId===null signifie qu'elle est directement sous la
+          // phase, sans ensemble parent)
+          if(curEnsId!==null&&!curEnsExp)continue;
+
           var drActs=_pfRowActs(p.data,di);
-          if(!drActs.length&&dr.t!=='sb')continue;
+          if(!drActs.length&&!(dr.headcount&&Object.keys(dr.headcount).length))continue;
           var drPrevWks=getBarWeeks(drActs,'prev');
           var drReelWks=getBarWeeks(drActs,'reel');
-          var isSb=dr.t==='sb';
-          var drHC=isSb&&isChantier?(dr.headcount||{}):null;
+          var drHC=isChantier?(dr.headcount||{}):null;
           var drPers={};
           drActs.forEach(function(a){(a.p||[]).forEach(function(pp){if(pp.name)drPers[pp.name]=true;});});
 
           html+='<tr style="background:'+rowBg+'">';
-          html+='<td style="position:sticky;left:0;z-index:3;background:'+rowBg+';padding:5px 14px 5px '+(isSb?'42px':'32px')+';border-top:1px solid #F7F8FA">';
+          html+='<td style="position:sticky;left:0;z-index:3;background:'+rowBg+';padding:5px 14px 5px '+(curEnsId!==null?'46px':'32px')+';border-top:1px solid #F7F8FA">';
           html+='<div style="display:flex;align-items:center;gap:6px">';
-          html+='<span style="font-size:9px;color:'+(ph.h)+';opacity:.7;flex-shrink:0">'+(isSb?'◆':'▸')+'</span>';
-          html+='<span style="font-size:9.5px;font-weight:600;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">'+esc0(dr.lb||dr.pk)+(isSb&&isChantier?' 👷':'')+'</span>';
+          html+='<span style="font-size:9px;color:'+(ph.h)+';opacity:.7;flex-shrink:0">◆</span>';
+          html+='<span style="font-size:9.5px;font-weight:600;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">'+esc0(dr.lb||dr.pk)+(isChantier?' 👷':'')+'</span>';
           if(Object.keys(drPers).length)html+=_pfAvatars(Object.keys(drPers));
           html+='</div></td>';
 
