@@ -4567,7 +4567,7 @@ function dbRecap(){
     var delta=reel-prev;
     var done=acts.filter(function(a){return a.done;}).length;
     // Avancement pondéré par H Prévues sur les % de tâches saisis
-    var pct=calcWeightedProgress(acts);
+    var pct=calcHierProgress(p.data,{});
     var budPct=bud?Math.min(100,reel/bud*100):0;
     var isCurrent=aff===STORE.current;
 
@@ -5571,7 +5571,7 @@ function downloadPlanning(mode){
   var totP=acts.reduce(function(s,a){return s+(+a.hPrev||0);},0);
   var totR=acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
   var done=acts.filter(function(a){return a.done;}).length;
-  var pct=calcWeightedProgress(acts.filter(function(a){return a.hPrev>0||a.progress>0||a.done;}));
+  var pct=calcHierProgress(p.data,{includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}});
   var bud=p.budget||0;
   var ecart=Math.round((totR-totP)*10)/10;
 
@@ -5621,23 +5621,26 @@ function downloadPlanning(mode){
       curEnsGroupId=null;curSbGroupId=null;curPhGroupId=null;curEnsIdZ=null;
       if(!_clientRowIncluded(r.pk,null))return;
       curPhGroupId='pcg'+(_pcGid++);
+      var _dlPhPct=_countsInProgress(r.pk)?' <span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:rgba(255,255,255,.25);color:#fff">'+calcHierProgress(p.data,{filterPk:r.pk,includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}})+'%</span>':'';
       body+='<tr class="pc-hdr pc-collapsed" data-group="'+curPhGroupId+'" onclick="_pcToggle(this)" style="cursor:pointer;background:#1F4E79">'
-        +'<td colspan="'+_nbColsRecap+'" style="padding:8px 10px;color:#fff;font-weight:800;font-size:12px"><span class="pc-arrow">\u25B6</span> \u25A0 '+esc(r.pk)+'</td></tr>';
+        +'<td colspan="'+_nbColsRecap+'" style="padding:8px 10px;color:#fff;font-weight:800;font-size:12px"><span class="pc-arrow">\u25B6</span> \u25A0 '+esc(r.pk)+_dlPhPct+'</td></tr>';
       return;
     }
     if(r.t==='ens'){
       curSbGroupId=null;curEnsIdZ=r.id;
       if(!_clientRowIncluded(r.pk,r.id))return;
       curEnsGroupId='pcg'+(_pcGid++);
+      var _dlEnsPct=_countsInProgress(r.pk)?' <span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#1F4E79;color:#fff">'+calcHierProgress(p.data,{filterEnsId:r.id,includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}})+'%</span>':'';
       body+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupId?' pc-c-'+curPhGroupId:'')+'" data-group="'+curEnsGroupId+'" data-groups="'+(curPhGroupId||'')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:#EFF6FF">'
-        +'<td colspan="'+_nbColsRecap+'" style="padding:6px 10px 6px 26px;color:#1F4E79;font-weight:700;font-size:11px"><span class="pc-arrow">\u25B6</span> \u25B8 '+esc(r.lb)+'</td></tr>';
+        +'<td colspan="'+_nbColsRecap+'" style="padding:6px 10px 6px 26px;color:#1F4E79;font-weight:700;font-size:11px"><span class="pc-arrow">\u25B6</span> \u25B8 '+esc(r.lb)+_dlEnsPct+'</td></tr>';
       return;
     }
     if(r.t==='sb'){
       if(!_clientRowIncluded(r.pk,curEnsIdZ))return;
       curSbGroupId='pcg'+(_pcGid++);
+      var _dlSbPct=_countsInProgress(r.pk)?' <span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#4B5563;color:#fff">'+calcHierProgress(p.data,{filterSbId:r.id})+'%</span>':'';
       body+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupId?' pc-c-'+curPhGroupId:'')+(curEnsGroupId?' pc-c-'+curEnsGroupId:'')+'" data-group="'+curSbGroupId+'" data-groups="'+[curPhGroupId,curEnsGroupId].filter(Boolean).join(' ')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:#F9FAFB">'
-        +'<td colspan="'+_nbColsRecap+'" style="padding:5px 10px 5px 40px;color:#4B5563;font-weight:700;font-size:10px"><span class="pc-arrow">\u25B6</span> \u25C6 '+esc(r.lb)+'</td></tr>';
+        +'<td colspan="'+_nbColsRecap+'" style="padding:5px 10px 5px 40px;color:#4B5563;font-weight:700;font-size:10px"><span class="pc-arrow">\u25B6</span> \u25C6 '+esc(r.lb)+_dlSbPct+'</td></tr>';
       return;
     }
     if(r.t!=='act')return;
@@ -5830,7 +5833,8 @@ function downloadPlanning(mode){
         if(!_clientRowIncluded(curPk,null))return;
         curPhGroupG='pcg'+(_pcGid++);
         var phC=getPHC(curPk);
-        html+='<tr class="pc-hdr pc-collapsed" data-group="'+curPhGroupG+'" onclick="_pcToggle(this)" style="cursor:pointer;background:'+phC.h+';color:#fff"><td colspan="'+(numW+1)+'" style="padding:8px 10px;font-weight:800;font-size:15px;letter-spacing:.4px;border-top:3px solid rgba(0,0,0,.2)"><div style="position:sticky;left:10px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25A0 '+esc(curPk)+'</div></td></tr>';
+        var _dlPhPctG=_countsInProgress(curPk)?' <span style="font-size:11px;font-weight:900;padding:1px 9px;border-radius:10px;background:rgba(255,255,255,.9);color:'+phC.h+'">'+calcHierProgress(p.data,{filterPk:curPk,includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}})+'%</span>':'';
+        html+='<tr class="pc-hdr pc-collapsed" data-group="'+curPhGroupG+'" onclick="_pcToggle(this)" style="cursor:pointer;background:'+phC.h+';color:#fff"><td colspan="'+(numW+1)+'" style="padding:8px 10px;font-weight:800;font-size:15px;letter-spacing:.4px;border-top:3px solid rgba(0,0,0,.2)"><div style="position:sticky;left:10px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25A0 '+esc(curPk)+_dlPhPctG+'</div></td></tr>';
         return;
       }
       if(r.t==='ens'){
@@ -5838,7 +5842,8 @@ function downloadPlanning(mode){
         if(!_clientRowIncluded(curPk,r.id))return;
         curEnsGroupG='pcg'+(_pcGid++);
         var phC=getPHC(curPk);
-        html+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupG?' pc-c-'+curPhGroupG:'')+'" data-group="'+curEnsGroupG+'" data-groups="'+(curPhGroupG||'')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:'+phC.xl+';color:'+phC.h+'"><td colspan="'+(numW+1)+'" style="padding:6px 10px 6px 22px;font-weight:800;font-size:13px;letter-spacing:.3px;border-top:1px solid rgba(0,0,0,.08)"><div style="position:sticky;left:22px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25B8 '+esc(r.lb)+'</div></td></tr>';
+        var _dlEnsPctG=_countsInProgress(curPk)?' <span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:9px;background:'+phC.h+';color:#fff">'+calcHierProgress(p.data,{filterEnsId:r.id,includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}})+'%</span>':'';
+        html+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupG?' pc-c-'+curPhGroupG:'')+'" data-group="'+curEnsGroupG+'" data-groups="'+(curPhGroupG||'')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:'+phC.xl+';color:'+phC.h+'"><td colspan="'+(numW+1)+'" style="padding:6px 10px 6px 22px;font-weight:800;font-size:13px;letter-spacing:.3px;border-top:1px solid rgba(0,0,0,.08)"><div style="position:sticky;left:22px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25B8 '+esc(r.lb)+_dlEnsPctG+'</div></td></tr>';
         return;
       }
       if(r.t==='sb'){
@@ -5846,7 +5851,8 @@ function downloadPlanning(mode){
         if(!_clientRowIncluded(curPk,curEnsIdW))return;
         curSbGroupG='pcg'+(_pcGid++);
         var phC=getPHC(curPk);
-        html+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupG?' pc-c-'+curPhGroupG:'')+(curEnsGroupG?' pc-c-'+curEnsGroupG:'')+'" data-group="'+curSbGroupG+'" data-groups="'+[curPhGroupG,curEnsGroupG].filter(Boolean).join(' ')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:#F3F4F6;color:#4B5563"><td colspan="'+(numW+1)+'" style="padding:5px 10px 5px 36px;font-weight:700;font-size:12px;letter-spacing:.2px"><div style="position:sticky;left:36px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25C6 '+esc(r.lb)+'</div></td></tr>';
+        var _dlSbPctG=_countsInProgress(curPk)?' <span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#4B5563;color:#fff">'+calcHierProgress(p.data,{filterSbId:r.id})+'%</span>':'';
+        html+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupG?' pc-c-'+curPhGroupG:'')+(curEnsGroupG?' pc-c-'+curEnsGroupG:'')+'" data-group="'+curSbGroupG+'" data-groups="'+[curPhGroupG,curEnsGroupG].filter(Boolean).join(' ')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:#F3F4F6;color:#4B5563"><td colspan="'+(numW+1)+'" style="padding:5px 10px 5px 36px;font-weight:700;font-size:12px;letter-spacing:.2px"><div style="position:sticky;left:36px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25C6 '+esc(r.lb)+_dlSbPctG+'</div></td></tr>';
         return;
       }
       if(r.t!=='act')return;
@@ -8051,6 +8057,72 @@ function updDateBudget(){
   saveNow();updBudget();
 }
 function updSettings(){saveNow();}
+// ── Avancement : quelles phases comptent ? ────────────────────────────
+// Chantier et Automatisme comptent dans l'avancement de l'affaire. Études
+// et Tableauterie n'y participent jamais (pas de notion de "% avancement"
+// pour elles — juste des barres de couleur + case "Terminé"). Toute autre
+// phase personnalisée, non reconnue, est exclue par prudence par défaut.
+function _isAutomatismePhase(pk){return pk&&pk.toUpperCase().indexOf('AUTOMATISME')>=0;}
+function _isProgressExcludedPhase(pk){
+  var u=(pk||'').toUpperCase();
+  return u.indexOf('ETUDE')>=0||u.indexOf('TABLEAUTERIE')>=0;
+}
+function _countsInProgress(pk){
+  return (_isChantierPhase(pk)||_isAutomatismePhase(pk))&&!_isProgressExcludedPhase(pk);
+}
+function toggleExcludeProgress(id){
+  var r=D().find(function(x){return x.id===id;});
+  if(!r)return;
+  r.excludeProgress=!r.excludeProgress;
+  if(r.excludeProgress){r.inProgress=false;r.progress=0;} // perd aussi l'icône "en cours"
+  saveNow();refreshAllTabs();
+}
+// ── Calcul hiérarchique de l'avancement ────────────────────────────────
+// À l'intérieur d'une sous-phase : les tâches qui comptent (non exclues)
+// pèsent à PARTS ÉGALES entre elles (peu importe leurs heures).
+// Entre les sous-phases d'une même phase (regroupées ou non par un
+// ensemble) : chaque sous-phase pèse selon la SOMME DES HEURES PRÉVUES DE
+// TOUTES ses tâches (le "budget" réel de la sous-phase, exclues comprises —
+// l'exclusion ne retire une tâche que du calcul du %, pas du poids/budget).
+// Entre Chantier et Automatisme, au niveau affaire : même principe, pondéré
+// par leurs heures respectives.
+//
+// pData : tableau ordonné de lignes (ph/ens/sb/act), typiquement p.data (ou
+// un sous-ensemble déjà filtré par phase, dans le même ordre).
+// opts.filterSbId  : ne calculer que pour CETTE sous-phase précise.
+// opts.filterEnsId : ne calculer que pour CET ensemble précis (regroupe ses sous-phases).
+// opts.filterPk    : ne calculer que pour CETTE phase précise.
+// opts.includeSb(sb) : filtre additionnel optionnel (ex: sélection export client).
+// Sans aucun filtre : avancement global de l'affaire (Chantier+Automatisme
+// uniquement, Études/Tableauterie exclues automatiquement).
+function calcHierProgress(pData,opts){
+  opts=opts||{};
+  var sbList=[];
+  var curPk=null,curEnsId=null,curSb=null;
+  (pData||[]).forEach(function(r){
+    if(r.t==='ph'){curPk=r.pk;curEnsId=null;curSb=null;}
+    else if(r.t==='ens'){curEnsId=r.id;curSb=null;}
+    else if(r.t==='sb'){curSb={pk:curPk,ensId:curEnsId,sbId:r.id,tasks:[]};sbList.push(curSb);}
+    else if(r.t==='act'){if(curSb)curSb.tasks.push(r);}
+  });
+  var hasExplicitFilter=!!(opts.filterSbId||opts.filterEnsId||opts.filterPk);
+  var weightedSum=0,totalWeight=0;
+  sbList.forEach(function(sb){
+    if(opts.filterSbId&&sb.sbId!==opts.filterSbId)return;
+    if(opts.filterEnsId&&sb.ensId!==opts.filterEnsId)return;
+    if(opts.filterPk&&sb.pk!==opts.filterPk)return;
+    if(opts.includeSb&&!opts.includeSb(sb))return;
+    if(!hasExplicitFilter&&!_countsInProgress(sb.pk))return;
+    var weight=sb.tasks.reduce(function(s,a){return s+(+a.hPrev||0);},0);
+    var counted=sb.tasks.filter(function(a){return !a.excludeProgress;});
+    if(!counted.length)return;
+    var sbPct=counted.reduce(function(s,a){return s+(a.done?100:(+a.progress||0));},0)/counted.length;
+    weightedSum+=sbPct*weight;
+    totalWeight+=weight;
+  });
+  return totalWeight>0?Math.round(weightedSum/totalWeight):0;
+}
+
 // ── Calcul % avancement pondéré par H Prévues ────────────────────────
 // Paramètre : tableau de rows de type 'act'
 // Retourne : % pondéré (0-100)
@@ -9715,9 +9787,9 @@ function renderGantt(){
       const _phReel=_phActs.reduce(function(s,a){return s+(+a.hReel||0);},0);
       const _phDiff=_phReel-_phPrev;
       const _phBudget=row.budgetH||0;
-      const _phProgress=calcWeightedProgress(_phActs);
+      const _phProgress=calcHierProgress(D(),{filterPk:row.pk});
       const _phBadge=
-        (_phProgress>0?`<span style="font-size:10px;font-weight:900;margin-left:10px;padding:1px 8px;background:rgba(255,255,255,.9);color:${ph.h};border-radius:10px">${_phProgress}%</span>`:'')
+        (_countsInProgress(row.pk)?`<span style="font-size:10px;font-weight:900;margin-left:10px;padding:1px 8px;background:rgba(255,255,255,.9);color:${ph.h};border-radius:10px">${_phProgress}%</span>`:'')
         +`<span onclick="event.stopPropagation();phSetBudget('${row.pk}',${_phBudget})" style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:rgba(255,255,255,.25);border-radius:4px;cursor:pointer" title="Budget heures">${_phBudget>0?'Budget:'+_phBudget+'H':'+ Budget'}</span>`
         +`<span onclick="event.stopPropagation();phSetNotifResps('${row.pk}')" style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:${row.notifResps&&row.notifResps.length?'rgba(255,255,255,.4)':'rgba(255,255,255,.15)'};border-radius:4px;cursor:pointer" title="Responsables alertes retard">${row.notifResps&&row.notifResps.length?'\uD83D\uDD14 '+row.notifResps.length+' resp.':'\uD83D\uDD14 Alertes'}</span>`
         +(_phPrev>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">P:${_phPrev}H</span>`:'')
@@ -9745,8 +9817,8 @@ function renderGantt(){
         if(_er.t==='ph'||_er.t==='ens')break;
         if(_er.t==='act')_ensActs.push(_er);
       }
-      const _ensPct=calcWeightedProgress(_ensActs);
-      const _ensPctBadge=_ensPct>0?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.15);color:${ph.t}">${_ensPct}%</span>`:'';
+      const _ensPct=calcHierProgress(D(),{filterEnsId:row.id});
+      const _ensPctBadge=_countsInProgress(row.pk)?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.15);color:${ph.t}">${_ensPct}%</span>`:'';
       const _ensBudget=row.budgetH||0;
       const _ensBudBadge=`<span onclick="event.stopPropagation();ensSetBudget('${row.id}',${_ensBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.25);border-radius:3px;cursor:pointer" title="Budget ensemble">${_ensBudget>0?'B:'+_ensBudget+'H':'+ Budget'}</span>`;
       const _isColl=!!row.collapsed;
@@ -9765,8 +9837,8 @@ function renderGantt(){
         if(_sr.t==='ph'||_sr.t==='sb'||_sr.t==='ens')break;
         if(_sr.t==='act')_sbActs.push(_sr);
       }
-      const _sbPct=calcWeightedProgress(_sbActs);
-      const _sbPctBadge=_sbPct>0?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.12);color:${ph.t}">${_sbPct}%</span>`:'';
+      const _sbPct=calcHierProgress(D(),{filterSbId:row.id});
+      const _sbPctBadge=_countsInProgress(row.pk)?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.12);color:${ph.t}">${_sbPct}%</span>`:'';
       const _sbBudget=row.budgetH||0;
       const _sbBudBadge=`<span onclick="event.stopPropagation();sbSetBudget('${row.id}',${_sbBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.18);border-radius:3px;cursor:pointer" title="Budget sous-phase">${_sbBudget>0?'B:'+_sbBudget+'H':'+ Budget'}</span>`;
       if(_isChantierPhase(row.pk)){
@@ -9884,7 +9956,10 @@ function renderGantt(){
             </span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;padding-left:20px;margin-top:3px" onclick="event.stopPropagation()">
-            <span onclick="toggleInProgress('${row.id}')" style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;user-select:none;transition:.15s;background:${(row.inProgress&&!row.done)?'#FEF3C7':'var(--bg3)'};color:${(row.inProgress&&!row.done)?'#D97706':'var(--tx3)'};border:1px solid ${(row.inProgress&&!row.done)?'#FDE68A':'var(--bd)'}">
+            ${_isProgressExcludedPhase(row.pk)?'':(
+              row.excludeProgress
+              ?`<span onclick="toggleExcludeProgress('${row.id}')" title="Cliquer pour réintégrer cette tâche dans l'avancement" style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;user-select:none;background:var(--bg3);color:var(--tx3);border:1px dashed var(--bd)">Ø Hors avancement</span>`
+              :`<span onclick="toggleInProgress('${row.id}')" style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;user-select:none;transition:.15s;background:${(row.inProgress&&!row.done)?'#FEF3C7':'var(--bg3)'};color:${(row.inProgress&&!row.done)?'#D97706':'var(--tx3)'};border:1px solid ${(row.inProgress&&!row.done)?'#FDE68A':'var(--bd)'}">
               ${(row.inProgress&&!row.done)?'⚡ En cours':'⚡ En cours'}
             </span>
             ${(row.inProgress&&!row.done)?`
@@ -9892,7 +9967,10 @@ function renderGantt(){
               oninput="event.stopPropagation();setProgress('${row.id}',+this.value||0)"
               style="width:48px;border:1px solid #FDE68A;border-radius:4px;padding:2px 4px;font-size:9px;font-family:inherit;background:#FFFBEB;color:#D97706;outline:none;text-align:center"
               placeholder="%">
-            `:''}          </div>
+            `:''}`
+            )}
+            ${_isProgressExcludedPhase(row.pk)?'':`<span onclick="toggleExcludeProgress('${row.id}')" title="${row.excludeProgress?'Réintégrer dans l avancement':'Ne compte pas dans l avancement (ex: mise à disposition)'}" style="font-size:8px;color:var(--tx3);opacity:.6;cursor:pointer;text-decoration:underline;user-select:none">${row.excludeProgress?'réintégrer':'ne compte pas'}</span>`}
+          </div>
           <div style="display:flex;flex-wrap:wrap;gap:2px;padding-left:19px;">
             ${(!row.s&&(!row.reelDays||!row.reelDays.length))?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-weight:700">📌 Non planifiée</span>':''}
             ${(row.hPrev>0)?'<span style="font-size:10px;color:var(--or);font-weight:600;padding:1px 4px;border-radius:3px;background:rgba(237,137,0,.1)">P:'+row.hPrev+'H</span>':''}
@@ -13782,18 +13860,18 @@ function renderRecap(){
 
   var _recGid=0;
 
-  function subRow(lb,phColor,pct,gid,parentCls){
+  function subRow(lb,phColor,pct,gid,parentCls,show){
     // ENSEMBLE — fond plein comme avant, mais plus petit.
     const cols=1+maxP*3+6;
-    const pctBadge=pct>0?`<span style="margin-left:8px;font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:rgba(255,255,255,.25)">${pct}%</span>`:'';
+    const pctBadge=show?`<span style="margin-left:8px;font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:rgba(255,255,255,.25)">${pct}%</span>`:'';
     return `<tr class="rec-hdr${parentCls?' '+parentCls:''}" data-group="${gid}" onclick="_recToggle(this)" style="cursor:pointer"><td colspan="${cols}" style="background:${phColor};padding:4px 12px;font-size:10px;font-weight:700;color:#fff;letter-spacing:.3px;border-radius:5px;margin:3px 0"><span class="rec-arrow" style="display:inline-block;width:12px">▼</span>\u25A3 &nbsp;${lb}${pctBadge}</td></tr>`;
   }
 
-  function ensRow(lb,phColor,pct,gid,parentCls){
+  function ensRow(lb,phColor,pct,gid,parentCls,show){
     // SOUS-PHASE — reste discrète, nettement en retrait par rapport à
     // l'ensemble ci-dessus.
     const cols=1+maxP*3+6;
-    const pctBadge=pct>0?`<span style="margin-left:8px;font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:${phColor};color:#fff">${pct}%</span>`:'';
+    const pctBadge=show?`<span style="margin-left:8px;font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:${phColor};color:#fff">${pct}%</span>`:'';
     return `<tr class="rec-hdr${parentCls?' '+parentCls:''}" data-group="${gid}" onclick="_recToggle(this)" style="cursor:pointer"><td colspan="${cols}" style="background:${phColor}0D;padding:3px 12px 3px 34px;font-size:9px;font-weight:600;color:var(--tx2);letter-spacing:.3px;border-bottom:1px dashed ${phColor}33"><span class="rec-arrow" style="display:inline-block;width:12px;color:${phColor}">▼</span>▸ &nbsp;${lb}${pctBadge}</td></tr>`;
   }
 
@@ -13804,7 +13882,7 @@ function renderRecap(){
     let html='';
     let totH=0,totPrev=0,totReel=0;
     const _phActsR=rows.filter(r=>r.t==='act');
-    const _phPctR=calcWeightedProgress(_phActsR);
+    const _phPctR=calcHierProgress(rows,{filterPk:phKey});
     var _curGroupCls='rec-c-'+phGid; // classe(s) de groupe(s) actives pour la ligne en cours
     rows.forEach(r=>{
       if(r.t==='ens'){
@@ -13816,7 +13894,7 @@ function renderRecap(){
           if(_err.t==='act')_ensActsR.push(_err);
         }
         const _ensGid='reg'+(_recGid++);
-        html+=subRow(r.lb,ph.h,calcWeightedProgress(_ensActsR),_ensGid,'rec-c-'+phGid);
+        html+=subRow(r.lb,ph.h,calcHierProgress(rows,{filterEnsId:r.id}),_ensGid,'rec-c-'+phGid,_countsInProgress(phKey));
         _curGroupCls='rec-c-'+phGid+' rec-c-'+_ensGid;
       } else if(r.t==='sb'){
         // Calcul % sous-phase dans le recap (imbriquée dans un ensemble ou directement sous la phase)
@@ -13827,7 +13905,7 @@ function renderRecap(){
           if(_rr.t==='act')_sbActsR.push(_rr);
         }
         const _sbGid='reg'+(_recGid++);
-        html+=ensRow(r.lb,ph.h,calcWeightedProgress(_sbActsR),_sbGid,_curGroupCls);
+        html+=ensRow(r.lb,ph.h,calcHierProgress(rows,{filterSbId:r.id}),_sbGid,_curGroupCls,_countsInProgress(phKey));
         _curGroupCls=_curGroupCls+' rec-c-'+_sbGid;
       } else if(r.t==='act'){
         html+=aRow(r,_curGroupCls);
@@ -13863,7 +13941,7 @@ function renderRecap(){
 
     // Phase total row
     const emptyPc=Array.from({length:maxP*3},()=>'<td></td>').join('');
-    const _phPctBadge=_phPctR>0?`<span style="margin-left:8px;font-size:10px;padding:1px 8px;border-radius:10px;background:${ph.h};color:#fff;font-weight:800">${_phPctR}%</span>`:'';
+    const _phPctBadge=_countsInProgress(phKey)?`<span style="margin-left:8px;font-size:10px;padding:1px 8px;border-radius:10px;background:${ph.h};color:#fff;font-weight:800">${_phPctR}%</span>`:'';
     html+=`<tr class="rec-c-${phGid}" style="background:${ph.h}22;border-top:2px solid ${ph.h}44;font-weight:700">
       <td style="padding:4px 8px;color:${ph.h}">Total ${phKey}${_phPctBadge}</td>${emptyPc}
       <td style="text-align:right;color:var(--ac);font-weight:700">${totH||'—'}</td>
@@ -13978,7 +14056,7 @@ function renderRecap(){
   const affDelta=Math.round((affTotReel-affTotPrev)*10)/10;
   const affDone=allActs.filter(a=>a.done).length;
   // Avancement pondéré par H Prévues sur les % saisis manuellement
-  const affPct=calcWeightedProgress(allActs);
+  const affPct=calcHierProgress(D(),{});
 
   html+=`<div style="background:var(--bg2);border:2px solid var(--ac);border-radius:var(--r2);padding:14px 18px;margin-top:8px">
     <div style="font-size:10px;font-weight:800;color:var(--ac);letter-spacing:.8px;margin-bottom:12px">TOTAL AFFAIRE — ${STORE.current}</div>
