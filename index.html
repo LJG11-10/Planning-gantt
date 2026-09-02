@@ -8098,27 +8098,76 @@ function toggleExcludeProgress(id){
 function calcHierProgress(pData,opts){
   opts=opts||{};
   var sbList=[];
+  var ensRows={};
   var curPk=null,curEnsId=null,curSb=null;
   (pData||[]).forEach(function(r){
     if(r.t==='ph'){curPk=r.pk;curEnsId=null;curSb=null;}
-    else if(r.t==='ens'){curEnsId=r.id;curSb=null;}
+    else if(r.t==='ens'){curEnsId=r.id;curSb=null;ensRows[r.id]=r;}
     else if(r.t==='sb'){curSb={pk:curPk,ensId:curEnsId,sbId:r.id,row:r,tasks:[]};sbList.push(curSb);}
     else if(r.t==='act'){if(curSb)curSb.tasks.push(r);}
   });
-  var hasExplicitFilter=!!(opts.filterSbId||opts.filterEnsId||opts.filterPk);
+  // % d'une sous-phase : ses tâches non exclues, à parts égales. null si
+  // aucune tâche mesurable (toutes exclues, ou aucune tâche).
+  function sbPercent(sb){
+    var counted=sb.tasks.filter(function(a){return !a.excludeProgress;});
+    if(!counted.length)return null;
+    return counted.reduce(function(s,a){return s+(a.done?100:(+a.progress||0));},0)/counted.length;
+  }
+  // Poids d'une sous-phase = SON PROPRE budget heures saisi manuellement.
+  // Aucun repli sur les heures prévues des tâches : sans budget renseigné,
+  // une sous-phase ne compte tout simplement pas dans le calcul (poids 0).
+  function sbWeight(sb){return +((sb.row&&sb.row.budgetH)||0);}
+  // % propre d'un ensemble : ses sous-phases combinées, pondérées chacune
+  // par SON PROPRE budget (pas celui de l'ensemble). null si aucune
+  // sous-phase mesurable (toutes sans budget, ou sans tâche comptée).
+  function ensPercent(ensId,filterFn){
+    var items=sbList.filter(function(sb){return sb.ensId===ensId&&(!filterFn||filterFn(sb));});
+    var wSum=0,wTot=0;
+    items.forEach(function(sb){
+      var pct=sbPercent(sb);if(pct===null)return;
+      var w=sbWeight(sb);if(w<=0)return;
+      wSum+=pct*w;wTot+=w;
+    });
+    return wTot>0?wSum/wTot:null;
+  }
+
+  // Demande directe du % d'UNE sous-phase précise (badges GANTT/Récap)
+  if(opts.filterSbId){
+    var only=sbList.find(function(sb){return sb.sbId===opts.filterSbId;});
+    if(!only)return 0;
+    var p1=sbPercent(only);
+    return p1===null?0:Math.round(p1);
+  }
+  // Demande directe du % propre d'UN ensemble précis
+  if(opts.filterEnsId){
+    var p2=ensPercent(opts.filterEnsId,opts.includeSb);
+    return p2===null?0:Math.round(p2);
+  }
+
+  // Niveau phase ou affaire globale : un ensemble pèse selon SON PROPRE
+  // budget heures (la "marche d'escalier" supplémentaire, distincte de la
+  // somme de ses sous-phases) ; une sous-phase sans ensemble parent pèse
+  // selon son propre budget, directement au niveau de la phase.
+  var seenEns={};
   var weightedSum=0,totalWeight=0;
   sbList.forEach(function(sb){
-    if(opts.filterSbId&&sb.sbId!==opts.filterSbId)return;
-    if(opts.filterEnsId&&sb.ensId!==opts.filterEnsId)return;
     if(opts.filterPk&&sb.pk!==opts.filterPk)return;
-    if(opts.includeSb&&!opts.includeSb(sb))return;
-    if(!hasExplicitFilter&&!_countsInProgress(sb.pk))return;
-    var weight=(+sb.row.budgetH||0)||sb.tasks.reduce(function(s,a){return s+(+a.hPrev||0);},0);
-    var counted=sb.tasks.filter(function(a){return !a.excludeProgress;});
-    if(!counted.length)return;
-    var sbPct=counted.reduce(function(s,a){return s+(a.done?100:(+a.progress||0));},0)/counted.length;
-    weightedSum+=sbPct*weight;
-    totalWeight+=weight;
+    if(!opts.filterPk&&!_countsInProgress(sb.pk))return;
+    if(sb.ensId){
+      if(seenEns[sb.ensId])return; // cet ensemble a déjà été agrégé
+      seenEns[sb.ensId]=true;
+      var ep=ensPercent(sb.ensId,opts.includeSb);
+      if(ep===null)return;
+      var ensRow=ensRows[sb.ensId];
+      var ew=+((ensRow&&ensRow.budgetH)||0);
+      if(ew<=0)return; // ensemble sans budget propre : ne compte pas non plus
+      weightedSum+=ep*ew;totalWeight+=ew;
+    }else{
+      if(opts.includeSb&&!opts.includeSb(sb))return;
+      var pct=sbPercent(sb);if(pct===null)return;
+      var w=sbWeight(sb);if(w<=0)return;
+      weightedSum+=pct*w;totalWeight+=w;
+    }
   });
   return totalWeight>0?Math.round(weightedSum/totalWeight):0;
 }
@@ -14037,8 +14086,9 @@ function renderRecap(){
     const hasActs=D().some(r=>r.pk===pk&&r.t==='act');
     if(!hasActs)return;
     const _phGid='reg'+(_recGid++);
+    const _phHdrPct=_countsInProgress(pk)?` <span style="margin-left:8px;font-size:10px;padding:1px 8px;border-radius:10px;background:rgba(255,255,255,.25);font-weight:800">${calcHierProgress(D(),{filterPk:pk})}%</span>`:'';
     html+=`<div style="margin-bottom:24px">
-      <div class="rec-hdr" data-group="${_phGid}" onclick="_recToggle(this)" style="cursor:pointer;background:${ph.h};color:#fff;padding:8px 14px;border-radius:var(--r) var(--r) 0 0;font-size:11px;font-weight:700;letter-spacing:1px"><span class="rec-arrow" style="display:inline-block;width:14px">▼</span>&nbsp;${pk}</div>
+      <div class="rec-hdr" data-group="${_phGid}" onclick="_recToggle(this)" style="cursor:pointer;background:${ph.h};color:#fff;padding:8px 14px;border-radius:var(--r) var(--r) 0 0;font-size:11px;font-weight:700;letter-spacing:1px"><span class="rec-arrow" style="display:inline-block;width:14px">▼</span>&nbsp;${pk}${_phHdrPct}</div>
       <div class="rec-c-${_phGid}" style="overflow-x:auto;border:1px solid ${ph.h}44;border-top:none;border-radius:0 0 var(--r) var(--r)">
         <table class="rt" style="width:100%">
           ${tableHdr}
