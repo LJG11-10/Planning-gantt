@@ -2348,8 +2348,8 @@ function applyRoleRestrictions() {
     document.querySelectorAll('.btn-np,.btn-da,[onclick*="openModal"],[onclick="openRenameModal()"]').forEach(function(b){b.style.display='none';});
     // Masquer l'éditeur de planning (structure phases/tâches)
     document.querySelectorAll('[onclick="openPlanEditor()"]').forEach(function(b){b.style.display='none';});
-    // Masquer les téléchargements et exports
-    document.querySelectorAll('[onclick*="downloadPlanning"],[onclick*="exportData"],[onclick*="showClientDownload"]').forEach(function(b){b.style.display='none';});
+    // Masquer l'export de données brutes (Planning interne et client restent autorisés)
+    document.querySelectorAll('[onclick*="exportData"]').forEach(function(b){b.style.display='none';});
     // Masquer Fortuit et Rappels
     document.querySelectorAll('[onclick*="openFortuitModal"],[onclick*="openRappelsSett"]').forEach(function(b){b.style.display='none';});
     // Garder la sbar visible mais masquer les inputs budget/dates
@@ -5789,6 +5789,15 @@ function downloadPlanning(mode){
     html+='<div style="font-size:12px;color:#888;margin-top:3px">'+dateStr+'</div>';
     html+='</div>';
 
+    html+='<div class="no-print" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+    html+='<div style="display:flex;align-items:center;gap:4px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:3px">';
+    html+='<button onclick="_ganttSetZoom(-8)" title="Zoom arrière" style="width:30px;height:30px;border:none;background:#fff;border-radius:6px;color:#1F4E79;font-size:16px;font-weight:800;cursor:pointer">−</button>';
+    html+='<span id="_ganttZoomPct" style="font-size:11px;font-weight:700;color:#1F4E79;min-width:40px;text-align:center">100%</span>';
+    html+='<button onclick="_ganttSetZoom(8)" title="Zoom avant" style="width:30px;height:30px;border:none;background:#fff;border-radius:6px;color:#1F4E79;font-size:16px;font-weight:800;cursor:pointer">+</button>';
+    html+='</div>';
+    html+='<button id="_ganttDayBtn" onclick="_ganttToggleDayView()" title="Afficher le détail jour par jour (lundi → dimanche) avec les dates" style="padding:0 16px;height:36px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;color:#1F4E79;font-size:12px;font-weight:700;cursor:pointer">📆 Vue jours</button>';
+    html+='</div>';
+
     html+='<table style="border-collapse:collapse;table-layout:fixed;width:'+(ACT_W+numW*COL)+'px" id="gantt-table">';
     // Colgroup
     html+='<colgroup><col style="width:'+ACT_W+'px">';
@@ -5821,7 +5830,16 @@ function downloadPlanning(mode){
       var isTW=TODAY&&TODAY.w===w;
       var _yStart=_yearStarts[w];
       var _yBand=_yStart?'border-left:4px solid #F59E0B!important':'';
-      html+='<th class="wk-c-'+w+' gsh" style="position:sticky;top:30px;z-index:3;background:'+(isTW?'#FDE047':'#2563EB')+';color:'+(isTW?'#1F4E79':'rgba(255,255,255,.8)')+';padding:5px 1px;text-align:center;font-size:11px;font-weight:700;border:1px solid #3B82F6;'+_yBand+'" title="'+(_yStart?'D\u00E9but '+_yStart:'')+'">'+(_yStart?'<div style="font-size:7px;color:#F59E0B;font-weight:900;white-space:nowrap">\u25B6 '+_yStart+'</div>':'')+'S'+isoWeekOf(w)+'</th>';
+      var _dayHdrs='';
+      for(var _dh=0;_dh<7;_dh++){
+        var _dDate=weekDayToDate(w,_dh);
+        var _dIsToday=isTW&&TODAY.di===_dh;
+        _dayHdrs+='<div style="flex:1;min-width:0;text-align:center;padding:3px 0;height:36px;box-sizing:border-box;font-size:10px;font-weight:'+(_dIsToday?'900':'700')+';color:'+(_dIsToday?'#1F4E79':'#fff')+';background:'+(_dIsToday?'#FDE047':'transparent')+';border-right:1px solid rgba(255,255,255,.25);overflow:hidden"><div style="white-space:nowrap;overflow:hidden;text-overflow:clip">'+['LUN','MAR','MER','JEU','VEN','SAM','DIM'][_dh]+'</div><div style="font-size:10px;font-weight:800;opacity:.95;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:clip">'+(_dDate?_dDate.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):'')+'</div></div>';
+      }
+      html+='<th class="wk-c-'+w+' gsh" style="position:sticky;top:30px;z-index:3;background:'+(isTW?'#FDE047':'#2563EB')+';color:'+(isTW?'#1F4E79':'rgba(255,255,255,.8)')+';padding:0;text-align:center;font-size:11px;font-weight:700;border:1px solid #3B82F6;'+_yBand+'" title="'+(_yStart?'D\u00E9but '+_yStart:'')+'">'
+        +'<div class="gz-wklabel" style="padding:5px 1px">'+(_yStart?'<div style="font-size:7px;color:#F59E0B;font-weight:900;white-space:nowrap">\u25B6 '+_yStart+'</div>':'')+'S'+isoWeekOf(w)+'</div>'
+        +'<div class="gz-daylabel" style="align-items:stretch;height:36px">'+_dayHdrs+'</div>'
+        +'</th>';
     }
     html+='</tr></thead><tbody>';
 
@@ -5919,11 +5937,38 @@ function downloadPlanning(mode){
         }
         var isTW=TODAY&&TODAY.w===w;
 
+        // Mini-grille jour par jour (lundi→dimanche), toujours calculée mais
+        // cachée par défaut — affichée automatiquement au-delà d'un certain
+        // niveau de zoom, à la place de la barre hebdomadaire résumée.
+        var _dayBarHtml='<div class="gz-daybar" style="height:23px">';
+        for(var _db=0;_db<7;_db++){
+          var _dbInP,_dbInR;
+          if(_db<5){
+            var _dAbs=absS+_db;
+            _dbInP=_prevDaysSet?_prevDaysSet.has(_dAbs):(_hasBar&&prevS>=0&&_dAbs>=prevS&&_dAbs<=prevE);
+            _dbInR=_reelDaysSet?_reelDaysSet.has(_dAbs):(_hasBar&&reelS>=0&&_dAbs>=reelS&&_dAbs<=reelE);
+          }else{
+            // Week-end : uniquement si explicitement marqué travaillé
+            var _weAbs=(w-1)*7+_db;
+            _dbInP=(r.weekendPrev||[]).indexOf(_weAbs)>=0;
+            _dbInR=(r.weekendReel||[]).indexOf(_weAbs)>=0;
+          }
+          _dayBarHtml+='<div style="flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid #F1F2F5;height:100%">'
+            +'<div style="flex:1;background:'+(_dbInP?phC.xl:(_db>=5?'#FAFAFA':'transparent'))+'"></div>'
+            +'<div style="height:0.5px;background:#fff"></div>'
+            +'<div style="flex:1;background:'+(_dbInR?phC.xd:(_db>=5?'#FAFAFA':'transparent'))+'"></div>'
+            +'</div>';
+        }
+        _dayBarHtml+='</div>';
+
         if(!inP&&!inR){
-          html+='<td class="wk-c-'+w+'" style="padding:0;border:1px solid #E5E7EB;background:'+(isTW?'#FFFBEB':'#fff')+'"></td>';
+          html+='<td class="wk-c-'+w+'" style="padding:0;border:1px solid #E5E7EB;background:'+(isTW?'#FFFBEB':'#fff')+'">'
+            +'<div class="gz-wkbar"></div>'+_dayBarHtml
+            +'</td>';
           continue;
         }
         html+='<td class="wk-c-'+w+'" style="padding:0;border:1px solid #E5E7EB;vertical-align:top">';
+        html+='<div class="gz-wkbar">';
         // Prévu
         html+='<div style="height:11px;background:'+(inP?phC.xl:'transparent')+';display:flex;align-items:center;justify-content:center">';
         if(inP) html+='<span style="font-size:6px;font-weight:900;color:'+phC.h+'">P</span>';
@@ -5933,6 +5978,8 @@ function downloadPlanning(mode){
         html+='<div style="height:11px;background:'+(inR?phC.xd:'transparent')+';display:flex;align-items:center;justify-content:center">';
         if(inR) html+='<span style="font-size:6px;font-weight:900;color:#fff">R</span>';
         html+='</div>';
+        html+='</div>';
+        html+=_dayBarHtml;
         html+='</td>';
       }
       html+='</tr>';
@@ -5979,7 +6026,9 @@ function downloadPlanning(mode){
   var _ganttPrintWidthMm=(mode==='client'?420:297)-14;
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
     +'<title>'+esc(aff)+' — Planning '+PLANNING_YEAR+'</title>'
-    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow:auto;max-height:78vh;border:1px solid #E5E7EB;border-radius:8px}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}.print-only{display:none}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none!important}.print-only{display:block!important;margin-bottom:14px;font-size:26px;font-weight:900;color:#1F4E79}.gantt-page{padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important;max-height:none!important;overflow:visible!important;border:none!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}.recap-page{max-width:100%}.pc-arrow{display:none}.gsh{position:static!important;top:auto!important;left:auto!important}.pc-collapsed{display:none!important}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}}</style>'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow:auto;max-height:78vh;border:1px solid #E5E7EB;border-radius:8px}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}.print-only{display:none}'
+    +'.gz-daylabel{display:none}.gz-daybar{display:none}#gantt-table.gz-daymode .gz-wklabel{display:none}#gantt-table.gz-daymode .gz-daylabel{display:flex}#gantt-table.gz-daymode .gz-wkbar{display:none}#gantt-table.gz-daymode .gz-daybar{display:flex}'
+    +'@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none!important}.print-only{display:block!important;margin-bottom:14px;font-size:26px;font-weight:900;color:#1F4E79}.gantt-page{padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important;max-height:none!important;overflow:visible!important;border:none!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}.recap-page{max-width:100%}.pc-arrow{display:none}.gsh{position:static!important;top:auto!important;left:auto!important}.pc-collapsed{display:none!important}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}}</style>'
     +'<style id="_pc_page_size">@media print{@page{size:A4 portrait;margin:12mm}}</style>'
     +'</head><body>'
     +'<div class="no-print" style="margin-bottom:16px;padding:12px 20px;background:#EFF6FF;border-radius:10px;display:flex;gap:12px;align-items:center;border:1px solid #BFDBFE;flex-wrap:wrap">'
@@ -6002,10 +6051,27 @@ function downloadPlanning(mode){
     // navigateur est bloqué pendant ce geste précis.
     +'var _ganttZoomCol=26;'
     +'function _ganttSetZoom(delta){'
-      +'_ganttZoomCol=Math.max(8,Math.min(50,_ganttZoomCol+delta));'
+      +'_ganttZoomCol=Math.max(8,Math.min(400,_ganttZoomCol+delta));'
       +'document.querySelectorAll(\'#gantt-table col[class*="wk-c-"]\').forEach(function(c){c.style.width=_ganttZoomCol+"px";});'
       +'var table=document.getElementById("gantt-table");'
-      +'if(table){var numCols=table.querySelectorAll(\'col[class*="wk-c-"]\').length;table.style.width=(210+numCols*_ganttZoomCol)+"px";}'
+      +'if(table){'
+        +'var numCols=table.querySelectorAll(\'col[class*="wk-c-"]\').length;'
+        +'table.style.width=(210+numCols*_ganttZoomCol)+"px";'
+      +'}'
+      +'var lbl=document.getElementById("_ganttZoomPct");if(lbl)lbl.textContent=Math.round(_ganttZoomCol/26*100)+"%";'
+    +'}'
+    // Vue jour : bascule explicite via un bouton dédié, indépendante du
+    // niveau de zoom. En passant en vue jour, on élargit automatiquement les
+    // colonnes à une largeur confortable pour lire les dates (l\'inverse en
+    // revenant à la vue semaine).
+    +'var _ganttDayMode=false;'
+    +'function _ganttToggleDayView(){'
+      +'_ganttDayMode=!_ganttDayMode;'
+      +'var table=document.getElementById("gantt-table");'
+      +'if(table)table.classList.toggle("gz-daymode",_ganttDayMode);'
+      +'var btn=document.getElementById("_ganttDayBtn");'
+      +'if(btn){btn.textContent=_ganttDayMode?"\\u{1F4C5} Vue semaines":"\\u{1F4C6} Vue jours";btn.style.background=_ganttDayMode?"#7C3AED":"#EFF6FF";btn.style.color=_ganttDayMode?"#fff":"#1F4E79";}'
+      +'if(_ganttDayMode&&_ganttZoomCol<280)_ganttSetZoom(280-_ganttZoomCol);'
     +'}'
     +'(function(){'
       +'var _lastGanttZoomWheel=0;'
