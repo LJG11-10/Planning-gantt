@@ -8098,37 +8098,91 @@ function toggleExcludeProgress(id){
 function calcHierProgress(pData,opts){
   opts=opts||{};
   var sbList=[];
-  var ensRows={};
+  var ensRows={},phRows={};
   var curPk=null,curEnsId=null,curSb=null;
   (pData||[]).forEach(function(r){
-    if(r.t==='ph'){curPk=r.pk;curEnsId=null;curSb=null;}
+    if(r.t==='ph'){curPk=r.pk;curEnsId=null;curSb=null;phRows[r.pk]=r;}
     else if(r.t==='ens'){curEnsId=r.id;curSb=null;ensRows[r.id]=r;}
     else if(r.t==='sb'){curSb={pk:curPk,ensId:curEnsId,sbId:r.id,row:r,tasks:[]};sbList.push(curSb);}
     else if(r.t==='act'){if(curSb)curSb.tasks.push(r);}
   });
   // % d'une sous-phase : ses tâches non exclues, à parts égales. null si
-  // aucune tâche mesurable (toutes exclues, ou aucune tâche).
+  // aucune tâche mesurable.
   function sbPercent(sb){
     var counted=sb.tasks.filter(function(a){return !a.excludeProgress;});
     if(!counted.length)return null;
     return counted.reduce(function(s,a){return s+(a.done?100:(+a.progress||0));},0)/counted.length;
   }
-  // Poids d'une sous-phase = SON PROPRE budget heures saisi manuellement.
-  // Aucun repli sur les heures prévues des tâches : sans budget renseigné,
-  // une sous-phase ne compte tout simplement pas dans le calcul (poids 0).
+  // Poids d'une sous-phase = son propre budget heures. Sans budget saisi,
+  // elle ne compte pas (poids 0).
   function sbWeight(sb){return +((sb.row&&sb.row.budgetH)||0);}
-  // % propre d'un ensemble : ses sous-phases combinées, pondérées chacune
-  // par SON PROPRE budget (pas celui de l'ensemble). null si aucune
-  // sous-phase mesurable (toutes sans budget, ou sans tâche comptée).
+
+  // % propre d'un ensemble. Le DÉNOMINATEUR est le budget propre de
+  // l'ensemble s'il est saisi (ex: 2400h = la référence "100%" de cet
+  // ensemble) — une sous-phase à 250h ne peut donc jamais peser plus de
+  // 250/2400 dans le résultat, même à 100% elle-même. Si l'ensemble n'a
+  // lui-même aucun budget saisi, on retombe sur la somme des sous-phases
+  // couvertes (comportement précédent, pour ne rien casser).
   function ensPercent(ensId,filterFn){
     var items=sbList.filter(function(sb){return sb.ensId===ensId&&(!filterFn||filterFn(sb));});
-    var wSum=0,wTot=0;
+    var wSum=0,wCovered=0;
     items.forEach(function(sb){
       var pct=sbPercent(sb);if(pct===null)return;
       var w=sbWeight(sb);if(w<=0)return;
-      wSum+=pct*w;wTot+=w;
+      wSum+=pct*w;wCovered+=w;
     });
-    return wTot>0?wSum/wTot:null;
+    if(wCovered<=0)return null;
+    var declared=+((ensRows[ensId]&&ensRows[ensId].budgetH)||0);
+    var denom=declared>0?declared:wCovered;
+    return Math.max(0,Math.min(100,wSum/denom));
+  }
+  // Poids d'un ensemble au niveau phase = son propre budget, ou à défaut la
+  // somme des budgets de ses sous-phases couvertes.
+  function ensWeight(ensId){
+    var declared=+((ensRows[ensId]&&ensRows[ensId].budgetH)||0);
+    if(declared>0)return declared;
+    return sbList.filter(function(sb){return sb.ensId===ensId;}).reduce(function(s,sb){return s+sbWeight(sb);},0);
+  }
+
+  // % propre d'une phase : même principe — dénominateur fixe = budget propre
+  // de la phase s'il est saisi, sinon repli sur la somme de ce qu'il y a
+  // dessous (ensembles + sous-phases isolées).
+  function phasePercent(pk,filterFn){
+    var seenEns={};
+    var wSum=0,wCovered=0;
+    sbList.forEach(function(sb){
+      if(sb.pk!==pk)return;
+      if(sb.ensId){
+        if(seenEns[sb.ensId])return;seenEns[sb.ensId]=true;
+        var ep=ensPercent(sb.ensId,filterFn);
+        if(ep===null)return;
+        var ew=ensWeight(sb.ensId);
+        if(ew<=0)return;
+        wSum+=ep*ew;wCovered+=ew;
+      }else{
+        if(filterFn&&!filterFn(sb))return;
+        var pct=sbPercent(sb);if(pct===null)return;
+        var w=sbWeight(sb);if(w<=0)return;
+        wSum+=pct*w;wCovered+=w;
+      }
+    });
+    if(wCovered<=0)return null;
+    var declared=+((phRows[pk]&&phRows[pk].budgetH)||0);
+    var denom=declared>0?declared:wCovered;
+    return Math.max(0,Math.min(100,wSum/denom));
+  }
+  // Poids d'une phase au niveau affaire = son propre budget, ou à défaut la
+  // somme de ce qu'il y a dessous.
+  function phaseWeight(pk){
+    var declared=+((phRows[pk]&&phRows[pk].budgetH)||0);
+    if(declared>0)return declared;
+    var seenEns={};var sum=0;
+    sbList.forEach(function(sb){
+      if(sb.pk!==pk)return;
+      if(sb.ensId){if(seenEns[sb.ensId])return;seenEns[sb.ensId]=true;sum+=ensWeight(sb.ensId);}
+      else sum+=sbWeight(sb);
+    });
+    return sum;
   }
 
   // Demande directe du % d'UNE sous-phase précise (badges GANTT/Récap)
@@ -8143,33 +8197,24 @@ function calcHierProgress(pData,opts){
     var p2=ensPercent(opts.filterEnsId,opts.includeSb);
     return p2===null?0:Math.round(p2);
   }
+  // Demande directe du % propre d'UNE phase précise
+  if(opts.filterPk){
+    var p3=phasePercent(opts.filterPk,opts.includeSb);
+    return p3===null?0:Math.round(p3);
+  }
 
-  // Niveau phase ou affaire globale : un ensemble pèse selon SON PROPRE
-  // budget heures (la "marche d'escalier" supplémentaire, distincte de la
-  // somme de ses sous-phases) ; une sous-phase sans ensemble parent pèse
-  // selon son propre budget, directement au niveau de la phase.
-  var seenEns={};
-  var weightedSum=0,totalWeight=0;
-  sbList.forEach(function(sb){
-    if(opts.filterPk&&sb.pk!==opts.filterPk)return;
-    if(!opts.filterPk&&!_countsInProgress(sb.pk))return;
-    if(sb.ensId){
-      if(seenEns[sb.ensId])return; // cet ensemble a déjà été agrégé
-      seenEns[sb.ensId]=true;
-      var ep=ensPercent(sb.ensId,opts.includeSb);
-      if(ep===null)return;
-      var ensRow=ensRows[sb.ensId];
-      var ew=+((ensRow&&ensRow.budgetH)||0);
-      if(ew<=0)return; // ensemble sans budget propre : ne compte pas non plus
-      weightedSum+=ep*ew;totalWeight+=ew;
-    }else{
-      if(opts.includeSb&&!opts.includeSb(sb))return;
-      var pct=sbPercent(sb);if(pct===null)return;
-      var w=sbWeight(sb);if(w<=0)return;
-      weightedSum+=pct*w;totalWeight+=w;
-    }
+  // Niveau affaire globale : combiner les phases qui comptent (Chantier et
+  // Automatisme), chacune pondérée par son propre poids.
+  var pks=Object.keys(phRows).filter(function(pk){return _countsInProgress(pk);});
+  var wSum4=0,wTot4=0;
+  pks.forEach(function(pk){
+    var pp=phasePercent(pk,opts.includeSb);
+    if(pp===null)return;
+    var pw=phaseWeight(pk);
+    if(pw<=0)return;
+    wSum4+=pp*pw;wTot4+=pw;
   });
-  return totalWeight>0?Math.round(weightedSum/totalWeight):0;
+  return wTot4>0?Math.round(wSum4/wTot4):0;
 }
 
 // ── Calcul % avancement pondéré par H Prévues ────────────────────────
