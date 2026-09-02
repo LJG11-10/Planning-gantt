@@ -5883,30 +5883,41 @@ function downloadPlanning(mode){
       var _ganttRowGroups=[curPhGroupG,curEnsGroupG,curSbGroupG].filter(Boolean).join(' ');
 
       var phC=getPHC(r.pk||curPk);
-      var sP=r.s||1, eP=r.e||r.s||1;
-      var sR=r.sReel||r.s||1, eR=r.eReel||r.e||r.s||1;
-      var d1P=r.dStart||0, d2P=r.dEnd!=null?r.dEnd:4;
-      var d1R=r.dStartR!=null?r.dStartR:d1P, d2R=r.dEndR!=null?r.dEndR:4;
-      var prevS=(sP-1)*5+d1P, prevE=(eP-1)*5+d2P;
-      var reelS=(sR-1)*5+d1R, reelE=(eR-1)*5+d2R;
       var hP=+r.hPrev||0;
       var nb=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim();}).length;
       var lbl=esc(r.lb);
-      // Ensembles de jours précis (pas juste min/max) — pour ne jamais
-      // colorer à tort les jours "entre deux" alors qu'ils sont vides.
-      var _prevDaysSet=r.prevDays&&r.prevDays.length?new Set(r.prevDays):null;
-      var _reelDaysSet=r.reelDays&&r.reelDays.length?new Set(r.reelDays):null;
+      // Jours précis (Prévu/Réel) via getTaskDays5 — la même fonction
+      // canonique utilisée par le GANTT vue Semaines et vue Jours du site
+      // (renderGantt/renderGanttDay), garantissant que les trois vues
+      // s'accordent toujours sur les mêmes jours pour une même tâche, même
+      // pour une tâche jamais "peinte" à la souris (ancien format s/e géré
+      // de façon identique partout, une seule source de vérité).
+      var _prevDaysSet=new Set(getTaskDays5(r,'prev'));
+      var _reelDaysSet=new Set(getTaskDays5(r,'reel'));
+      // Semaines contenant un commentaire (💬), calculées une fois par
+      // tâche à partir des segments commentés — même logique que le GANTT
+      // du site (clic droit sur une barre), pour afficher la même icône.
+      function _pcCommentWeeks(daysSet,commentsObj){
+        var weeks={};
+        if(!commentsObj)return weeks;
+        Object.keys(commentsObj).forEach(function(key){
+          var s=+key,e=s;
+          while(daysSet.has(e+1))e++;
+          var w1=Math.floor(s/5)+1,w2=Math.floor(e/5)+1;
+          for(var wi=w1;wi<=w2;wi++)weeks[wi]=true;
+        });
+        return weeks;
+      }
+      var _prevCommentWeeks=_pcCommentWeeks(_prevDaysSet,r.barComments&&r.barComments.prev);
+      var _reelCommentWeeks=_pcCommentWeeks(_reelDaysSet,r.barComments&&r.barComments.reel);
       // Précalculer les semaines où cette tâche a une barre (prévu ou réel),
       // pour permettre le filtrage par semaine côté document interactif.
       var _taskWeeksWithBar=[];
       for(var _ww=fromW;_ww<=toW;_ww++){
         var _absS0=(_ww-1)*5,_absE0=(_ww-1)*5+4;
-        var _hasBar0=r.s>0||_prevDaysSet||_reelDaysSet;
-        var _inP0,_inR0;
-        if(_prevDaysSet){_inP0=false;for(var _dp0=_absS0;_dp0<=_absE0;_dp0++){if(_prevDaysSet.has(_dp0)){_inP0=true;break;}}}
-        else{_inP0=_hasBar0&&prevS>=0&&_absE0>=prevS&&_absS0<=prevE;}
-        if(_reelDaysSet){_inR0=false;for(var _dr0=_absS0;_dr0<=_absE0;_dr0++){if(_reelDaysSet.has(_dr0)){_inR0=true;break;}}}
-        else{_inR0=_hasBar0&&reelS>=0&&_absE0>=reelS&&_absS0<=reelE;}
+        var _inP0=false,_inR0=false;
+        for(var _dp0=_absS0;_dp0<=_absE0;_dp0++){if(_prevDaysSet.has(_dp0)){_inP0=true;break;}}
+        for(var _dr0=_absS0;_dr0<=_absE0;_dr0++){if(_reelDaysSet.has(_dr0)){_inR0=true;break;}}
         if(_inP0||_inR0)_taskWeeksWithBar.push(_ww);
       }
 
@@ -5920,22 +5931,9 @@ function downloadPlanning(mode){
 
       for(var w=fromW;w<=toW;w++){
         var absS=(w-1)*5, absE=(w-1)*5+4;
-        // Non planifié = pas de barres (ni prevDays ni reelDays ni s)
-        var _hasBar=r.s>0||_prevDaysSet||_reelDaysSet;
-        var inP,inR;
-        if(_prevDaysSet){
-          // Vérifie précisément chaque jour de cette semaine, pas juste la plage min-max
-          inP=false;
-          for(var _dp=absS;_dp<=absE;_dp++){if(_prevDaysSet.has(_dp)){inP=true;break;}}
-        }else{
-          inP=_hasBar&&prevS>=0&&absE>=prevS&&absS<=prevE;
-        }
-        if(_reelDaysSet){
-          inR=false;
-          for(var _dr=absS;_dr<=absE;_dr++){if(_reelDaysSet.has(_dr)){inR=true;break;}}
-        }else{
-          inR=_hasBar&&reelS>=0&&absE>=reelS&&absS<=reelE;
-        }
+        var inP=false,inR=false;
+        for(var _dp=absS;_dp<=absE;_dp++){if(_prevDaysSet.has(_dp)){inP=true;break;}}
+        for(var _dr=absS;_dr<=absE;_dr++){if(_reelDaysSet.has(_dr)){inR=true;break;}}
         var isTW=TODAY&&TODAY.w===w;
 
         // Mini-grille jour par jour (lundi→dimanche) : construite UNIQUEMENT
@@ -5956,18 +5954,21 @@ function downloadPlanning(mode){
           var _dbInP,_dbInR;
           if(_db<5){
             var _dAbs=absS+_db;
-            _dbInP=_prevDaysSet?_prevDaysSet.has(_dAbs):(_hasBar&&prevS>=0&&_dAbs>=prevS&&_dAbs<=prevE);
-            _dbInR=_reelDaysSet?_reelDaysSet.has(_dAbs):(_hasBar&&reelS>=0&&_dAbs>=reelS&&_dAbs<=reelE);
+            _dbInP=_prevDaysSet.has(_dAbs);
+            _dbInR=_reelDaysSet.has(_dAbs);
           }else{
             // Week-end : uniquement si explicitement marqué travaillé
             var _weAbs=(w-1)*7+_db;
             _dbInP=(r.weekendPrev||[]).indexOf(_weAbs)>=0;
             _dbInR=(r.weekendReel||[]).indexOf(_weAbs)>=0;
           }
+          var _dbCmtP='',_dbCmtR='';
+          if(_dbInP&&r.barComments&&r.barComments.prev){var _sgP=_dAbs;while(_prevDaysSet.has(_sgP-1))_sgP--;_dbCmtP=r.barComments.prev[_sgP]||'';}
+          if(_dbInR&&r.barComments&&r.barComments.reel){var _sgR=_dAbs;while(_reelDaysSet.has(_sgR-1))_sgR--;_dbCmtR=r.barComments.reel[_sgR]||'';}
           _dayBarHtml+='<div style="flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid #F1F2F5;height:100%">'
-            +'<div style="flex:1;background:'+(_dbInP?phC.xl:(_db>=5?'#FAFAFA':'transparent'))+'"></div>'
+            +'<div style="flex:1;background:'+(_dbInP?phC.xl:(_db>=5?'#FAFAFA':'transparent'))+';display:flex;align-items:center;justify-content:center;overflow:hidden"'+(_dbCmtP?' title="'+esc(_dbCmtP)+'"':'')+'>'+(_dbCmtP?'<span style="font-size:8px">💬</span>':'')+'</div>'
             +'<div style="height:0.5px;background:#fff"></div>'
-            +'<div style="flex:1;background:'+(_dbInR?phC.xd:(_db>=5?'#FAFAFA':'transparent'))+'"></div>'
+            +'<div style="flex:1;background:'+(_dbInR?phC.xd:(_db>=5?'#FAFAFA':'transparent'))+';display:flex;align-items:center;justify-content:center;overflow:hidden"'+(_dbCmtR?' title="'+esc(_dbCmtR)+'"':'')+'>'+(_dbCmtR?'<span style="font-size:8px">💬</span>':'')+'</div>'
             +'</div>';
         }
         _dayBarHtml+='</div>';
@@ -5982,13 +5983,13 @@ function downloadPlanning(mode){
         html+='<td class="wk-c-'+w+'" style="padding:0;border:1px solid #E5E7EB;vertical-align:top">';
         html+='<div class="gz-wkbar">';
         // Prévu
-        html+='<div style="height:11px;background:'+(inP?phC.xl:'transparent')+';display:flex;align-items:center;justify-content:center">';
-        if(inP) html+='<span style="font-size:6px;font-weight:900;color:'+phC.h+'">P</span>';
+        html+='<div style="height:11px;background:'+(inP?phC.xl:'transparent')+';display:flex;align-items:center;justify-content:center" title="'+(_prevCommentWeeks[w]?'💬 Voir le commentaire (zoomer en vue jours pour le lire)':'')+'">';
+        if(inP) html+='<span style="font-size:6px;font-weight:900;color:'+phC.h+'">P</span>'+(_prevCommentWeeks[w]?'<span style="font-size:6px;margin-left:1px">💬</span>':'');
         html+='</div>';
         html+='<div style="height:0.5px;background:#fff"></div>';
         // Réel
-        html+='<div style="height:11px;background:'+(inR?phC.xd:'transparent')+';display:flex;align-items:center;justify-content:center">';
-        if(inR) html+='<span style="font-size:6px;font-weight:900;color:#fff">R</span>';
+        html+='<div style="height:11px;background:'+(inR?phC.xd:'transparent')+';display:flex;align-items:center;justify-content:center" title="'+(_reelCommentWeeks[w]?'💬 Voir le commentaire (zoomer en vue jours pour le lire)':'')+'">';
+        if(inR) html+='<span style="font-size:6px;font-weight:900;color:#fff">R</span>'+(_reelCommentWeeks[w]?'<span style="font-size:6px;margin-left:1px">💬</span>':'');
         html+='</div>';
         html+='</div>';
         html+=_dayBarHtml;
@@ -6041,7 +6042,7 @@ function downloadPlanning(mode){
   var _ganttPrintWidthMm=(mode==='client'?420:297)-14;
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
     +'<title>'+esc(aff)+' — Planning '+PLANNING_YEAR+'</title>'
-    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow:auto;max-height:78vh;border:1px solid #E5E7EB;border-radius:8px}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}.print-only{display:none}'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow:auto;max-height:70vh;border:1px solid #E5E7EB;border-radius:8px}.gantt-page::-webkit-scrollbar{height:18px;width:18px}.gantt-page::-webkit-scrollbar-track{background:#F3F4F6}.gantt-page::-webkit-scrollbar-thumb{background:#9CA3AF;border-radius:9px;border:3px solid #F3F4F6}.gantt-page::-webkit-scrollbar-thumb:hover{background:#6B7280}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}.print-only{display:none}'
     +'.gz-daylabel{display:none}.gz-daybar{display:none}#gantt-table.gz-daymode .gz-wklabel{display:none}#gantt-table.gz-daymode .gz-daylabel{display:flex}#gantt-table.gz-daymode .gz-wkbar{display:none}#gantt-table.gz-daymode .gz-daybar{display:flex}'
     +'@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none!important}.print-only{display:block!important;margin-bottom:14px;font-size:26px;font-weight:900;color:#1F4E79}.gantt-page{padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important;max-height:none!important;overflow:visible!important;border:none!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}.recap-page{max-width:100%}.pc-arrow{display:none}.gsh{position:static!important;top:auto!important;left:auto!important}.pc-collapsed{display:none!important}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}}</style>'
     +'<style id="_pc_page_size">@media print{@page{size:A4 portrait;margin:12mm}}</style>'
@@ -11969,21 +11970,17 @@ function pedConfirmAddPhase(){
       const done=!!a.done;
       const hStart=a.hStart!=null?a.hStart:8;
       const hDur=a.hDur!=null?a.hDur:8;
-      const dDur=a.dDur!=null?a.dDur:null; // number of working days
-
-      // Calculate the block for each day
-      // Activity spans from week a.s day (a.dStart||0) to computed end
-      const actStartW=a.sPrev||a.s;
-      const actEndW=a.ePrev||a.e;
-      const actStartD=a.dStart||0;
-      const actEndD=a.dEnd!=null?a.dEnd:4;
-      // Real bar params (separate from planned)
+      // Real bar hour params (heure de la journée, indépendant de QUELS jours sont concernés)
       const hStartR=a.hStartR!=null?a.hStartR:hStart;
       const hDurR2=a.hDurR!=null?a.hDurR:hDur;
-      const dDurR2=a.dDurR!=null?a.dDurR:(a.dDur!=null?a.dDur:(actEndW-actStartW)*5+5);
-      const dStartR2=a.dStartR!=null?a.dStartR:actStartD;
-      const reelStartW=a.sReel||actStartW;
-      const reelStartAbsPre=reelStartW*5+dStartR2;  // pre-computed
+
+      // QUELS jours sont concernés (Prévu/Réel) : calculé via getTaskDays5,
+      // exactement comme la vue Semaines et Planning client — garantit que
+      // les trois vues s'accordent toujours sur les mêmes jours, même pour
+      // une tâche jamais "peinte" à la souris (repli sur les anciens champs
+      // s/e géré de façon identique partout, une seule source de vérité).
+      const _prevDaysArrLive=getTaskDays5(a,'prev');
+      const _reelDaysArrLive=getTaskDays5(a,'reel');
 
       // For each day cell: compute what fraction to color
       let cells='';
@@ -11992,15 +11989,9 @@ function pedConfirmAddPhase(){
         const borderL=isMon?'2px solid var(--bd2)':'1px solid var(--bd)';
         const isToday=day.isTD;
 
-        // Is this day within the activity range?
-        const dayIdxAbs=day.w*5+day.d;
-        const actStartAbs=actStartW*5+actStartD;
-        const actEndAbs=actEndW*5+actEndD;
-
-        const reelStartAbs=reelStartAbsPre;
-        const reelEndAbs2=reelStartAbs+(dDurR2-1);
-        const inPrev=dayIdxAbs>=actStartAbs&&dayIdxAbs<=actEndAbs;
-        const inReel=dayIdxAbs>=reelStartAbs&&dayIdxAbs<=reelEndAbs2;
+        const d5=(day.w-1)*5+day.d;
+        const inPrev=_prevDaysArrLive.indexOf(d5)>=0;
+        const inReel=_reelDaysArrLive.indexOf(d5)>=0;
 
         let blockTopP=0,blockHtP=0,blockTopR=0,blockHtR=0;
         const H_BASE=8; // 8H = 100% de hauteur de cellule
@@ -12021,10 +12012,10 @@ function pedConfirmAddPhase(){
           blockTopR=Math.max(0,(hStartR-DAY_START)/DAY_HOURS*100)+1;
           blockHtR=Math.max(4,Math.min(100-blockTopR,hReelDay/H_BASE*100));
         }
-        const showText=dayIdxAbs===actStartAbs;
-        const inRange=inPrev||inReel;
-        const lblP=dayIdxAbs===actStartAbs&&inPrev?'P':'';
-        const lblR=dayIdxAbs===reelStartAbs&&inReel?'R':'';
+        const _prevMinD5=_prevDaysArrLive.length?Math.min.apply(null,_prevDaysArrLive):null;
+        const _reelMinD5=_reelDaysArrLive.length?Math.min.apply(null,_reelDaysArrLive):null;
+        const lblP=inPrev&&d5===_prevMinD5?'P':'';
+        const lblR=inReel&&d5===_reelMinD5?'R':'';
 
         cells+=`<td style="width:${COL_W}px;min-width:${COL_W}px;height:${ROW_H}px;background:${day.isFerieDay?'rgba(254,226,226,.4)':isToday?'rgba(254,243,199,.3)':'var(--bg2)'};border-left:${borderL};${day.isFerieDay?'border-top:2px solid rgba(239,68,68,.3);':''}border-bottom:1px solid var(--bd);padding:0;vertical-align:top;position:relative;cursor:pointer;isolation:isolate;z-index:1" onclick="toggleDayExp(event,'${a.id}',${dayAbsIdx},'${dayLbl}')">
           ${inPrev?`<div style="position:absolute;left:2px;width:46%;top:${blockTopP}%;height:${blockHtP}%;background:${ph.xl};border-radius:3px 0 0 3px;border:2px solid ${ph.x};border-right:none;z-index:1;display:flex;align-items:flex-start;justify-content:center;overflow:hidden">${lblP?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblP}</span>`:''}</div>`:''}
