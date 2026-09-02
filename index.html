@@ -8102,7 +8102,7 @@ function calcHierProgress(pData,opts){
   (pData||[]).forEach(function(r){
     if(r.t==='ph'){curPk=r.pk;curEnsId=null;curSb=null;}
     else if(r.t==='ens'){curEnsId=r.id;curSb=null;}
-    else if(r.t==='sb'){curSb={pk:curPk,ensId:curEnsId,sbId:r.id,tasks:[]};sbList.push(curSb);}
+    else if(r.t==='sb'){curSb={pk:curPk,ensId:curEnsId,sbId:r.id,row:r,tasks:[]};sbList.push(curSb);}
     else if(r.t==='act'){if(curSb)curSb.tasks.push(r);}
   });
   var hasExplicitFilter=!!(opts.filterSbId||opts.filterEnsId||opts.filterPk);
@@ -8113,7 +8113,7 @@ function calcHierProgress(pData,opts){
     if(opts.filterPk&&sb.pk!==opts.filterPk)return;
     if(opts.includeSb&&!opts.includeSb(sb))return;
     if(!hasExplicitFilter&&!_countsInProgress(sb.pk))return;
-    var weight=sb.tasks.reduce(function(s,a){return s+(+a.hPrev||0);},0);
+    var weight=(+sb.row.budgetH||0)||sb.tasks.reduce(function(s,a){return s+(+a.hPrev||0);},0);
     var counted=sb.tasks.filter(function(a){return !a.excludeProgress;});
     if(!counted.length)return;
     var sbPct=counted.reduce(function(s,a){return s+(a.done?100:(+a.progress||0));},0)/counted.length;
