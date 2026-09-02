@@ -474,7 +474,9 @@
       renderProjSel();updBudget();
       var _expId=(typeof EXP!=='undefined')?EXP:null;
       var _expNode=_expId?document.getElementById('exp-panel-row'):null;
-      renderGantt();
+      var _syncActiveTab=document.querySelector('.nb.on');
+      var _syncIsGantt=_syncActiveTab&&_syncActiveTab.dataset&&_syncActiveTab.dataset.tab==='gantt';
+      if(_syncIsGantt)renderGantt();
       // Restaurer le panneau après renderGantt
       if(_expId&&!document.getElementById('exp-panel-row')){
         var _tr2=document.querySelector('[data-rid="'+_expId+'"]');
@@ -7892,17 +7894,31 @@ function renderFiche(){
 // ═══════════════════════════════
 
 function refreshAllTabs(){
-  renderGantt();
   const activeTab=document.querySelector('.nb.on');
+  const _rt=activeTab&&activeTab.dataset?activeTab.dataset.tab:null;
+  if(_rt==='gantt')renderGantt();
   if(activeTab){
     const t=activeTab.dataset.tab;
     if(t==='recap'){switchTdbTab(window._tdbTab||'overview');}
     else if(t==='planning-reunion')renderPlanningReunionTab();
-  
 
     else if(t==='personnel')switchPersonnelTab(window._personnelTab||'equipe');
-    // gantt déjà rendu par renderGantt() ci-dessus
+    // gantt déjà rendu ci-dessus si c'est l'onglet actif
   }
+}
+// Variante de refreshAllTabs pour le cas très fréquent où UNE SEULE tâche
+// vient de changer (cocher, %, peindre une barre...) : sur l'onglet GANTT,
+// met à jour juste cette ligne au lieu de tout reconstruire. Les autres
+// onglets (Récap, Planning Réunion, Personnel) continuent d'être
+// entièrement rafraîchis comme avant s'ils sont actifs — seul le GANTT,
+// nettement plus coûteux (110 semaines), bénéficie du raccourci.
+function _refreshAllTabsForRow(rid){
+  const activeTab=document.querySelector('.nb.on');
+  const t=activeTab&&activeTab.dataset?activeTab.dataset.tab:null;
+  if(t==='gantt'){_gcUpdateRowInPlace(rid);}
+  else if(t==='recap'){switchTdbTab(window._tdbTab||'overview');}
+  else if(t==='planning-reunion'){renderPlanningReunionTab();}
+  else if(t==='personnel'){switchPersonnelTab(window._personnelTab||'equipe');}
 }
 
 // ── Système Annuler (Undo) ──────────────────────────────────────────────
@@ -9785,6 +9801,181 @@ function renderPortfolio(){
 function esc0(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 
+// Génère le HTML d'UNE ligne-tâche du GANTT (type 'act'). Extrait de
+// renderGantt() pour pouvoir être appelé soit dans la boucle complète (rendu
+// initial / changement d'onglet), soit seul pour mettre à jour une seule
+// ligne déjà affichée sans reconstruire tout le tableau (peindre une barre,
+// cocher une case, changer un %...). Le résultat est rigoureusement
+// identique dans les deux cas : c'est la même fonction, appelée une fois par
+// ligne dans les deux chemins — aucun risque de divergence entre eux.
+function _gcActRowHtml(row,DW,NC,_MG){
+  const ph=PH_get(row.pk);
+  if(!row.p||!Array.isArray(row.p))row.p=[]; // garde-fou : jamais planter le GANTT sur une ligne corrompue
+  const nb=row.p.filter(p=>p.name.trim()).length;
+  const isE=EXP===row.id,done=!!row.done;
+  const tH=row.p.reduce((s,p)=>s+(+p.heures||0),0);
+  const diff=(row.hPrev&&row.hReel)?row.hReel-row.hPrev:null; // positif=dépassement(rouge), négatif=économie(vert)
+  // Tâche non planifiée (pas de semaine de début)
+
+  // Day cells — deux barres indépendantes : Prévue (haut, couleur claire) + Réelle (bas, couleur foncée)
+  // Chaque barre est régie par ses propres semaines sPrev/ePrev et sReel/eReel
+  let dc='';
+  // Jours colorés : tableau individuel (nouveau) ou range (compat)
+  const _prevSet=getTaskDays5(row,'prev');
+  const _reelSet=getTaskDays5(row,'reel');
+  const prevStartDay=_prevSet.length?_prevSet[0]:0;
+  const reelStartDay=_reelSet.length?_reelSet[0]:0;
+  _reelSet.length?_reelSet[_reelSet.length-1]:0; // fin réelle
+
+  for(let w=1;w<=GANTT_WIDE_WEEKS;w++){
+    const sep=_MG.some(m=>m.e===w);
+    const isTW=TODAY&&TODAY.w===w;
+
+    for(let d=0;d<7;d++){
+      const isWE=d>=5;
+      const absDay=(w-1)*7+d;
+      const d5=isWE?-1:(w-1)*5+d; // Equivalent 5-col pour les barres
+      const inPrev=!isWE&&_prevSet.indexOf(d5)>=0;
+      const inReel=!isWE&&_reelSet.indexOf(d5)>=0;
+      const isFirstPrev=inPrev&&(_prevSet.indexOf(d5-1)<0);
+      const isLastPrev=inPrev&&(_prevSet.indexOf(d5+1)<0);
+      const isFirstReel=inReel&&(_reelSet.indexOf(d5-1)<0);
+      const isLastReel=inReel&&(_reelSet.indexOf(d5+1)<0);
+      const prevRad=`${isFirstPrev?'8px':'0'} ${isLastPrev?'8px':'0'} ${isLastPrev?'8px':'0'} ${isFirstPrev?'8px':'0'}`;
+      const reelRad=`${isFirstReel?'8px':'0'} ${isLastReel?'8px':'0'} ${isLastReel?'8px':'0'} ${isFirstReel?'8px':'0'}`;
+      const inAny=inPrev||inReel;
+      const isTD=isTW&&TODAY.di===d;
+      const sepBdr=d===6?'border-right:2px solid #374151;':(d===4&&sep?'border-right:1px solid var(--bd2);':'');
+      const todBdr=isTD?'box-shadow:inset 0 0 0 2px #D97706;':'';
+
+      // Cellule week-end : normalement grisée, mais peut être marquée "travaillée"
+      if(isWE){
+        const _wkPrev=(row.weekendPrev||[]).indexOf(absDay)>=0;
+        const _wkReel=(row.weekendReel||[]).indexOf(absDay)>=0;
+        if(_wkPrev||_wkReel){
+          const prevBgWE=_wkPrev?ph.xl:'transparent';
+          const reelBgWE=_wkReel?ph.xd:'transparent';
+          dc+=`<td onclick="wkendToggle('${row.id}',${absDay},event)" title="Week-end travaillé — clic en haut=Prévu / clic en bas=Réel" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${d===6?'border-right:2px solid #374151;':''}cursor:pointer;background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px)">
+            <div style="height:32px;margin:3px 0 2px;background:${prevBgWE};border-radius:8px;${_wkPrev?'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);':''}display:flex;align-items:center;justify-content:center;overflow:hidden">${_wkPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55)">P</span>`:''}</div>
+            <div style="height:3px;background:rgba(255,255,255,.9)"></div>
+            <div style="height:32px;margin:2px 0 3px;background:${reelBgWE};border-radius:8px;${_wkReel?'box-shadow:inset 0 1px 0 rgba(255,255,255,.18);':''}display:flex;align-items:center;justify-content:center;overflow:hidden">${_wkReel?`<span style="font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)">R</span>`:''}</div>
+          </td>`;
+        } else {
+          dc+=`<td onclick="wkendToggle('${row.id}',${absDay},event)" title="Cliquer pour marquer ce week-end comme travaillé (haut=Prévu / bas=Réel)" style="background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px);border-right:${d===6?'2px solid #374151':'none'};min-width:${DW}px;cursor:pointer"></td>`;
+        }
+        continue;
+      }
+      if(!inAny){
+        dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d},event)" onmousemove="gcMove(event)" title="Clic haut=Prévu / Clic bas=Réel" style="background:var(--bg2);${sepBdr}${todBdr};cursor:crosshair"></td>`;
+        continue;
+      }
+
+      // Couleurs : Prévue = clair, Réelle = foncé
+      const prevBg=inPrev?ph.xl:'transparent';
+      const reelBg=inReel?ph.xd:'transparent';
+      // Infobulle : commentaire propre à CETTE période (segment contigu),
+      // pas à toute la tâche — une tâche peut avoir plusieurs périodes de
+      // barres séparées (ex: 20/08→30/08 puis 11/11→20/11), chacune avec
+      // son propre commentaire indépendant.
+      let _prevSegStart=null,_reelSegStart=null,_prevCmt=null,_reelCmt=null;
+      if(inPrev){_prevSegStart=d5;while(_prevSet.indexOf(_prevSegStart-1)>=0)_prevSegStart--;_prevCmt=row.barComments&&row.barComments.prev&&row.barComments.prev[_prevSegStart];}
+      if(inReel){_reelSegStart=d5;while(_reelSet.indexOf(_reelSegStart-1)>=0)_reelSegStart--;_reelCmt=row.barComments&&row.barComments.reel&&row.barComments.reel[_reelSegStart];}
+      const _cmtParts=[];
+      if(_prevCmt)_cmtParts.push('💬 Prévu : '+_prevCmt);
+      if(_reelCmt)_cmtParts.push('💬 Réel : '+_reelCmt);
+      const cellTitle=_cmtParts.length?_cmtParts.join(' — ').replace(/"/g,'&quot;'):'Clic haut=Prévu / Clic bas=Réel · Clic droit=Commentaire/Déplacer';
+
+      dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d},event)" onmousemove="gcMove(event)" oncontextmenu="gcContextMenu('${row.id}',${w},${d},event)" title="${cellTitle}" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
+        <div style="height:32px;margin:3px 0 2px;background:${prevBg};border-radius:${prevRad};${inPrev?'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
+          ${isFirstPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55);padding-left:2px">P</span>${_prevCmt?'<span style="font-size:9px;margin-left:2px" title="'+String(_prevCmt).replace(/"/g,'&quot;')+'">💬</span>':''}`:''}
+        </div>
+        <div style="height:3px;background:rgba(255,255,255,.9)"></div>
+        <div style="height:32px;margin:2px 0 3px;background:${reelBg};border-radius:${reelRad};${inReel?'box-shadow:inset 0 1px 0 rgba(255,255,255,.18);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
+          ${isFirstReel?`<span style="font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);padding-left:2px">R</span>${_reelCmt?'<span style="font-size:9px;margin-left:2px" title="'+String(_reelCmt).replace(/"/g,'&quot;')+'">💬</span>':''}`:''}
+        </div>
+      </td>`;
+    }
+  }
+  // Statut visuel de la ligne
+  const todayD5=TODAY?(TODAY.w-1)*5+(TODAY.di||0):0;
+  // Rouge UNIQUEMENT si la fin de la barre RÉEL est dépassée
+  const _reelDays2=row.reelDays&&row.reelDays.length?row.reelDays:[];
+  const _reelEnd=_reelDays2.length?Math.max.apply(null,_reelDays2):-1;
+  const isOverdue=!done&&!row.inProgress&&_reelEnd>=0&&todayD5>_reelEnd;
+  // Non planifié = pas de barres du tout → blanc/transparent
+  const _hasBars=(_reelDays2.length>0)||(row.prevDays&&row.prevDays.length>0)||row.s>0;
+  const rowBgColor=!_hasBars?'transparent':done?'rgba(209,250,229,.35)':row.inProgress?'rgba(254,243,199,.35)':isOverdue?'rgba(254,226,226,.35)':'transparent';
+  const rowBorderLeft=!_hasBars?'none':done?'3px solid var(--gn)':row.inProgress?'3px solid #D97706':isOverdue?'3px solid #DC2626':'none';
+  return `<tr class="ra" data-rid="${row.id}" style="height:79px;background:${rowBgColor}">
+      
+      <td class="al s1" onclick="event.stopPropagation();toggleExp('${row.id}')" style="cursor:pointer;background:${isE?'var(--ac2)':done?'rgba(209,250,229,.5)':row.inProgress?'rgba(254,243,199,.5)':isOverdue?'rgba(254,226,226,.5)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':row.inProgress?'#D97706':isOverdue?'#DC2626':'var(--tx)'};border-left:${rowBorderLeft};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
+        <div style="display:flex;flex-direction:column;gap:1px;padding-left:2px;">
+          <div style="display:flex;align-items:center;gap:3px;min-width:0;">
+            <span onclick="event.stopPropagation();toggleDone('${row.id}')" title="${done?'Décocher':'Marquer terminé'}"
+              style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0;border-radius:3px;border:1.5px solid ${done?'var(--gn)':'var(--bd2)'};background:${done?'var(--gn)':'var(--bg2)'};cursor:pointer;font-size:12px;color:#fff;">${done?'✓':''}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;${done?'text-decoration:line-through;opacity:.6;':''}">
+              ${done?row.lb:row.lb}
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;padding-left:20px;margin-top:3px" onclick="event.stopPropagation()">
+            ${_isProgressExcludedPhase(row.pk)?'':(
+              row.excludeProgress
+              ?`<span onclick="toggleExcludeProgress('${row.id}')" title="Cliquer pour réintégrer cette tâche dans l'avancement" style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;user-select:none;background:var(--bg3);color:var(--tx3);border:1px dashed var(--bd)">Ø Hors avancement</span>`
+              :`<span onclick="toggleInProgress('${row.id}')" style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;user-select:none;transition:.15s;background:${(row.inProgress&&!row.done)?'#FEF3C7':'var(--bg3)'};color:${(row.inProgress&&!row.done)?'#D97706':'var(--tx3)'};border:1px solid ${(row.inProgress&&!row.done)?'#FDE68A':'var(--bd)'}">
+              ${(row.inProgress&&!row.done)?'⚡ En cours':'⚡ En cours'}
+            </span>
+            ${(row.inProgress&&!row.done)?`
+            <input type="number" min="0" max="100" value="${row.progress||0}" onclick="event.stopPropagation()"
+              oninput="event.stopPropagation();setProgress('${row.id}',+this.value||0)"
+              style="width:48px;border:1px solid #FDE68A;border-radius:4px;padding:2px 4px;font-size:9px;font-family:inherit;background:#FFFBEB;color:#D97706;outline:none;text-align:center"
+              placeholder="%">
+            `:''}`
+            )}
+            ${_isProgressExcludedPhase(row.pk)?'':`<span onclick="toggleExcludeProgress('${row.id}')" title="${row.excludeProgress?'Réintégrer dans l avancement':'Ne compte pas dans l avancement (ex: mise à disposition)'}" style="font-size:8px;color:var(--tx3);opacity:.6;cursor:pointer;text-decoration:underline;user-select:none">${row.excludeProgress?'réintégrer':'ne compte pas'}</span>`}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:2px;padding-left:19px;">
+            ${(!row.s&&(!row.reelDays||!row.reelDays.length))?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-weight:700">📌 Non planifiée</span>':''}
+            ${(row.hPrev>0)?'<span style="font-size:10px;color:var(--or);font-weight:600;padding:1px 4px;border-radius:3px;background:rgba(237,137,0,.1)">P:'+row.hPrev+'H</span>':''}
+            ${row.hReel?`<span style="font-size:10px;color:var(--gn);font-weight:600;background:rgba(22,163,74,.1);padding:1px 4px;border-radius:3px">R:${row.hReel}H</span>`:''}
+            ${diff!==null?`<span style="font-size:10px;font-weight:700;color:${diff>0?'var(--rd)':'var(--gn)'};padding:1px 3px;border-radius:3px">${diff>0?'+'+diff:diff}H</span>`:''}
+            ${tH?`<span style="font-size:10px;color:var(--tx3);padding:1px 3px;">👥${tH}H</span>`:''}
+          </div>
+        </div>
+      </td>
+      <td class="s2" style="position:sticky;left:255px;z-index:4;background:${nb?'var(--ac2)':'var(--bg2)'};text-align:center;font-size:11px;font-weight:700;color:${nb?'var(--ac)':'var(--tx3)'};border-right:2px solid var(--bd2);min-width:38px;max-width:38px">${nb||''}</td>
+      
+      
+      ${dc}</tr>`;
+}
+
+// Met à jour UNE SEULE ligne déjà affichée dans le GANTT, sans reconstruire
+// tout le tableau (110 semaines × toutes les lignes) — utilisée après les
+// actions fréquentes qui ne changent qu'une tâche à la fois (peindre une
+// barre, cocher "Terminé", changer un %, etc.). Repose sur EXACTEMENT la
+// même fonction de rendu (_gcActRowHtml) que le rendu complet : le résultat
+// est garanti identique, ce n'est que la quantité de DOM reconstruite qui
+// change. Si la ligne n'est pas actuellement affichée (section repliée,
+// onglet différent, ligne supprimée...), on retombe automatiquement et sans
+// risque sur le rendu complet habituel.
+function _gcUpdateRowInPlace(rid){
+  var activeTab=document.querySelector('.nb.on');
+  if(!activeTab||!activeTab.dataset||activeTab.dataset.tab!=='gantt'){return;} // pas sur cet onglet : rien à mettre à jour à l'écran, le prochain renderGantt() (à l'ouverture de l'onglet) affichera la bonne donnée
+  var trEl=document.querySelector('tr.ra[data-rid="'+rid+'"]');
+  if(!trEl){renderGantt();return;}
+  var row=D().find(function(x){return x.id===rid;});
+  if(!row){renderGantt();return;}
+  try{
+    var DW=ZOOM_DW,NC=GANTT_WIDE_WEEKS*7;
+    var _MG=_computeMonthGroupsRange(1,GANTT_WIDE_WEEKS);
+    var html=_gcActRowHtml(row,DW,NC,_MG);
+    var tmp=document.createElement('tbody');
+    tmp.innerHTML=html;
+    var newTr=tmp.querySelector('tr');
+    if(!newTr){renderGantt();return;}
+    trEl.replaceWith(newTr);
+  }catch(e){renderGantt();} // en cas de moindre souci : repli sûr sur le rendu complet, jamais d'écran cassé
+}
+
 function renderGantt(){
   if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='day'){renderGanttDay();return;}
   if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='global'){renderPortfolio();return;}
@@ -9948,137 +10139,7 @@ function renderGantt(){
       html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};opacity:.92;padding:0 12px 0 34px;font-size:11px;font-weight:600;height:19px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.08)">\u25C6 &nbsp;${row.lb}${_sbPctBadge}${_sbBudBadge}</td><td colspan="${2+NC}" style="background:${ph.s};opacity:.92;height:19px"></td></tr>`;return;
     }
     if(!row.p||!Array.isArray(row.p))row.p=[]; // garde-fou : jamais planter le GANTT sur une ligne corrompue
-    const nb=row.p.filter(p=>p.name.trim()).length;
-    const isE=EXP===row.id,done=!!row.done;
-    const tH=row.p.reduce((s,p)=>s+(+p.heures||0),0);
-    const diff=(row.hPrev&&row.hReel)?row.hReel-row.hPrev:null; // positif=dépassement(rouge), négatif=économie(vert)
-    // Tâche non planifiée (pas de semaine de début)
-
-    // Day cells — deux barres indépendantes : Prévue (haut, couleur claire) + Réelle (bas, couleur foncée)
-    // Chaque barre est régie par ses propres semaines sPrev/ePrev et sReel/eReel
-    let dc='';
-    // Jours colorés : tableau individuel (nouveau) ou range (compat)
-    const _prevSet=getTaskDays5(row,'prev');
-    const _reelSet=getTaskDays5(row,'reel');
-    const prevStartDay=_prevSet.length?_prevSet[0]:0;
-    const reelStartDay=_reelSet.length?_reelSet[0]:0;
-    _reelSet.length?_reelSet[_reelSet.length-1]:0; // fin réelle
-
-    for(let w=1;w<=GANTT_WIDE_WEEKS;w++){
-      const sep=_MG.some(m=>m.e===w);
-      const isTW=TODAY&&TODAY.w===w;
-
-      for(let d=0;d<7;d++){
-        const isWE=d>=5;
-        const absDay=(w-1)*7+d;
-        const d5=isWE?-1:(w-1)*5+d; // Equivalent 5-col pour les barres
-        const inPrev=!isWE&&_prevSet.indexOf(d5)>=0;
-        const inReel=!isWE&&_reelSet.indexOf(d5)>=0;
-        const isFirstPrev=inPrev&&(_prevSet.indexOf(d5-1)<0);
-        const isLastPrev=inPrev&&(_prevSet.indexOf(d5+1)<0);
-        const isFirstReel=inReel&&(_reelSet.indexOf(d5-1)<0);
-        const isLastReel=inReel&&(_reelSet.indexOf(d5+1)<0);
-        const prevRad=`${isFirstPrev?'8px':'0'} ${isLastPrev?'8px':'0'} ${isLastPrev?'8px':'0'} ${isFirstPrev?'8px':'0'}`;
-        const reelRad=`${isFirstReel?'8px':'0'} ${isLastReel?'8px':'0'} ${isLastReel?'8px':'0'} ${isFirstReel?'8px':'0'}`;
-        const inAny=inPrev||inReel;
-        const isTD=isTW&&TODAY.di===d;
-        const sepBdr=d===6?'border-right:2px solid #374151;':(d===4&&sep?'border-right:1px solid var(--bd2);':'');
-        const todBdr=isTD?'box-shadow:inset 0 0 0 2px #D97706;':'';
-
-        // Cellule week-end : normalement grisée, mais peut être marquée "travaillée"
-        if(isWE){
-          const _wkPrev=(row.weekendPrev||[]).indexOf(absDay)>=0;
-          const _wkReel=(row.weekendReel||[]).indexOf(absDay)>=0;
-          if(_wkPrev||_wkReel){
-            const prevBgWE=_wkPrev?ph.xl:'transparent';
-            const reelBgWE=_wkReel?ph.xd:'transparent';
-            dc+=`<td onclick="wkendToggle('${row.id}',${absDay},event)" title="Week-end travaillé — clic en haut=Prévu / clic en bas=Réel" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${d===6?'border-right:2px solid #374151;':''}cursor:pointer;background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px)">
-              <div style="height:32px;margin:3px 0 2px;background:${prevBgWE};border-radius:8px;${_wkPrev?'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);':''}display:flex;align-items:center;justify-content:center;overflow:hidden">${_wkPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55)">P</span>`:''}</div>
-              <div style="height:3px;background:rgba(255,255,255,.9)"></div>
-              <div style="height:32px;margin:2px 0 3px;background:${reelBgWE};border-radius:8px;${_wkReel?'box-shadow:inset 0 1px 0 rgba(255,255,255,.18);':''}display:flex;align-items:center;justify-content:center;overflow:hidden">${_wkReel?`<span style="font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)">R</span>`:''}</div>
-            </td>`;
-          } else {
-            dc+=`<td onclick="wkendToggle('${row.id}',${absDay},event)" title="Cliquer pour marquer ce week-end comme travaillé (haut=Prévu / bas=Réel)" style="background:repeating-linear-gradient(135deg,var(--bg3),var(--bg3) 3px,var(--bg2) 3px,var(--bg2) 9px);border-right:${d===6?'2px solid #374151':'none'};min-width:${DW}px;cursor:pointer"></td>`;
-          }
-          continue;
-        }
-        if(!inAny){
-          dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d},event)" onmousemove="gcMove(event)" title="Clic haut=Prévu / Clic bas=Réel" style="background:var(--bg2);${sepBdr}${todBdr};cursor:crosshair"></td>`;
-          continue;
-        }
-
-        // Couleurs : Prévue = clair, Réelle = foncé
-        const prevBg=inPrev?ph.xl:'transparent';
-        const reelBg=inReel?ph.xd:'transparent';
-        // Infobulle : commentaire s'il y en a un sur cette barre (clic droit
-        // pour en ajouter/modifier un), sinon le rappel d'usage habituel.
-        const _cmtParts=[];
-        if(inPrev&&row.barComments&&row.barComments.prev)_cmtParts.push('💬 Prévu : '+row.barComments.prev);
-        if(inReel&&row.barComments&&row.barComments.reel)_cmtParts.push('💬 Réel : '+row.barComments.reel);
-        const cellTitle=_cmtParts.length?_cmtParts.join(' — ').replace(/"/g,'&quot;'):'Clic haut=Prévu / Clic bas=Réel · Clic droit=Commentaire/Déplacer';
-
-        dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d},event)" onmousemove="gcMove(event)" oncontextmenu="gcContextMenu('${row.id}',${w},${d},event)" title="${cellTitle}" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
-          <div style="height:32px;margin:3px 0 2px;background:${prevBg};border-radius:${prevRad};${inPrev?'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
-            ${isFirstPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55);padding-left:2px">P</span>`:''}
-          </div>
-          <div style="height:3px;background:rgba(255,255,255,.9)"></div>
-          <div style="height:32px;margin:2px 0 3px;background:${reelBg};border-radius:${reelRad};${inReel?'box-shadow:inset 0 1px 0 rgba(255,255,255,.18);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
-            ${isFirstReel?`<span style="font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);padding-left:2px">R</span>`:''}
-          </div>
-        </td>`;
-      }
-    }
-    // Statut visuel de la ligne
-    const todayD5=TODAY?(TODAY.w-1)*5+(TODAY.di||0):0;
-    // Rouge UNIQUEMENT si la fin de la barre RÉEL est dépassée
-    const _reelDays2=row.reelDays&&row.reelDays.length?row.reelDays:[];
-    const _reelEnd=_reelDays2.length?Math.max.apply(null,_reelDays2):-1;
-    const isOverdue=!done&&!row.inProgress&&_reelEnd>=0&&todayD5>_reelEnd;
-    // Non planifié = pas de barres du tout → blanc/transparent
-    const _hasBars=(_reelDays2.length>0)||(row.prevDays&&row.prevDays.length>0)||row.s>0;
-    const rowBgColor=!_hasBars?'transparent':done?'rgba(209,250,229,.35)':row.inProgress?'rgba(254,243,199,.35)':isOverdue?'rgba(254,226,226,.35)':'transparent';
-    const rowBorderLeft=!_hasBars?'none':done?'3px solid var(--gn)':row.inProgress?'3px solid #D97706':isOverdue?'3px solid #DC2626':'none';
-    html+=`<tr class="ra" data-rid="${row.id}" style="height:79px;background:${rowBgColor}">
-      
-      <td class="al s1" onclick="event.stopPropagation();toggleExp('${row.id}')" style="cursor:pointer;background:${isE?'var(--ac2)':done?'rgba(209,250,229,.5)':row.inProgress?'rgba(254,243,199,.5)':isOverdue?'rgba(254,226,226,.5)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':row.inProgress?'#D97706':isOverdue?'#DC2626':'var(--tx)'};border-left:${rowBorderLeft};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
-        <div style="display:flex;flex-direction:column;gap:1px;padding-left:2px;">
-          <div style="display:flex;align-items:center;gap:3px;min-width:0;">
-            <span onclick="event.stopPropagation();toggleDone('${row.id}')" title="${done?'Décocher':'Marquer terminé'}"
-              style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0;border-radius:3px;border:1.5px solid ${done?'var(--gn)':'var(--bd2)'};background:${done?'var(--gn)':'var(--bg2)'};cursor:pointer;font-size:12px;color:#fff;">${done?'✓':''}</span>
-            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;${done?'text-decoration:line-through;opacity:.6;':''}">
-              ${done?row.lb:row.lb}
-            </span>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;padding-left:20px;margin-top:3px" onclick="event.stopPropagation()">
-            ${_isProgressExcludedPhase(row.pk)?'':(
-              row.excludeProgress
-              ?`<span onclick="toggleExcludeProgress('${row.id}')" title="Cliquer pour réintégrer cette tâche dans l'avancement" style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;user-select:none;background:var(--bg3);color:var(--tx3);border:1px dashed var(--bd)">Ø Hors avancement</span>`
-              :`<span onclick="toggleInProgress('${row.id}')" style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;user-select:none;transition:.15s;background:${(row.inProgress&&!row.done)?'#FEF3C7':'var(--bg3)'};color:${(row.inProgress&&!row.done)?'#D97706':'var(--tx3)'};border:1px solid ${(row.inProgress&&!row.done)?'#FDE68A':'var(--bd)'}">
-              ${(row.inProgress&&!row.done)?'⚡ En cours':'⚡ En cours'}
-            </span>
-            ${(row.inProgress&&!row.done)?`
-            <input type="number" min="0" max="100" value="${row.progress||0}" onclick="event.stopPropagation()"
-              oninput="event.stopPropagation();setProgress('${row.id}',+this.value||0)"
-              style="width:48px;border:1px solid #FDE68A;border-radius:4px;padding:2px 4px;font-size:9px;font-family:inherit;background:#FFFBEB;color:#D97706;outline:none;text-align:center"
-              placeholder="%">
-            `:''}`
-            )}
-            ${_isProgressExcludedPhase(row.pk)?'':`<span onclick="toggleExcludeProgress('${row.id}')" title="${row.excludeProgress?'Réintégrer dans l avancement':'Ne compte pas dans l avancement (ex: mise à disposition)'}" style="font-size:8px;color:var(--tx3);opacity:.6;cursor:pointer;text-decoration:underline;user-select:none">${row.excludeProgress?'réintégrer':'ne compte pas'}</span>`}
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:2px;padding-left:19px;">
-            ${(!row.s&&(!row.reelDays||!row.reelDays.length))?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-weight:700">📌 Non planifiée</span>':''}
-            ${(row.hPrev>0)?'<span style="font-size:10px;color:var(--or);font-weight:600;padding:1px 4px;border-radius:3px;background:rgba(237,137,0,.1)">P:'+row.hPrev+'H</span>':''}
-            ${row.hReel?`<span style="font-size:10px;color:var(--gn);font-weight:600;background:rgba(22,163,74,.1);padding:1px 4px;border-radius:3px">R:${row.hReel}H</span>`:''}
-            ${diff!==null?`<span style="font-size:10px;font-weight:700;color:${diff>0?'var(--rd)':'var(--gn)'};padding:1px 3px;border-radius:3px">${diff>0?'+'+diff:diff}H</span>`:''}
-            ${tH?`<span style="font-size:10px;color:var(--tx3);padding:1px 3px;">👥${tH}H</span>`:''}
-          </div>
-        </div>
-      </td>
-      <td class="s2" style="position:sticky;left:255px;z-index:4;background:${nb?'var(--ac2)':'var(--bg2)'};text-align:center;font-size:11px;font-weight:700;color:${nb?'var(--ac)':'var(--tx3)'};border-right:2px solid var(--bd2);min-width:38px;max-width:38px">${nb||''}</td>
-      
-      
-      ${dc}</tr>`;
-
+    html+=_gcActRowHtml(row,DW,NC,_MG);
   });
     html+='</tbody></table>';
   wrap.innerHTML=html;
@@ -13031,7 +13092,7 @@ function wkendToggle(rid, absDay, ev){
   if(ix>=0){r[key].splice(ix,1);} else {r[key].push(absDay);}
   saveNow();
   scheduleSupa();
-  _reRenderGanttKeepScroll();
+  _gcUpdateRowInPlace(rid);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -13041,7 +13102,41 @@ function wkendToggle(rid, absDay, ev){
 // GANTT (prevDays/reelDays + _syncTaskMeta + _reRenderGanttKeepScroll),
 // pour rester garanti compatible avec tout ce qui lit déjà ces champs
 // (téléchargements Planning interne/client, Planning Réunion, Récap...).
+//
+// Une même tâche peut avoir plusieurs périodes de barres disjointes (ex:
+// 20/08→30/08 puis 11/11→20/11) : tout ce qui suit agit UNIQUEMENT sur la
+// période précise cliquée, jamais sur les autres périodes de la ligne.
 // ═══════════════════════════════════════════════════════════════════════
+// Bornes du segment (période contiguë) contenant d5 dans daysArr, ou null.
+function _gcSegBounds(daysArr,d5){
+  var set={};(daysArr||[]).forEach(function(x){set[x]=true;});
+  if(!set[d5])return null;
+  var s=d5;while(set[s-1])s--;
+  var e=d5;while(set[e+1])e++;
+  return {start:s,end:e};
+}
+// Cherche dans daysArr un segment qui chevauche ou touche [start,end]
+// (tolérance 1 jour, pour capter un segment "Réel" légèrement décalé par
+// rapport à son "Prévu" correspondant, sans capter une période totalement
+// différente plus loin sur la ligne).
+function _gcOverlapSeg(daysArr,start,end){
+  var set={};(daysArr||[]).forEach(function(x){set[x]=true;});
+  for(var d=start-1;d<=end+1;d++){
+    if(set[d]){
+      var s=d;while(set[s-1])s--;
+      var e=d;while(set[e+1])e++;
+      return {start:s,end:e};
+    }
+  }
+  return null;
+}
+function _gcDaysInRange(start,end){var a=[];for(var d=start;d<=end;d++)a.push(d);return a;}
+function _gcRemoveRange(daysArr,start,end){return (daysArr||[]).filter(function(d){return d<start||d>end;});}
+function _gcPeriodLabel(start,end){
+  function toDate(d5){return weekDayToDate(Math.floor(d5/5)+1,d5%5);}
+  function fmt(dt){return dt?dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):'?';}
+  return start===end?fmt(toDate(start)):fmt(toDate(start))+' → '+fmt(toDate(end));
+}
 function gcContextMenu(rid,w,d,ev){
   ev.preventDefault();
   ev.stopPropagation();
@@ -13051,13 +13146,16 @@ function gcContextMenu(rid,w,d,ev){
   var rect=ev.currentTarget.getBoundingClientRect();
   var relY=ev.clientY-rect.top;
   var mode=(relY<rect.height/2)?'prev':'reel';
-  window._gcCtxTarget={rid:rid,mode:mode};
-  _gcShowContextMenu(ev.clientX,ev.clientY,r,mode);
+  var d5=(w-1)*5+d;
+  var seg=_gcSegBounds(getTaskDays5(r,mode),d5);
+  if(!seg)return; // pas de barre de ce type précisément sous le clic
+  window._gcCtxTarget={rid:rid,mode:mode,segStart:seg.start,segEnd:seg.end};
+  _gcShowContextMenu(ev.clientX,ev.clientY,r,mode,seg.start);
 }
-function _gcShowContextMenu(x,y,r,mode){
+function _gcShowContextMenu(x,y,r,mode,segStart){
   _gcCloseContextMenu();
   var modeLabel=mode==='prev'?'Prévu':'Réel';
-  var hasComment=!!(r.barComments&&r.barComments[mode]);
+  var hasComment=!!(r.barComments&&r.barComments[mode]&&r.barComments[mode][segStart]);
   var menu=document.createElement('div');
   menu.id='_gcCtxMenu';
   var mw=220,mh=90;
@@ -13092,12 +13190,14 @@ function gcCtxComment(){
   if(!t)return;
   var r=D().find(function(x){return x.id===t.rid;});
   if(!r)return;
-  var cur=(r.barComments&&r.barComments[t.mode])||'';
-  var txt=prompt('Commentaire pour la barre '+(t.mode==='prev'?'Prévu':'Réel')+' de "'+(r.lb||'')+'" :',cur);
+  var cur=(r.barComments&&r.barComments[t.mode]&&r.barComments[t.mode][t.segStart])||'';
+  var periodLabel=_gcPeriodLabel(t.segStart,t.segEnd);
+  var txt=prompt('Commentaire pour la barre '+(t.mode==='prev'?'Prévu':'Réel')+' de "'+(r.lb||'')+'" ('+periodLabel+') :',cur);
   if(txt===null)return; // annulé, on ne touche à rien
   txt=txt.trim();
   if(!r.barComments)r.barComments={};
-  if(txt)r.barComments[t.mode]=txt;else delete r.barComments[t.mode];
+  if(!r.barComments[t.mode])r.barComments[t.mode]={};
+  if(txt)r.barComments[t.mode][t.segStart]=txt;else delete r.barComments[t.mode][t.segStart];
   saveNow();
   _reRenderGanttKeepScroll();
 }
@@ -13108,31 +13208,27 @@ function gcCtxMoveAll(){
   if(!t)return;
   var r=D().find(function(x){return x.id===t.rid;});
   if(!r)return;
-  // Capturer ICI, une fois pour toutes, la position ET la durée exactes de
-  // CHAQUE barre (Prévu et Réel) telles qu'affichées à l'instant du clic
-  // droit — y compris si Réel n'a jamais été peint à la main et se contente
-  // aujourd'hui de calquer Prévu (comportement normal du site). En les
-  // figeant maintenant, on garantit que chacune garde EXACTEMENT sa
-  // longueur actuelle pendant tout le déplacement, sans qu'aucune ne
-  // "suive" ou ne se redimensionne à cause de ce calque automatique.
-  var prevDays=getTaskDays5(r,'prev').slice().sort(function(a,b){return a-b;});
-  var reelDays=getTaskDays5(r,'reel').slice().sort(function(a,b){return a-b;});
-  if(!prevDays.length&&!reelDays.length){alert('Aucune barre à déplacer ici.');return;}
-  var anchor=prevDays.length?prevDays[0]:reelDays[0];
-  window._gcMoveState={rid:t.rid,prevDays:prevDays,reelDays:reelDays,anchor:anchor};
-  _gcShowMoveHint(r,prevDays.length,reelDays.length);
+  // Capturer UNIQUEMENT la période cliquée (pas les autres périodes de la
+  // même tâche) — et, si elle existe, la période de l'AUTRE type de barre
+  // (prévu/réel) qui chevauche ou touche cette même période, pour continuer
+  // à déplacer prévu+réel ensemble, mais seulement pour CETTE période-là.
+  var primaryDays=_gcDaysInRange(t.segStart,t.segEnd);
+  var otherMode=t.mode==='prev'?'reel':'prev';
+  var otherSeg=_gcOverlapSeg(getTaskDays5(r,otherMode),t.segStart,t.segEnd);
+  var segments=[{mode:t.mode,days:primaryDays,oldStart:t.segStart}];
+  if(otherSeg)segments.push({mode:otherMode,days:_gcDaysInRange(otherSeg.start,otherSeg.end),oldStart:otherSeg.start});
+  window._gcMoveState={rid:t.rid,segments:segments,anchor:t.segStart};
+  _gcShowMoveHint(r,segments);
   document.addEventListener('keydown',_gcMoveEscHandler);
 }
-function _gcShowMoveHint(r,prevCount,reelCount){
+function _gcShowMoveHint(r,segments){
   var old=document.getElementById('_gcMoveHint');
   if(old)old.remove();
-  var parts=[];
-  if(prevCount)parts.push('Prévu '+prevCount+'j');
-  if(reelCount)parts.push('Réel '+reelCount+'j');
+  var parts=segments.map(function(s){return (s.mode==='prev'?'Prévu':'Réel')+' '+s.days.length+'j';});
   var hint=document.createElement('div');
   hint.id='_gcMoveHint';
   hint.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99999;background:#1F2937;color:#fff;padding:9px 10px 9px 18px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;gap:10px;font-family:inherit';
-  hint.innerHTML='📦 Déplacement de « '+esc0(r.lb||'')+' » ('+parts.join(' + ')+') — cliquez sur la nouvelle position<button onclick="_gcCancelMove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:999px;padding:4px 12px;cursor:pointer;font-size:11px;font-family:inherit">✕ Annuler (Échap)</button>';
+  hint.innerHTML='📦 Déplacement de « '+esc0(r.lb||'')+' » ('+parts.join(' + ')+', cette période uniquement) — cliquez sur la nouvelle position<button onclick="_gcCancelMove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:999px;padding:4px 12px;cursor:pointer;font-size:11px;font-family:inherit">✕ Annuler (Échap)</button>';
   document.body.appendChild(hint);
 }
 function _gcMoveEscHandler(ev){if(ev.key==='Escape')_gcCancelMove();}
@@ -13143,31 +13239,31 @@ function _gcCancelMove(){
   document.querySelectorAll('.gcell').forEach(function(td){td.style.outline='';});
   document.removeEventListener('keydown',_gcMoveEscHandler);
 }
-// Aperçu : surligne, sur la ligne de la tâche, les cases où atterriraient
-// les DEUX barres (Prévu en bleu, Réel en vert) si on validait ici — chacune
-// garde sa longueur d'origine, et leur écart l'une par rapport à l'autre
-// reste identique (elles bougent comme un seul bloc rigide).
+// Aperçu : surligne, sur la ligne de la tâche, les cases où atterrirait
+// CETTE période précise (et sa période correspondante de l'autre type de
+// barre s'il y en a une) — jamais les autres périodes de la ligne.
 function _gcMoveHighlight(targetW,targetD){
   var ms=window._gcMoveState;
   if(!ms)return;
   document.querySelectorAll('.gcell[data-rid="'+ms.rid+'"]').forEach(function(td){td.style.outline='';});
   var targetD5=(targetW-1)*5+targetD;
   var offset=targetD5-ms.anchor;
-  function paint(days,color){
-    days.forEach(function(d0){
+  var colors={prev:'rgba(37,99,235,.8)',reel:'rgba(22,163,74,.8)'};
+  ms.segments.forEach(function(seg){
+    seg.days.forEach(function(d0){
       var d5=d0+offset;
       if(d5<0)return;
       var w2=Math.floor(d5/5)+1,d2=d5%5;
       var cell=document.querySelector('.gcell[data-rid="'+ms.rid+'"][data-w="'+w2+'"][data-d="'+d2+'"]');
-      if(cell)cell.style.outline='2px inset '+color;
+      if(cell)cell.style.outline='2px inset '+colors[seg.mode];
     });
-  }
-  paint(ms.prevDays,'rgba(37,99,235,.8)');
-  paint(ms.reelDays,'rgba(22,163,74,.8)');
+  });
 }
-// Validation : déplace les deux barres capturées au clic droit, chacune
-// gardant strictement sa longueur d'origine, en conservant l'écart entre
-// elles (déplacement "en bloc rigide").
+// Validation : déplace uniquement les segments capturés au clic droit
+// (cette période, et sa correspondante éventuelle de l'autre type de
+// barre), en retirant précisément leurs anciens jours et en réinsérant les
+// nouveaux — sans toucher aux autres périodes de la tâche. Le commentaire
+// éventuellement attaché à cette période est déplacé avec elle.
 function _gcCommitMove(targetW,targetD){
   var ms=window._gcMoveState;
   if(!ms)return;
@@ -13175,8 +13271,18 @@ function _gcCommitMove(targetW,targetD){
   if(r){
     var targetD5=(targetW-1)*5+targetD;
     var offset=targetD5-ms.anchor;
-    if(ms.prevDays.length)r.prevDays=ms.prevDays.map(function(d){return Math.max(0,d+offset);});
-    if(ms.reelDays.length)r.reelDays=ms.reelDays.map(function(d){return Math.max(0,d+offset);});
+    ms.segments.forEach(function(seg){
+      var key=seg.mode==='prev'?'prevDays':'reelDays';
+      var oldStart=seg.oldStart,oldEnd=oldStart+seg.days.length-1;
+      var remaining=_gcRemoveRange(r[key],oldStart,oldEnd);
+      var newDays=seg.days.map(function(dd){return Math.max(0,dd+offset);});
+      r[key]=remaining.concat(newDays);
+      if(r.barComments&&r.barComments[seg.mode]&&r.barComments[seg.mode][oldStart]!==undefined){
+        var txt=r.barComments[seg.mode][oldStart];
+        delete r.barComments[seg.mode][oldStart];
+        r.barComments[seg.mode][newDays[0]]=txt;
+      }
+    });
     _syncTaskMeta(r);
     saveNow();
   }
@@ -13307,7 +13413,7 @@ function gcCommit(){
     _applyToKey(mode==='reel'?'reelDays':'prevDays');
   }
   _syncTaskMeta(r);
-  saveNow();renderGantt();
+  saveNow();_gcUpdateRowInPlace(_gc.rid);
 }
 
 document.addEventListener('mouseup', function(){
