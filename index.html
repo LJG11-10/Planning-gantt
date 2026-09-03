@@ -6130,10 +6130,37 @@ function downloadPlanning(mode){
     +'function _pcPrintRecap(){var st=document.getElementById("_pc_page_size");if(st)st.textContent="@media print{@page{size:A4 portrait;margin:12mm}}";document.body.classList.add("pc-print-recap");window.print();setTimeout(function(){document.body.classList.remove("pc-print-recap");},400);}'
     +'function _pcPrintGantt(){'
       +'var st=document.getElementById("_pc_page_size");if(st)st.textContent="@media print{@page{size:'+_ganttPageSizeCss+';margin:7mm}}";'
+      // Sécurité : quelle que soit la façon dont on est arrivé ici (bouton
+      // de zoom manuel, allers-retours vue jour/semaine...), on repart d\'un
+      // zoom propre et connu (26px) pour construire les pages en vue
+      // Semaine — puis on restaure le zoom d\'affichage d\'origine juste
+      // après (une fois les pages d\'impression retirées : elles partagent
+      // le même identifiant que le tableau réel, restaurer trop tôt les
+      // modifierait aussi et les corromprait).
+      +'var _pcgTable=document.getElementById("gantt-table");'
+      +'var _pcgSavedZoom=_ganttZoomCol;'
+      +'var _pcgIsDay=_pcgTable&&_pcgTable.classList.contains("gz-daymode");'
+      +'if(_pcgTable&&!_pcgIsDay&&_ganttZoomCol!==26)_ganttSetZoom(26-_ganttZoomCol);'
       +'_pcBuildPrintSlices();'
       +'document.body.classList.add("pc-print-gantt");'
+      // Nettoyer seulement une fois l\'impression VRAIMENT terminée (la
+      // fenêtre d\'impression du navigateur peut rester ouverte plusieurs
+      // secondes pendant que l\'utilisateur la regarde) — un délai fixe
+      // pouvait déclencher le nettoyage trop tôt, pendant que cette
+      // fenêtre était encore ouverte, faisant apparaître l\'ancien tableau
+      // non découpé à la place de la version corrigée.
+      +'var _pcgCleaned=false;'
+      +'function _pcgCleanup(){'
+        +'if(_pcgCleaned)return;_pcgCleaned=true;'
+        +'document.body.classList.remove("pc-print-gantt");'
+        +'_pcRemovePrintSlices();'
+        +'if(_ganttZoomCol!==_pcgSavedZoom)_ganttSetZoom(_pcgSavedZoom-_ganttZoomCol);'
+        +'window.removeEventListener("afterprint",_pcgCleanup);'
+      +'}'
+      +'window.addEventListener("afterprint",_pcgCleanup);'
+      +'setTimeout(_pcgCleanup,15000);'
+      // filet de sécurité si "afterprint" ne se déclenche jamais
       +'window.print();'
-      +'setTimeout(function(){document.body.classList.remove("pc-print-gantt");_pcRemovePrintSlices();},400);'
     +'}'
     // Un navigateur ne reporte JAMAIS automatiquement un contenu trop LARGE
     // sur plusieurs pages à l\'impression (contrairement à la hauteur, qui
@@ -6163,12 +6190,74 @@ function downloadPlanning(mode){
       +'var container=document.createElement("div");'
       +'container.id="_pcPrintSlices";'
       +'var pageWidthPxApprox=Math.round('+_ganttPrintWidthMm+'*3.78);'
+      // Vue SEMAINE : comportement d\'origine conservé — calendrier continu
+      // sur toute l\'affaire, découpé précisément en pages successives
+      // (décalage en mm, jamais en pixels approximés, pour ne jamais
+      // dériver sur les pages tardives).
+      +'if(!table.classList.contains("gz-daymode")){'
+        +'var weeksPerPageW=Math.max(1,Math.floor(pageWidthPxApprox/_ganttZoomCol));'
+        +'var wFrom='+_fw+',wTo='+_tw+';'
+        +'var totalWeeksW=Math.max(1,wTo-wFrom+1);'
+        +'var nSlicesW=Math.max(1,Math.ceil(totalWeeksW/weeksPerPageW));'
+        +'for(var iw=0;iw<nSlicesW;iw++){'
+          +'var subFromW2=wFrom+iw*weeksPerPageW;'
+          +'var subToW2=Math.min(wTo,subFromW2+weeksPerPageW-1);'
+          +'var viewportW=document.createElement("div");'
+          +'viewportW.className="_pc-print-slice";'
+          +'viewportW.style.cssText="width:'+_ganttPrintWidthMm+'mm;max-width:'+_ganttPrintWidthMm+'mm;page-break-after:always";'
+          +'var cloneW=table.cloneNode(true);'
+          +'cloneW.style.tableLayout="fixed";'
+          +'cloneW.style.width="auto";'
+          +'cloneW.style.marginLeft="0";'
+          // Retirer réellement les colonnes hors de la plage voulue (col,
+          // en-tête, cellules) — un tableau vraiment étroit, pas juste
+          // coupé visuellement. Toutes les lignes restent, comme avant
+          // (seul l\'état replié/déplié déjà présent sur le vrai tableau
+          // s\'applique, via les classes copiées par le clonage).
+          +'Array.prototype.forEach.call(Array.prototype.slice.call(cloneW.querySelectorAll("col")),function(c){'
+            +'var m=/wk-c-(\\d+)/.exec(c.className||"");'
+            +'if(m){var w=+m[1];if(w<subFromW2||w>subToW2)c.parentNode.removeChild(c);}'
+          +'});'
+          +'Array.prototype.forEach.call(Array.prototype.slice.call(cloneW.querySelectorAll("thead th[class*=wk-c-]")),function(th){'
+            +'var m=/wk-c-(\\d+)/.exec(th.className||"");'
+            +'if(m){var w=+m[1];if(w<subFromW2||w>subToW2)th.parentNode.removeChild(th);}'
+          +'});'
+          +'Array.prototype.forEach.call(Array.prototype.slice.call(cloneW.querySelectorAll("tbody td[class*=wk-c-]")),function(td){'
+            +'var m=/wk-c-(\\d+)/.exec(td.className||"");'
+            +'if(m){var w=+m[1];if(w<subFromW2||w>subToW2)td.parentNode.removeChild(td);}'
+          +'});'
+          // Reconstruire l\'en-tête des mois pour cette plage étroite.
+          +'var monthRowW=cloneW.querySelector("thead tr:first-child");'
+          +'if(monthRowW){'
+            +'Array.prototype.forEach.call(Array.prototype.slice.call(monthRowW.querySelectorAll("th")),function(th,idx){if(idx>0)th.parentNode.removeChild(th);});'
+            +'_pcMonthGroups(subFromW2,subToW2).forEach(function(m){'
+              +'var th=document.createElement("th");'
+              +'th.colSpan=m.e-m.s+1;'
+              +'th.style.cssText="background:#1F4E79;color:#fff;padding:7px 4px;text-align:center;font-size:13px;font-weight:700;border:1px solid #2563EB";'
+              +'th.textContent=m.l;'
+              +'monthRowW.appendChild(th);'
+            +'});'
+          +'}'
+          +'viewportW.appendChild(cloneW);'
+          +'_pcAddPageNumBadge(viewportW);'
+          +'container.appendChild(viewportW);'
+        +'}'
+        +'_pcFillPageNumbers(container);'
+        +'page.parentNode.insertBefore(container,page.nextSibling);'
+        +'return;'
+      +'}'
+      // Vue JOUR : nouveau système — une page (ou plusieurs si besoin) par
+      // ensemble réellement déplié, tableau vraiment étroit (pas juste
+      // coupé), cadré sur sa propre période visible.
       +'var weeksPerPage=Math.max(1,Math.floor(pageWidthPxApprox/_ganttZoomCol));'
       // Lignes actuellement visibles (dépliées) sur le vrai tableau —
       // respecte exactement ce que l\'utilisateur a choisi de montrer.
       +'var visibleIds={};'
       +'Array.prototype.forEach.call(table.querySelectorAll("tbody > tr[data-store-id]"),function(tr){'
-        +'if(!tr.classList.contains("pc-hidden"))visibleIds[tr.getAttribute("data-store-id")]=true;'
+        // Exclu si caché par un ancêtre replié (pc-hidden) OU replié
+        // lui-même (pc-collapsed) — une sous-phase repliée ne doit plus
+        // apparaître du tout à l\'impression, pas même son propre titre.
+        +'if(!tr.classList.contains("pc-hidden")&&!tr.classList.contains("pc-collapsed"))visibleIds[tr.getAttribute("data-store-id")]=true;'
       +'});'
       +'function buildNarrowPage(rowIds,subFromW,subToW,titleText){'
         +'var viewport=document.createElement("div");'
@@ -6188,7 +6277,7 @@ function downloadPlanning(mode){
         +'Array.prototype.forEach.call(Array.prototype.slice.call(clone.querySelectorAll("tbody > tr")),function(tr){'
           +'var rid=tr.getAttribute("data-store-id");'
           +'if(!rid||rowIds.indexOf(rid)<0)tr.parentNode.removeChild(tr);'
-          +'else tr.classList.remove("pc-hidden","pc-collapsed");'
+          +'else tr.classList.remove("pc-hidden");'
         +'});'
         // Retirer les colonnes hors de la plage voulue (col, en-tête
         // semaine/jour, et chaque cellule de donnée) — un tableau
@@ -6220,6 +6309,7 @@ function downloadPlanning(mode){
           +'});'
         +'}'
         +'viewport.appendChild(clone);'
+        +'_pcAddPageNumBadge(viewport);'
         +'container.appendChild(viewport);'
       +'}'
       +'function buildGroupPages(rowIds,groupFromW,groupToW,title){'
@@ -6227,7 +6317,11 @@ function downloadPlanning(mode){
         +'var nSub=Math.max(1,Math.ceil(groupWeeks/weeksPerPage));'
         +'for(var i=0;i<nSub;i++){'
           +'var subFromW=groupFromW+i*weeksPerPage;'
-          +'var subToW=Math.min(groupToW,subFromW+weeksPerPage-1);'
+          // Toujours remplir la page entière (jusqu\'à weeksPerPage
+          // semaines), même au-delà de la dernière barre réelle — évite une
+          // page presque vide pour un ensemble qui n\'a que peu d\'activité ;
+          // les semaines en trop restent simplement blanches, sans barre.
+          +'var subToW=subFromW+weeksPerPage-1;'
           +'buildNarrowPage(rowIds,subFromW,subToW,title+(nSub>1?" ("+(i+1)+"/"+nSub+")":""));'
         +'}'
       +'}'
@@ -6236,6 +6330,7 @@ function downloadPlanning(mode){
         // lignes visibles, cadrées sur leur vraie période commune.
         +'var allVisible=Object.keys(visibleIds);'
         +'buildGroupPages(allVisible,'+_ganttSpanFrom+','+_ganttSpanTo+',"");'
+        +'_pcFillPageNumbers(container);'
         +'page.parentNode.insertBefore(container,page.nextSibling);'
         +'return;'
       +'}'
@@ -6256,7 +6351,26 @@ function downloadPlanning(mode){
         +'var gToW=weekNums.length?Math.max.apply(null,weekNums):group.toW;'
         +'buildGroupPages(visibleRowIds,gFromW,gToW,group.title);'
       +'});'
+      +'_pcFillPageNumbers(container);'
       +'page.parentNode.insertBefore(container,page.nextSibling);'
+    +'}'
+    // Numérotation des pages : un badge posé sur chaque page à sa
+    // création, puis complété avec le nombre total de pages une fois que
+    // toutes sont connues (fonctionne pareil pour la vue semaine et la vue
+    // jour, quel que soit le nombre de pages généré au final).
+    +'function _pcAddPageNumBadge(viewport){'
+      +'var badge=document.createElement("div");'
+      +'badge.className="_pc-page-num";'
+      +'badge.style.cssText="font-size:10px;color:#9CA3AF;text-align:right;margin-top:3px";'
+      +'viewport.appendChild(badge);'
+    +'}'
+    +'function _pcFillPageNumbers(container){'
+      +'var slices=container.querySelectorAll("._pc-print-slice");'
+      +'var total=slices.length;'
+      +'Array.prototype.forEach.call(slices,function(el,idx){'
+        +'var badge=el.querySelector("._pc-page-num");'
+        +'if(badge)badge.textContent="Page "+(idx+1)+" / "+total;'
+      +'});'
     +'}'
     +'function _pcRemovePrintSlices(){var c=document.getElementById("_pcPrintSlices");if(c)c.remove();}'
     // Zoom au Ctrl+molette sur le GANTT de ce document téléchargé — même
@@ -6300,6 +6414,17 @@ function downloadPlanning(mode){
         +'requestAnimationFrame(function(){'
           +'var _newMax=Math.max(1,(table.scrollWidth||0)-page.clientWidth);'
           +'page.scrollLeft=_ratio*_newMax;'
+        +'});'
+      +'}else if(!_ganttDayMode&&_ganttZoomCol!==26&&page){'
+        // Retour à la vue semaine : remettre le zoom à sa taille normale —
+        // sinon les colonnes restent aussi larges qu\'en vue jour, ce qui
+        // fausse complètement le calcul du nombre de pages à l\'impression.
+        +'var _oldMax2=Math.max(1,(table.scrollWidth||0)-page.clientWidth);'
+        +'var _ratio2=_oldMax2>0?page.scrollLeft/_oldMax2:0;'
+        +'_ganttSetZoom(26-_ganttZoomCol);'
+        +'requestAnimationFrame(function(){'
+          +'var _newMax2=Math.max(1,(table.scrollWidth||0)-page.clientWidth);'
+          +'page.scrollLeft=_ratio2*_newMax2;'
         +'});'
       +'}'
     +'}'
