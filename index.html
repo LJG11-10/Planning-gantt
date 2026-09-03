@@ -13683,12 +13683,27 @@ function gcCtxComment(){
   if(!r.barComments[t.mode])r.barComments[t.mode]={};
   if(txt)r.barComments[t.mode][t.segStart]=txt;else delete r.barComments[t.mode][t.segStart];
   // Un commentaire posé sur Prévu se recopie automatiquement sur Réel juste
-  // en dessous (même segment), pour ne pas avoir à le ressaisir deux fois —
+  // en dessous (même période), pour ne pas avoir à le ressaisir deux fois —
   // sauf si Réel a déjà SON PROPRE commentaire différent, qu'on ne veut pas
-  // écraser silencieusement.
+  // écraser silencieusement. Réel n'a pas forcément le même jour de départ
+  // que Prévu (les deux barres peuvent être légèrement décalées) : il faut
+  // donc calculer LE VRAI point de départ du segment Réel, pas réutiliser
+  // à tort celui de Prévu — sinon le commentaire est enregistré à une
+  // position que l'affichage de Réel ne consulte jamais.
   if(t.mode==='prev'&&txt){
-    if(!r.barComments.reel)r.barComments.reel={};
-    if(!r.barComments.reel[t.segStart])r.barComments.reel[t.segStart]=txt;
+    var _reelDaysNow=getTaskDays5(r,'reel');
+    var _reelSegStart=null;
+    for(var _dChk=t.segStart;_dChk<=t.segEnd;_dChk++){
+      if(_reelDaysNow.indexOf(_dChk)>=0){
+        _reelSegStart=_dChk;
+        while(_reelDaysNow.indexOf(_reelSegStart-1)>=0)_reelSegStart--;
+        break;
+      }
+    }
+    if(_reelSegStart!==null){
+      if(!r.barComments.reel)r.barComments.reel={};
+      if(!r.barComments.reel[_reelSegStart])r.barComments.reel[_reelSegStart]=txt;
+    }
   }
   // Sécurité : même si une étape annexe (calcul de budget, etc.) échoue
   // pour une raison imprévue ailleurs dans saveNow(), le commentaire lui-
