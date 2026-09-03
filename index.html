@@ -300,6 +300,12 @@
   }
   function _isEditingUI(){
     try{
+      // Une sauvegarde locale vient d'être déclenchée mais n'est pas encore
+      // partie vers le serveur (fenêtre de 800ms de scheduleSupa) — ne pas
+      // appliquer une mise à jour distante maintenant, sinon un changement
+      // tout juste fait localement (ex: un commentaire) pourrait être
+      // écrasé par une version distante encore périmée qui ne l'a pas.
+      if(_syncTimeout)return true;
       // On ne bloque plus la synchronisation juste parce qu'un panneau est
       // ouvert à l'écran (vous êtes juste en train de regarder une tâche) —
       // avec l'horodatage désormais en place, la fusion sait déjà préserver
