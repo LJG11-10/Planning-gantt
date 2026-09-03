@@ -6016,9 +6016,9 @@ function downloadPlanning(mode){
           if(_dbInP&&r.barComments&&r.barComments.prev){var _sgP=_dAbs;while(_prevDaysSet.has(_sgP-1))_sgP--;_dbCmtP=r.barComments.prev[_sgP]||'';}
           if(_dbInR&&r.barComments&&r.barComments.reel){var _sgR=_dAbs;while(_reelDaysSet.has(_sgR-1))_sgR--;_dbCmtR=r.barComments.reel[_sgR]||'';}
           _dayBarHtml+='<div style="flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid #F1F2F5;height:100%">'
-            +'<div style="flex:1;background:'+(_dbInP?phC.xl:(_db>=5?'#FAFAFA':'transparent'))+';display:flex;align-items:center;justify-content:center;overflow:hidden"'+(_dbCmtP?' title="'+esc(_dbCmtP)+'"':'')+'>'+(_dbCmtP?'<span style="font-size:8px">💬</span>':'')+'</div>'
+            +'<div style="flex:1;background:'+(_dbInP?phC.xl:(_db>=5?'#FAFAFA':'transparent'))+';display:flex;align-items:center;justify-content:center;overflow:hidden"'+(_dbCmtP?' title="'+esc(_dbCmtP)+'"':'')+'>'+(_dbCmtP?'<span style="font-size:13px">💬</span>':'')+'</div>'
             +'<div style="height:0.5px;background:#fff"></div>'
-            +'<div style="flex:1;background:'+(_dbInR?phC.xd:(_db>=5?'#FAFAFA':'transparent'))+';display:flex;align-items:center;justify-content:center;overflow:hidden"'+(_dbCmtR?' title="'+esc(_dbCmtR)+'"':'')+'>'+(_dbCmtR?'<span style="font-size:8px">💬</span>':'')+'</div>'
+            +'<div style="flex:1;background:'+(_dbInR?phC.xd:(_db>=5?'#FAFAFA':'transparent'))+';display:flex;align-items:center;justify-content:center;overflow:hidden"'+(_dbCmtR?' title="'+esc(_dbCmtR)+'"':'')+'>'+(_dbCmtR?'<span style="font-size:13px">💬</span>':'')+'</div>'
             +'</div>';
         }
         _dayBarHtml+='</div>';
@@ -6036,14 +6036,14 @@ function downloadPlanning(mode){
         var _cmtPwk=_prevCommentWeeks[w]||'';
         var _cmtPwkJs=_cmtPwk?JSON.stringify('💬 Commentaire (Prévu) :\n\n'+_cmtPwk).replace(/"/g,'&quot;'):'';
         html+='<div style="height:11px;background:'+(inP?phC.xl:'transparent')+';display:flex;align-items:center;justify-content:center'+(_cmtPwk?';cursor:pointer':'')+'" title="'+(_cmtPwk?'💬 Cliquer pour lire le commentaire':'')+'"'+(_cmtPwk?' onclick="alert('+_cmtPwkJs+')"':'')+'>';
-        if(inP) html+='<span style="font-size:6px;font-weight:900;color:'+phC.h+'">P</span>'+(_cmtPwk?'<span style="font-size:6px;margin-left:1px">💬</span>':'');
+        if(inP) html+='<span style="font-size:6px;font-weight:900;color:'+phC.h+'">P</span>'+(_cmtPwk?'<span style="font-size:11px;margin-left:1px">💬</span>':'');
         html+='</div>';
         html+='<div style="height:0.5px;background:#fff"></div>';
         // Réel
         var _cmtRwk=_reelCommentWeeks[w]||'';
         var _cmtRwkJs=_cmtRwk?JSON.stringify('💬 Commentaire (Réel) :\n\n'+_cmtRwk).replace(/"/g,'&quot;'):'';
         html+='<div style="height:11px;background:'+(inR?phC.xd:'transparent')+';display:flex;align-items:center;justify-content:center'+(_cmtRwk?';cursor:pointer':'')+'" title="'+(_cmtRwk?'💬 Cliquer pour lire le commentaire':'')+'"'+(_cmtRwk?' onclick="alert('+_cmtRwkJs+')"':'')+'>';
-        if(inR) html+='<span style="font-size:6px;font-weight:900;color:#fff">R</span>'+(_cmtRwk?'<span style="font-size:6px;margin-left:1px">💬</span>':'');
+        if(inR) html+='<span style="font-size:6px;font-weight:900;color:#fff">R</span>'+(_cmtRwk?'<span style="font-size:11px;margin-left:1px">💬</span>':'');
         html+='</div>';
         html+='</div>';
         html+=_dayBarHtml;
@@ -10361,11 +10361,11 @@ function _gcActRowHtml(row,DW,NC,_MG){
 
       dc+=`<td data-rid="${row.id}" data-w="${w}" data-d="${d}" class="gcell" onmousedown="gcDown('${row.id}',${w},${d},event)" onmouseenter="gcEnter('${row.id}',${w},${d},event)" onmousemove="gcMove(event)" oncontextmenu="gcContextMenu('${row.id}',${w},${d},event)" title="${cellTitle}" style="padding:0;vertical-align:top;width:${DW}px;min-width:${DW}px;max-width:${DW}px;${sepBdr}${todBdr};cursor:crosshair">
         <div style="height:32px;margin:3px 0 2px;background:${prevBg};border-radius:${prevRad};${inPrev?'box-shadow:inset 0 1px 0 rgba(255,255,255,.35);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
-          ${isFirstPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55);padding-left:2px">P</span>${_prevCmt?'<span style="font-size:9px;margin-left:2px" title="'+String(_prevCmt).replace(/"/g,'&quot;')+'">💬</span>':''}`:''}
+          ${isFirstPrev?`<span style="font-size:9px;font-weight:800;color:${ph.xd};text-shadow:0 1px 0 rgba(255,255,255,.55);padding-left:2px">P</span>${_prevCmt?'<span style="font-size:14px;margin-left:2px" title="'+String(_prevCmt).replace(/"/g,'&quot;')+'">💬</span>':''}`:''}
         </div>
         <div style="height:3px;background:rgba(255,255,255,.9)"></div>
         <div style="height:32px;margin:2px 0 3px;background:${reelBg};border-radius:${reelRad};${inReel?'box-shadow:inset 0 1px 0 rgba(255,255,255,.18);':''};display:flex;align-items:center;justify-content:center;overflow:hidden">
-          ${isFirstReel?`<span style="font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);padding-left:2px">R</span>${_reelCmt?'<span style="font-size:9px;margin-left:2px" title="'+String(_reelCmt).replace(/"/g,'&quot;')+'">💬</span>':''}`:''}
+          ${isFirstReel?`<span style="font-size:9px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);padding-left:2px">R</span>${_reelCmt?'<span style="font-size:14px;margin-left:2px" title="'+String(_reelCmt).replace(/"/g,'&quot;')+'">💬</span>':''}`:''}
         </div>
       </td>`;
     }
@@ -12415,8 +12415,8 @@ function pedConfirmAddPhase(){
         if(inReel&&a.barComments&&a.barComments.reel){let sgR=d5;while(_reelDaysArrLive.indexOf(sgR-1)>=0)sgR--;cmtR=a.barComments.reel[sgR]||'';}
 
         cells+=`<td style="width:${COL_W}px;min-width:${COL_W}px;height:${ROW_H}px;background:${day.isFerieDay?'rgba(254,226,226,.4)':isToday?'rgba(254,243,199,.3)':'var(--bg2)'};border-left:${borderL};${day.isFerieDay?'border-top:2px solid rgba(239,68,68,.3);':''}border-bottom:1px solid var(--bd);padding:0;vertical-align:top;position:relative;cursor:pointer;isolation:isolate;z-index:1" onclick="toggleDayExp(event,'${a.id}',${dayAbsIdx},'${dayLbl}')" oncontextmenu="gcContextMenu('${a.id}',${day.w},${day.d},event)">
-          ${inPrev?`<div style="position:absolute;left:2px;width:46%;top:${blockTopP}%;height:${blockHtP}%;background:${ph.xl};border-radius:3px 0 0 3px;border:2px solid ${ph.x};border-right:none;z-index:1;display:flex;align-items:flex-start;justify-content:center;overflow:hidden"${cmtP?` title="💬 ${esc(cmtP)}"`:''}>${lblP?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblP}</span>`:''}${cmtP?`<span style="font-size:8px;position:absolute;top:1px;right:1px">💬</span>`:''}</div>`:''}
-          ${inReel?`<div style="position:absolute;right:2px;width:46%;top:${blockTopR}%;height:${blockHtR}%;background:${ph.xd};border-radius:0 3px 3px 0;border:2px solid ${ph.h};border-left:none;z-index:2;display:flex;align-items:flex-start;justify-content:center;overflow:hidden"${cmtR?` title="💬 ${esc(cmtR)}"`:''}>${lblR?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblR}</span>`:''}${cmtR?`<span style="font-size:8px;position:absolute;top:1px;right:1px">💬</span>`:''}</div>`:''}
+          ${inPrev?`<div style="position:absolute;left:2px;width:46%;top:${blockTopP}%;height:${blockHtP}%;background:${ph.xl};border-radius:3px 0 0 3px;border:2px solid ${ph.x};border-right:none;z-index:1;display:flex;align-items:flex-start;justify-content:center;overflow:hidden"${cmtP?` title="💬 ${esc(cmtP)}"`:''}>${lblP?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblP}</span>`:''}${cmtP?`<span style="font-size:13px;position:absolute;top:0px;right:0px">💬</span>`:''}</div>`:''}
+          ${inReel?`<div style="position:absolute;right:2px;width:46%;top:${blockTopR}%;height:${blockHtR}%;background:${ph.xd};border-radius:0 3px 3px 0;border:2px solid ${ph.h};border-left:none;z-index:2;display:flex;align-items:flex-start;justify-content:center;overflow:hidden"${cmtR?` title="💬 ${esc(cmtR)}"`:''}>${lblR?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblR}</span>`:''}${cmtR?`<span style="font-size:13px;position:absolute;top:0px;right:0px">💬</span>`:''}</div>`:''}
         </td>`;
       });
 
@@ -13665,8 +13665,25 @@ function gcCtxComment(){
   if(!r.barComments)r.barComments={};
   if(!r.barComments[t.mode])r.barComments[t.mode]={};
   if(txt)r.barComments[t.mode][t.segStart]=txt;else delete r.barComments[t.mode][t.segStart];
-  saveNow();
-  _reRenderGanttKeepScroll();
+  // Un commentaire posé sur Prévu se recopie automatiquement sur Réel juste
+  // en dessous (même segment), pour ne pas avoir à le ressaisir deux fois —
+  // sauf si Réel a déjà SON PROPRE commentaire différent, qu'on ne veut pas
+  // écraser silencieusement.
+  if(t.mode==='prev'&&txt){
+    if(!r.barComments.reel)r.barComments.reel={};
+    if(!r.barComments.reel[t.segStart])r.barComments.reel[t.segStart]=txt;
+  }
+  // Sécurité : même si une étape annexe (calcul de budget, etc.) échoue
+  // pour une raison imprévue ailleurs dans saveNow(), le commentaire lui-
+  // même doit rester enregistré et affiché — jamais de perte silencieuse.
+  try{saveNow();}catch(_e1){
+    console.error('Erreur pendant saveNow() après ajout de commentaire (le commentaire reste en mémoire) :',_e1);
+    try{localStorage.setItem(SK,JSON.stringify(STORE));}catch(_e2){}
+    try{if(typeof scheduleSupa==='function')scheduleSupa();}catch(_e3){}
+  }
+  try{_reRenderGanttKeepScroll();}catch(_e4){
+    console.error('Erreur pendant le rafraîchissement du GANTT après ajout de commentaire :',_e4);
+  }
 }
 window._gcMoveState=null;
 function gcCtxMoveAll(){
