@@ -2609,15 +2609,16 @@ const MG=[
 function _computeMonthGroupsRange(fromW,toW){
   var monNames=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
   var groups=[];
-  var curMonth=null,curStart=null;
+  var curMonth=null,curYear=null,curStart=null;
   for(var w=fromW;w<=toW;w++){
-    var mo=weekDayToDate(w,0).getMonth();
-    if(mo!==curMonth){
-      if(curMonth!==null)groups.push({l:monNames[curMonth],s:curStart,e:w-1});
-      curMonth=mo;curStart=w;
+    var _d0=weekDayToDate(w,0);
+    var mo=_d0.getMonth(),yr=_d0.getFullYear();
+    if(mo!==curMonth||yr!==curYear){
+      if(curMonth!==null)groups.push({l:monNames[curMonth]+' '+curYear,s:curStart,e:w-1});
+      curMonth=mo;curYear=yr;curStart=w;
     }
   }
-  if(curMonth!==null)groups.push({l:monNames[curMonth],s:curStart,e:toW});
+  if(curMonth!==null)groups.push({l:monNames[curMonth]+' '+curYear,s:curStart,e:toW});
   return groups;
 }
 // Version pratique pour "52 semaines à partir d'un décalage d'année" (le cas le plus courant)
@@ -5855,7 +5856,7 @@ function downloadPlanning(mode){
         curPhGroupG='pcg'+(_pcGid++);
         var phC=getPHC(curPk);
         var _dlPhPctG=_countsInProgress(curPk)?' <span style="font-size:11px;font-weight:900;padding:1px 9px;border-radius:10px;background:rgba(255,255,255,.9);color:'+phC.h+'">'+calcHierProgress(p.data,{filterPk:curPk,includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}})+'%</span>':'';
-        html+='<tr class="pc-hdr pc-collapsed" data-group="'+curPhGroupG+'" onclick="_pcToggle(this)" style="cursor:pointer;background:'+phC.h+';color:#fff"><td colspan="'+(numW+1)+'" style="padding:8px 10px;font-weight:800;font-size:15px;letter-spacing:.4px;border-top:3px solid rgba(0,0,0,.2)"><div style="position:sticky;left:10px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25A0 '+esc(curPk)+_dlPhPctG+'</div></td></tr>';
+        html+='<tr class="pc-hdr pc-collapsed" data-store-id="'+esc(r.id)+'" data-group="'+curPhGroupG+'" onclick="_pcToggle(this)" style="cursor:pointer;background:'+phC.h+';color:#fff"><td colspan="'+(numW+1)+'" style="padding:8px 10px;font-weight:800;font-size:15px;letter-spacing:.4px;border-top:3px solid rgba(0,0,0,.2)"><div style="position:sticky;left:10px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25A0 '+esc(curPk)+_dlPhPctG+'</div></td></tr>';
         return;
       }
       if(r.t==='ens'){
@@ -5864,7 +5865,7 @@ function downloadPlanning(mode){
         curEnsGroupG='pcg'+(_pcGid++);
         var phC=getPHC(curPk);
         var _dlEnsPctG=_countsInProgress(curPk)?' <span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:9px;background:'+phC.h+';color:#fff">'+calcHierProgress(p.data,{filterEnsId:r.id,includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}})+'%</span>':'';
-        html+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupG?' pc-c-'+curPhGroupG:'')+'" data-group="'+curEnsGroupG+'" data-groups="'+(curPhGroupG||'')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:'+phC.xl+';color:'+phC.h+'"><td colspan="'+(numW+1)+'" style="padding:6px 10px 6px 22px;font-weight:800;font-size:13px;letter-spacing:.3px;border-top:1px solid rgba(0,0,0,.08)"><div style="position:sticky;left:22px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25B8 '+esc(r.lb)+_dlEnsPctG+'</div></td></tr>';
+        html+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupG?' pc-c-'+curPhGroupG:'')+'" data-store-id="'+esc(r.id)+'" data-group="'+curEnsGroupG+'" data-groups="'+(curPhGroupG||'')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:'+phC.xl+';color:'+phC.h+'"><td colspan="'+(numW+1)+'" style="padding:6px 10px 6px 22px;font-weight:800;font-size:13px;letter-spacing:.3px;border-top:1px solid rgba(0,0,0,.08)"><div style="position:sticky;left:22px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25B8 '+esc(r.lb)+_dlEnsPctG+'</div></td></tr>';
         return;
       }
       if(r.t==='sb'){
@@ -5873,7 +5874,7 @@ function downloadPlanning(mode){
         curSbGroupG='pcg'+(_pcGid++);
         var phC=getPHC(curPk);
         var _dlSbPctG=_countsInProgress(curPk)?' <span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#4B5563;color:#fff">'+calcHierProgress(p.data,{filterSbId:r.id})+'%</span>':'';
-        html+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupG?' pc-c-'+curPhGroupG:'')+(curEnsGroupG?' pc-c-'+curEnsGroupG:'')+'" data-group="'+curSbGroupG+'" data-groups="'+[curPhGroupG,curEnsGroupG].filter(Boolean).join(' ')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:#F3F4F6;color:#4B5563"><td colspan="'+(numW+1)+'" style="padding:5px 10px 5px 36px;font-weight:700;font-size:12px;letter-spacing:.2px"><div style="position:sticky;left:36px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25C6 '+esc(r.lb)+_dlSbPctG+'</div></td></tr>';
+        html+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupG?' pc-c-'+curPhGroupG:'')+(curEnsGroupG?' pc-c-'+curEnsGroupG:'')+'" data-store-id="'+esc(r.id)+'" data-group="'+curSbGroupG+'" data-groups="'+[curPhGroupG,curEnsGroupG].filter(Boolean).join(' ')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:#F3F4F6;color:#4B5563"><td colspan="'+(numW+1)+'" style="padding:5px 10px 5px 36px;font-weight:700;font-size:12px;letter-spacing:.2px"><div style="position:sticky;left:36px;display:inline-block;white-space:nowrap"><span class="pc-arrow">\u25B6</span> \u25C6 '+esc(r.lb)+_dlSbPctG+'</div></td></tr>';
         return;
       }
       if(r.t!=='act')return;
@@ -5921,7 +5922,7 @@ function downloadPlanning(mode){
         if(_inP0||_inR0)_taskWeeksWithBar.push(_ww);
       }
 
-      html+='<tr class="pc-hidden '+_ganttRowClasses+'" data-groups="'+_ganttRowGroups+'" id="gantt-row-'+r.id+'" data-weeks="'+_taskWeeksWithBar.join(',')+'"'+(r.done?' data-always-show="1"':'')+'>';
+      html+='<tr class="pc-hidden '+_ganttRowClasses+'" data-store-id="'+esc(r.id)+'" data-groups="'+_ganttRowGroups+'" id="gantt-row-'+r.id+'" data-weeks="'+_taskWeeksWithBar.join(',')+'"'+(r.done?' data-always-show="1"':'')+'>';
       html+='<td class="gsh" style="position:sticky;left:0;z-index:2;padding:0;border:1px solid #E5E7EB;background:'+(r.done?'#F0FDF4':'#FAFAFA')+';overflow:hidden">'
         +'<div style="padding:4px 6px 3px 48px;border-left:3px solid '+phC.h+'">'
         +'<div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(r.done?'#059669':'#1A1917')+'">'
@@ -6017,14 +6018,75 @@ function downloadPlanning(mode){
     return html;
   }
 
-  var _fw=mode==='client'?(window._clientGanttFrom||(PLANNING_YEAR_OFFSET+1)):(PLANNING_YEAR_OFFSET+1);
-  var _tw=mode==='client'?(window._clientGanttTo||(PLANNING_YEAR_OFFSET+52)):(PLANNING_YEAR_OFFSET+52);
+  // Période du GANTT calculée directement ici, à partir de TOUTES les
+  // tâches réellement planifiées de l'affaire (peu importe si elles sont
+  // cochées ou non dans le filtre client — les cases à cocher contrôlent
+  // uniquement quelles LIGNES s'affichent, jamais la période couverte).
+  // Garantit de toujours voir tout ce qu'il y a dans l'affaire, même la
+  // tâche la plus tardive (ex: un PAE 13 fin 2027), quel que soit le
+  // nombre de pages que ça donnera à l'impression.
+  var _fw=PLANNING_YEAR_OFFSET+1,_tw=PLANNING_YEAR_OFFSET+52;
+  (function(){
+    var _minW=null,_maxW=null;
+    var _allActsRaw=(p.data||[]).filter(function(r){return r.t==='act';});
+    _allActsRaw.forEach(function(a){
+      function _consider(w){if(w>0){if(_minW===null||w<_minW)_minW=w;if(_maxW===null||w>_maxW)_maxW=w;}}
+      if(a.s>0){_consider(a.s);if(a.e)_consider(a.e);}
+      (a.prevDays||[]).forEach(function(d5){_consider(Math.floor(d5/5)+1);});
+      (a.reelDays||[]).forEach(function(d5){_consider(Math.floor(d5/5)+1);});
+    });
+    if(_minW!==null){_fw=_minW;_tw=_maxW;}
+  })();
   // Le GANTT va simplement de la première à la dernière tâche réellement
   // planifiée (barre de couleurs posée) — pas de sélecteur manuel, pas de
   // découpage par année. On garde juste TODAY dans la plage si jamais il en
   // était hors, pour toujours pouvoir voir/surligner la semaine en cours.
   var _ganttSpanFrom=TODAY?Math.min(_fw,TODAY.w):_fw;
   var _ganttSpanTo=TODAY?Math.max(_tw,TODAY.w):_tw;
+  // Groupes d'impression : un groupe par ensemble (PAE4, PAE5...), chacun
+  // avec SA PROPRE période réelle (première à dernière barre), plus un
+  // groupe par phase pour ce qui n'a pas d'ensemble (Tableauterie,
+  // Études...). Permet d'imprimer chaque ensemble sur sa ou ses propres
+  // pages, avec les bonnes dates, plutôt qu'un unique calendrier géant
+  // partagé où la plupart des cases sont vides.
+  var _pcEnsembleGroups=(function(){
+    var groups=[];
+    var curPk=null,curPhRowId=null;
+    var curEns=null,curEnsRowIds=null,curEnsMinW=null,curEnsMaxW=null;
+    var curPhRowIds=null,curPhMinW=null,curPhMaxW=null;
+    function flushEns(){
+      if(curEns&&curEnsRowIds&&curEnsRowIds.length&&curEnsMinW!==null){
+        groups.push({title:curEns.lb,fromW:curEnsMinW,toW:curEnsMaxW,rowIds:curEnsRowIds.slice()});
+      }
+      curEns=null;curEnsRowIds=null;curEnsMinW=null;curEnsMaxW=null;
+    }
+    function flushPhNonEns(){
+      if(curPk&&curPhRowIds&&curPhRowIds.length>1&&curPhMinW!==null){
+        groups.push({title:curPk,fromW:curPhMinW,toW:curPhMaxW,rowIds:curPhRowIds.slice()});
+      }
+      curPhRowIds=null;curPhMinW=null;curPhMaxW=null;
+    }
+    (p.data||[]).forEach(function(r){
+      if(r.t==='ph'){flushEns();flushPhNonEns();curPk=r.pk;curPhRowId=r.id;curPhRowIds=[r.id];}
+      else if(r.t==='ens'){flushEns();curEns=r;curEnsRowIds=[curPhRowId,r.id].filter(Boolean);curEnsMinW=null;curEnsMaxW=null;}
+      else if(r.t==='sb'){
+        if(curEns)curEnsRowIds.push(r.id);
+        else if(curPhRowIds)curPhRowIds.push(r.id);
+      }
+      else if(r.t==='act'){
+        var days=getTaskDays5(r,'prev').concat(getTaskDays5(r,'reel'));
+        if(curEns){
+          curEnsRowIds.push(r.id);
+          days.forEach(function(d5){var w=Math.floor(d5/5)+1;if(curEnsMinW===null||w<curEnsMinW)curEnsMinW=w;if(curEnsMaxW===null||w>curEnsMaxW)curEnsMaxW=w;});
+        }else if(curPhRowIds){
+          curPhRowIds.push(r.id);
+          days.forEach(function(d5){var w=Math.floor(d5/5)+1;if(curPhMinW===null||w<curPhMinW)curPhMinW=w;if(curPhMaxW===null||w>curPhMaxW)curPhMaxW=w;});
+        }
+      }
+    });
+    flushEns();flushPhNonEns();
+    return groups;
+  })();
   // Un seul GANTT continu (pas de découpage par année) : on défile
   // naturellement de 2026 vers 2027 avec la barre de défilement horizontale
   // du tableau, sans rupture. Les en-têtes de mois/semaines restent fixes
@@ -6042,9 +6104,15 @@ function downloadPlanning(mode){
   var _ganttPrintWidthMm=(mode==='client'?420:297)-14;
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">'
     +'<title>'+esc(aff)+' — Planning '+PLANNING_YEAR+'</title>'
-    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow:auto;max-height:70vh;border:1px solid #E5E7EB;border-radius:8px}.gantt-page::-webkit-scrollbar{height:18px;width:18px}.gantt-page::-webkit-scrollbar-track{background:#F3F4F6}.gantt-page::-webkit-scrollbar-thumb{background:#9CA3AF;border-radius:9px;border:3px solid #F3F4F6}.gantt-page::-webkit-scrollbar-thumb:hover{background:#6B7280}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}.print-only{display:none}'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;color:#1A1917;padding:20px}.recap-page{max-width:1100px;margin:0 auto}.gantt-page{max-width:none!important;width:100%;overflow-x:scroll;overflow-y:auto;max-height:70vh;border:1px solid #E5E7EB;border-radius:8px}.gantt-page::-webkit-scrollbar{height:18px;width:18px}.gantt-page::-webkit-scrollbar-track{background:#F3F4F6}.gantt-page::-webkit-scrollbar-thumb{background:#9CA3AF;border-radius:9px;border:3px solid #F3F4F6}.gantt-page::-webkit-scrollbar-thumb:hover{background:#6B7280}.pc-hidden{display:none}.pc-hdr:hover{filter:brightness(1.08)}.pc-arrow{display:inline-block;width:12px;font-size:10px}.print-only{display:none}'
     +'.gz-daylabel{display:none}.gz-daybar{display:none}#gantt-table.gz-daymode .gz-wklabel{display:none}#gantt-table.gz-daymode .gz-daylabel{display:flex}#gantt-table.gz-daymode .gz-wkbar{display:none}#gantt-table.gz-daymode .gz-daybar{display:flex}'
-    +'@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none!important}.print-only{display:block!important;margin-bottom:14px;font-size:26px;font-weight:900;color:#1F4E79}.gantt-page{padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important;max-height:none!important;overflow:visible!important;border:none!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}.recap-page{max-width:100%}.pc-arrow{display:none}.gsh{position:static!important;top:auto!important;left:auto!important}.pc-collapsed{display:none!important}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}}</style>'
+    +'@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{padding:0;max-width:100%;overflow:visible}table{table-layout:fixed;border-collapse:collapse}.recap-page table{width:100%!important}tr{page-break-inside:avoid}.no-print{display:none!important}.print-only{display:block!important;margin-bottom:14px;font-size:26px;font-weight:900;color:#1F4E79}.gantt-page{padding:4px;width:'+_ganttPrintWidthMm+'mm!important;max-width:'+_ganttPrintWidthMm+'mm!important;max-height:none!important;overflow:visible!important;border:none!important}.gantt-page table{width:'+_ganttPrintWidthMm+'mm!important}'
+    // En vue jour, le tableau est bien plus large que ce que peut contenir
+    // une seule page — plutôt que de tout compresser illisiblement sur une
+    // page, on laisse le tableau à sa largeur réelle : le navigateur
+    // l'étale alors naturellement sur plusieurs pages à l'impression.
+    +'.gantt-page.gz-daymode-active{width:auto!important;max-width:none!important;overflow:visible!important}.gantt-page table.gz-daymode{width:auto!important;max-width:none!important}'
+    +'.recap-page{max-width:100%}.pc-arrow{display:none}.gsh{position:static!important;top:auto!important;left:auto!important}.pc-collapsed{display:none!important}body.pc-print-recap .gantt-page{display:none!important}body.pc-print-gantt .recap-page{display:none!important}#_pcPrintSlices{display:none}body.pc-print-gantt .gantt-page{display:none!important}body.pc-print-gantt #_pcPrintSlices{display:block!important}}</style>'
     +'<style id="_pc_page_size">@media print{@page{size:A4 portrait;margin:12mm}}</style>'
     +'</head><body>'
     +'<div class="no-print" style="margin-bottom:16px;padding:12px 20px;background:#EFF6FF;border-radius:10px;display:flex;gap:12px;align-items:center;border:1px solid #BFDBFE;flex-wrap:wrap">'
@@ -6060,11 +6128,143 @@ function downloadPlanning(mode){
     +'function _pcToggle(h){h.classList.toggle("pc-collapsed");var isC=h.classList.contains("pc-collapsed");var a=h.querySelector(".pc-arrow");if(a)a.textContent=isC?"\u25B6":"\u25BC";_pcRecompute();}'
     +'function _pcRecompute(){var closed={};document.querySelectorAll("[data-group].pc-collapsed").forEach(function(el){var g=el.getAttribute("data-group");if(g)closed[g]=true;});document.querySelectorAll("[data-groups]").forEach(function(el){var gs=(el.getAttribute("data-groups")||"").split(" ").filter(Boolean);var hidden=gs.some(function(g){return closed[g];});el.classList.toggle("pc-hidden",hidden);});}'
     +'function _pcPrintRecap(){var st=document.getElementById("_pc_page_size");if(st)st.textContent="@media print{@page{size:A4 portrait;margin:12mm}}";document.body.classList.add("pc-print-recap");window.print();setTimeout(function(){document.body.classList.remove("pc-print-recap");},400);}'
-    +'function _pcPrintGantt(){var st=document.getElementById("_pc_page_size");if(st)st.textContent="@media print{@page{size:'+_ganttPageSizeCss+';margin:7mm}}";document.body.classList.add("pc-print-gantt");window.print();setTimeout(function(){document.body.classList.remove("pc-print-gantt");},400);}'
+    +'function _pcPrintGantt(){'
+      +'var st=document.getElementById("_pc_page_size");if(st)st.textContent="@media print{@page{size:'+_ganttPageSizeCss+';margin:7mm}}";'
+      +'_pcBuildPrintSlices();'
+      +'document.body.classList.add("pc-print-gantt");'
+      +'window.print();'
+      +'setTimeout(function(){document.body.classList.remove("pc-print-gantt");_pcRemovePrintSlices();},400);'
+    +'}'
+    // Un navigateur ne reporte JAMAIS automatiquement un contenu trop LARGE
+    // sur plusieurs pages à l\'impression (contrairement à la hauteur, qui
+    // se reporte naturellement) — il coupe simplement ce qui dépasse. Pour
+    // vraiment tout imprimer, quel que soit le nombre de pages nécessaire,
+    // on découpe donc nous-mêmes le GANTT en tranches (une par page),
+    // chacune étant une copie du tableau décalée pour ne montrer que sa
+    // portion, avec un saut de page entre chaque tranche.
+    // Fonctions de date auto-suffisantes, embarquées pour pouvoir
+    // reconstruire un en-tête de mois correct sur une page étroite, sans
+    // dépendre du reste du site (le fichier téléchargé est autonome).
+    +'var _pcW1=new Date('+W1_2025.getFullYear()+','+W1_2025.getMonth()+','+W1_2025.getDate()+');'
+    +'function _pcWeekDayToDate(w,di){var d=new Date(_pcW1.getTime());d.setDate(_pcW1.getDate()+(w-1)*7+di);return d;}'
+    +'var _pcMonNames=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];'
+    +'function _pcMonthGroups(fromW,toW){var groups=[];var curM=null,curY=null,curS=null;for(var w=fromW;w<=toW;w++){var d0=_pcWeekDayToDate(w,0);var mo=d0.getMonth(),yr=d0.getFullYear();if(mo!==curM||yr!==curY){if(curM!==null)groups.push({l:_pcMonNames[curM]+" "+curY,s:curS,e:w-1});curM=mo;curY=yr;curS=w;}}if(curM!==null)groups.push({l:_pcMonNames[curM]+" "+curY,s:curS,e:toW});return groups;}'
+    // Un navigateur ne reporte JAMAIS automatiquement un contenu trop LARGE
+    // sur plusieurs pages à l\'impression (contrairement à la hauteur, qui
+    // se reporte naturellement) — il coupe simplement ce qui dépasse. On
+    // construit donc, pour chaque page, un tableau VRAIMENT étroit (les
+    // colonnes hors de la période voulue sont RETIRÉES, pas juste
+    // masquées/décalées) — ça évite tout souci de positionnement des
+    // étiquettes, contrairement à une simple découpe visuelle. Seules les
+    // lignes actuellement dépliées par l\'utilisateur sont incluses.
+    +'function _pcBuildPrintSlices(){'
+      +'var table=document.getElementById("gantt-table");if(!table)return;'
+      +'var page=table.closest(".gantt-page");if(!page)return;'
+      +'var container=document.createElement("div");'
+      +'container.id="_pcPrintSlices";'
+      +'var pageWidthPxApprox=Math.round('+_ganttPrintWidthMm+'*3.78);'
+      +'var weeksPerPage=Math.max(1,Math.floor(pageWidthPxApprox/_ganttZoomCol));'
+      // Lignes actuellement visibles (dépliées) sur le vrai tableau —
+      // respecte exactement ce que l\'utilisateur a choisi de montrer.
+      +'var visibleIds={};'
+      +'Array.prototype.forEach.call(table.querySelectorAll("tbody > tr[data-store-id]"),function(tr){'
+        +'if(!tr.classList.contains("pc-hidden"))visibleIds[tr.getAttribute("data-store-id")]=true;'
+      +'});'
+      +'function buildNarrowPage(rowIds,subFromW,subToW,titleText){'
+        +'var viewport=document.createElement("div");'
+        +'viewport.className="_pc-print-slice";'
+        +'viewport.style.cssText="width:'+_ganttPrintWidthMm+'mm;max-width:'+_ganttPrintWidthMm+'mm;page-break-after:always";'
+        +'if(titleText){'
+          +'var titleDiv=document.createElement("div");'
+          +'titleDiv.style.cssText="font-size:13px;font-weight:800;color:#1F4E79;margin-bottom:4px";'
+          +'titleDiv.textContent=titleText;'
+          +'viewport.appendChild(titleDiv);'
+        +'}'
+        +'var clone=table.cloneNode(true);'
+        +'clone.style.tableLayout="fixed";'
+        +'clone.style.width="auto";'
+        +'clone.style.marginLeft="0";'
+        // Ne garder que les lignes de ce groupe, réellement visibles.
+        +'Array.prototype.forEach.call(Array.prototype.slice.call(clone.querySelectorAll("tbody > tr")),function(tr){'
+          +'var rid=tr.getAttribute("data-store-id");'
+          +'if(!rid||rowIds.indexOf(rid)<0)tr.parentNode.removeChild(tr);'
+          +'else tr.classList.remove("pc-hidden","pc-collapsed");'
+        +'});'
+        // Retirer les colonnes hors de la plage voulue (col, en-tête
+        // semaine/jour, et chaque cellule de donnée) — un tableau
+        // réellement plus étroit, pas juste coupé visuellement.
+        +'Array.prototype.forEach.call(Array.prototype.slice.call(clone.querySelectorAll("col")),function(c){'
+          +'var m=/wk-c-(\\d+)/.exec(c.className||"");'
+          +'if(m){var w=+m[1];if(w<subFromW||w>subToW)c.parentNode.removeChild(c);}'
+        +'});'
+        +'Array.prototype.forEach.call(Array.prototype.slice.call(clone.querySelectorAll("thead th[class*=wk-c-]")),function(th){'
+          +'var m=/wk-c-(\\d+)/.exec(th.className||"");'
+          +'if(m){var w=+m[1];if(w<subFromW||w>subToW)th.parentNode.removeChild(th);}'
+        +'});'
+        +'Array.prototype.forEach.call(Array.prototype.slice.call(clone.querySelectorAll("tbody td[class*=wk-c-]")),function(td){'
+          +'var m=/wk-c-(\\d+)/.exec(td.className||"");'
+          +'if(m){var w=+m[1];if(w<subFromW||w>subToW)td.parentNode.removeChild(td);}'
+        +'});'
+        // Reconstruire l\'en-tête des mois pour cette plage étroite — les
+        // colspans d\'origine, calculés pour la largeur totale, ne
+        // correspondent plus une fois les colonnes retirées.
+        +'var monthRow=clone.querySelector("thead tr:first-child");'
+        +'if(monthRow){'
+          +'Array.prototype.forEach.call(Array.prototype.slice.call(monthRow.querySelectorAll("th")),function(th,idx){if(idx>0)th.parentNode.removeChild(th);});'
+          +'_pcMonthGroups(subFromW,subToW).forEach(function(m){'
+            +'var th=document.createElement("th");'
+            +'th.colSpan=m.e-m.s+1;'
+            +'th.style.cssText="background:#1F4E79;color:#fff;padding:7px 4px;text-align:center;font-size:13px;font-weight:700;border:1px solid #2563EB";'
+            +'th.textContent=m.l;'
+            +'monthRow.appendChild(th);'
+          +'});'
+        +'}'
+        +'viewport.appendChild(clone);'
+        +'container.appendChild(viewport);'
+      +'}'
+      +'function buildGroupPages(rowIds,groupFromW,groupToW,title){'
+        +'var groupWeeks=Math.max(1,groupToW-groupFromW+1);'
+        +'var nSub=Math.max(1,Math.ceil(groupWeeks/weeksPerPage));'
+        +'for(var i=0;i<nSub;i++){'
+          +'var subFromW=groupFromW+i*weeksPerPage;'
+          +'var subToW=Math.min(groupToW,subFromW+weeksPerPage-1);'
+          +'buildNarrowPage(rowIds,subFromW,subToW,title+(nSub>1?" ("+(i+1)+"/"+nSub+")":""));'
+        +'}'
+      +'}'
+      +'if(!_pcEnsembleGroups||!_pcEnsembleGroups.length){'
+        // Repli : aucun ensemble trouvé (affaire sans PAE) — toutes les
+        // lignes visibles, cadrées sur leur vraie période commune.
+        +'var allVisible=Object.keys(visibleIds);'
+        +'buildGroupPages(allVisible,'+_ganttSpanFrom+','+_ganttSpanTo+',"");'
+        +'page.parentNode.insertBefore(container,page.nextSibling);'
+        +'return;'
+      +'}'
+      +'_pcEnsembleGroups.forEach(function(group){'
+        +'var visibleRowIds=group.rowIds.filter(function(id){return visibleIds[id];});'
+        +'if(!visibleRowIds.length)return;'
+        // Ne cadrer que sur les semaines où une ligne VISIBLE a vraiment
+        // une barre — pas la période complète du groupe si une partie a
+        // été repliée par l\'utilisateur.
+        +'var weeksSet={};'
+        +'Array.prototype.forEach.call(table.querySelectorAll("tbody > tr[data-store-id]"),function(tr){'
+          +'var rid=tr.getAttribute("data-store-id");'
+          +'if(visibleRowIds.indexOf(rid)<0)return;'
+          +'(tr.getAttribute("data-weeks")||"").split(",").filter(Boolean).forEach(function(w){weeksSet[w]=true;});'
+        +'});'
+        +'var weekNums=Object.keys(weeksSet).map(Number);'
+        +'var gFromW=weekNums.length?Math.min.apply(null,weekNums):group.fromW;'
+        +'var gToW=weekNums.length?Math.max.apply(null,weekNums):group.toW;'
+        +'buildGroupPages(visibleRowIds,gFromW,gToW,group.title);'
+      +'});'
+      +'page.parentNode.insertBefore(container,page.nextSibling);'
+    +'}'
+    +'function _pcRemovePrintSlices(){var c=document.getElementById("_pcPrintSlices");if(c)c.remove();}'
     // Zoom au Ctrl+molette sur le GANTT de ce document téléchargé — même
     // principe que sur le site : uniquement quand la souris est sur le
     // GANTT, jamais sur le reste de la page, et le zoom classique du
     // navigateur est bloqué pendant ce geste précis.
+    +'var _pcEnsembleGroups='+JSON.stringify(_pcEnsembleGroups)+';'
+    +'var _ganttSpanFromEmbed='+_ganttSpanFrom+';'
     +'var _ganttZoomCol=26;'
     +'function _ganttSetZoom(delta){'
       +'_ganttZoomCol=Math.max(8,Math.min(400,_ganttZoomCol+delta));'
@@ -6085,9 +6285,23 @@ function downloadPlanning(mode){
       +'_ganttDayMode=!_ganttDayMode;'
       +'var table=document.getElementById("gantt-table");'
       +'if(table)table.classList.toggle("gz-daymode",_ganttDayMode);'
+      +'var page=table?table.closest(".gantt-page"):null;'
+      +'if(page)page.classList.toggle("gz-daymode-active",_ganttDayMode);'
       +'var btn=document.getElementById("_ganttDayBtn");'
       +'if(btn){btn.textContent=_ganttDayMode?"\\u{1F4C5} Vue semaines":"\\u{1F4C6} Vue jours";btn.style.background=_ganttDayMode?"#7C3AED":"#EFF6FF";btn.style.color=_ganttDayMode?"#fff":"#1F4E79";}'
-      +'if(_ganttDayMode&&_ganttZoomCol<280)_ganttSetZoom(280-_ganttZoomCol);'
+      +'if(_ganttDayMode&&_ganttZoomCol<280&&page){'
+        // Retenir la période actuellement regardée (position proportionnelle
+        // dans le tableau) AVANT l\'agrandissement automatique du zoom, pour
+        // la restaurer juste après — sinon élargir les colonnes change la
+        // largeur totale et fait "sauter" la vue vers une autre période.
+        +'var _oldMax=Math.max(1,(table.scrollWidth||0)-page.clientWidth);'
+        +'var _ratio=_oldMax>0?page.scrollLeft/_oldMax:0;'
+        +'_ganttSetZoom(280-_ganttZoomCol);'
+        +'requestAnimationFrame(function(){'
+          +'var _newMax=Math.max(1,(table.scrollWidth||0)-page.clientWidth);'
+          +'page.scrollLeft=_ratio*_newMax;'
+        +'});'
+      +'}'
     +'}'
     +'(function(){'
       +'var _lastGanttZoomWheel=0;'
