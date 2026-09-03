@@ -5452,25 +5452,47 @@ function showClientDownloadModal(){
   }
   var _allActWeeks=acts.reduce(function(arr,a){return arr.concat(_actWeeks(a));},[]);
 
-  // ── Construire la liste Phase ▸ Ensemble à cocher ──────────────────
+  // ── Construire la liste Phase ▸ Ensemble ▸ Sous-phase ▸ Tâche à cocher ──
   var _cdlStruct=[];
-  var _cdlCurPh=null;
+  var _cdlCurPh=null,_cdlCurContainer=null,_cdlCurSb=null,_cdlCurEnsId='';
   (STORE.projects[aff].data||[]).forEach(function(r){
-    if(r.t==='ph'){_cdlCurPh={pk:r.pk,ensembles:[]};_cdlStruct.push(_cdlCurPh);return;}
-    if(r.t==='ens'&&_cdlCurPh){_cdlCurPh.ensembles.push({id:r.id,lb:r.lb});return;}
-  });
-  var checklistHtml=_cdlStruct.map(function(phEntry){
-    var phSafe=phEntry.pk.replace(/'/g,"\\'");
-    var rows='<label style="display:flex;align-items:center;gap:6px;padding:4px 0;cursor:pointer">'
-      +'<input type="checkbox" class="_cdl-ph-cb" data-pk="'+escHtml(phEntry.pk)+'" checked onchange="_cdlTogglePhase(this)" style="cursor:pointer">'
-      +'<span style="font-weight:800;font-size:12px;color:var(--tx)">'+escHtml(phEntry.pk)+'</span></label>';
-    if(phEntry.ensembles.length){
-      rows+=phEntry.ensembles.map(function(ens){
-        return '<label style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 24px;cursor:pointer">'
-          +'<input type="checkbox" class="_cdl-ens-cb" data-pk="'+escHtml(phEntry.pk)+'" data-id="'+ens.id+'" checked onchange="_cdlSyncPhaseState()" style="cursor:pointer">'
-          +'<span style="font-size:11px;color:var(--tx2)">\u25B8 '+escHtml(ens.lb)+'</span></label>';
-      }).join('');
+    if(r.t==='ph'){_cdlCurPh={pk:r.pk,items:[]};_cdlStruct.push(_cdlCurPh);_cdlCurContainer=_cdlCurPh.items;_cdlCurSb=null;_cdlCurEnsId='';return;}
+    if(!_cdlCurPh)return;
+    if(r.t==='ens'){
+      var ensEntry={type:'ens',id:r.id,lb:r.lb,pk:r.pk,sousPhases:[]};
+      _cdlCurPh.items.push(ensEntry);_cdlCurContainer=ensEntry.sousPhases;_cdlCurSb=null;_cdlCurEnsId=r.id;return;
     }
+    if(r.t==='sb'){
+      var sbEntry={type:'sb',id:r.id,lb:r.lb,pk:r.pk,ensId:_cdlCurEnsId,taches:[]};
+      _cdlCurContainer.push(sbEntry);_cdlCurSb=sbEntry;return;
+    }
+    if(r.t==='act'){if(_cdlCurSb)_cdlCurSb.taches.push({id:r.id,lb:r.lb});return;}
+  });
+  function _cdlRenderSb(sb,indent){
+    var rows='<label style="display:flex;align-items:center;gap:6px;padding:3px 0;padding-left:'+indent+'px;cursor:pointer">'
+      +'<input type="checkbox" class="_cdl-sb-cb" data-pk="'+escHtml(sb.pk)+'" data-ensid="'+escHtml(sb.ensId||'')+'" data-id="'+sb.id+'" checked onchange="_cdlCascade(this)" style="cursor:pointer">'
+      +'<span style="font-size:10px;color:var(--tx3)">\u25C6 '+escHtml(sb.lb)+'</span></label>';
+    rows+=sb.taches.map(function(t){
+      return '<label style="display:flex;align-items:center;gap:6px;padding:2px 0;padding-left:'+(indent+16)+'px;cursor:pointer">'
+        +'<input type="checkbox" class="_cdl-act-cb" data-pk="'+escHtml(sb.pk)+'" data-ensid="'+escHtml(sb.ensId||'')+'" data-sbid="'+sb.id+'" data-id="'+t.id+'" checked onchange="_cdlCascade(this)" style="cursor:pointer">'
+        +'<span style="font-size:9px;color:var(--tx3)">\u2013 '+escHtml(t.lb)+'</span></label>';
+    }).join('');
+    return rows;
+  }
+  var checklistHtml=_cdlStruct.map(function(phEntry){
+    var rows='<label style="display:flex;align-items:center;gap:6px;padding:4px 0;cursor:pointer">'
+      +'<input type="checkbox" class="_cdl-ph-cb" data-pk="'+escHtml(phEntry.pk)+'" checked onchange="_cdlCascade(this)" style="cursor:pointer">'
+      +'<span style="font-weight:800;font-size:12px;color:var(--tx)">'+escHtml(phEntry.pk)+'</span></label>';
+    rows+=phEntry.items.map(function(item){
+      if(item.type==='ens'){
+        var ensRow='<label style="display:flex;align-items:center;gap:6px;padding:3px 0 3px 24px;cursor:pointer">'
+          +'<input type="checkbox" class="_cdl-ens-cb" data-pk="'+escHtml(phEntry.pk)+'" data-id="'+item.id+'" checked onchange="_cdlCascade(this)" style="cursor:pointer">'
+          +'<span style="font-size:11px;color:var(--tx2)">\u25B8 '+escHtml(item.lb)+'</span></label>';
+        ensRow+=item.sousPhases.map(function(sb){return _cdlRenderSb(sb,40);}).join('');
+        return ensRow;
+      }
+      return _cdlRenderSb(item,24);
+    }).join('');
     return rows;
   }).join('<div style="height:1px;background:var(--bd);margin:6px 0"></div>');
 
@@ -5481,10 +5503,10 @@ function showClientDownloadModal(){
   inner.style.cssText='background:var(--bg2);border-radius:16px;padding:32px;min-width:420px;max-width:90vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)';
   inner.innerHTML=''
     +'<div style="font-size:16px;font-weight:900;color:var(--tx);margin-bottom:6px">&#128229; Export client</div>'
-    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:20px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Le GANTT affichera automatiquement toute la p\u00E9riode ayant des t\u00E2ches planifi\u00E9es (dans les phases/sous-ensembles coch\u00E9s ci-dessous) \u2014 pas besoin de choisir une ann\u00E9e, ça suit ce que vous cochez. Le tableau r\u00E9capitulatif, lui, liste toujours <strong>toutes</strong> les t\u00E2ches.</div>'
-    +(checklistHtml?('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:12px;font-weight:800;color:var(--tx)">Phases / Sous-ensembles à inclure</div>'
+    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:20px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Le GANTT et le r\u00E9capitulatif afficheront exactement ce qui est coch\u00E9 ci-dessous (phase, ensemble, sous-phase ou t\u00E2che pr\u00E9cise) \u2014 d\u00E9cocher un niveau d\u00E9coche automatiquement tout ce qu\u2019il contient. La p\u00E9riode du GANTT s\u2019adapte automatiquement \u00E0 ce qui reste coch\u00E9, pas besoin de choisir une ann\u00E9e.</div>'
+    +(checklistHtml?('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:12px;font-weight:800;color:var(--tx)">\u00C0 inclure</div>'
       +'<button type="button" onclick="_cdlToggleAll(true)" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg3);cursor:pointer;font-family:inherit">Tout cocher</button></div>'
-      +'<div style="max-height:220px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:10px 14px;margin-bottom:20px;background:var(--bg3)">'+checklistHtml+'</div>'):'')
+      +'<div style="max-height:340px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:10px 14px;margin-bottom:20px;background:var(--bg3)">'+checklistHtml+'</div>'):'')
     +'<div style="display:flex;gap:8px;justify-content:flex-end">'
     +'<button id="_cdl_cancel" style="padding:8px 18px;border-radius:8px;border:1px solid var(--bd);background:var(--bg3);font-family:inherit;font-size:13px;cursor:pointer">Annuler</button>'
     +'<button id="_cdl_ok" style="padding:8px 24px;border-radius:8px;border:none;background:var(--ac);color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">&#128229; Télécharger</button>'
@@ -5496,15 +5518,17 @@ function showClientDownloadModal(){
   document.getElementById('_cdl_ok').onclick=function(){
     // Construire le filtre à partir des cases cochées D'ABORD, pour que la
     // plage de semaines calculée juste après ne tienne compte QUE des
-    // tâches des phases/ensembles réellement inclus (si une phase 2027 est
-    // décochée, elle n'étend plus la plage affichée).
-    var selPhases={},selEns={};
+    // tâches réellement incluses (phase/ensemble/sous-phase/tâche).
+    var selPhases={},selEns={},selSb={},selAct={};
     document.querySelectorAll('._cdl-ph-cb').forEach(function(cb){selPhases[cb.dataset.pk]=cb.checked;});
     document.querySelectorAll('._cdl-ens-cb').forEach(function(cb){selEns[cb.dataset.id]=cb.checked;});
-    window._clientFilter={phases:selPhases,ensembles:selEns};
+    document.querySelectorAll('._cdl-sb-cb').forEach(function(cb){selSb[cb.dataset.id]=cb.checked;});
+    document.querySelectorAll('._cdl-act-cb').forEach(function(cb){selAct[cb.dataset.id]=cb.checked;});
+    window._clientFilter={phases:selPhases,ensembles:selEns,sousPhases:selSb,taches:selAct};
     var _includedActs=acts.filter(function(a){
       if(selPhases[a.pk]===false)return false;
-      return true; // filtrage fin par ensemble déjà couvert par _clientRowIncluded à l'affichage ; ici on reste large pour la plage
+      if(selAct[a.id]===false)return false;
+      return true; // filtrage fin ensemble/sous-phase déjà couvert par _clientRowIncluded à l'affichage ; ici on reste large pour la plage
     });
     var _includedWeeks=_includedActs.reduce(function(arr,a){return arr.concat(_actWeeks(a));},[]);
     var _useWeeks=_includedWeeks.length?_includedWeeks:_allActWeeks;
@@ -5515,22 +5539,39 @@ function showClientDownloadModal(){
     downloadPlanning('client');
   };
 }
-// Décocher/recocher tous les ensembles d'une phase quand on (dé)coche la phase
-function _cdlTogglePhase(cb){
-  var pk=cb.dataset.pk;
-  document.querySelectorAll('._cdl-ens-cb').forEach(function(ecb){if(ecb.dataset.pk===pk)ecb.checked=cb.checked;});
+// Coche/décoche en cascade : un clic sur une case répercute le même état
+// vers le bas (tous ses descendants) puis remonte l'état vers le haut
+// (une case parente est cochée si au moins un de ses enfants l'est).
+function _cdlCascade(cb){
+  if(cb.classList.contains('_cdl-ph-cb')){
+    var pk=cb.dataset.pk;
+    document.querySelectorAll('._cdl-ens-cb,._cdl-sb-cb,._cdl-act-cb').forEach(function(c){if(c.dataset.pk===pk)c.checked=cb.checked;});
+  }else if(cb.classList.contains('_cdl-ens-cb')){
+    var eid=cb.dataset.id;
+    document.querySelectorAll('._cdl-sb-cb,._cdl-act-cb').forEach(function(c){if(c.dataset.ensid===eid)c.checked=cb.checked;});
+  }else if(cb.classList.contains('_cdl-sb-cb')){
+    var sid=cb.dataset.id;
+    document.querySelectorAll('._cdl-act-cb').forEach(function(c){if(c.dataset.sbid===sid)c.checked=cb.checked;});
+  }
+  _cdlSyncUp();
 }
-// Si tous les ensembles d'une phase sont décochés à la main, décocher la phase aussi (et vice-versa)
-function _cdlSyncPhaseState(){
+function _cdlSyncUp(){
+  document.querySelectorAll('._cdl-sb-cb').forEach(function(sbcb){
+    var acts=Array.prototype.filter.call(document.querySelectorAll('._cdl-act-cb'),function(a){return a.dataset.sbid===sbcb.dataset.id;});
+    if(acts.length)sbcb.checked=acts.some(function(a){return a.checked;});
+  });
+  document.querySelectorAll('._cdl-ens-cb').forEach(function(enscb){
+    var sbs=Array.prototype.filter.call(document.querySelectorAll('._cdl-sb-cb'),function(s){return s.dataset.ensid===enscb.dataset.id;});
+    if(sbs.length)enscb.checked=sbs.some(function(s){return s.checked;});
+  });
   document.querySelectorAll('._cdl-ph-cb').forEach(function(phcb){
-    var ecbs=Array.from(document.querySelectorAll('._cdl-ens-cb')).filter(function(e){return e.dataset.pk===phcb.dataset.pk;});
-    if(!ecbs.length)return;
-    var anyChecked=ecbs.some(function(e){return e.checked;});
-    phcb.checked=anyChecked;
+    var pk=phcb.dataset.pk;
+    var children=Array.prototype.filter.call(document.querySelectorAll('._cdl-ens-cb,._cdl-sb-cb'),function(c){return c.dataset.pk===pk;});
+    if(children.length)phcb.checked=children.some(function(c){return c.checked;});
   });
 }
 function _cdlToggleAll(state){
-  document.querySelectorAll('._cdl-ph-cb,._cdl-ens-cb').forEach(function(cb){cb.checked=state;});
+  document.querySelectorAll('._cdl-ph-cb,._cdl-ens-cb,._cdl-sb-cb,._cdl-act-cb').forEach(function(cb){cb.checked=state;});
 }
 
 function downloadPlanning(mode){
@@ -5563,11 +5604,13 @@ function downloadPlanning(mode){
   }
   // Helper partagé : une ligne (phase+ensemble éventuel) doit-elle apparaître
   // dans l'export client ? (toujours vrai en mode interne, ou si pas de filtre)
-  function _clientRowIncluded(pk,ensId){
+  function _clientRowIncluded(pk,ensId,sbId,actId){
     if(mode!=='client'||!window._clientFilter)return true;
     var _cf=window._clientFilter;
     if(_cf.phases[pk]===false)return false;
     if(ensId&&_cf.ensembles[ensId]===false)return false;
+    if(sbId&&_cf.sousPhases&&_cf.sousPhases[sbId]===false)return false;
+    if(actId&&_cf.taches&&_cf.taches[actId]===false)return false;
     return true;
   }
   var forts=p.fortuites||[];
@@ -5618,10 +5661,10 @@ function downloadPlanning(mode){
     body+='<th style="padding:8px 10px;text-align:left;border-bottom:2px solid #BFDBFE;font-size:10px;font-weight:700;color:#1F4E79;white-space:nowrap">'+h+'</th>';
   });
   body+='</tr></thead><tbody>';
-  var curPhGroupId=null,curEnsGroupId=null,curSbGroupId=null,curEnsIdZ=null;
+  var curPhGroupId=null,curEnsGroupId=null,curSbGroupId=null,curEnsIdZ=null,curSbIdZ=null;
   (p.data||[]).forEach(function(r,ri){
     if(r.t==='ph'){
-      curEnsGroupId=null;curSbGroupId=null;curPhGroupId=null;curEnsIdZ=null;
+      curEnsGroupId=null;curSbGroupId=null;curPhGroupId=null;curEnsIdZ=null;curSbIdZ=null;
       if(!_clientRowIncluded(r.pk,null))return;
       curPhGroupId='pcg'+(_pcGid++);
       var _dlPhPct=_countsInProgress(r.pk)?' <span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:rgba(255,255,255,.25);color:#fff">'+calcHierProgress(p.data,{filterPk:r.pk,includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}})+'%</span>':'';
@@ -5630,7 +5673,7 @@ function downloadPlanning(mode){
       return;
     }
     if(r.t==='ens'){
-      curSbGroupId=null;curEnsIdZ=r.id;
+      curSbGroupId=null;curEnsIdZ=r.id;curSbIdZ=null;
       if(!_clientRowIncluded(r.pk,r.id))return;
       curEnsGroupId='pcg'+(_pcGid++);
       var _dlEnsPct=_countsInProgress(r.pk)?' <span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#1F4E79;color:#fff">'+calcHierProgress(p.data,{filterEnsId:r.id,includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}})+'%</span>':'';
@@ -5639,7 +5682,8 @@ function downloadPlanning(mode){
       return;
     }
     if(r.t==='sb'){
-      if(!_clientRowIncluded(r.pk,curEnsIdZ))return;
+      curSbIdZ=r.id;
+      if(!_clientRowIncluded(r.pk,curEnsIdZ,r.id))return;
       curSbGroupId='pcg'+(_pcGid++);
       var _dlSbPct=_countsInProgress(r.pk)?' <span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#4B5563;color:#fff">'+calcHierProgress(p.data,{filterSbId:r.id})+'%</span>':'';
       body+='<tr class="pc-hdr pc-collapsed pc-hidden'+(curPhGroupId?' pc-c-'+curPhGroupId:'')+(curEnsGroupId?' pc-c-'+curEnsGroupId:'')+'" data-group="'+curSbGroupId+'" data-groups="'+[curPhGroupId,curEnsGroupId].filter(Boolean).join(' ')+'" onclick="_pcToggle(this)" style="cursor:pointer;background:#F9FAFB">'
@@ -5647,7 +5691,7 @@ function downloadPlanning(mode){
       return;
     }
     if(r.t!=='act')return;
-    if(!_clientRowIncluded(r.pk,curEnsIdZ))return;
+    if(!_clientRowIncluded(r.pk,curEnsIdZ,curSbIdZ,r.id))return;
     var hP=+r.hPrev||0;
     var hR=Math.round((+r.hReel||0)*10)/10;
     var d=Math.round((hR-hP)*10)/10;
@@ -5846,11 +5890,11 @@ function downloadPlanning(mode){
 
     // Activity rows
     var curSbBaseW=''; var curEnsLblW=''; var curPk=''; var curEnsIdW=null;
-    var curPhGroupG=null,curEnsGroupG=null,curSbGroupG=null;
+    var curPhGroupG=null,curEnsGroupG=null,curSbGroupG=null,curSbIdW=null;
     (p.data||[]).forEach(function(r){
      try{
       if(r.t==='ph'){
-        curPk=r.pk||r.lb; curSbBaseW='';curEnsLblW='';curEnsIdW=null;
+        curPk=r.pk||r.lb; curSbBaseW='';curEnsLblW='';curEnsIdW=null;curSbIdW=null;
         curEnsGroupG=null;curSbGroupG=null;curPhGroupG=null;
         if(!_clientRowIncluded(curPk,null))return;
         curPhGroupG='pcg'+(_pcGid++);
@@ -5860,7 +5904,7 @@ function downloadPlanning(mode){
         return;
       }
       if(r.t==='ens'){
-        curSbBaseW=r.lb;curEnsLblW='';curEnsIdW=r.id;curSbGroupG=null;
+        curSbBaseW=r.lb;curEnsLblW='';curEnsIdW=r.id;curSbGroupG=null;curSbIdW=null;
         if(!_clientRowIncluded(curPk,r.id))return;
         curEnsGroupG='pcg'+(_pcGid++);
         var phC=getPHC(curPk);
@@ -5869,8 +5913,8 @@ function downloadPlanning(mode){
         return;
       }
       if(r.t==='sb'){
-        curEnsLblW=r.lb;
-        if(!_clientRowIncluded(curPk,curEnsIdW))return;
+        curEnsLblW=r.lb;curSbIdW=r.id;
+        if(!_clientRowIncluded(curPk,curEnsIdW,r.id))return;
         curSbGroupG='pcg'+(_pcGid++);
         var phC=getPHC(curPk);
         var _dlSbPctG=_countsInProgress(curPk)?' <span style="font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;background:#4B5563;color:#fff">'+calcHierProgress(p.data,{filterSbId:r.id})+'%</span>':'';
@@ -5878,7 +5922,7 @@ function downloadPlanning(mode){
         return;
       }
       if(r.t!=='act')return;
-      if(!_clientRowIncluded(r.pk,curEnsIdW))return;
+      if(!_clientRowIncluded(r.pk,curEnsIdW,curSbIdW,r.id))return;
       var curSb=curSbBaseW+(curEnsLblW?' ▸ '+curEnsLblW:'');
       var _ganttRowClasses=[curPhGroupG,curEnsGroupG,curSbGroupG].filter(Boolean).map(function(g){return 'pc-c-'+g;}).join(' ');
       var _ganttRowGroups=[curPhGroupG,curEnsGroupG,curSbGroupG].filter(Boolean).join(' ');
@@ -5905,7 +5949,7 @@ function downloadPlanning(mode){
           var s=+key,e=s;
           while(daysSet.has(e+1))e++;
           var w1=Math.floor(s/5)+1,w2=Math.floor(e/5)+1;
-          for(var wi=w1;wi<=w2;wi++)weeks[wi]=true;
+          for(var wi=w1;wi<=w2;wi++)weeks[wi]=commentsObj[key];
         });
         return weeks;
       }
@@ -5984,13 +6028,17 @@ function downloadPlanning(mode){
         html+='<td class="wk-c-'+w+'" style="padding:0;border:1px solid #E5E7EB;vertical-align:top">';
         html+='<div class="gz-wkbar">';
         // Prévu
-        html+='<div style="height:11px;background:'+(inP?phC.xl:'transparent')+';display:flex;align-items:center;justify-content:center" title="'+(_prevCommentWeeks[w]?'💬 Voir le commentaire (zoomer en vue jours pour le lire)':'')+'">';
-        if(inP) html+='<span style="font-size:6px;font-weight:900;color:'+phC.h+'">P</span>'+(_prevCommentWeeks[w]?'<span style="font-size:6px;margin-left:1px">💬</span>':'');
+        var _cmtPwk=_prevCommentWeeks[w]||'';
+        var _cmtPwkJs=_cmtPwk?JSON.stringify('💬 Commentaire (Prévu) :\n\n'+_cmtPwk).replace(/"/g,'&quot;'):'';
+        html+='<div style="height:11px;background:'+(inP?phC.xl:'transparent')+';display:flex;align-items:center;justify-content:center'+(_cmtPwk?';cursor:pointer':'')+'" title="'+(_cmtPwk?'💬 Cliquer pour lire le commentaire':'')+'"'+(_cmtPwk?' onclick="alert('+_cmtPwkJs+')"':'')+'>';
+        if(inP) html+='<span style="font-size:6px;font-weight:900;color:'+phC.h+'">P</span>'+(_cmtPwk?'<span style="font-size:6px;margin-left:1px">💬</span>':'');
         html+='</div>';
         html+='<div style="height:0.5px;background:#fff"></div>';
         // Réel
-        html+='<div style="height:11px;background:'+(inR?phC.xd:'transparent')+';display:flex;align-items:center;justify-content:center" title="'+(_reelCommentWeeks[w]?'💬 Voir le commentaire (zoomer en vue jours pour le lire)':'')+'">';
-        if(inR) html+='<span style="font-size:6px;font-weight:900;color:#fff">R</span>'+(_reelCommentWeeks[w]?'<span style="font-size:6px;margin-left:1px">💬</span>':'');
+        var _cmtRwk=_reelCommentWeeks[w]||'';
+        var _cmtRwkJs=_cmtRwk?JSON.stringify('💬 Commentaire (Réel) :\n\n'+_cmtRwk).replace(/"/g,'&quot;'):'';
+        html+='<div style="height:11px;background:'+(inR?phC.xd:'transparent')+';display:flex;align-items:center;justify-content:center'+(_cmtRwk?';cursor:pointer':'')+'" title="'+(_cmtRwk?'💬 Cliquer pour lire le commentaire':'')+'"'+(_cmtRwk?' onclick="alert('+_cmtRwkJs+')"':'')+'>';
+        if(inR) html+='<span style="font-size:6px;font-weight:900;color:#fff">R</span>'+(_cmtRwk?'<span style="font-size:6px;margin-left:1px">💬</span>':'');
         html+='</div>';
         html+='</div>';
         html+=_dayBarHtml;
@@ -12355,10 +12403,15 @@ function pedConfirmAddPhase(){
         const _reelMinD5=_reelDaysArrLive.length?Math.min.apply(null,_reelDaysArrLive):null;
         const lblP=inPrev&&d5===_prevMinD5?'P':'';
         const lblR=inReel&&d5===_reelMinD5?'R':'';
+        // Commentaire éventuel sur le segment auquel appartient ce jour —
+        // même logique que la vue Semaines (clic droit sur une barre).
+        let cmtP='',cmtR='';
+        if(inPrev&&a.barComments&&a.barComments.prev){let sgP=d5;while(_prevDaysArrLive.indexOf(sgP-1)>=0)sgP--;cmtP=a.barComments.prev[sgP]||'';}
+        if(inReel&&a.barComments&&a.barComments.reel){let sgR=d5;while(_reelDaysArrLive.indexOf(sgR-1)>=0)sgR--;cmtR=a.barComments.reel[sgR]||'';}
 
-        cells+=`<td style="width:${COL_W}px;min-width:${COL_W}px;height:${ROW_H}px;background:${day.isFerieDay?'rgba(254,226,226,.4)':isToday?'rgba(254,243,199,.3)':'var(--bg2)'};border-left:${borderL};${day.isFerieDay?'border-top:2px solid rgba(239,68,68,.3);':''}border-bottom:1px solid var(--bd);padding:0;vertical-align:top;position:relative;cursor:pointer;isolation:isolate;z-index:1" onclick="toggleDayExp(event,'${a.id}',${dayAbsIdx},'${dayLbl}')">
-          ${inPrev?`<div style="position:absolute;left:2px;width:46%;top:${blockTopP}%;height:${blockHtP}%;background:${ph.xl};border-radius:3px 0 0 3px;border:2px solid ${ph.x};border-right:none;z-index:1;display:flex;align-items:flex-start;justify-content:center;overflow:hidden">${lblP?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblP}</span>`:''}</div>`:''}
-          ${inReel?`<div style="position:absolute;right:2px;width:46%;top:${blockTopR}%;height:${blockHtR}%;background:${ph.xd};border-radius:0 3px 3px 0;border:2px solid ${ph.h};border-left:none;z-index:2;display:flex;align-items:flex-start;justify-content:center;overflow:hidden">${lblR?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblR}</span>`:''}</div>`:''}
+        cells+=`<td style="width:${COL_W}px;min-width:${COL_W}px;height:${ROW_H}px;background:${day.isFerieDay?'rgba(254,226,226,.4)':isToday?'rgba(254,243,199,.3)':'var(--bg2)'};border-left:${borderL};${day.isFerieDay?'border-top:2px solid rgba(239,68,68,.3);':''}border-bottom:1px solid var(--bd);padding:0;vertical-align:top;position:relative;cursor:pointer;isolation:isolate;z-index:1" onclick="toggleDayExp(event,'${a.id}',${dayAbsIdx},'${dayLbl}')" oncontextmenu="gcContextMenu('${a.id}',${day.w},${day.d},event)">
+          ${inPrev?`<div style="position:absolute;left:2px;width:46%;top:${blockTopP}%;height:${blockHtP}%;background:${ph.xl};border-radius:3px 0 0 3px;border:2px solid ${ph.x};border-right:none;z-index:1;display:flex;align-items:flex-start;justify-content:center;overflow:hidden"${cmtP?` title="💬 ${esc(cmtP)}"`:''}>${lblP?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblP}</span>`:''}${cmtP?`<span style="font-size:8px;position:absolute;top:1px;right:1px">💬</span>`:''}</div>`:''}
+          ${inReel?`<div style="position:absolute;right:2px;width:46%;top:${blockTopR}%;height:${blockHtR}%;background:${ph.xd};border-radius:0 3px 3px 0;border:2px solid ${ph.h};border-left:none;z-index:2;display:flex;align-items:flex-start;justify-content:center;overflow:hidden"${cmtR?` title="💬 ${esc(cmtR)}"`:''}>${lblR?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblR}</span>`:''}${cmtR?`<span style="font-size:8px;position:absolute;top:1px;right:1px">💬</span>`:''}</div>`:''}
         </td>`;
       });
 
