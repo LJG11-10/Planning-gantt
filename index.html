@@ -128,6 +128,13 @@
   }
 
   function scheduleSupa(){
+    // Dater les lignes qui ont réellement changé — quel que soit le chemin
+    // qui a mené jusqu'ici (saveNow() ou l'un des nombreux autres endroits
+    // qui sauvegardent directement sans passer par saveNow()). Sans ça,
+    // seules les modifications passant par saveNow() étaient protégées
+    // contre une fusion distante qui écraserait un changement local tout
+    // juste fait.
+    if(typeof _stampModifiedRows==='function')_stampModifiedRows();
     clearTimeout(_syncTimeout);
     _syncTimeout=setTimeout(function(){supaSave(STORE);},800);
   }
@@ -3350,6 +3357,7 @@ function saveGlobalPerson(origNm, newNm, type, habsArr, service, email){
   // Uploader sur Supabase IMMEDIATEMENT (pas de debounce)
   // pour que le prochain poll récupère les données à jour
   window._lastPersonSave=Date.now(); // Marquer le moment de sauvegarde personne
+  if(typeof _stampModifiedRows==='function')_stampModifiedRows();
   if(typeof supaSave==='function'){
     supaSave(STORE).catch(function(){scheduleSupa();});
   } else {
@@ -3396,6 +3404,7 @@ function deleteGlobalPerson(nm){
   STORE._deletedPersons[nm]=Date.now();
   // Sauvegarde IMMÉDIATE (pas debounce) pour éviter le retour via polling
   localStorage.setItem('plan26v5',JSON.stringify(STORE));
+  if(typeof _stampModifiedRows==='function')_stampModifiedRows();
   supaSave(STORE); // async immédiat
   window._editingPerson=undefined;
   // Forcer la re-render complète du sous-onglet
@@ -9179,6 +9188,7 @@ function sendModif(actId,doSend){
     r.modifications.push(mod);
     // Sauvegarde IMMÉDIATE (pas debounce) pour éviter écrasement par polling Supabase
     localStorage.setItem('plan26v5',JSON.stringify(STORE));
+    if(typeof _stampModifiedRows==='function')_stampModifiedRows();
     supaSave(STORE);
     // Rafraîchir le panneau avec try/catch
     try{
@@ -9556,6 +9566,7 @@ function openModal(type){
     STORE.current=Object.keys(STORE.projects)[0]||'';
     // Sauvegarde IMMÉDIATE (pas debounce)
     localStorage.setItem('plan26v5',JSON.stringify(STORE));
+    if(typeof _stampModifiedRows==='function')_stampModifiedRows();
     supaSave(STORE);
     renderProjSel();
     if(STORE.current)switchProjet(STORE.current);
