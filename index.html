@@ -214,7 +214,12 @@
       var key=aff+'::'+r.id;
       var cmp=Object.assign({},r);delete cmp._modAt;
       var json=JSON.stringify(cmp);
-      if(window._rowSnapshots[key]!==undefined&&window._rowSnapshots[key]!==json){
+      // Si cette ligne n'a jamais eu de référence enregistrée (ex: un
+      // ensemble/une tâche ajouté(e) récemment), on l'horodate quand même —
+      // sinon sa toute première modification passerait inaperçue pour la
+      // synchronisation et pourrait être silencieusement écrasée par la
+      // version d'un collègue lors d'une fusion.
+      if(window._rowSnapshots[key]===undefined||window._rowSnapshots[key]!==json){
         r._modAt=Date.now();
       }
       window._rowSnapshots[key]=json;
@@ -235,7 +240,7 @@
     var cmp={};
     _META_FIELDS.forEach(function(f){cmp[f]=p[f];});
     var json=JSON.stringify(cmp);
-    if(window._rowSnapshots[key]!==undefined&&window._rowSnapshots[key]!==json){
+    if(window._rowSnapshots[key]===undefined||window._rowSnapshots[key]!==json){
       p._metaModAt=Date.now();
     }
     window._rowSnapshots[key]=json;
