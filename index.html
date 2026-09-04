@@ -2078,12 +2078,18 @@ window.DroitsAcces = (function () {
   var MODULES = [
     {key:'planning', label:'Planning (Gantt, tâches, dates)'},
     {key:'annuaire',  label:'Annuaire du personnel'},
-    {key:'budgets',   label:'Budgets'},
     {key:'rappels',   label:'Rappels & alertes'},
-    {key:'plaque_pe', label:'Plaque PE'}
+    {key:'plaque_pe', label:'Plaque PE'},
+    {key:'budget_toolbar', label:'H vendues (barre d\'outils)', group:'Budget Heures'},
+    {key:'budget_gantt',   label:'Budget heures dans le Gantt (par phase/ensemble/sous-phase)', group:'Budget Heures'},
+    {key:'budget_recap',   label:'Heures dans le récap & les rapports', group:'Budget Heures'}
   ];
-  var _cache = {};     // email -> { moduleKey: {can_view, can_edit} }
-  var _selected = null; // email actuellement ouvert dans le panneau
+  var GROUPS = ['Budget Heures']; // groupes dépliables, dans l'ordre d'affichage
+  var _openGroups = {}; // group name -> bool (déplié ou non), état local à l'écran
+  var _cache = {};       // email -> { moduleKey: {can_view, can_edit} }
+  var _selected = null;  // email actuellement ouvert dans le panneau
+  var _selectedName = ''; // nom affiché correspondant, pour pouvoir ré-ouvrir le panneau après un dépliage
+  var _manualNames = {}; // email -> nom saisi via "Ajouter un accès" (pour l'affichage dans la liste)
 
   function esc(s){
     return String(s==null?'':s).replace(/[&<>"']/g,function(c){
@@ -2118,7 +2124,7 @@ window.DroitsAcces = (function () {
     });
     // Ajoute aussi les emails qui ont déjà des droits mais ne sont plus/pas dans l'annuaire
     Object.keys(_cache).forEach(function(em){
-      if(!seen[em]){ seen[em]=true; list.push({name:'(hors annuaire)', email:em}); }
+      if(!seen[em]){ seen[em]=true; list.push({name:_manualNames[em]||'(hors annuaire)', email:em}); }
     });
     list.sort(function(a,b){ return a.name.localeCompare(b.name); });
     return list;
@@ -2134,20 +2140,44 @@ window.DroitsAcces = (function () {
       + '</div></div>';
   }
 
+  function _groupHeaderHtml(groupName, isOpen){
+    return '<div onclick="DroitsAcces._toggleGroup(\''+groupName.replace(/'/g,"\\'")+'\')" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#F6F5FB;cursor:pointer;border-bottom:1px solid #EEECF7">'
+      + '<div style="font-size:13px;font-weight:700;color:#1C1A33">'+esc(groupName)+'</div>'
+      + '<span style="color:#6457F4;font-size:11px;font-weight:700">'+(isOpen?'▾ Réduire':'▸ Déplier')+'</span>'
+      + '</div>';
+  }
+
   function _openPerson(email, name){
     _selected = email;
+    _selectedName = name;
     var panel = document.getElementById('_droitsPanel');
     if(!panel) return;
     var perms = _cache[email] || {};
     var html = '<div style="background:#fff;border-radius:14px;padding:20px 22px;box-shadow:0 4px 18px rgba(60,40,160,.08)">'
       + '<div style="font-size:15px;font-weight:800;color:#1C1A33;margin-bottom:2px">'+esc(name)+'</div>'
       + '<div style="font-size:11px;color:#9A96B3;margin-bottom:14px">'+esc(email)+'</div>';
-    MODULES.forEach(function(m){ html += _rowHtml(m, perms[m.key]); });
+    // Modules sans groupe : affichés directement
+    MODULES.filter(function(m){ return !m.group; }).forEach(function(m){ html += _rowHtml(m, perms[m.key]); });
+    // Modules groupés : en-tête dépliable, puis les lignes si le groupe est ouvert
+    GROUPS.forEach(function(g){
+      var isOpen = !!_openGroups[g];
+      html += _groupHeaderHtml(g, isOpen);
+      if(isOpen){
+        MODULES.filter(function(m){ return m.group===g; }).forEach(function(m){ html += _rowHtml(m, perms[m.key]); });
+      }
+    });
     html += '<div style="margin-top:16px;display:flex;align-items:center;justify-content:flex-end;gap:12px">'
       + '<span id="_droitsSaveMsg" style="font-size:11px"></span>'
       + '<button onclick="DroitsAcces._save()" style="background:#6457F4;color:#fff;border:none;border-radius:9px;padding:9px 18px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Enregistrer</button>'
       + '</div></div>';
     panel.innerHTML = html;
+  }
+
+  function _toggleGroup(groupName){
+    _openGroups[groupName] = !_openGroups[groupName];
+    if(_selected){
+      _openPerson(_selected, _selectedName);
+    }
   }
 
   function _onToggle(input){
@@ -2187,10 +2217,9 @@ window.DroitsAcces = (function () {
     }
   }
 
-  function _listHtml(){
-    var persons = _personsList();
+  function _listHtmlFor(persons){
     if(!persons.length){
-      return '<div style="font-size:12px;color:#9A96B3;padding:16px;text-align:center;border:2px dashed #E4E1F0;border-radius:14px">Aucune personne avec un email dans l\'annuaire pour l\'instant.<br>Ajoutez un email dans sa fiche, dans Planning Pétrole → Personnel.</div>';
+      return '<div style="font-size:12px;color:#9A96B3;padding:16px;text-align:center;border:2px dashed #E4E1F0;border-radius:14px">Aucun résultat.</div>';
     }
     return persons.map(function(p){
       var safeE = p.email.replace(/'/g,"\\'");
@@ -2202,6 +2231,81 @@ window.DroitsAcces = (function () {
     }).join('');
   }
 
+  function _listHtml(){
+    var persons = _personsList();
+    if(!persons.length){
+      return '<div style="font-size:12px;color:#9A96B3;padding:16px;text-align:center;border:2px dashed #E4E1F0;border-radius:14px">Aucune personne avec un email dans l\'annuaire pour l\'instant.<br>Ajoutez un email dans sa fiche (Planning Pétrole → Personnel), ou clique sur « + Ajouter un accès » ci-dessus.</div>';
+    }
+    return _listHtmlFor(persons);
+  }
+
+  function _filterList(term){
+    var el = document.getElementById('_droitsList');
+    if(!el) return;
+    var t = String(term||'').trim().toLowerCase();
+    var persons = _personsList();
+    if(t){
+      persons = persons.filter(function(p){
+        return p.name.toLowerCase().indexOf(t)>=0 || p.email.toLowerCase().indexOf(t)>=0;
+      });
+    }
+    el.innerHTML = _listHtmlFor(persons);
+  }
+
+  function _openAddForm(){
+    _selected = null;
+    var panel = document.getElementById('_droitsPanel');
+    if(!panel) return;
+    panel.innerHTML = '<div style="background:#fff;border-radius:14px;padding:20px 22px;box-shadow:0 4px 18px rgba(60,40,160,.08)">'
+      + '<div style="font-size:15px;font-weight:800;color:#1C1A33;margin-bottom:14px">Ajouter un accès</div>'
+      + '<div style="margin-bottom:12px"><label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">Prénom</label><input id="_addPrenom" type="text" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit"></div>'
+      + '<div style="margin-bottom:12px"><label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">Nom</label><input id="_addNom" type="text" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit"></div>'
+      + '<div style="margin-bottom:12px"><label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">Email</label><input id="_addEmail" type="email" placeholder="prenom.nom@entreprise.fr" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit"></div>'
+      + '<div style="margin-bottom:14px"><label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">Rôle</label>'
+      + '<select id="_addRole" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit">'
+      + '<option value="chef_chantier">Chef de chantier</option>'
+      + '<option value="automatisme">Automatisme</option>'
+      + '<option value="admin">Admin</option>'
+      + '</select>'
+      + '<div style="font-size:10px;color:#9A96B3;margin-top:5px">Détermine ce qu\'elle voit par défaut ; tu affineras ensuite module par module ci-contre.</div></div>'
+      + '<div style="font-size:10px;color:#9A96B3;margin-bottom:14px">Une fois ajoutée, la personne pourra créer elle-même son mot de passe depuis l\'écran de connexion, avec cet email.</div>'
+      + '<div style="display:flex;align-items:center;justify-content:flex-end;gap:12px">'
+      + '<span id="_droitsAddMsg" style="font-size:11px"></span>'
+      + '<button onclick="DroitsAcces._submitAddForm()" style="background:#6457F4;color:#fff;border:none;border-radius:9px;padding:9px 18px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Ajouter</button>'
+      + '</div></div>';
+  }
+
+  async function _submitAddForm(){
+    var prenomEl = document.getElementById('_addPrenom');
+    var nomEl = document.getElementById('_addNom');
+    var emailEl = document.getElementById('_addEmail');
+    var roleEl = document.getElementById('_addRole');
+    var msg = document.getElementById('_droitsAddMsg');
+    var prenom = (prenomEl.value||'').trim();
+    var nom = (nomEl.value||'').trim();
+    var email = (emailEl.value||'').trim().toLowerCase();
+    var role = roleEl.value;
+    var nomComplet = (prenom+' '+nom).trim();
+    if(!email || email.indexOf('@')<0){ if(msg){msg.style.color='#DC2626';msg.textContent='Email invalide.';} return; }
+    if(!window.supa){ if(msg){msg.style.color='#DC2626';msg.textContent='Erreur serveur.';} return; }
+    if(msg){ msg.style.color='#6457F4'; msg.textContent='Ajout…'; }
+    try{
+      var res = await window.supa.from('roles').upsert([{ email: email, role: role, nom: nomComplet }], {onConflict:'email'});
+      if(res.error){
+        if(msg){ msg.style.color='#DC2626'; msg.textContent='Erreur : '+res.error.message; }
+        return;
+      }
+      _manualNames[email] = nomComplet || email;
+      if(!_cache[email]) _cache[email] = {};
+      var searchBox = document.getElementById('_droitsSearch');
+      _filterList(searchBox ? searchBox.value : '');
+      if(msg){ msg.style.color='#16A34A'; msg.textContent='Accès créé ✓'; }
+      setTimeout(function(){ _openPerson(email, nomComplet || email); }, 500);
+    }catch(e){
+      if(msg){ msg.style.color='#DC2626'; msg.textContent='Erreur réseau'; }
+    }
+  }
+
   async function render(containerId){
     var el = document.getElementById(containerId);
     if(!el) return;
@@ -2210,12 +2314,16 @@ window.DroitsAcces = (function () {
     _selected = null;
     el.innerHTML = '<div style="max-width:760px;margin:0 auto;display:flex;gap:24px;flex-wrap:wrap">'
       + '<div style="flex:1;min-width:260px">'
-      + '<div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Personnes</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px">'
+      + '<div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px">Personnes</div>'
+      + '<button onclick="DroitsAcces._openAddForm()" style="background:#6457F4;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">+ Ajouter un accès</button>'
+      + '</div>'
+      + '<input id="_droitsSearch" type="text" placeholder="Rechercher un nom ou un email…" oninput="DroitsAcces._filterList(this.value)" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:9px;border:1px solid #E4E1F0;font-size:12px;font-family:inherit;margin-bottom:10px;outline:none">'
       + '<div id="_droitsList">'+_listHtml()+'</div>'
       + '</div>'
       + '<div style="flex:1;min-width:300px">'
       + '<div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Droits par module</div>'
-      + '<div id="_droitsPanel"><div style="padding:30px;text-align:center;color:#C4C0DC;font-size:12px;border:2px dashed #E4E1F0;border-radius:14px">← Sélectionnez une personne</div></div>'
+      + '<div id="_droitsPanel"><div style="padding:30px;text-align:center;color:#C4C0DC;font-size:12px;border:2px dashed #E4E1F0;border-radius:14px">← Sélectionnez une personne, ou ajoutez un accès</div></div>'
       + '</div></div>';
   }
 
@@ -2223,7 +2331,11 @@ window.DroitsAcces = (function () {
     render: render,
     _openPerson: _openPerson,
     _onToggle: _onToggle,
-    _save: _save
+    _save: _save,
+    _filterList: _filterList,
+    _openAddForm: _openAddForm,
+    _submitAddForm: _submitAddForm,
+    _toggleGroup: _toggleGroup
   };
 })();
 
@@ -2471,6 +2583,34 @@ function toggleSignup(on) {
   document.getElementById('login-title').textContent = on ? 'Créer mon compte' : 'Pétrosphère';
 }
 
+var CURRENT_PERMISSIONS = {}; // module -> {can_view, can_edit}, pour la personne actuellement connectée
+
+// Charge les droits personnels (table "permissions") de la personne connectée.
+// Ne bloque jamais la connexion : en cas d'erreur, CURRENT_PERMISSIONS reste vide
+// (donc tout ce qui dépend de hasView/hasEdit reste caché par défaut, jamais affiché par erreur).
+async function loadCurrentPermissions(){
+  CURRENT_PERMISSIONS = {};
+  if(!supa || !CURRENT_USER) return;
+  try{
+    var res = await supa.from('permissions').select('module,can_view,can_edit').eq('email', CURRENT_USER.email.toLowerCase());
+    if(!res.error && res.data){
+      res.data.forEach(function(row){
+        CURRENT_PERMISSIONS[row.module] = {can_view: !!row.can_view, can_edit: !!row.can_edit};
+      });
+    }
+  }catch(e){ console.error('Erreur chargement des droits personnels', e); }
+}
+// Admin = toujours tout voir/modifier. Sinon : uniquement ce qui a été explicitement coché
+// dans "Gestion des droits" (aucun filet de sécurité, volontairement — cf. discussion).
+function hasView(mod){
+  if(CURRENT_ROLE==='admin') return true;
+  return !!(CURRENT_PERMISSIONS[mod] && CURRENT_PERMISSIONS[mod].can_view);
+}
+function hasEdit(mod){
+  if(CURRENT_ROLE==='admin') return true;
+  return !!(CURRENT_PERMISSIONS[mod] && CURRENT_PERMISSIONS[mod].can_edit);
+}
+
 async function loadRoleAndStart() {
   window._appBootstrapped = true;
   try {
@@ -2483,6 +2623,7 @@ async function loadRoleAndStart() {
       return;
     }
     CURRENT_ROLE = res.data.role;
+    await loadCurrentPermissions();
     document.getElementById('login-screen').style.display = 'none';
     showHub();
     loadStore();
@@ -2501,10 +2642,27 @@ async function loadRoleAndStart() {
     if (firstProj) switchProjet(firstProj);
     setTimeout(navRefreshArchBtn, 100);
     applyRoleRestrictions();
+    applyBudgetPermissions();
     checkAndSendRetardAlerts();
   } catch(e) {
     setLoginLoading(false);
     showLoginMsg("Erreur lors du chargement du rôle.");
+  }
+}
+
+// Applique les droits "Budget Heures" (H vendues, Gantt, récap) de la personne
+// connectée. Appelé une fois après connexion ; la case "H vendues" de la barre
+// d'outils est masquée/rendue lecture seule ici. Les badges de budget dans le
+// Gantt lui-même et le récap se basent directement sur hasView/hasEdit à
+// chaque rendu (renderGantt, renderRecap...), pas besoin de les rafraîchir ici.
+function applyBudgetPermissions(){
+  var budBox = document.querySelector('.bud-box');
+  var budInput = document.getElementById('inp-bud');
+  if(!hasView('budget_toolbar')){
+    if(budBox) budBox.style.display='none';
+  } else {
+    if(budBox) budBox.style.display='';
+    if(budInput) budInput.disabled = !hasEdit('budget_toolbar');
   }
 }
 
@@ -4667,7 +4825,7 @@ function dbRecap(){
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--or)">'+gPrev+'H</div><div style="font-size:8px;color:var(--tx3)">PRÉVUES</div></div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--gn)">'+gReel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:'+(gReel-gPrev>0?'var(--rd)':gReel-gPrev<0?'var(--gn)':'var(--tx3)')+'">'+(gReel-gPrev===0?'—':(gReel-gPrev>0?'+':'')+( gReel-gPrev)+'H')+'</div><div style="font-size:8px;color:var(--tx3)">Δ</div></div>'
-    +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gBud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>'
+    +(hasView('budget_recap')?'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gBud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gDone+'/'+gActs+'</div><div style="font-size:8px;color:var(--tx3)">TERMINÉES</div></div>'
     +'</div>';
 
@@ -4714,7 +4872,7 @@ function dbRecap(){
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--or)">'+prev+'H</div><div style="font-size:8px;color:var(--tx3)">PRÉVUES</div></div>'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--gn)">'+reel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:'+(delta>0?'var(--rd)':delta<0?'var(--gn)':'var(--tx3)')+'">'+(delta===0?'—':(delta>0?'+':'')+delta+'H')+'</div><div style="font-size:8px;color:var(--tx3)">DELTA</div></div>'
-      +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+bud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>'
+      +(hasView('budget_recap')?'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+bud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+done+'/'+acts.length+'</div><div style="font-size:8px;color:var(--tx3)">TERMIN.</div></div>'
       +'</div></div>'
       // Progress bars
@@ -5746,7 +5904,7 @@ function downloadPlanning(mode){
   body+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:28px">';
   [
     {v:pct+'%',l:'Avancement',sub:done+'/'+acts.length+' activités terminées',c:'#2563EB',bg:'#EFF6FF'},
-    {v:mode!=='client'?Math.round(totP)+'H':'—',l:'H Prévues',sub:'Budget : '+(bud||'—')+'H',c:'#D97706',bg:'#FFF7ED',hide:mode==='client'},
+    {v:mode!=='client'?Math.round(totP)+'H':'—',l:'H Prévues',sub:hasView('budget_recap')?('Budget : '+(bud||'—')+'H'):'',c:'#D97706',bg:'#FFF7ED',hide:mode==='client'},
     {v:mode!=='client'?Math.round(totR)+'H':'—',l:'H Réelles',sub:'Écart : '+(ecart>=0?'+':'')+ecart+'H',c:ecart<0?'#DC2626':'#059669',bg:ecart<0?'#FEF2F2':'#F0FDF4',hide:mode==='client'},
   ].filter(function(x){return !x.hide;}).forEach(function(x){
     body+='<div style="background:'+x.bg+';border-radius:12px;padding:20px;border-top:4px solid '+x.c+'">'
@@ -5853,7 +6011,7 @@ function downloadPlanning(mode){
 
     // ── Budget heures par phase ────────────────────────────────
   var _phsWB=(p.data||[]).filter(function(r){return r.t==='ph'&&r.budgetH>0;});
-  if(_phsWB.length&&mode!=='client'){
+  if(_phsWB.length&&mode!=='client'&&hasView('budget_recap')){
     body+='<h2 style="font-size:15px;font-weight:800;color:#1F4E79;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #BFDBFE">&#128176; Budget Heures par Phase</h2>';
     body+='<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px">';
     _phsWB.forEach(function(ph_r){
@@ -10655,13 +10813,18 @@ function renderGantt(){
       const _phDiff=_phReel-_phPrev;
       const _phBudget=row.budgetH||0;
       const _phProgress=calcHierProgress(D(),{filterPk:row.pk});
+      const _phBudgetBadge=hasView('budget_gantt')
+        ?(hasEdit('budget_gantt')
+          ?`<span onclick="event.stopPropagation();phSetBudget('${row.pk}',${_phBudget})" style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:rgba(255,255,255,.25);border-radius:4px;cursor:pointer" title="Budget heures">${_phBudget>0?'Budget:'+_phBudget+'H':'+ Budget'}</span>`
+          :(_phBudget>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:rgba(255,255,255,.25);border-radius:4px" title="Budget heures">Budget:${_phBudget}H</span>`:''))
+        :'';
       const _phBadge=
         (_countsInProgress(row.pk)?`<span style="font-size:10px;font-weight:900;margin-left:10px;padding:1px 8px;background:rgba(255,255,255,.9);color:${ph.h};border-radius:10px">${_phProgress}%</span>`:'')
-        +`<span onclick="event.stopPropagation();phSetBudget('${row.pk}',${_phBudget})" style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:rgba(255,255,255,.25);border-radius:4px;cursor:pointer" title="Budget heures">${_phBudget>0?'Budget:'+_phBudget+'H':'+ Budget'}</span>`
+        +_phBudgetBadge
         +`<span onclick="event.stopPropagation();phSetNotifResps('${row.pk}')" style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:${row.notifResps&&row.notifResps.length?'rgba(255,255,255,.4)':'rgba(255,255,255,.15)'};border-radius:4px;cursor:pointer" title="Responsables alertes retard">${row.notifResps&&row.notifResps.length?'\uD83D\uDD14 '+row.notifResps.length+' resp.':'\uD83D\uDD14 Alertes'}</span>`
         +(_phPrev>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">P:${_phPrev}H</span>`:'')
         +(_phReel>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">R:${_phReel}H</span>`:'')
-        +(_phBudget>0&&_phPrev>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 4px;background:rgba(0,0,0,.2);border-radius:3px">${_phPrev>_phBudget?'⚠+'+(_phPrev-_phBudget)+'H':(_phPrev<_phBudget?'✓-'+(_phBudget-_phPrev)+'H':'=')}</span>`:'')
+        +(hasView('budget_gantt')&&_phBudget>0&&_phPrev>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 4px;background:rgba(0,0,0,.2);border-radius:3px">${_phPrev>_phBudget?'⚠+'+(_phPrev-_phBudget)+'H':(_phPrev<_phBudget?'✓-'+(_phBudget-_phPrev)+'H':'=')}</span>`:'')
         +(!_phBudget&&_phPrev>0&&_phReel>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;opacity:.85">${_phDiff>0?'Δ+'+_phDiff:_phDiff<0?'Δ'+_phDiff:''}</span>`:'');
       // Couleur selon statut de la phase
       const _phBg=row.phStatus==='done'?'#059669':row.phStatus==='inprogress'?'#D97706':ph.h;
@@ -10687,7 +10850,9 @@ function renderGantt(){
       const _ensPct=calcHierProgress(D(),{filterEnsId:row.id});
       const _ensPctBadge=_countsInProgress(row.pk)?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.15);color:${ph.t}">${_ensPct}%</span>`:'';
       const _ensBudget=row.budgetH||0;
-      const _ensBudBadge=`<span onclick="event.stopPropagation();ensSetBudget('${row.id}',${_ensBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.25);border-radius:3px;cursor:pointer" title="Budget ensemble">${_ensBudget>0?'B:'+_ensBudget+'H':'+ Budget'}</span>`;
+      const _ensBudBadge=!hasView('budget_gantt')?'':(hasEdit('budget_gantt')
+        ?`<span onclick="event.stopPropagation();ensSetBudget('${row.id}',${_ensBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.25);border-radius:3px;cursor:pointer" title="Budget ensemble">${_ensBudget>0?'B:'+_ensBudget+'H':'+ Budget'}</span>`
+        :(_ensBudget>0?`<span style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.25);border-radius:3px" title="Budget ensemble">B:${_ensBudget}H</span>`:''));
       const _isColl=!!row.collapsed;
       if(_isColl)_skipToken=row.id;else _skipToken=null;
       const _chev=_isColl?'\u25B6':'\u25BC';
@@ -10707,7 +10872,9 @@ function renderGantt(){
       const _sbPct=calcHierProgress(D(),{filterSbId:row.id});
       const _sbPctBadge=_countsInProgress(row.pk)?` <span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;background:rgba(0,0,0,.12);color:${ph.t}">${_sbPct}%</span>`:'';
       const _sbBudget=row.budgetH||0;
-      const _sbBudBadge=`<span onclick="event.stopPropagation();sbSetBudget('${row.id}',${_sbBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.18);border-radius:3px;cursor:pointer" title="Budget sous-phase">${_sbBudget>0?'B:'+_sbBudget+'H':'+ Budget'}</span>`;
+      const _sbBudBadge=!hasView('budget_gantt')?'':(hasEdit('budget_gantt')
+        ?`<span onclick="event.stopPropagation();sbSetBudget('${row.id}',${_sbBudget})" style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.18);border-radius:3px;cursor:pointer" title="Budget sous-phase">${_sbBudget>0?'B:'+_sbBudget+'H':'+ Budget'}</span>`
+        :(_sbBudget>0?`<span style="font-size:9px;font-weight:700;margin-left:6px;padding:0 5px;background:rgba(255,255,255,.18);border-radius:3px" title="Budget sous-phase">B:${_sbBudget}H</span>`:''));
       if(_isChantierPhase(row.pk)){
         // Sous-phase d'une phase chantier : une case éditable par semaine pour
         // saisir manuellement l'effectif prévu (utile pour anticiper le recrutement).
@@ -14891,7 +15058,7 @@ function renderRecap(){
   </div>`;
 
   // Budget par phase
-  var _hBud=D().some(function(r){return r.t==='ph'&&r.budgetH>0;});
+  var _hBud=D().some(function(r){return r.t==='ph'&&r.budgetH>0;})&&hasView('budget_recap');
   if(_hBud){
     html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Budget Heures par Phase</h3>';
     html+='<table class="rt"><thead><tr><th>Phase</th><th>Budget H</th><th>Pr&eacute;vu H</th><th>R&eacute;el H</th><th>Ecart Bud/Pr&eacute;vu</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
@@ -14915,7 +15082,7 @@ function renderRecap(){
     html+='</tbody></table>';
   }
   // Budget par ensemble
-  var _hBudEns=D().some(function(r){return r.t==='ens'&&r.budgetH>0;});
+  var _hBudEns=D().some(function(r){return r.t==='ens'&&r.budgetH>0;})&&hasView('budget_recap');
   if(_hBudEns){
     html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Budget Heures par Ensemble</h3>';
     html+='<table class="rt"><thead><tr><th>Ensemble</th><th>Phase</th><th>Budget H</th><th>Pr&eacute;vu H</th><th>R&eacute;el H</th><th>Ecart Bud/Pr&eacute;vu</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
@@ -14947,7 +15114,7 @@ function renderRecap(){
     html+='</tbody></table>';
   }
   // Budget par sous-phase — avec détail des personnes (qui a travaillé dessus et combien d'heures)
-  var _hBudSb=D().some(function(r){return r.t==='sb'&&r.budgetH>0;});
+  var _hBudSb=D().some(function(r){return r.t==='sb'&&r.budgetH>0;})&&hasView('budget_recap');
   if(_hBudSb){
     html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Budget Heures par Sous-phase</h3>';
     html+='<table class="rt"><thead><tr><th>Sous-phase</th><th>Phase / Ensemble</th><th>Budget H</th><th>R&eacute;el H</th><th>Ecart</th><th>Qui a travaill&eacute; dessus</th></tr></thead><tbody>';
