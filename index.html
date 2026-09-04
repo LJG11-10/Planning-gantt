@@ -1057,7 +1057,6 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
     <div style="text-align:center;margin-top:14px;display:flex;flex-direction:column;gap:6px">
       <span id="lnk-signup" onclick="toggleSignup(true)" style="font-size:11px;color:#2563EB;cursor:pointer;font-weight:600">Première connexion ? Créer mon compte</span>
       <span id="lnk-back" onclick="toggleSignup(false)" style="font-size:11px;color:#2563EB;cursor:pointer;font-weight:600;display:none">← Retour à la connexion</span>
-      <span onclick="doResetPassword()" style="font-size:10px;color:#9A978F;cursor:pointer">Mot de passe oublié ?</span>
     </div>
     <div style="text-align:center;margin-top:16px;font-size:10px;color:#9A978F">Accès restreint</div>
   </div>
@@ -1087,6 +1086,11 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
         <div style="font-size:16px;font-weight:800;color:#1C1A33">Plaque PE</div>
         <div style="font-size:12px;color:#9A96B3;margin-top:6px;line-height:1.5">Générateur de plaques PE (DXF)</div>
       </div>
+      <div id="petro-hub-tile-droits" onclick="petroHubEnterDroits()" style="cursor:pointer;background:#fff;border-radius:16px;padding:32px 28px;width:280px;box-shadow:0 8px 28px rgba(60,40,160,.08);border:2px solid #E4E1F0;transition:transform .15s,box-shadow .15s,border-color .15s;text-align:center" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 14px 36px rgba(60,40,160,.15)';this.style.borderColor='#6457F4'" onmouseout="this.style.transform='none';this.style.boxShadow='0 8px 28px rgba(60,40,160,.08)';this.style.borderColor='#E4E1F0'">
+        <div style="height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;font-size:44px">🔐</div>
+        <div style="font-size:16px;font-weight:800;color:#1C1A33">Gestion des droits</div>
+        <div style="font-size:12px;color:#9A96B3;margin-top:6px;line-height:1.5">Qui voit quoi, qui peut modifier quoi</div>
+      </div>
     </div>
     <div style="text-align:center;margin-top:32px">
       <span onclick="petroHubLogout()" style="font-size:11px;color:rgba(255,255,255,.75);cursor:pointer;text-decoration:underline">Se déconnecter</span>
@@ -1107,6 +1111,15 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
     <span style="color:#1C1A33;font-size:13px;font-weight:700">Plaque PE</span>
   </div>
   <div id="petro-plaque-pe-content"></div>
+</div>
+
+<!-- Conteneur "Gestion des droits" — isolé, comme Plaque PE -->
+<div id="petro-droits-shell" style="display:none;position:fixed;inset:0;z-index:8000;background:#F6F5FB;flex-direction:column;overflow:hidden;font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif">
+  <div style="padding:10px 16px;background:#fff;border-bottom:1px solid #E4E1F0;display:flex;align-items:center;gap:12px;flex-shrink:0">
+    <button onclick="petroHubBackToHub()" style="background:#F6F5FB;color:#1C1A33;border:1px solid #E4E1F0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">← Retour</button>
+    <span style="color:#1C1A33;font-size:13px;font-weight:700">Gestion des droits</span>
+  </div>
+  <div id="petro-droits-content" style="flex:1;min-height:0;overflow:auto;padding:24px"></div>
 </div>
 
 <script>
@@ -1131,6 +1144,8 @@ function showHub(){
   if(shell) shell.style.display='none';
   var plaque = document.getElementById('petro-plaque-pe-shell');
   if(plaque) plaque.style.display='none';
+  var droits = document.getElementById('petro-droits-shell');
+  if(droits) droits.style.display='none';
   petroHubShowLogoOnHub();
 }
 function petroHubEnterPlanning(){
@@ -1148,11 +1163,22 @@ function petroHubEnterPlaquePE(){
     window.PresseEtoupe.render('petro-plaque-pe-content');
   }
 }
+function petroHubEnterDroits(){
+  var hub = document.getElementById('petro-hub-screen');
+  if(hub) hub.style.display='none';
+  var droits = document.getElementById('petro-droits-shell');
+  if(droits) droits.style.display='flex';
+  if(window.DroitsAcces && typeof window.DroitsAcces.render==='function'){
+    window.DroitsAcces.render('petro-droits-content');
+  }
+}
 function petroHubBackToHub(){
   var shell = document.getElementById('app-shell');
   if(shell) shell.style.display='none';
   var plaque = document.getElementById('petro-plaque-pe-shell');
   if(plaque) plaque.style.display='none';
+  var droits = document.getElementById('petro-droits-shell');
+  if(droits) droits.style.display='none';
   var hub = document.getElementById('petro-hub-screen');
   if(hub) hub.style.display='flex';
 }
@@ -2043,6 +2069,164 @@ function downloadDXF(text, filename) {
   };
 })();
 
+/* ══════════════════════════════════════════════════════════════════
+   GESTION DES DROITS — module isolé, ne touche à aucune variable
+   interne du Planning Pétrole. Lit/écrit dans la table Supabase
+   "permissions" (voir 01_creer_table_permissions.sql).
+   ══════════════════════════════════════════════════════════════════ */
+window.DroitsAcces = (function () {
+  var MODULES = [
+    {key:'planning', label:'Planning (Gantt, tâches, dates)'},
+    {key:'annuaire',  label:'Annuaire du personnel'},
+    {key:'budgets',   label:'Budgets'},
+    {key:'rappels',   label:'Rappels & alertes'},
+    {key:'plaque_pe', label:'Plaque PE'}
+  ];
+  var _cache = {};     // email -> { moduleKey: {can_view, can_edit} }
+  var _selected = null; // email actuellement ouvert dans le panneau
+
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  async function _loadAllPermissions(){
+    if(!window.supa) return {};
+    try{
+      var res = await window.supa.from('permissions').select('*');
+      if(res.error){ console.error('Erreur chargement permissions', res.error); return {}; }
+      var byEmail = {};
+      (res.data||[]).forEach(function(row){
+        if(!byEmail[row.email]) byEmail[row.email] = {};
+        byEmail[row.email][row.module] = {can_view: !!row.can_view, can_edit: !!row.can_edit};
+      });
+      return byEmail;
+    }catch(e){ console.error(e); return {}; }
+  }
+
+  function _personsList(){
+    // Puise dans l'annuaire du Planning Pétrole (personnes ayant un email renseigné)
+    var gp = (typeof _getGlobalPersons === 'function') ? _getGlobalPersons() : {};
+    var list = [], seen = {};
+    Object.keys(gp).forEach(function(name){
+      var p = gp[name];
+      if(p && p.email){
+        var em = String(p.email).trim().toLowerCase();
+        if(em && !seen[em]){ seen[em]=true; list.push({name:name, email:em}); }
+      }
+    });
+    // Ajoute aussi les emails qui ont déjà des droits mais ne sont plus/pas dans l'annuaire
+    Object.keys(_cache).forEach(function(em){
+      if(!seen[em]){ seen[em]=true; list.push({name:'(hors annuaire)', email:em}); }
+    });
+    list.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    return list;
+  }
+
+  function _rowHtml(m, perm){
+    perm = perm || {can_view:false, can_edit:false};
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #EEECF7">'
+      + '<div style="font-size:13px;font-weight:700;color:#1C1A33">'+esc(m.label)+'</div>'
+      + '<div style="display:flex;gap:20px;flex-shrink:0">'
+      + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#5A5674;cursor:pointer"><input type="checkbox" data-mod="'+m.key+'" data-field="can_view" '+(perm.can_view?'checked':'')+' onchange="DroitsAcces._onToggle(this)"> Voir</label>'
+      + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#5A5674;cursor:pointer"><input type="checkbox" data-mod="'+m.key+'" data-field="can_edit" '+(perm.can_edit?'checked':'')+' onchange="DroitsAcces._onToggle(this)"> Modifier</label>'
+      + '</div></div>';
+  }
+
+  function _openPerson(email, name){
+    _selected = email;
+    var panel = document.getElementById('_droitsPanel');
+    if(!panel) return;
+    var perms = _cache[email] || {};
+    var html = '<div style="background:#fff;border-radius:14px;padding:20px 22px;box-shadow:0 4px 18px rgba(60,40,160,.08)">'
+      + '<div style="font-size:15px;font-weight:800;color:#1C1A33;margin-bottom:2px">'+esc(name)+'</div>'
+      + '<div style="font-size:11px;color:#9A96B3;margin-bottom:14px">'+esc(email)+'</div>';
+    MODULES.forEach(function(m){ html += _rowHtml(m, perms[m.key]); });
+    html += '<div style="margin-top:16px;display:flex;align-items:center;justify-content:flex-end;gap:12px">'
+      + '<span id="_droitsSaveMsg" style="font-size:11px"></span>'
+      + '<button onclick="DroitsAcces._save()" style="background:#6457F4;color:#fff;border:none;border-radius:9px;padding:9px 18px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Enregistrer</button>'
+      + '</div></div>';
+    panel.innerHTML = html;
+  }
+
+  function _onToggle(input){
+    var email = _selected;
+    if(!email) return;
+    if(!_cache[email]) _cache[email] = {};
+    var mod = input.getAttribute('data-mod');
+    var field = input.getAttribute('data-field');
+    if(!_cache[email][mod]) _cache[email][mod] = {can_view:false, can_edit:false};
+    _cache[email][mod][field] = input.checked;
+    // Cocher "Modifier" implique forcément "Voir" (on ne peut pas modifier ce qu'on ne voit pas)
+    if(field==='can_edit' && input.checked){
+      _cache[email][mod].can_view = true;
+      var viewBox = document.querySelector('#_droitsPanel input[data-field="can_view"][data-mod="'+mod+'"]');
+      if(viewBox) viewBox.checked = true;
+    }
+  }
+
+  async function _save(){
+    var email = _selected;
+    if(!email || !window.supa) return;
+    var msg = document.getElementById('_droitsSaveMsg');
+    if(msg){ msg.style.color='#6457F4'; msg.textContent='Enregistrement…'; }
+    var rows = MODULES.map(function(m){
+      var p = (_cache[email] && _cache[email][m.key]) || {can_view:false, can_edit:false};
+      return { email: email, module: m.key, can_view: !!p.can_view, can_edit: !!p.can_edit, updated_at: new Date().toISOString() };
+    });
+    try{
+      var res = await window.supa.from('permissions').upsert(rows, {onConflict:'email,module'});
+      if(res.error){
+        if(msg){ msg.style.color='#DC2626'; msg.textContent='Erreur : '+res.error.message; }
+      } else {
+        if(msg){ msg.style.color='#16A34A'; msg.textContent='Enregistré ✓'; }
+      }
+    }catch(e){
+      if(msg){ msg.style.color='#DC2626'; msg.textContent='Erreur réseau'; }
+    }
+  }
+
+  function _listHtml(){
+    var persons = _personsList();
+    if(!persons.length){
+      return '<div style="font-size:12px;color:#9A96B3;padding:16px;text-align:center;border:2px dashed #E4E1F0;border-radius:14px">Aucune personne avec un email dans l\'annuaire pour l\'instant.<br>Ajoutez un email dans sa fiche, dans Planning Pétrole → Personnel.</div>';
+    }
+    return persons.map(function(p){
+      var safeE = p.email.replace(/'/g,"\\'");
+      var safeN = p.name.replace(/'/g,"\\'");
+      return '<div onclick="DroitsAcces._openPerson(\''+safeE+'\',\''+safeN+'\')" style="cursor:pointer;padding:11px 14px;border-radius:9px;margin-bottom:4px;background:#fff;border:1px solid #EEECF7;display:flex;justify-content:space-between;align-items:center" onmouseover="this.style.borderColor=\'#6457F4\'" onmouseout="this.style.borderColor=\'#EEECF7\'">'
+        + '<div><div style="font-size:12px;font-weight:700;color:#1C1A33">'+esc(p.name)+'</div><div style="font-size:10px;color:#9A96B3">'+esc(p.email)+'</div></div>'
+        + '<span style="color:#C4C0DC;font-size:14px">›</span>'
+        + '</div>';
+    }).join('');
+  }
+
+  async function render(containerId){
+    var el = document.getElementById(containerId);
+    if(!el) return;
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:#9A96B3;font-size:12px">Chargement des droits…</div>';
+    _cache = await _loadAllPermissions();
+    _selected = null;
+    el.innerHTML = '<div style="max-width:760px;margin:0 auto;display:flex;gap:24px;flex-wrap:wrap">'
+      + '<div style="flex:1;min-width:260px">'
+      + '<div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Personnes</div>'
+      + '<div id="_droitsList">'+_listHtml()+'</div>'
+      + '</div>'
+      + '<div style="flex:1;min-width:300px">'
+      + '<div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Droits par module</div>'
+      + '<div id="_droitsPanel"><div style="padding:30px;text-align:center;color:#C4C0DC;font-size:12px;border:2px dashed #E4E1F0;border-radius:14px">← Sélectionnez une personne</div></div>'
+      + '</div></div>';
+  }
+
+  return {
+    render: render,
+    _openPerson: _openPerson,
+    _onToggle: _onToggle,
+    _save: _save
+  };
+})();
+
 </script>
 <!-- ═══════════════════════════ /PLAQUE PE ═══════════════════════════ -->
 
@@ -2068,6 +2252,7 @@ function downloadDXF(text, filename) {
     <button onclick="downloadPlanning('interne')" style="background:var(--ac);color:#fff;border:none;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" title="Télécharger le planning complet (version interne avec heures et budget)">📥 Planning interne</button>
     <button onclick="showClientDownloadModal()" style="background:#F0FDF4;color:#15803D;border:1px solid #BBF7D0;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" title="Télécharger le planning simplifié (version client sans heures ni budget)">📄 Planning client</button>
     <button style="background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" onclick="openRappelsSettings()">🔔 Rappels</button>
+    <button style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit" onclick="exportData()" title="Télécharge un fichier .json contenant TOUTES les affaires, à garder précieusement comme sauvegarde">💾 Sauvegarde complète</button>
   </div>
 </div>
 
@@ -2147,9 +2332,7 @@ function downloadDXF(text, filename) {
   <div id="pers-search" class="pers-pane pg" style="flex:1;overflow:auto;display:none"></div>
 </div>
 
-<div id="tab-heures" class="tab"><div id="hw" class="pg"></div></div>
 <div id="tab-skids" class="tab"><div id="skw" class="pg"></div></div>
-<div id="tab-fiche" class="tab"><div id="fw" class="pg"></div></div>
 <div id="tab-search" class="tab">
   <div class="sw">
     <div class="pg-ttl">RECHERCHE PAR PERSONNE</div>
@@ -2280,13 +2463,6 @@ async function doSignup() {
   }
 }
 
-async function doResetPassword() {
-  var email = document.getElementById('login-email').value.trim().toLowerCase();
-  if (!email) { showLoginMsg("Entrez votre email d'abord."); return; }
-  await supa.auth.resetPasswordForEmail(email);
-  showLoginMsg("Email de réinitialisation envoyé !", '#16A34A');
-}
-
 function toggleSignup(on) {
   document.getElementById('btn-login').style.display = on ? 'none' : 'block';
   document.getElementById('btn-signup').style.display = on ? 'block' : 'none';
@@ -2333,6 +2509,9 @@ async function loadRoleAndStart() {
 }
 
 function applyRoleRestrictions() {
+  // Gestion des droits : réservé aux admins, peu importe le reste des règles ci-dessous
+  var droitsTile = document.getElementById('petro-hub-tile-droits');
+  if (droitsTile) droitsTile.style.display = (CURRENT_ROLE === 'admin') ? '' : 'none';
   if (CURRENT_ROLE === 'chef_chantier') {
     // Masquer tous les onglets sauf GANTT, Planning réunion, Personnel et Absences
     document.querySelectorAll('.nb[data-tab]').forEach(function(btn) {
@@ -2345,8 +2524,8 @@ function applyRoleRestrictions() {
     document.querySelectorAll('.btn-np,.btn-da,[onclick*="openModal"],[onclick="openRenameModal()"]').forEach(function(b){b.style.display='none';});
     // Masquer le bouton Éditer planning
     document.querySelectorAll('[onclick="openPlanEditor()"]').forEach(function(b){b.style.display='none';});
-    // Masquer téléchargements, rappels
-    document.querySelectorAll('[onclick*="downloadPlanning"],[onclick*="showClientDownload"],[onclick*="openRappels"]').forEach(function(b){b.style.display='none';});
+    // Masquer téléchargements, rappels, sauvegarde complète (données sensibles : budget de toutes les affaires)
+    document.querySelectorAll('[onclick*="downloadPlanning"],[onclick*="showClientDownload"],[onclick*="openRappels"],[onclick*="exportData"]').forEach(function(b){b.style.display='none';});
     // Masquer le bouton Annuler (undo)
     var undoBtn=document.getElementById('btn-undo');if(undoBtn)undoBtn.style.display='none';
     // Chef chantier PEUT : marquer terminé, mettre % avancement, voir heures
@@ -3417,15 +3596,6 @@ function openPersonEditor(nm){
   renderPersonnelSearch();
 }
 
-function renderPersonnelFilter(){
-  var q=document.getElementById('si-ann');
-  var val=q?q.value:'';
-  renderPersonnelSearch();
-  var q2=document.getElementById('si-ann');
-  if(q2){q2.value=val;q2.focus();q2.setSelectionRange(val.length,val.length);}
-}
-function _annEdit(nm){window._editingPerson=nm;renderPersonnelSearch();}
-
 function _annEdit(nm){window._editingPerson=nm;renderPersonnelSearch();}
 function _annCancel(){window._editingPerson=undefined;renderPersonnelSearch();}
 function _savePersonForm2(){
@@ -3621,81 +3791,6 @@ function renderPersonnelFilter(){
   var q2=document.getElementById('si-ann');
   if(q2){q2.value=val;q2.focus();q2.setSelectionRange(val.length,val.length);}
 }
-function _annEdit(nm){window._editingPerson=nm;renderPersonnelSearch();}
-
-
-function openPersonProfile(nm){
-  var gp=_getGlobalPersons();
-  var p=gp[nm];
-  if(!p)return;
-  var svcInfo=SERVICES.find(function(s){return s.k===p.service;})||{l:'—',color:'#6B7280',bg:'#F9FAFB'};
-  var habs=p.habilitations||[];
-  var ini=nm.trim().charAt(0).toUpperCase();
-  // Affaires actives
-  var tasksByAff={};
-  Object.keys(STORE.projects).sort().forEach(function(aff){
-    if(STORE.projects[aff].closed)return;
-    (STORE.projects[aff].data||[]).filter(function(r){return r.t==='act';}).forEach(function(a){
-      if((a.p||[]).some(function(pp){return pp.name===nm;})){
-        if(!tasksByAff[aff])tasksByAff[aff]=[];
-        tasksByAff[aff].push(a);
-      }
-    });
-  });
-  // Modal
-  var existing=document.getElementById('_persProfileModal');
-  if(existing)existing.remove();
-  var ov=document.createElement('div');
-  ov.id='_persProfileModal';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.onclick=function(e){if(e.target===ov)ov.remove();};
-  // Header
-  var hdr='<div style="background:'+svcInfo.color+';padding:20px 24px;border-radius:16px 16px 0 0;position:relative">'
-    +'<button onclick="document.getElementById(\'_persProfileModal\').remove()" style="position:absolute;top:12px;right:14px;background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:16px;line-height:1">×</button>'
-    +'<div style="display:flex;align-items:center;gap:14px">'
-    +'<div style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.25);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;flex-shrink:0">'+ini+'</div>'
-    +'<div><div style="font-size:18px;font-weight:900;color:#fff">'+escHtml(nm)+'</div>'
-    +'<div style="font-size:11px;color:rgba(255,255,255,.8);margin-top:2px">'+svcInfo.l+(p.type?' · '+escHtml(p.type):'')+'</div></div>'
-    +'</div></div>';
-  // Body
-  var body='<div style="padding:20px 24px">';
-  if(p.email)body+='<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:'+svcInfo.bg+';border-radius:8px;margin-bottom:14px">'
-    +'<span style="font-size:16px">📧</span>'
-    +'<a href="mailto:'+escHtml(p.email)+'" style="color:'+svcInfo.color+';font-size:12px;font-weight:600;text-decoration:none">'+escHtml(p.email)+'</a></div>';
-  if(habs.length)body+='<div style="margin-bottom:14px"><div style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;margin-bottom:6px">HABILITATIONS</div>'
-    +'<div style="display:flex;flex-wrap:wrap;gap:5px">'+habs.map(function(h){
-      return '<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:'+svcInfo.bg+';color:'+svcInfo.color+';border:1px solid '+svcInfo.color+'40">'+escHtml(h)+'</span>';
-    }).join('')+'</div></div>';
-  var affKeys=Object.keys(tasksByAff);
-  if(affKeys.length){
-    body+='<div><div style="font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:.5px;margin-bottom:8px">AFFAIRES EN COURS</div>';
-    affKeys.forEach(function(aff){
-      var _inf=(STORE.projects[aff].infos)||{};
-      var _al=(_inf.numeroClient?_inf.numeroClient+' | ':'')+aff+(_inf.libelle?' — '+escHtml(_inf.libelle.substring(0,30)):'');
-      body+='<div style="margin-bottom:8px;padding:10px 12px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">'
-        +'<div style="font-size:10px;font-weight:700;color:var(--ac);margin-bottom:5px">'+_al+'</div>'
-        +'<div style="display:flex;flex-wrap:wrap;gap:4px">';
-      tasksByAff[aff].forEach(function(a){
-        var ph=PH_get(a.pk);
-        body+='<span style="font-size:9px;padding:2px 7px;border-radius:6px;background:'+(ph.f||ph.s||'#eee')+';color:'+(ph.xd||ph.t||'#333')+'">'+(a.done?'✓ ':'')+escHtml(a.lb)+'</span>';
-      });
-      body+='</div></div>';
-    });
-    body+='</div>';
-  } else {
-    body+='<div style="font-size:11px;color:var(--tx3);text-align:center;padding:12px">Aucune affaire active assignée</div>';
-  }
-  var safeName=nm.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  body+='<button onclick="document.getElementById(\'_persProfileModal\').remove();_annEdit(\''+safeName+'\');switchTab(\'personnel\')" style="margin-top:14px;width:100%;padding:8px;border-radius:var(--r);background:var(--bg3);border:1px solid var(--bd);color:var(--tx2);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">✎ Modifier la fiche</button>';
-  body+='</div>';
-  var box=document.createElement('div');
-  box.style.cssText='background:var(--bg2);border-radius:16px;width:460px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4);font-family:inherit';
-  box.innerHTML=hdr+body;
-  ov.appendChild(box);
-  document.body.appendChild(ov);
-}
-
-
 // Convertit une couleur hex (#RRGGBB) en rgba() transparent — utilisé pour
 // teinter les entrées de l'aperçu "Planning semaine" selon la couleur du
 // chantier, sans casser le fond dégradé foncé de la carte.
@@ -4500,10 +4595,6 @@ function dbChangePerson(sel){
 }
 
 
-function dbPlanningUI(){
-  // Retourne simplement le conteneur - dbBuildPlanningGrid construit tout
-  return '<div id="db-grid" style="padding:0"></div>';
-}
 // ── Détection des affaires en double (même n° + même libellé) ───────────
 // Peut arriver après un renommage mal synchronisé entre deux appareils.
 function findDuplicateAffairesHtml(){
@@ -8036,9 +8127,9 @@ function modsNotify(doc,version,eventLabel){
     clearTimeout(modsNotify._t);
     modsNotify._t=setTimeout(function(){sv.style.display='none';sv.style.color='';},4000);
   }
-  fetch('https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels',{
+  fetch(SUPA_URL+'/functions/v1/send-rappels',{
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU','apikey':'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU'},
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY,'apikey':SUPA_KEY},
     body:JSON.stringify({emails:emails,subject:sujet,html:corps})
   }).then(function(res){
     var status=res.status;
@@ -9212,12 +9303,12 @@ function sendModif(actId,doSend){
               '<td style="padding:6px 12px;font-size:15px;color:#1F4E79;font-weight:700">'+txt+'</td></tr>'+
               '</table>'+
               '<p style="margin-top:20px;font-size:12px;color:#888">Planning Pétrole — ELS/Génesienne</p>';
-    fetch('https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels',{
+    fetch(SUPA_URL+'/functions/v1/send-rappels',{
       method:'POST',
       headers:{
         'Content-Type':'application/json',
-        'Authorization':'Bearer sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU',
-        'apikey':'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU'
+        'Authorization':'Bearer '+SUPA_KEY,
+        'apikey':SUPA_KEY
       },
       body:JSON.stringify({emails:emails,subject:sujet,html:corps})
     }).then(function(res){
@@ -13169,9 +13260,8 @@ function sendRappelsManuellement(){
   var payload={emails:emailList,semaine:nextWk,rappels:rappels,forceEnvoi:true};
   var btn=document.getElementById('rm-send-btn');
   if(btn){btn.textContent='Envoi\u2026';btn.disabled=true;}
-  var SUPA_URL='https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels';
-  var SUPA_KEY='sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
-  fetch(SUPA_URL,{
+  var _fnUrl=SUPA_URL+'/functions/v1/send-rappels';
+  fetch(_fnUrl,{
     method:'POST',
     headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
     body:JSON.stringify(payload)
@@ -13200,9 +13290,8 @@ function checkAndSendMondayRappel(){
   var nextWk=(TODAY?TODAY.w:1)+1;
   var emailList=emails.split('\n').map(function(e2){return e2.trim();}).filter(Boolean);
   var payload={emails:emailList,semaine:nextWk,rappels:rappels,forceEnvoi:false};
-  var SUPA_URL='https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/send-rappels';
-  var SUPA_KEY='sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
-  fetch(SUPA_URL,{method:'POST',
+  var _fnUrl=SUPA_URL+'/functions/v1/send-rappels';
+  fetch(_fnUrl,{method:'POST',
     headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
     body:JSON.stringify(payload)}).catch(function(){});
 }
@@ -13242,10 +13331,9 @@ function checkAndSendRetardAlerts(force){
     var todayKeyRA=new Date().toISOString().slice(0,10);
     if(localStorage.getItem('retard_alerts_last_check')===todayKeyRA)return;
   }
-  var SUPA_URL='https://phcnmrsvywnzdrfazavv.supabase.co/functions/v1/check-retards';
-  var SUPA_KEY='sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
+  var _fnUrl=SUPA_URL+'/functions/v1/check-retards';
   var todayKeyRA2=new Date().toISOString().slice(0,10);
-  fetch(SUPA_URL,{method:'POST',
+  fetch(_fnUrl,{method:'POST',
     headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
     body:JSON.stringify({})
   }).then(function(res){return res.json();}).then(function(data){
