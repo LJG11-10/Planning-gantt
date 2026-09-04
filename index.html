@@ -6133,7 +6133,7 @@ function downloadPlanning(mode){
     html+='<div style="font-size:12px;color:#888;margin-top:3px">'+dateStr+'</div>';
     html+='</div>';
 
-    html+='<div class="no-print" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+    html+='<div class="no-print" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;position:sticky;left:0;width:max-content;z-index:50;background:#fff;padding:4px;border-radius:8px">';
     html+='<div style="display:flex;align-items:center;gap:4px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:3px">';
     html+='<button onclick="_ganttSetZoom(-8)" title="Zoom arrière" style="width:30px;height:30px;border:none;background:#fff;border-radius:6px;color:#1F4E79;font-size:16px;font-weight:800;cursor:pointer">−</button>';
     html+='<span id="_ganttZoomPct" style="font-size:11px;font-weight:700;color:#1F4E79;min-width:40px;text-align:center">100%</span>';
@@ -13973,30 +13973,8 @@ function gcCtxComment(){
   if(!r.barComments)r.barComments={};
   if(!r.barComments[t.mode])r.barComments[t.mode]={};
   if(txt)r.barComments[t.mode][t.segStart]=txt;else delete r.barComments[t.mode][t.segStart];
-  // Un commentaire posé sur une barre (Prévu ou Réel) se recopie automatiquement
-  // sur l'autre barre juste à côté (même période), pour ne pas avoir à le
-  // ressaisir deux fois — dans les DEUX sens (avant : uniquement Prévu → Réel,
-  // ce qui faisait que commenter directement sur Réel ne remplissait jamais
-  // Prévu). Ne jamais écraser un commentaire DÉJÀ présent et différent sur
-  // l'autre barre. L'autre barre n'a pas forcément le même jour de départ
-  // (les deux peuvent être légèrement décalées) : on recalcule donc SON VRAI
-  // point de départ, sans réutiliser à tort celui de la barre cliquée.
-  if(txt){
-    var otherMode=t.mode==='prev'?'reel':'prev';
-    var _otherDaysNow=getTaskDays5(r,otherMode);
-    var _otherSegStart=null;
-    for(var _dChk=t.segStart;_dChk<=t.segEnd;_dChk++){
-      if(_otherDaysNow.indexOf(_dChk)>=0){
-        _otherSegStart=_dChk;
-        while(_otherDaysNow.indexOf(_otherSegStart-1)>=0)_otherSegStart--;
-        break;
-      }
-    }
-    if(_otherSegStart!==null){
-      if(!r.barComments[otherMode])r.barComments[otherMode]={};
-      if(!r.barComments[otherMode][_otherSegStart])r.barComments[otherMode][_otherSegStart]=txt;
-    }
-  }
+  // Chaque barre (Prévu / Réel) garde son propre commentaire, totalement
+  // indépendant de l'autre — pas de recopie automatique entre les deux.
   // Sécurité : même si une étape annexe (calcul de budget, etc.) échoue
   // pour une raison imprévue ailleurs dans saveNow(), le commentaire lui-
   // même doit rester enregistré et affiché — jamais de perte silencieuse.
