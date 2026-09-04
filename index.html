@@ -2642,7 +2642,7 @@ async function loadRoleAndStart() {
     if (firstProj) switchProjet(firstProj);
     setTimeout(navRefreshArchBtn, 100);
     applyRoleRestrictions();
-    applyBudgetPermissions();
+    applyModulePermissions();
     checkAndSendRetardAlerts();
   } catch(e) {
     setLoginLoading(false);
@@ -2650,12 +2650,14 @@ async function loadRoleAndStart() {
   }
 }
 
-// Applique les droits "Budget Heures" (H vendues, Gantt, récap) de la personne
-// connectée. Appelé une fois après connexion ; la case "H vendues" de la barre
-// d'outils est masquée/rendue lecture seule ici. Les badges de budget dans le
-// Gantt lui-même et le récap se basent directement sur hasView/hasEdit à
-// chaque rendu (renderGantt, renderRecap...), pas besoin de les rafraîchir ici.
-function applyBudgetPermissions(){
+// Applique les droits de la personne connectée pour les modules déjà branchés
+// (Budget Heures, Rappels, Plaque PE, Annuaire). Appelé une fois après connexion.
+// Le contenu de l'Annuaire (renderPersonnelSearch) et les badges du Gantt/récap
+// se basent directement sur hasView/hasEdit à chaque rendu, pas besoin de les
+// rafraîchir ici — seuls les éléments toujours visibles (boutons, cases) sont
+// traités dans cette fonction.
+function applyModulePermissions(){
+  // Budget Heures — case "H vendues" dans la barre d'outils
   var budBox = document.querySelector('.bud-box');
   var budInput = document.getElementById('inp-bud');
   if(!hasView('budget_toolbar')){
@@ -2664,7 +2666,29 @@ function applyBudgetPermissions(){
     if(budBox) budBox.style.display='';
     if(budInput) budInput.disabled = !hasEdit('budget_toolbar');
   }
+
+  // Rappels & alertes — bouton dans la barre d'outils
+  var rappelsBtn = document.querySelector('[onclick="openRappelsSettings()"]');
+  if(rappelsBtn) rappelsBtn.style.display = hasView('rappels') ? '' : 'none';
+
+  // Plaque PE — case sur l'écran d'accueil
+  var plaqueTile = document.getElementById('petro-hub-tile-plaque');
+  if(plaqueTile) plaqueTile.style.display = hasView('plaque_pe') ? '' : 'none';
+
+  // Annuaire du personnel — sous-onglet dans Personnel
+  var annuaireBtn = document.querySelector('[data-pt="search"]');
+  if(annuaireBtn) annuaireBtn.style.display = hasView('annuaire') ? '' : 'none';
+
+  // Planning — bouton "Éditeur de planning" (couleurs, structure, phases/tâches)
+  // Le Gantt lui-même reste toujours visible (voir Planning n'est pas restreint pour
+  // l'instant) ; seule la modification de structure/couleurs dépend de ce droit.
+  // openPlanEditor() vérifie aussi ce droit lui-même en cas d'appel direct.
+  document.querySelectorAll('[onclick="openPlanEditor()"]').forEach(function(b){
+    b.style.display = hasEdit('planning') ? '' : 'none';
+  });
 }
+// Alias conservé pour compatibilité si jamais appelé ailleurs sous l'ancien nom
+function applyBudgetPermissions(){ applyModulePermissions(); }
 
 function applyRoleRestrictions() {
   // Gestion des droits : réservé aux admins, peu importe le reste des règles ci-dessous
@@ -3785,6 +3809,11 @@ function renderPersonnelSearch(){
   var el=document.getElementById('pers-search');
   if(!el){console.error('pers-search not found');return;}
 
+  if(!hasView('annuaire')){
+    el.innerHTML='<div style="padding:40px;text-align:center;color:var(--tx3);font-size:12px">Vous n\'avez pas accès à l\'annuaire du personnel.</div>';
+    return;
+  }
+
   var gp=_getGlobalPersons(); // Fusionne GP_KEY + STORE.globalPersons
   var _del=STORE._deletedPersons||{};
   var editingNm=window._editingPerson;
@@ -3816,7 +3845,7 @@ function renderPersonnelSearch(){
   html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
   html+='<div><div style="font-size:16px;font-weight:900;color:var(--tx)">📋 Annuaire du personnel</div>';
   html+='<div style="font-size:11px;color:var(--tx3);margin-top:1px">'+Object.keys(gp).length+' personne'+(Object.keys(gp).length!==1?'s':'')+' · Base inter-affaires</div></div>';
-  html+='<button onclick="_annEdit(null)" style="padding:6px 14px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Ajouter</button>';
+  html+=(hasEdit('annuaire')?'<button onclick="_annEdit(null)" style="padding:6px 14px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Ajouter</button>':'');
   html+='</div>';
 
   // ─── Recherche ───────────────────────────────────────────────────
@@ -3926,8 +3955,10 @@ function renderPersonnelSearch(){
         }
         html+='</div>';
         html+='<div style="display:flex;gap:4px;flex-shrink:0">';
-        html+='<button onclick="event.stopPropagation();_annEdit(\''+safeName+'\')" style="background:none;border:1px solid var(--bd);border-radius:var(--r);padding:3px 8px;font-size:10px;cursor:pointer;color:var(--tx2)">✎</button>';
-        html+='<button onclick="event.stopPropagation();deleteGlobalPerson(\''+safeName+'\')" style="background:none;border:1px solid #FCA5A5;border-radius:var(--r);padding:3px 8px;font-size:10px;cursor:pointer;color:var(--rd)">✕</button>';
+        if(hasEdit('annuaire')){
+          html+='<button onclick="event.stopPropagation();_annEdit(\''+safeName+'\')" style="background:none;border:1px solid var(--bd);border-radius:var(--r);padding:3px 8px;font-size:10px;cursor:pointer;color:var(--tx2)">✎</button>';
+          html+='<button onclick="event.stopPropagation();deleteGlobalPerson(\''+safeName+'\')" style="background:none;border:1px solid #FCA5A5;border-radius:var(--r);padding:3px 8px;font-size:10px;cursor:pointer;color:var(--rd)">✕</button>';
+        }
         html+='</div></div>';
       });
       });
@@ -5897,7 +5928,6 @@ function downloadPlanning(mode){
   body+='<div style="background:linear-gradient(135deg,#1F4E79,#2563EB);color:#fff;border-radius:16px;padding:28px 32px;margin-bottom:28px">'
     +'<div style="font-size:26px;font-weight:900;margin-bottom:6px">'+esc(aff)+(_infHdr.numeroClient?' <span style="font-size:16px;font-weight:700;opacity:.85">&middot; N&deg; client : '+esc(_infHdr.numeroClient)+'</span>':'')+'</div>'
     +'<div style="font-size:13px;opacity:.8">Rapport généré le '+dateStr+'</div>'
-    +(p.dstart&&p.dend?'<div style="font-size:12px;opacity:.7;margin-top:4px">Période : '+new Date(p.dstart).toLocaleDateString('fr-FR')+' → '+new Date(p.dend).toLocaleDateString('fr-FR')+'</div>':'')
     +'</div>';
 
   // ── Cartes KPI ───────────────────────────────────
@@ -6277,8 +6307,10 @@ function downloadPlanning(mode){
             _dbInR=(r.weekendReel||[]).indexOf(_weAbs)>=0;
           }
           var _dbCmtP='',_dbCmtR='';
-          if(_dbInP&&r.barComments&&r.barComments.prev){var _sgP=_dAbs;while(_prevDaysSet.has(_sgP-1))_sgP--;_dbCmtP=r.barComments.prev[_sgP]||'';}
-          if(_dbInR&&r.barComments&&r.barComments.reel){var _sgR=_dAbs;while(_reelDaysSet.has(_sgR-1))_sgR--;_dbCmtR=r.barComments.reel[_sgR]||'';}
+          if(_db<5){
+            if(_dbInP&&r.barComments&&r.barComments.prev){var _sgP=_dAbs;while(_prevDaysSet.has(_sgP-1))_sgP--;_dbCmtP=r.barComments.prev[_sgP]||'';}
+            if(_dbInR&&r.barComments&&r.barComments.reel){var _sgR=_dAbs;while(_reelDaysSet.has(_sgR-1))_sgR--;_dbCmtR=r.barComments.reel[_sgR]||'';}
+          }
           _dayBarHtml+='<div style="flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid #F1F2F5;height:100%">'
             +'<div style="flex:1;background:'+(_dbInP?phC.xl:(_db>=5?'#FAFAFA':'transparent'))+';display:flex;align-items:center;justify-content:center;overflow:hidden"'+(_dbCmtP?' title="'+esc(_dbCmtP)+'"':'')+'>'+(_dbCmtP?'<span style="font-size:13px">💬</span>':'')+'</div>'
             +'<div style="height:0.5px;background:#fff"></div>'
@@ -11090,6 +11122,10 @@ function repairOrphanPhaseInPlace(orphanPk,targetPk){
 }
 
 function openPlanEditor(){
+  if(!hasEdit('planning')){
+    alert('Vous n\'avez pas le droit de modifier la structure du planning (couleurs, phases, tâches).');
+    return;
+  }
   var el=document.getElementById('plan-editor');
   if(!el)return;
   el.classList.add('open');
@@ -13937,27 +13973,28 @@ function gcCtxComment(){
   if(!r.barComments)r.barComments={};
   if(!r.barComments[t.mode])r.barComments[t.mode]={};
   if(txt)r.barComments[t.mode][t.segStart]=txt;else delete r.barComments[t.mode][t.segStart];
-  // Un commentaire posé sur Prévu se recopie automatiquement sur Réel juste
-  // en dessous (même période), pour ne pas avoir à le ressaisir deux fois —
-  // sauf si Réel a déjà SON PROPRE commentaire différent, qu'on ne veut pas
-  // écraser silencieusement. Réel n'a pas forcément le même jour de départ
-  // que Prévu (les deux barres peuvent être légèrement décalées) : il faut
-  // donc calculer LE VRAI point de départ du segment Réel, pas réutiliser
-  // à tort celui de Prévu — sinon le commentaire est enregistré à une
-  // position que l'affichage de Réel ne consulte jamais.
-  if(t.mode==='prev'&&txt){
-    var _reelDaysNow=getTaskDays5(r,'reel');
-    var _reelSegStart=null;
+  // Un commentaire posé sur une barre (Prévu ou Réel) se recopie automatiquement
+  // sur l'autre barre juste à côté (même période), pour ne pas avoir à le
+  // ressaisir deux fois — dans les DEUX sens (avant : uniquement Prévu → Réel,
+  // ce qui faisait que commenter directement sur Réel ne remplissait jamais
+  // Prévu). Ne jamais écraser un commentaire DÉJÀ présent et différent sur
+  // l'autre barre. L'autre barre n'a pas forcément le même jour de départ
+  // (les deux peuvent être légèrement décalées) : on recalcule donc SON VRAI
+  // point de départ, sans réutiliser à tort celui de la barre cliquée.
+  if(txt){
+    var otherMode=t.mode==='prev'?'reel':'prev';
+    var _otherDaysNow=getTaskDays5(r,otherMode);
+    var _otherSegStart=null;
     for(var _dChk=t.segStart;_dChk<=t.segEnd;_dChk++){
-      if(_reelDaysNow.indexOf(_dChk)>=0){
-        _reelSegStart=_dChk;
-        while(_reelDaysNow.indexOf(_reelSegStart-1)>=0)_reelSegStart--;
+      if(_otherDaysNow.indexOf(_dChk)>=0){
+        _otherSegStart=_dChk;
+        while(_otherDaysNow.indexOf(_otherSegStart-1)>=0)_otherSegStart--;
         break;
       }
     }
-    if(_reelSegStart!==null){
-      if(!r.barComments.reel)r.barComments.reel={};
-      if(!r.barComments.reel[_reelSegStart])r.barComments.reel[_reelSegStart]=txt;
+    if(_otherSegStart!==null){
+      if(!r.barComments[otherMode])r.barComments[otherMode]={};
+      if(!r.barComments[otherMode][_otherSegStart])r.barComments[otherMode][_otherSegStart]=txt;
     }
   }
   // Sécurité : même si une étape annexe (calcul de budget, etc.) échoue
@@ -13974,6 +14011,7 @@ function gcCtxComment(){
 }
 window._gcMoveState=null;
 function gcCtxMoveAll(){
+  if(!hasEdit('planning')) return; // pas de droit de modifier le planning : pas de déplacement de barre
   var t=window._gcCtxTarget;
   _gcCloseContextMenu();
   if(!t)return;
@@ -14065,6 +14103,7 @@ function _gcCommitMove(targetW,targetD){
 }
 
 function gcDown(rid, w, d, ev){
+  if(!hasEdit('planning')) return; // pas de droit de modifier le planning : on ne dessine/efface aucune barre
   if(ev&&ev.button!==0)return; // clic droit/molette : jamais de peinture/suppression, seul le clic gauche agit sur les barres
   if(window._gcMoveState){ // un déplacement "glisser" est en cours : ce clic gauche valide la nouvelle position
     if(ev)ev.stopPropagation();
