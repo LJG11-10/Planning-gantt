@@ -417,16 +417,17 @@
         }
       });
     }
-    // ── Capturer weekPlan/absences/conges LOCAUX avant tout remplacement ──
+    // ── Capturer weekPlan/absences/conges/fhMeta LOCAUX avant tout remplacement ──
     // CRITIQUE : un cycle de synchro (toutes les 3s) ne doit JAMAIS remplacer
     // en bloc des données en cours de saisie qui n'ont pas encore eu le temps
     // d'être envoyées au serveur. On fusionne entrée par entrée (semaine par
     // semaine, puis personne/jour par personne/jour) au lieu d'écraser.
-    var _localWeekPlan={},_localAbsences={},_localConges={};
+    var _localWeekPlan={},_localAbsences={},_localConges={},_localFhMeta={};
     try{
       if(STORE&&STORE.weekPlan)_localWeekPlan=JSON.parse(JSON.stringify(STORE.weekPlan));
       if(STORE&&STORE.absences)_localAbsences=JSON.parse(JSON.stringify(STORE.absences));
       if(STORE&&STORE.conges)_localConges=JSON.parse(JSON.stringify(STORE.conges));
+      if(STORE&&STORE.fhMeta)_localFhMeta=JSON.parse(JSON.stringify(STORE.fhMeta));
     }catch(_eClone){}
     // ── Appliquer le remote puis restaurer globalPersons ────────────────
     STORE=remote;
@@ -478,6 +479,24 @@
     STORE._deletedWeekPlanKeys=_delWpKeys;
     STORE.absences=Object.assign({},STORE.absences||{},_localAbsences);
     STORE.conges=Object.assign({},STORE.conges||{},_localConges);
+    // Fusion fine de fhMeta (Panier/GD/Lieu/Zone/Trajet/Véhicule des feuilles
+    // d'heure) : le remote sert de base, le local prend le dessus jour par
+    // jour dès qu'il contient une vraie information — même principe que
+    // weekPlan juste au-dessus. Sans ça, changer d'onglet (ou simplement le
+    // cycle de synchro automatique) pouvait effacer une case tout juste
+    // cochée ou un lieu tout juste écrit, pas encore envoyé au serveur.
+    STORE.fhMeta=STORE.fhMeta||{};
+    Object.keys(_localFhMeta).forEach(function(wk){
+      STORE.fhMeta[wk]=STORE.fhMeta[wk]||{};
+      Object.keys(_localFhMeta[wk]).forEach(function(nm){
+        STORE.fhMeta[wk][nm]=STORE.fhMeta[wk][nm]||{};
+        Object.keys(_localFhMeta[wk][nm]).forEach(function(day){
+          var lm=_localFhMeta[wk][nm][day];
+          var hasActive=lm&&(lm.panier||lm.gd||(lm.lieu&&lm.lieu.trim())||(lm.zone&&lm.zone.trim())||(lm.trajetH&&+lm.trajetH>0)||(lm.vehicule&&lm.vehicule.trim()));
+          if(hasActive)STORE.fhMeta[wk][nm][day]=lm;
+        });
+      });
+    });
     // Retirer du weekPlan/absences/conges toute entrée d'une personne supprimée
     // (le remote peut encore contenir d'anciennes entrées pas encore nettoyées)
     // — mais uniquement à partir de la semaine actuelle : l'historique des
