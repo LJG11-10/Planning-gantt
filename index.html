@@ -4489,7 +4489,7 @@ function fhPrintFiche(nm){
       var _metaCellP='';
       if(_dmetaP.panier)_metaCellP+='<span class="meta-badge">\u{1F37D}</span>';
       if(_dmetaP.gd)_metaCellP+='<span class="meta-badge">\u{1F697}</span>';
-      if(_dmetaP.gd&&_dmetaP.trajetH)_metaCellP+='<span class="meta-badge">'+_dmetaP.trajetH+'H trajet</span>';
+      if(_dmetaP.trajetH)_metaCellP+='<span class="meta-badge">'+_dmetaP.trajetH+'H trajet</span>';
       if(_dmetaP.zone)_metaCellP+='<span class="meta-badge">'+esc(_dmetaP.zone)+'</span>';
       if(_dmetaP.vehicule)_metaCellP+='<span class="meta-badge">'+esc(_dmetaP.vehicule)+'</span>';
       if(_dmetaP.lieu)_metaCellP+='<span class="meta-badge meta-lieu">\u{1F4CD} '+esc(_dmetaP.lieu)+'</span>';
@@ -7981,7 +7981,7 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
     +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer"><input type="checkbox" '+(meta.panier?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'panier\',this.checked)" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F37D} Panier</label>'
     +'<div style="display:flex;align-items:center;gap:5px">'
     +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer;flex-shrink:0"><input type="checkbox" '+(meta.gd?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'gd\',this.checked);renderFiche()" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F697} Gd d\u00e9pl.</label>'
-    +(meta.gd?'<input type="number" min="0" step="0.5" value="'+(meta.trajetH||'')+'" placeholder="H trajet" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" title="Heures de trajet" style="width:56px;border:none;border-radius:6px;padding:2px 4px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">':'')
+    +'<input type="number" min="0" step="0.5" value="'+(meta.trajetH||'')+'" placeholder="H trajet" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" title="Heures de trajet" style="width:56px;border:none;border-radius:6px;padding:2px 4px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
     +'</div>'
     +'<select onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'zone\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'+zoneOpts+'</select>'
     +'<select onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'vehicule\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'+vehOpts+'</select>'
@@ -13311,7 +13311,7 @@ function fhGenerateWeekHTML(wk,cb){
       var metaCell='';
       if(meta.panier)metaCell+='<span class="meta-badge">\u{1F37D}</span>';
       if(meta.gd)metaCell+='<span class="meta-badge">\u{1F697}</span>';
-      if(meta.gd&&meta.trajetH)metaCell+='<span class="meta-badge">'+meta.trajetH+'H trajet</span>';
+      if(meta.trajetH)metaCell+='<span class="meta-badge">'+meta.trajetH+'H trajet</span>';
       if(meta.zone)metaCell+='<span class="meta-badge">'+esc(meta.zone)+'</span>';
       if(meta.vehicule)metaCell+='<span class="meta-badge">'+esc(meta.vehicule)+'</span>';
       if(meta.lieu)metaCell+='<span class="meta-badge meta-lieu">\u{1F4CD} '+esc(meta.lieu)+'</span>';
@@ -13390,7 +13390,7 @@ function fhGenerateHTML(nm,cb){
       var _metaCell='';
       if(_dmeta.panier)_metaCell+='<span class="meta-badge">\u{1F37D}</span>';
       if(_dmeta.gd)_metaCell+='<span class="meta-badge">\u{1F697}</span>';
-      if(_dmeta.gd&&_dmeta.trajetH)_metaCell+='<span class="meta-badge">'+_dmeta.trajetH+'H trajet</span>';
+      if(_dmeta.trajetH)_metaCell+='<span class="meta-badge">'+_dmeta.trajetH+'H trajet</span>';
       if(_dmeta.zone)_metaCell+='<span class="meta-badge">'+esc(_dmeta.zone)+'</span>';
       if(_dmeta.vehicule)_metaCell+='<span class="meta-badge">'+esc(_dmeta.vehicule)+'</span>';
       if(_dmeta.lieu)_metaCell+='<span class="meta-badge meta-lieu">\u{1F4CD} '+esc(_dmeta.lieu)+'</span>';
