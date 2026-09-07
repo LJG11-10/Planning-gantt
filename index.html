@@ -4513,7 +4513,7 @@ function fhPrintFiche(nm){
       if(_dmetaP.panier)panierTotal++;
       if(_dmetaP.trajetH)trajetTotal+=(+_dmetaP.trajetH||0);
       var _metaCellP='';
-      if(_dmetaP.panier)_metaCellP+='<span class="meta-badge">\u{1F37D}</span>';
+      if(_dmetaP.panier)_metaCellP+='<span class="meta-badge">\u{1F37D} Panier</span>';
       if(_dmetaP.gd)_metaCellP+='<span class="meta-badge">\u{1F697} Grand dep</span>';
       if(_dmetaP.trajetH)_metaCellP+='<span class="meta-badge">'+_dmetaP.trajetH+'H trajet</span>';
       if(_dmetaP.zone)_metaCellP+='<span class="meta-badge">'+esc(_dmetaP.zone)+'</span>';
@@ -4527,33 +4527,37 @@ function fhPrintFiche(nm){
       wkTotal+=dayH;
 
       if(!valid.length){
-        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCellP+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="h">0H</td><td class="tot"></td></tr>';
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCellP+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="tot">0H</td></tr>';
       } else {
-        valid.forEach(function(l,i){
-          var h=+(l.hours||l.h)||0;
-          var act=getAct(l.actId,l.affId);
-          var affLbl=getAffLabel(l.affId||aff);
+        // Regrouper les lignes du jour par affaire (dans l'ordre d'apparition),
+        // pour n'afficher le numéro d'affaire qu'une seule fois, avec le détail
+        // des sous-phases (et leurs heures) listé en dessous.
+        var _order=[];var _groups={};
+        valid.forEach(function(l){
           var _affKey=l.affId||aff;
-          affTotals[_affKey]=(affTotals[_affKey]||0)+h;
-          rows+='<tr'+(i===0?' class="day-sep"':'')+'>'
-            +(i===0?'<td class="day" rowspan="'+valid.length+'">'+dayStr+'</td><td class="meta-cell" rowspan="'+valid.length+'">'+_metaCellP+'</td>':'')
-            +'<td class="act">'
-            +'<div class="aff-lbl">'+esc(affLbl)+'</div>'
-            +(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')
-            +esc(act.lb)+'</td>'
-            +'<td class="h">'+h+'H</td>'
-            +(i===valid.length-1?'<td class="tot day-tot">'+dayH+'H</td>':'<td class="tot"></td>')
-            +'</tr>';
+          if(!_groups[_affKey]){_groups[_affKey]=[];_order.push(_affKey);}
+          _groups[_affKey].push(l);
+          affTotals[_affKey]=(affTotals[_affKey]||0)+(+(l.hours||l.h)||0);
         });
+        var actHtml=_order.map(function(_affKey){
+          var affLbl=getAffLabel(_affKey);
+          var linesHtml=_groups[_affKey].map(function(l){
+            var h=+(l.hours||l.h)||0;
+            var act=getAct(l.actId,l.affId);
+            return '<div class="sb-line">'+(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')+esc(act.lb)+'<span class="sb-h">'+h+'H</span></div>';
+          }).join('');
+          return '<div class="aff-group"><div class="aff-lbl">'+esc(affLbl)+'</div>'+linesHtml+'</div>';
+        }).join('');
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCellP+'</td><td class="act">'+actHtml+'</td><td class="tot day-tot">'+dayH+'H</td></tr>';
       }
     });
 
     grandTotal+=wkTotal;
     body+='<div class="week">'
       +'<div class="week-hdr"><span>'+wkLabel+'</span><span class="week-tot">'+wkTotal+' H</span></div>'
-      +'<table><thead><tr><th class="th-day">Jour</th><th class="th-meta">Panier / GD / Trajet / Zone / Véh. / Lieu</th><th class="th-act">Activité</th><th class="th-h">H</th><th class="th-tot">/ Jour</th></tr></thead>'
+      +'<table><thead><tr><th class="th-day">Jour</th><th class="th-meta">Panier / GD / Trajet / Zone / Véh. / Lieu</th><th class="th-act">Activité</th><th class="th-tot">Total / Jour</th></tr></thead>'
       +'<tbody>'+rows+'</tbody>'
-      +'<tfoot><tr><td colspan="4" class="tf-lbl">Total semaine '+wk+'</td><td class="tf-h">'+wkTotal+' H</td></tr></tfoot>'
+      +'<tfoot><tr><td colspan="3" class="tf-lbl">Total semaine '+wk+'</td><td class="tf-h">'+wkTotal+' H</td></tr></tfoot>'
       +'</table></div>';
   });
 
@@ -4599,7 +4603,7 @@ function fhPrintFiche(nm){
     +'.week{margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #CBD5E1}'
     +'.week-hdr{background:#1F4E79;color:#fff;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12px;align-items:center}'
     +'.meta-badge{background:#EEF2FF;color:#1F4E79;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;margin:1px 2px 1px 0;display:inline-block}.meta-lieu{background:#FDE68A}.meta-cell{font-size:9px;max-width:110px}.th-meta{width:190px}'
-    +'.aff-lbl{font-size:9px;font-weight:800;color:#059669;margin-bottom:2px}'
+    +'.aff-lbl{font-size:9px;font-weight:800;color:#059669;margin-bottom:2px}.aff-group{margin-bottom:8px}.aff-group:last-child{margin-bottom:0}.sb-line{font-size:10px;color:#333;padding:3px 0 3px 6px;border-left:2px solid #E5E7EB;margin-bottom:2px}.sb-h{float:right;font-weight:800;color:#1F4E79;margin-left:8px}'
     +'.week-tot{background:rgba(255,255,255,.2);padding:2px 12px;border-radius:20px;font-size:13px;font-weight:900}'
     +'table{width:100%;border-collapse:collapse}'
     +'th{background:#EFF6FF;color:#1F4E79;padding:6px 10px;text-align:left;font-size:10px;border-bottom:2px solid #BFDBFE}'
@@ -13408,7 +13412,7 @@ function fhGenerateWeekHTML(wk,cb){
       if(meta.panier)panierTotal++;
       if(meta.trajetH)trajetTotal+=(+meta.trajetH||0);
       var metaCell='';
-      if(meta.panier)metaCell+='<span class="meta-badge">\u{1F37D}</span>';
+      if(meta.panier)metaCell+='<span class="meta-badge">\u{1F37D} Panier</span>';
       if(meta.gd)metaCell+='<span class="meta-badge">\u{1F697} Grand dep</span>';
       if(meta.trajetH)metaCell+='<span class="meta-badge">'+meta.trajetH+'H trajet</span>';
       if(meta.zone)metaCell+='<span class="meta-badge">'+esc(meta.zone)+'</span>';
@@ -13420,29 +13424,34 @@ function fhGenerateWeekHTML(wk,cb){
       var dayH=valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0);
       wkTotal+=dayH;
       if(!valid.length){
-        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+metaCell+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="h">0H</td><td class="tot"></td></tr>';
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+metaCell+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="tot">0H</td></tr>';
       }else{
-        valid.forEach(function(l,i){
-          var h=+(l.hours||l.h)||0;
-          var act=getAct(l.affId||fhAff,l.actId);
-          var affLbl=getAffLabel(l.affId||fhAff);
+        var _order=[];var _groups={};
+        valid.forEach(function(l){
           var _affKey=l.affId||fhAff;
-          affTotals[_affKey]=(affTotals[_affKey]||0)+h;
-          rows+='<tr'+(i===0?' class="day-sep"':'')+'>'+(i===0?'<td class="day" rowspan="'+valid.length+'">'+dayStr+'</td><td class="meta-cell" rowspan="'+valid.length+'">'+metaCell+'</td>':'')
-            +'<td class="act"><div class="aff-lbl">'+esc(affLbl)+'</div>'+(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')+esc(act.lb)+'</td>'
-            +'<td class="h">'+h+'H</td>'
-            +(i===valid.length-1?'<td class="tot day-tot">'+dayH+'H</td>':'<td class="tot"></td>')
-            +'</tr>';
+          if(!_groups[_affKey]){_groups[_affKey]=[];_order.push(_affKey);}
+          _groups[_affKey].push(l);
+          affTotals[_affKey]=(affTotals[_affKey]||0)+(+(l.hours||l.h)||0);
         });
+        var actHtml=_order.map(function(_affKey){
+          var affLbl=getAffLabel(_affKey);
+          var linesHtml=_groups[_affKey].map(function(l){
+            var h=+(l.hours||l.h)||0;
+            var act=getAct(l.affId||fhAff,l.actId);
+            return '<div class="sb-line">'+(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')+esc(act.lb)+'<span class="sb-h">'+h+'H</span></div>';
+          }).join('');
+          return '<div class="aff-group"><div class="aff-lbl">'+esc(affLbl)+'</div>'+linesHtml+'</div>';
+        }).join('');
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+metaCell+'</td><td class="act">'+actHtml+'</td><td class="tot day-tot">'+dayH+'H</td></tr>';
       }
     });
     return '<div'+(idx>0?' style="page-break-before:always;padding-top:20px"':'')+'>'
       +'<h1>Feuille d\'heure</h1>'
       +'<div class="meta"><strong>'+esc(nm)+'</strong>'+(fhPersonTypeLabel(nm)?' <span class="type-badge">'+esc(fhPersonTypeLabel(nm))+'</span>':'')+' &nbsp;·&nbsp; Édité le '+dateStr+'</div>'
       +'<div class="week"><div class="week-hdr"><span>'+wkLabel+'</span><span class="week-tot">'+wkTotal+' H</span></div>'
-      +'<table><thead><tr><th class="th-day">Jour</th><th class="th-meta">Panier / GD / Trajet / Zone / Véh. / Lieu</th><th class="th-act">Activité</th><th class="th-h">H</th><th class="th-tot">/ Jour</th></tr></thead>'
+      +'<table><thead><tr><th class="th-day">Jour</th><th class="th-meta">Panier / GD / Trajet / Zone / Véh. / Lieu</th><th class="th-act">Activité</th><th class="th-tot">Total / Jour</th></tr></thead>'
       +'<tbody>'+rows+'</tbody>'
-      +'<tfoot><tr><td colspan="4" class="tf-lbl">Total semaine</td><td class="tf-h">'+wkTotal+' H</td></tr></tfoot>'
+      +'<tfoot><tr><td colspan="3" class="tf-lbl">Total semaine</td><td class="tf-h">'+wkTotal+' H</td></tr></tfoot>'
       +'</table></div>'
       +(Object.keys(affTotals).length>1?'<div style="margin:14px 0;padding:10px 14px;background:#F8FAFF;border-radius:8px;border:1px solid #E5E7EB">'
         +'<div style="font-size:10px;font-weight:800;color:#1F4E79;margin-bottom:6px;letter-spacing:.3px">RÉCAP PAR AFFAIRE</div>'
@@ -13463,7 +13472,7 @@ function fhGenerateWeekHTML(wk,cb){
       +'</div>';
   }).join('');
 
-  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Feuilles d\'heure S'+wk+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}h1{font-size:20px;font-weight:900;color:#1F4E79}.meta{font-size:11px;color:#666;margin:4px 0 20px}.type-badge{display:inline-block;background:#1F4E79;color:#fff;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;margin-left:6px;vertical-align:middle}.week{margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #CBD5E1}.week-hdr{background:#1F4E79;color:#fff;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12px;align-items:center}.meta-badge{background:#EEF2FF;color:#1F4E79;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;margin:1px 2px 1px 0;display:inline-block}.meta-lieu{background:#FDE68A}.meta-cell{font-size:9px;max-width:110px}.aff-lbl{font-size:9px;font-weight:800;color:#059669;margin-bottom:2px}.week-tot{background:rgba(255,255,255,.2);padding:2px 12px;border-radius:20px;font-size:13px;font-weight:900}table{width:100%;border-collapse:collapse}th{background:#EFF6FF;color:#1F4E79;padding:6px 10px;text-align:left;font-size:10px;border-bottom:2px solid #BFDBFE}.th-h,.th-tot{text-align:center;width:60px}.th-meta{width:190px}td{padding:6px 10px;border-bottom:1px solid #E5E7EB;vertical-align:middle}.day{font-weight:700;color:#1F4E79;background:#F8FAFF;width:110px;font-size:11px}.pk{background:#DBEAFE;color:#1E40AF;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px}.h{text-align:center;color:#666;width:60px}.tot{text-align:center;width:60px}.day-tot{font-weight:900;color:#1F4E79;background:#EFF6FF}.day-sep td{border-top:2px solid #94A3B8}tfoot td{background:#1F4E79;color:#fff;padding:7px 10px;font-weight:700}.tf-lbl{text-align:right}.tf-h{text-align:center;font-size:15px;font-weight:900;color:#FDE047}.sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:32px}.sig-box{border-top:2px solid #1F4E79;padding-top:8px}.sig-lbl{font-size:10px;color:#999;margin-bottom:36px}.sig-name{font-size:12px;font-weight:700}@media print{@page{size:A4 portrait;margin:12mm}body{padding:0}.week{page-break-inside:avoid}}</style></head><body>'
+  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Feuilles d\'heure S'+wk+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}h1{font-size:20px;font-weight:900;color:#1F4E79}.meta{font-size:11px;color:#666;margin:4px 0 20px}.type-badge{display:inline-block;background:#1F4E79;color:#fff;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;margin-left:6px;vertical-align:middle}.week{margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #CBD5E1}.week-hdr{background:#1F4E79;color:#fff;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12px;align-items:center}.meta-badge{background:#EEF2FF;color:#1F4E79;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;margin:1px 2px 1px 0;display:inline-block}.meta-lieu{background:#FDE68A}.meta-cell{font-size:9px;max-width:110px}.aff-lbl{font-size:9px;font-weight:800;color:#059669;margin-bottom:2px}.aff-group{margin-bottom:8px}.aff-group:last-child{margin-bottom:0}.sb-line{font-size:10px;color:#333;padding:3px 0 3px 6px;border-left:2px solid #E5E7EB;margin-bottom:2px}.sb-h{float:right;font-weight:800;color:#1F4E79;margin-left:8px}.week-tot{background:rgba(255,255,255,.2);padding:2px 12px;border-radius:20px;font-size:13px;font-weight:900}table{width:100%;border-collapse:collapse}th{background:#EFF6FF;color:#1F4E79;padding:6px 10px;text-align:left;font-size:10px;border-bottom:2px solid #BFDBFE}.th-h,.th-tot{text-align:center;width:60px}.th-meta{width:190px}td{padding:6px 10px;border-bottom:1px solid #E5E7EB;vertical-align:middle}.day{font-weight:700;color:#1F4E79;background:#F8FAFF;width:110px;font-size:11px}.pk{background:#DBEAFE;color:#1E40AF;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px}.h{text-align:center;color:#666;width:60px}.tot{text-align:center;width:60px}.day-tot{font-weight:900;color:#1F4E79;background:#EFF6FF}.day-sep td{border-top:2px solid #94A3B8}tfoot td{background:#1F4E79;color:#fff;padding:7px 10px;font-weight:700}.tf-lbl{text-align:right}.tf-h{text-align:center;font-size:15px;font-weight:900;color:#FDE047}.sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:32px}.sig-box{border-top:2px solid #1F4E79;padding-top:8px}.sig-lbl{font-size:10px;color:#999;margin-bottom:36px}.sig-name{font-size:12px;font-weight:700}@media print{@page{size:A4 portrait;margin:12mm}body{padding:0}.week{page-break-inside:avoid}}</style></head><body>'
     +sheets+'</body></html>';
   cb(html);
 }
@@ -13505,7 +13514,7 @@ function fhGenerateHTML(nm,cb){
       if(_dmeta.panier)panierTotal++;
       if(_dmeta.trajetH)trajetTotal+=(+_dmeta.trajetH||0);
       var _metaCell='';
-      if(_dmeta.panier)_metaCell+='<span class="meta-badge">\u{1F37D}</span>';
+      if(_dmeta.panier)_metaCell+='<span class="meta-badge">\u{1F37D} Panier</span>';
       if(_dmeta.gd)_metaCell+='<span class="meta-badge">\u{1F697} Grand dep</span>';
       if(_dmeta.trajetH)_metaCell+='<span class="meta-badge">'+_dmeta.trajetH+'H trajet</span>';
       if(_dmeta.zone)_metaCell+='<span class="meta-badge">'+esc(_dmeta.zone)+'</span>';
@@ -13516,22 +13525,37 @@ function fhGenerateHTML(nm,cb){
       var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
       var dayH=valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0);
       wkTotal+=dayH;
-      if(!valid.length){rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCell+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="h">0H</td><td class="tot"></td></tr>';}
-      else{valid.forEach(function(l,i){var h=+(l.hours||l.h)||0;// Utiliser l'affaire de la ligne si différente
-      if(l.affId&&l.affId!==aff&&STORE.projects[l.affId]){
-        var _tmpData=(STORE.projects[l.affId].data||[]);
-        var _r=_tmpData.find(function(x){return x.id===l.actId;});
-        var act=_r?{lb:_r.lb,pk:_r.pk||''}:{lb:l.actId||'(sous-phase non précisée)',pk:''};
-      } else {
-        var act=getAct(l.actId);
+      if(!valid.length){rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCell+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="tot">0H</td></tr>';}
+      else{
+        // Regrouper les lignes du jour par affaire (ordre d'apparition)
+        var _order=[];var _groups={};
+        valid.forEach(function(l){
+          var _affKey=l.affId||aff;
+          if(!_groups[_affKey]){_groups[_affKey]=[];_order.push(_affKey);}
+          _groups[_affKey].push(l);
+          affTotals[_affKey]=(affTotals[_affKey]||0)+(+(l.hours||l.h)||0);
+        });
+        var actHtml=_order.map(function(_affKey){
+          var affLbl=getAffLabel(_affKey);
+          var linesHtml=_groups[_affKey].map(function(l){
+            var h=+(l.hours||l.h)||0;
+            var act;
+            if(l.affId&&l.affId!==aff&&STORE.projects[l.affId]){
+              var _tmpData=(STORE.projects[l.affId].data||[]);
+              var _r=_tmpData.find(function(x){return x.id===l.actId;});
+              act=_r?{lb:_r.lb,pk:_r.pk||''}:{lb:l.actId||'(sous-phase non précisée)',pk:''};
+            } else {
+              act=getAct(l.actId);
+            }
+            return '<div class="sb-line">'+(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')+esc(act.lb)+'<span class="sb-h">'+h+'H</span></div>';
+          }).join('');
+          return '<div class="aff-group"><div class="aff-lbl">'+esc(affLbl)+'</div>'+linesHtml+'</div>';
+        }).join('');
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCell+'</td><td class="act">'+actHtml+'</td><td class="tot day-tot">'+dayH+'H</td></tr>';
       }
-      var affLbl=getAffLabel(l.affId||aff);
-      var _affKey=l.affId||aff;
-      affTotals[_affKey]=(affTotals[_affKey]||0)+h;
-      rows+='<tr'+(i===0?' class="day-sep"':'')+'>'+(i===0?'<td class="day" rowspan="'+valid.length+'">'+dayStr+'</td><td class="meta-cell" rowspan="'+valid.length+'">'+_metaCell+'</td>':'')+'<td class="act"><div class="aff-lbl">'+esc(affLbl)+'</div>'+(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')+esc(act.lb)+'</td>'+'<td class="h">'+h+'H</td>'+(i===valid.length-1?'<td class="tot day-tot">'+dayH+'H</td>':'<td class="tot"></td>')+'</tr>';});}
     });
     grandTotal+=wkTotal;
-    body+='<div class="week"><div class="week-hdr"><span>'+wkLabel+'</span><span class="week-tot">'+wkTotal+' H</span></div><table><thead><tr><th class="th-day">Jour</th><th class="th-meta">Panier / GD / Trajet / Zone / Véh. / Lieu</th><th class="th-act">Activité</th><th class="th-h">H</th><th class="th-tot">/ Jour</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><td colspan="4" class="tf-lbl">Total semaine '+wk+'</td><td class="tf-h">'+wkTotal+' H</td></tr></tfoot></table></div>';
+    body+='<div class="week"><div class="week-hdr"><span>'+wkLabel+'</span><span class="week-tot">'+wkTotal+' H</span></div><table><thead><tr><th class="th-day">Jour</th><th class="th-meta">Panier / GD / Trajet / Zone / Véh. / Lieu</th><th class="th-act">Activité</th><th class="th-tot">Total / Jour</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr><td colspan="3" class="tf-lbl">Total semaine '+wk+'</td><td class="tf-h">'+wkTotal+' H</td></tr></tfoot></table></div>';
   });
   var _affKeys=Object.keys(affTotals);
   if(_affKeys.length>1){
@@ -13554,7 +13578,7 @@ function fhGenerateHTML(nm,cb){
   }
   body+='<div class="sig"><div class="sig-box"><div class="sig-lbl">Signature du salarié</div><div class="sig-name">'+esc(nm)+'</div></div><div class="sig-box"><div class="sig-lbl">Visa du responsable</div></div></div>';
   var dateStr=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Feuille d\'heure '+esc(nm)+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}h1{font-size:20px;font-weight:900;color:#1F4E79}.meta{font-size:11px;color:#666;margin:4px 0 20px}.type-badge{display:inline-block;background:#1F4E79;color:#fff;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;margin-left:6px;vertical-align:middle}.kpi{display:flex;gap:20px;margin-bottom:24px}.kpi-box{background:#1F4E79;color:#fff;padding:10px 20px;border-radius:8px;text-align:center}.kpi-h{font-size:26px;font-weight:900}.kpi-l{font-size:9px;opacity:.8;font-weight:700}.week{margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #CBD5E1}.week-hdr{background:#1F4E79;color:#fff;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12px;align-items:center}.meta-badge{background:#EEF2FF;color:#1F4E79;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;margin:1px 2px 1px 0;display:inline-block}.meta-lieu{background:#FDE68A}.meta-cell{font-size:9px;max-width:110px}.aff-lbl{font-size:9px;font-weight:800;color:#059669;margin-bottom:2px}.week-tot{background:rgba(255,255,255,.2);padding:2px 12px;border-radius:20px;font-size:13px;font-weight:900}table{width:100%;border-collapse:collapse}th{background:#EFF6FF;color:#1F4E79;padding:6px 10px;text-align:left;font-size:10px;border-bottom:2px solid #BFDBFE}.th-h,.th-tot{text-align:center;width:60px}.th-meta{width:190px}td{padding:6px 10px;border-bottom:1px solid #E5E7EB;vertical-align:middle}.day{font-weight:700;color:#1F4E79;background:#F8FAFF;width:110px;font-size:11px}.pk{background:#DBEAFE;color:#1E40AF;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px}.h{text-align:center;color:#666;width:60px}.tot{text-align:center;width:60px}.day-tot{font-weight:900;color:#1F4E79;background:#EFF6FF}.day-sep td{border-top:2px solid #94A3B8}tfoot td{background:#1F4E79;color:#fff;padding:7px 10px;font-weight:700}.tf-lbl{text-align:right}.tf-h{text-align:center;font-size:15px;font-weight:900;color:#FDE047}.sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:32px}.sig-box{border-top:2px solid #1F4E79;padding-top:8px}.sig-lbl{font-size:10px;color:#999;margin-bottom:36px}.sig-name{font-size:12px;font-weight:700}@media print{@page{size:A4 portrait;margin:12mm}body{padding:0}.week{page-break-inside:avoid}}</style></head><body>'
+  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Feuille d\'heure '+esc(nm)+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:20px}h1{font-size:20px;font-weight:900;color:#1F4E79}.meta{font-size:11px;color:#666;margin:4px 0 20px}.type-badge{display:inline-block;background:#1F4E79;color:#fff;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;margin-left:6px;vertical-align:middle}.kpi{display:flex;gap:20px;margin-bottom:24px}.kpi-box{background:#1F4E79;color:#fff;padding:10px 20px;border-radius:8px;text-align:center}.kpi-h{font-size:26px;font-weight:900}.kpi-l{font-size:9px;opacity:.8;font-weight:700}.week{margin-bottom:20px;border-radius:6px;overflow:hidden;border:1px solid #CBD5E1}.week-hdr{background:#1F4E79;color:#fff;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12px;align-items:center}.meta-badge{background:#EEF2FF;color:#1F4E79;border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;margin:1px 2px 1px 0;display:inline-block}.meta-lieu{background:#FDE68A}.meta-cell{font-size:9px;max-width:110px}.aff-lbl{font-size:9px;font-weight:800;color:#059669;margin-bottom:2px}.aff-group{margin-bottom:8px}.aff-group:last-child{margin-bottom:0}.sb-line{font-size:10px;color:#333;padding:3px 0 3px 6px;border-left:2px solid #E5E7EB;margin-bottom:2px}.sb-h{float:right;font-weight:800;color:#1F4E79;margin-left:8px}.week-tot{background:rgba(255,255,255,.2);padding:2px 12px;border-radius:20px;font-size:13px;font-weight:900}table{width:100%;border-collapse:collapse}th{background:#EFF6FF;color:#1F4E79;padding:6px 10px;text-align:left;font-size:10px;border-bottom:2px solid #BFDBFE}.th-h,.th-tot{text-align:center;width:60px}.th-meta{width:190px}td{padding:6px 10px;border-bottom:1px solid #E5E7EB;vertical-align:middle}.day{font-weight:700;color:#1F4E79;background:#F8FAFF;width:110px;font-size:11px}.pk{background:#DBEAFE;color:#1E40AF;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin-right:6px}.h{text-align:center;color:#666;width:60px}.tot{text-align:center;width:60px}.day-tot{font-weight:900;color:#1F4E79;background:#EFF6FF}.day-sep td{border-top:2px solid #94A3B8}tfoot td{background:#1F4E79;color:#fff;padding:7px 10px;font-weight:700}.tf-lbl{text-align:right}.tf-h{text-align:center;font-size:15px;font-weight:900;color:#FDE047}.sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:32px}.sig-box{border-top:2px solid #1F4E79;padding-top:8px}.sig-lbl{font-size:10px;color:#999;margin-bottom:36px}.sig-name{font-size:12px;font-weight:700}@media print{@page{size:A4 portrait;margin:12mm}body{padding:0}.week{page-break-inside:avoid}}</style></head><body>'
     +'<h1>Feuille d\'heure</h1><div class="meta"><strong>'+esc(nm)+'</strong>'+(fhPersonTypeLabel(nm)?' <span class="type-badge">'+esc(fhPersonTypeLabel(nm))+'</span>':'')+' &nbsp;·&nbsp; '+esc(aff)+' &nbsp;·&nbsp; Édité le '+dateStr+'</div>'
     +'<div class="kpi"><div class="kpi-box"><div class="kpi-h">'+grandTotal+'H</div><div class="kpi-l">TOTAL GÉNÉRAL</div></div><div class="kpi-box" style="background:#374151"><div class="kpi-h">'+wks.length+'</div><div class="kpi-l">SEMAINE'+(wks.length>1?'S':'')+'</div></div></div>'
     +body+'</body></html>';
