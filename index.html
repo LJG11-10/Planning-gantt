@@ -12,6 +12,7 @@
   const SUPA_KEY = 'sb_publishable_JHwgPlpb-vLIeoPE66VYyg__1DOGQdU';
   let supa = null;
   try { supa = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) {}
+  window.supa = supa; // accessible aux modules séparés (Gestion des droits, Plaque PE...)
   let _syncTimeout = null;
 
   function _isValidStore(s){
@@ -7980,12 +7981,12 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
   var metaHtml='<div style="display:flex;flex-direction:column;gap:3px;margin-bottom:6px;padding:6px 8px;background:var(--bg4);border-radius:8px">'
     +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer"><input type="checkbox" '+(meta.panier?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'panier\',this.checked)" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F37D} Panier</label>'
     +'<div style="display:flex;align-items:center;gap:5px">'
-    +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer;flex-shrink:0"><input type="checkbox" '+(meta.gd?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'gd\',this.checked);renderFiche()" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F697} Gd d\u00e9pl.</label>'
-    +'<input type="number" min="0" step="0.5" value="'+(meta.trajetH||'')+'" placeholder="H trajet" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" title="Heures de trajet" style="width:56px;border:none;border-radius:6px;padding:2px 4px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
+    +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer;flex-shrink:0"><input type="checkbox" '+(meta.gd?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'gd\',this.checked)" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F697} Gd d\u00e9pl.</label>'
+    +'<input type="number" min="0" step="0.5" value="'+(meta.trajetH||'')+'" placeholder="H trajet" oninput="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" title="Heures de trajet" style="width:56px;border:none;border-radius:6px;padding:2px 4px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
     +'</div>'
     +'<select onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'zone\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'+zoneOpts+'</select>'
     +'<select onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'vehicule\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'+vehOpts+'</select>'
-    +'<input type="text" value="'+meta.lieu.replace(/"/g,'&quot;')+'" placeholder="\u{1F4CD} Lieu" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'
+    +'<input type="text" value="'+meta.lieu.replace(/"/g,'&quot;')+'" placeholder="\u{1F4CD} Lieu" oninput="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'
     +'</div>';
   var linesHtml='';
   for(var li=0;li<lines.length;li++){
