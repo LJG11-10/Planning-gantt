@@ -8069,6 +8069,9 @@ function fhDupDayToDay(aff,nm,w,srcDi,targetDi){
   if(srcMeta.panier)fhMetaSet(w,nm,targetDi,'panier',true);
   if(srcMeta.gd)fhMetaSet(w,nm,targetDi,'gd',true);
   if(srcMeta.lieu)fhMetaSet(w,nm,targetDi,'lieu',srcMeta.lieu);
+  if(srcMeta.zone)fhMetaSet(w,nm,targetDi,'zone',srcMeta.zone);
+  if(srcMeta.trajetH)fhMetaSet(w,nm,targetDi,'trajetH',srcMeta.trajetH);
+  if(srcMeta.vehicule)fhMetaSet(w,nm,targetDi,'vehicule',srcMeta.vehicule);
   saveNow();
   if(typeof syncFichesToGantt==='function')syncFichesToGantt();
   renderFiche();
