@@ -218,7 +218,7 @@
   // quelle version (la vôtre ou celle d'un collègue) est la plus récente,
   // au lieu de toujours garder la version locale par défaut.
   window._rowSnapshots=window._rowSnapshots||{};
-  var _META_FIELDS=['customPhases','budget','infos','documents','fh','sk1','sk2','persons'];
+  var _META_FIELDS=['customPhases','budget','infos','documents','sk1','sk2','persons'];
   function _refreshRowSnapshots(){
     window._rowSnapshots={};
     if(!STORE||!STORE.projects)return;
@@ -325,6 +325,47 @@
     });
     return merged;
   }
+  // Fusion fine des heures (fh) d'une affaire, personne par personne, semaine
+  // par semaine, jour par jour — remplace l'ancienne fusion "tout ou rien" où
+  // 'fh' faisait partie des _META_FIELDS échangés en bloc : si un seul
+  // utilisateur avait une copie locale jugée "plus récente" pour N'IMPORTE
+  // QUELLE AUTRE info de cette affaire (budget, documents, couleurs...), TOUTES
+  // les heures de TOUTES les personnes de cette affaire étaient remplacées par
+  // sa propre copie — pouvant silencieusement effacer les heures qu'un
+  // collègue venait de saisir, sans lien avec ce qu'il modifiait lui-même.
+  // Chaque entrée jour par jour a maintenant son propre horodatage (posé par
+  // fhPut), comparé indépendamment des autres.
+  function _mergeFh(remoteFh,localFh,remoteModAt,localModAt){
+    remoteFh=remoteFh||{};localFh=localFh||{};
+    remoteModAt=remoteModAt||{};localModAt=localModAt||{};
+    var merged=JSON.parse(JSON.stringify(remoteFh));
+    var mergedModAt=JSON.parse(JSON.stringify(remoteModAt));
+    Object.keys(localFh).forEach(function(nm){
+      if(!merged[nm])merged[nm]={};
+      if(!mergedModAt[nm])mergedModAt[nm]={};
+      Object.keys(localFh[nm]).forEach(function(wk){
+        if(!merged[nm][wk])merged[nm][wk]={};
+        if(!mergedModAt[nm][wk])mergedModAt[nm][wk]={};
+        Object.keys(localFh[nm][wk]).forEach(function(day){
+          var lt=(localModAt[nm]&&localModAt[nm][wk]&&localModAt[nm][wk][day])||0;
+          var rt=(remoteModAt[nm]&&remoteModAt[nm][wk]&&remoteModAt[nm][wk][day])||0;
+          var localLines=localFh[nm][wk][day];
+          var hasRemoteEntry=!!(remoteFh[nm]&&remoteFh[nm][wk]&&remoteFh[nm][wk][day]!==undefined);
+          if(lt&&rt){
+            if(lt>=rt)merged[nm][wk][day]=localLines;
+          }else if(lt&&!rt){
+            merged[nm][wk][day]=localLines;
+          }else if(!hasRemoteEntry){
+            // Ni horodatage ni entrée distante pour ce jour précis : garder
+            // le local (comportement historique, par sécurité).
+            merged[nm][wk][day]=localLines;
+          }
+          mergedModAt[nm][wk][day]=Math.max(lt,rt)||mergedModAt[nm][wk][day]||0;
+        });
+      });
+    });
+    return {fh:merged,fhModAt:mergedModAt};
+  }
   function _isEditingUI(){
     try{
       // Une sauvegarde locale vient d'être déclenchée mais n'est pas encore
@@ -415,6 +456,11 @@
           // l'ensemble le plus récent (local ou distant) au lieu de toujours
           // garder celui du distant en bloc.
           _mergeProjectMeta(remote.projects[aff],STORE.projects[aff]);
+          // Heures (fh) : fusion fine personne par personne, jour par jour —
+          // jamais en bloc (voir _mergeFh).
+          var _fhM=_mergeFh(remote.projects[aff].fh,STORE.projects[aff].fh,remote.projects[aff]._fhModAt,STORE.projects[aff]._fhModAt);
+          remote.projects[aff].fh=_fhM.fh;
+          remote.projects[aff]._fhModAt=_fhM.fhModAt;
         }
       });
     }
@@ -2116,6 +2162,7 @@ function downloadDXF(text, filename) {
 window.DroitsAcces = (function () {
   var MODULES = [
     {key:'planning', label:'Planning (Gantt, tâches, dates)'},
+    {key:'gantt_statut_toutes', label:'Marquer terminé / % avancement même hors Chantier (sinon limité aux activités Chantier)'},
     {key:'annuaire',  label:'Annuaire du personnel'},
     {key:'rappels',   label:'Rappels & alertes'},
     {key:'plaque_pe', label:'Plaque PE'},
@@ -2655,6 +2702,18 @@ function hasView(mod){
 function hasEdit(mod){
   if(CURRENT_ROLE==='admin') return true;
   return !!(CURRENT_PERMISSIONS[mod] && CURRENT_PERMISSIONS[mod].can_edit);
+}
+// Peut-on changer le statut (terminé/en cours/%) sur N'IMPORTE QUELLE activité,
+// ou seulement sur celles de type Chantier (pk commençant par "CHANTIER") ?
+// Par défaut (droit non accordé), on restreint à Chantier — ex: chef de
+// chantier, qui ne doit pas pouvoir toucher au statut d'activités d'autres
+// équipes (automatisme, bureau...).
+function _peutStatutToutesActivites(){
+  return hasEdit('gantt_statut_toutes');
+}
+function _peutChangerStatut(r){
+  if(_peutStatutToutesActivites())return true;
+  return !!(r&&r.pk&&r.pk.indexOf('CHANTIER')===0);
 }
 
 async function loadRoleAndStart() {
@@ -3320,6 +3379,11 @@ function loadStore(){
           // ou distant) selon l'horodatage — pas toujours le local en bloc.
           _META_FIELDS.concat(['_metaModAt']).forEach(function(f){_merged[f]=remote.projects[k][f];});
           _mergeProjectMeta(_merged,localProjs[k]);
+          // Heures (fh) : fusion fine personne par personne, jour par jour —
+          // jamais en bloc (voir _mergeFh).
+          var _fhM0=_mergeFh(remote.projects[k].fh,localProjs[k].fh,remote.projects[k]._fhModAt,localProjs[k]._fhModAt);
+          _merged.fh=_fhM0.fh;
+          _merged._fhModAt=_fhM0.fhModAt;
           _filtProjs[k]=_merged;
         }else{
           _filtProjs[k]=remote.projects[k];
@@ -13158,11 +13222,14 @@ function fhPut(aff,nm,w,d,lines){
   if(!p.fh[nm][w])p.fh[nm][w]={};
   // Keep all lines including empty ones (user needs to see them to fill in)
   p.fh[nm][w][d]=lines.slice();
-  // Horodater : p.fh fait partie des _META_FIELDS fusionnés par horodatage
-  // (_mergeProjectMeta). Sans ce marqueur à jour, une synchro (toutes les 3s,
-  // ou au rechargement) pouvait juger une vieille copie distante de p.fh
-  // "plus récente" et écraser la suppression qu'on vient de faire ici.
-  p._metaModAt=Date.now();
+  // Horodater PRÉCISÉMENT cette entrée (personne/semaine/jour), pas toute
+  // l'affaire en bloc — indispensable pour que la fusion (_mergeFh) sache
+  // laquelle, entre la version locale et celle d'un collègue, est vraiment
+  // la plus récente, sans jamais écraser en bloc les heures de tout le monde.
+  if(!p._fhModAt)p._fhModAt={};
+  if(!p._fhModAt[nm])p._fhModAt[nm]={};
+  if(!p._fhModAt[nm][w])p._fhModAt[nm][w]={};
+  p._fhModAt[nm][w][d]=Date.now();
   localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   // Auto-sync to GANTT on every fiche save
   syncFichesToGantt();
@@ -13991,12 +14058,14 @@ function toggleExp(id){
 
 function setProgress(id,val){
   const r=D().find(x=>x.id===id);if(!r)return;
+  if(!_peutChangerStatut(r))return; // pas d'alerte ici (appelé en continu pendant le glissement du curseur)
   r.progress=Math.min(100,Math.max(0,+val||0));
   clearTimeout(setProgress._t);
   setProgress._t=setTimeout(function(){saveNow();refreshAllTabs();},400);
 }
 function toggleInProgress(id){
   const r=D().find(x=>x.id===id);if(!r)return;
+  if(!_peutChangerStatut(r)){alert('Vous ne pouvez modifier le statut que des activités Chantier.');return;}
   r.inProgress=!r.inProgress;
   if(!r.inProgress)r.progress=0;
   saveNow();refreshAllTabs();
@@ -14519,7 +14588,7 @@ function pedDaysModal(actId, pIdx){
   modal.onclick=function(e){if(e.target===modal){modal.remove();saveNow();_refreshPanelInPlace(actId);dbBuildPlanningGrid();}};
 }
 
-function toggleDone(id){const r=D().find(x=>x.id===id);if(!r)return;r.done=!r.done;saveNow();refreshAllTabs();}
+function toggleDone(id){const r=D().find(x=>x.id===id);if(!r)return;if(!_peutChangerStatut(r)){alert('Vous ne pouvez marquer terminé que les activités Chantier.');return;}r.done=!r.done;saveNow();refreshAllTabs();}
 function updDate(id,f,v){
   const n=Math.min(52,Math.max(1,parseInt(v)||1));
   const r=D().find(x=>x.id===id);if(!r)return;
