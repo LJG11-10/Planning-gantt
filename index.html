@@ -470,6 +470,7 @@
     // d'être envoyées au serveur. On fusionne entrée par entrée (semaine par
     // semaine, puis personne/jour par personne/jour) au lieu d'écraser.
     var _localWeekPlan={},_localAbsences={},_localConges={},_localFhMeta={};
+    var _localCurrent=STORE&&STORE.current;
     try{
       if(STORE&&STORE.weekPlan)_localWeekPlan=JSON.parse(JSON.stringify(STORE.weekPlan));
       if(STORE&&STORE.absences)_localAbsences=JSON.parse(JSON.stringify(STORE.absences));
@@ -478,6 +479,13 @@
     }catch(_eClone){}
     // ── Appliquer le remote puis restaurer globalPersons ────────────────
     STORE=remote;
+    // Restaurer l'affaire actuellement affichée à l'écran : un cycle de
+    // synchro ne doit JAMAIS ramener quelqu'un sur une autre affaire que
+    // celle qu'il vient lui-même de choisir, même si le serveur (rempli par
+    // la dernière sauvegarde de n'importe qui) en indique une différente.
+    if(_localCurrent&&STORE.projects&&STORE.projects[_localCurrent]){
+      STORE.current=_localCurrent;
+    }
     // globalPersons = version locale UNIQUEMENT (GP_KEY prime sur Supabase)
     // NE PAS appliquer les tombstones remote sur globalPersons :
     // renderPersonnelSearch filtre deja via _deletedPersons
@@ -8111,11 +8119,11 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
     +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer"><input type="checkbox" '+(meta.panier?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'panier\',this.checked)" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F37D} Panier</label>'
     +'<div style="display:flex;align-items:center;gap:5px">'
     +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer;flex-shrink:0"><input type="checkbox" '+(meta.gd?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'gd\',this.checked)" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F697} Gd d\u00e9pl.</label>'
-    +'<input type="number" min="0" step="0.5" value="'+(meta.trajetH||'')+'" placeholder="H trajet" oninput="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" title="Heures de trajet" style="width:56px;border:none;border-radius:6px;padding:2px 4px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
+    +'<input type="number" min="0" step="0.5" value="'+(meta.trajetH||'')+'" placeholder="H trajet" oninput="fhMetaSetDebounced('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" title="Heures de trajet" style="width:56px;border:none;border-radius:6px;padding:2px 4px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
     +'</div>'
     +'<select onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'zone\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'+zoneOpts+'</select>'
     +'<select onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'vehicule\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'+vehOpts+'</select>'
-    +'<input type="text" value="'+meta.lieu.replace(/"/g,'&quot;')+'" placeholder="\u{1F4CD} Lieu" oninput="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'
+    +'<input type="text" value="'+meta.lieu.replace(/"/g,'&quot;')+'" placeholder="\u{1F4CD} Lieu" oninput="fhMetaSetDebounced('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'
     +'</div>';
   var linesHtml='';
   for(var li=0;li<lines.length;li++){
@@ -13090,6 +13098,18 @@ function fhMetaSet(wk,nm,day,field,value){
   if(!STORE.fhMeta[wk][nm][day])STORE.fhMeta[wk][nm][day]={panier:false,gd:false,lieu:''};
   STORE.fhMeta[wk][nm][day][field]=value;
   saveNow();
+}
+// Version "avec un léger délai" pour les champs texte/nombre qui enregistrent
+// à chaque frappe (oninput) : on attend une petite pause dans la saisie
+// avant de vraiment sauvegarder, plutôt que de resauvegarder TOUT le
+// fichier à chaque lettre tapée (ce qui peut ralentir la frappe si
+// beaucoup de données se sont accumulées). La donnée n'est jamais perdue :
+// dès que l'utilisateur s'arrête de taper (ou quitte le champ, via
+// onblur qui appelle fhMetaSet directement), la dernière valeur est bien
+// enregistrée.
+function fhMetaSetDebounced(wk,nm,day,field,value){
+  clearTimeout(fhMetaSetDebounced._t);
+  fhMetaSetDebounced._t=setTimeout(function(){fhMetaSet(wk,nm,day,field,value);},400);
 }
 // Est-ce que cette personne a au moins une info (panier/gd/lieu) sur la semaine —
 // utilisé pour savoir si elle doit apparaître même sans heures saisies.
