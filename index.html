@@ -7393,10 +7393,16 @@ function dbBuildPlanningGrid(){
       var _dayKey=_dayDate.getFullYear()+'-'+String(_dayDate.getMonth()+1).padStart(2,'0')+'-'+String(_dayDate.getDate()).padStart(2,'0');
       var _congesDays=(STORE.absences&&STORE.absences[nm]&&STORE.absences[nm].congesDays)||[];
       var _isConge=_congesDays.indexOf(_dayKey)>=0;
+      var _formationDays=(STORE.absences&&STORE.absences[nm]&&STORE.absences[nm].formationDays)||[];
+      var _isFormation=_formationDays.indexOf(_dayKey)>=0;
+      var _absenceDays=(STORE.absences&&STORE.absences[nm]&&STORE.absences[nm].absenceDays)||[];
+      var _isAbsenceDay=_absenceDays.indexOf(_dayKey)>=0;
       // Vérifier alternant à l'école pour CETTE semaine
       var _absData=STORE.absences&&STORE.absences[nm];
       var _isEcole=_absData&&(_absData.school||[]).indexOf(selWk)>=0;
       if(_isConge){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#FEE2E2,#FECACA);border-bottom:1px solid var(--bd);vertical-align:middle"><div style="font-size:20px">🏖</div><div style="font-size:11px;font-weight:800;color:#DC2626;margin-top:2px">Congé</div></td>';return;}
+      if(_isFormation){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#EDE9FE,#DDD6FE);border-bottom:1px solid var(--bd);vertical-align:middle"><div style="font-size:20px">📚</div><div style="font-size:11px;font-weight:800;color:#6D28D9;margin-top:2px">Formation</div></td>';return;}
+      if(_isAbsenceDay){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#F3F4F6,#E5E7EB);border-bottom:1px solid var(--bd);vertical-align:middle"><div style="font-size:20px">🚫</div><div style="font-size:11px;font-weight:800;color:#374151;margin-top:2px">Absence</div></td>';return;}
       if(_isEcole){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,var(--ac2),var(--ac3));border-bottom:1px solid var(--bd);vertical-align:middle"><div style="font-size:20px">🏫</div><div style="font-size:11px;font-weight:800;color:var(--ac);margin-top:2px">École</div></td>';return;}
       var rows=getCellRows(nm,di);var totalRows=rows.length;
       html+='<td style="padding:6px;border-bottom:1px solid var(--bd);vertical-align:top;background:var(--bg2)">';
@@ -7858,6 +7864,154 @@ function buildCongesCalendar(name){
   return html;
 }
 
+// ── Formation & Absence (même principe jour-par-jour que Congés ci-dessus,
+// mais dans leurs propres champs pour ne pas mélanger les catégories —
+// "absence" n'est pas un congé, c'est volontairement distinct). ──────────
+var _ABS_DAY_KINDS={
+  formation:{field:'formationDays',label:'Formation',icon:'📚',color:'#8B5CF6'},
+  absence:{field:'absenceDays',label:'Absence',icon:'🚫',color:'#6B7280'}
+};
+function toggleAbsDay(kind,name,dateISO){
+  var cfg=_ABS_DAY_KINDS[kind];if(!cfg)return;
+  if(!STORE.absences)STORE.absences={};
+  if(!STORE.absences[name])STORE.absences[name]={school:[],company:[]};
+  if(!STORE.absences[name][cfg.field])STORE.absences[name][cfg.field]=[];
+  var days=STORE.absences[name][cfg.field];
+  var idx=days.indexOf(dateISO);
+  if(idx>=0)days.splice(idx,1);else days.push(dateISO);
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));
+  localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));
+  scheduleSupa();
+  renderAbsences();
+}
+function addAbsPeriod(kind,name){
+  var cfg=_ABS_DAY_KINDS[kind];if(!cfg)return;
+  var safeId=kind+'-'+name.replace(/[^a-z0-9]/gi,'_');
+  var start=document.getElementById('abs-start-'+safeId);
+  var end=document.getElementById('abs-end-'+safeId);
+  if(!start||!end||!start.value||!end.value)return;
+  var d=new Date(start.value),dEnd=new Date(end.value);
+  if(d>dEnd){var tmp=d;d=dEnd;dEnd=tmp;}
+  if(!STORE.absences)STORE.absences={};
+  if(!STORE.absences[name])STORE.absences[name]={school:[],company:[]};
+  if(!STORE.absences[name][cfg.field])STORE.absences[name][cfg.field]=[];
+  var days=STORE.absences[name][cfg.field];
+  var cur=new Date(d);
+  while(cur<=dEnd){
+    var k=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0');
+    var dow=cur.getDay();
+    if(dow!==0&&dow!==6&&days.indexOf(k)<0)days.push(k);
+    cur.setDate(cur.getDate()+1);
+  }
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));
+  localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));
+  scheduleSupa();
+  renderAbsences();
+}
+function clearAllAbsDays(kind,name){
+  var cfg=_ABS_DAY_KINDS[kind];if(!cfg)return;
+  if(!confirm('Effacer tous les jours de '+cfg.label.toLowerCase()+' de '+name+' ?'))return;
+  if(STORE.absences&&STORE.absences[name])STORE.absences[name][cfg.field]=[];
+  localStorage.setItem('plan26v5',JSON.stringify(STORE));
+  localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));
+  scheduleSupa();
+  renderAbsences();
+}
+function getAbsDays(kind,name){
+  var cfg=_ABS_DAY_KINDS[kind];if(!cfg)return [];
+  if(!STORE.absences||!STORE.absences[name]||!STORE.absences[name][cfg.field])return [];
+  return STORE.absences[name][cfg.field];
+}
+function buildAbsCalendar(kind,name){
+  var cfg=_ABS_DAY_KINDS[kind];
+  var days=getAbsDays(kind,name);
+  var year=PLANNING_YEAR;
+  var moisFr=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var html='';
+  for(var m=0;m<12;m++){
+    var firstDay=new Date(year,m,1);
+    var lastDay=new Date(year,m+1,0);
+    var startDow=firstDay.getDay();
+    html+='<div style="display:inline-block;vertical-align:top;margin:0 8px 16px 0;width:210px">';
+    html+='<div style="font-size:11px;font-weight:800;color:var(--tx2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;text-align:center">'+moisFr[m]+'</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
+    ['L','M','M','J','V','S','D'].forEach(function(d){
+      html+='<div style="text-align:center;font-size:9px;font-weight:700;color:var(--tx3);padding:2px 0">'+d+'</div>';
+    });
+    var offset=(startDow+6)%7;
+    for(var i=0;i<offset;i++)html+='<div></div>';
+    for(var day=1;day<=lastDay.getDate();day++){
+      var d2=new Date(year,m,day);
+      var dow=d2.getDay();
+      var k=year+'-'+String(m+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+      var isMarked=days.indexOf(k)>=0;
+      var isWE=dow===0||dow===6;
+      var isToday=TODAY&&d2.toDateString()===new Date().toDateString();
+      var bg=isMarked?cfg.color:isWE?'var(--bg3)':isToday?'#FEF08A':'var(--bg2)';
+      var color=isMarked?'#fff':isWE?'var(--tx3)':'var(--tx)';
+      var border=isToday?'1px solid #EAB308':isMarked?'1px solid '+cfg.color:'1px solid var(--bd)';
+      var cursor=isWE?'default':'pointer';
+      var safeName=name;
+      var onclick=isWE?'':(' onclick="toggleAbsDay(\''+kind+'\',this.dataset.nm,this.dataset.k)" data-nm="'+safeName.replace(/"/g,'&quot;')+'" data-k="'+k+'"');
+      html+='<div'+onclick+' title="'+(isMarked?'Cliquer pour retirer':'Cliquer pour marquer '+cfg.label.toLowerCase())+'" style="text-align:center;font-size:10px;font-weight:'+(isMarked?'700':'500')+';padding:3px 1px;border-radius:3px;background:'+bg+';color:'+color+';border:'+border+';cursor:'+cursor+'">'+(isWE&&!isMarked?'<span style="opacity:.3">'+day+'</span>':day)+'</div>';
+    }
+    html+='</div></div>';
+  }
+  return html;
+}
+// Construit le contenu de l'onglet Formation ou Absence — même agencement
+// que l'onglet Congés (sélecteur de personne, période à ajouter, légende,
+// calendrier), juste sur son propre champ de données.
+function _renderAbsDayTabBody(kind,allNames,_gp,selP){
+  var cfg=_ABS_DAY_KINDS[kind];
+  if(!allNames.length){
+    return '<div style="text-align:center;padding:60px;color:var(--tx3)">Aucune personne définie. Ajoutez des personnes dans l\'éditeur de planning.</div>';
+  }
+  var _groups=[{key:'ELS',label:'ELS'},{key:'Interim',label:'Intérimaires'},{key:'Alternant',label:'Alternants'}];
+  var ptabs='';
+  _groups.forEach(function(grp){
+    var names=allNames.filter(function(nm){return (_gp[nm]&&_gp[nm].type)===grp.key;});
+    if(!names.length)return;
+    ptabs+='<div style="font-size:10px;font-weight:800;color:var(--tx3);letter-spacing:.6px;text-transform:uppercase;margin-bottom:6px">'+grp.label+'</div>';
+    ptabs+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">';
+    names.forEach(function(nm){
+      var isSel=nm===selP;
+      var nb=getAbsDays(kind,nm).length;
+      ptabs+='<button onclick="window._absPerson=\''+nm.replace(/'/g,"\\'")+'\';renderAbsences()" style="padding:8px 16px;border-radius:20px;border:2px solid '+(isSel?'var(--ac)':'var(--bd)')+';background:'+(isSel?'var(--ac)':'var(--bg2)')+';color:'+(isSel?'#fff':'var(--tx)')+';font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">'+nm+(nb?'<span style="margin-left:6px;background:'+(isSel?'rgba(255,255,255,.25)':'#EDE9FE')+';color:'+(isSel?'#fff':cfg.color)+';border-radius:10px;padding:1px 7px;font-size:10px">'+nb+'j</span>':'')+'</button>';
+    });
+    ptabs+='</div>';
+  });
+
+  var list=getAbsDays(kind,selP).sort();
+  var nbJours=list.length;
+  var safeId=kind+'-'+selP.replace(/[^a-z0-9]/gi,'_');
+  var addPeriod='<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);padding:14px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+  addPeriod+='<span style="font-size:12px;font-weight:700;color:var(--tx2)">'+cfg.icon+' Ajouter une période :</span>';
+  addPeriod+='<input type="date" id="abs-start-'+safeId+'" style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx)">';
+  addPeriod+='<span style="font-size:12px;color:var(--tx3)">→</span>';
+  addPeriod+='<input type="date" id="abs-end-'+safeId+'" style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx)">';
+  addPeriod+='<button onclick="addAbsPeriod(\''+kind+'\',\''+selP.replace(/'/g,"\\'")+'\')\" style="padding:6px 16px;border-radius:var(--r);background:'+cfg.color+';border:none;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Marquer comme '+cfg.label.toLowerCase()+'</button>';
+  if(nbJours>0)addPeriod+='<button onclick="clearAllAbsDays(\''+kind+'\',\''+selP.replace(/'/g,"\\'")+'\')\" style="padding:6px 14px;border-radius:var(--r);background:var(--bg3);border:1px solid var(--bd);color:var(--tx3);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🗑 Effacer tout</button>';
+  addPeriod+='</div>';
+
+  var statsHtml='';
+  if(nbJours>0){
+    statsHtml='<div style="background:#F5F3FF;border:1px solid #DDD6FE;border-radius:var(--r2);padding:10px 16px;margin-bottom:20px;display:flex;align-items:center;gap:12px">';
+    statsHtml+='<span style="font-size:28px;font-weight:900;color:'+cfg.color+'">'+nbJours+'</span>';
+    statsHtml+='<div><div style="font-size:12px;font-weight:700;color:'+cfg.color+'">jour(s) de '+cfg.label.toLowerCase()+' planifié(s)</div>';
+    statsHtml+='<div style="font-size:11px;color:#9CA3AF">Valable sur toutes les affaires • Visible dans le Planning Réunion</div></div>';
+    statsHtml+='</div>';
+  }
+
+  var legend='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--tx3)">';
+  legend+='<span><span style="display:inline-block;width:12px;height:12px;background:'+cfg.color+';border-radius:2px;vertical-align:middle;margin-right:4px"></span>'+cfg.label+' (cliquer pour retirer)</span>';
+  legend+='<span><span style="display:inline-block;width:12px;height:12px;background:var(--bg3);border-radius:2px;vertical-align:middle;margin-right:4px"></span>Week-end</span>';
+  legend+='<span><span style="display:inline-block;width:12px;height:12px;background:#FEF08A;border-radius:2px;border:1px solid #EAB308;vertical-align:middle;margin-right:4px"></span>Aujourd\'hui</span>';
+  legend+='</div>';
+
+  return ptabs+statsHtml+addPeriod+legend+buildAbsCalendar(kind,selP);
+}
+
 function renderAbsences(){
   var container=document.getElementById('absw');
   if(!container)return;
@@ -7894,7 +8048,7 @@ function renderAbsences(){
 
   // ── TABS
   var tabs='<div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid var(--bd);padding-bottom:0">';
-  [{id:'conges',icon:'🏖',label:'Congés'},{id:'altstagaire',icon:'🎓',label:'Alternants / Stagiaires'}].forEach(function(t){
+  [{id:'conges',icon:'🏖',label:'Congés'},{id:'formation',icon:'📚',label:'Formation'},{id:'absence',icon:'🚫',label:'Absence'},{id:'altstagaire',icon:'🎓',label:'Alternants / Stagiaires'}].forEach(function(t){
     var active=absTab===t.id;
     tabs+='<button onclick="window._absTab=\''+t.id+'\';renderAbsences()" style="padding:9px 18px;border:none;border-bottom:3px solid '+(active?'var(--ac)':'transparent')+';background:none;font-family:inherit;font-size:13px;font-weight:'+(active?'800':'600')+';color:'+(active?'var(--ac)':'var(--tx3)')+';cursor:pointer">'+t.icon+' '+t.label+'</button>';
   });
@@ -7958,6 +8112,8 @@ function renderAbsences(){
 
       bodyHtml=ptabs+statsHtml+addPeriod+legend+buildCongesCalendar(selP);
     }
+  } else if(absTab==='formation'||absTab==='absence'){
+    bodyHtml=_renderAbsDayTabBody(absTab,allNames,_gp,selP);
   } else {
     // ── Alternants/Stagiaires (code existant)
     var selAlt=window._absPerson||(altPersons.length?altPersons[0].name:'');
@@ -10457,6 +10613,21 @@ function _pfAvatars(names){
 // sous-phase rencontrée (sinon un ensemble n'a jamais de tâche "directe" et
 // disparaît à tort du dépliage, puisque ses tâches sont toujours nichées
 // sous ses sous-phases, jamais directement sous lui).
+// Effectif cumulé (headcount saisi à la main sur les sous-phases) d'un
+// ensemble — mêmes bornes que _pfRowActs (jusqu'à la prochaine phase ou le
+// prochain ensemble), mais on additionne les headcount des sous-phases
+// directement dans cet ensemble plutôt que de lister les tâches.
+function _pfEnsHeadcount(pData,ensIdx){
+  var byWk={};
+  for(var i=ensIdx+1;i<pData.length;i++){
+    var r=pData[i];
+    if(r.t==='ph'||r.t==='ens')break;
+    if(r.t==='sb'&&r.headcount){
+      Object.keys(r.headcount).forEach(function(w){byWk[w]=(byWk[w]||0)+(r.headcount[w]||0);});
+    }
+  }
+  return byWk;
+}
 function _pfRowActs(pData,startIdx){
   var startRow=pData[startIdx];
   var acts=[];
@@ -10548,7 +10719,11 @@ function renderPortfolio(){
     monthGroups[monthGroups.length-1].count++;
   }
 
-  var html='<div style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);margin:14px">';
+  // Pas de "overflow:hidden" ici : ça empêchait l'en-tête (pourtant déjà en
+  // position:sticky) de rester collé en haut pendant le défilement vertical —
+  // "overflow:hidden" fait de ce bloc lui-même la référence de collage du
+  // sticky, au lieu de la vraie zone qui défile (#gw) plus haut dans le DOM.
+  var html='<div style="background:#fff;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin:14px">';
   html+='<table style="border-collapse:collapse;table-layout:fixed;width:max-content;font-family:inherit">';
   html+='<thead>';
   html+='<tr>';
@@ -10704,6 +10879,7 @@ function renderPortfolio(){
             if(!ensActs.length)continue;
             var ensPrevWks=getBarWeeks(ensActs,'prev');
             var ensReelWks=getBarWeeks(ensActs,'reel');
+            var ensHC=isChantier?_pfEnsHeadcount(p.data,di):null;
             var ensPers={};
             ensActs.forEach(function(a){(a.p||[]).forEach(function(pp){if(pp.name)ensPers[pp.name]=true;});});
 
@@ -10718,11 +10894,16 @@ function renderPortfolio(){
             for(var we=minWk;we<=maxWk;we++){
               var isNe=we===todayWk;
               var hasPe=!!ensPrevWks[we],hasRe=!!ensReelWks[we];
+              var weHC=ensHC?(ensHC[we]||0):0;
               var cellE='';
               if(hasPe){
                 var pse=!ensPrevWks[we-1],pee=!ensPrevWks[we+1];
                 var brE=(pse?'4':'0')+'px '+(pee?'4':'0')+'px '+(pee?'4':'0')+'px '+(pse?'4':'0')+'px';
-                cellE+='<div style="height:7px;margin:0 1px 2px;background:'+ph.h+';opacity:.7;border-radius:'+brE+'"></div>';
+                cellE+='<div style="height:'+(weHC?'13':'7')+'px;margin:0 1px 2px;background:'+ph.h+';opacity:.7;border-radius:'+brE+';display:flex;align-items:center;justify-content:center">'
+                  +(weHC?'<span style="font-size:8px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35)">'+weHC+'</span>':'')
+                  +'</div>';
+              } else if(weHC){
+                cellE+='<div style="height:13px;margin:0 1px 2px;background:'+ph.h+';opacity:.45;border-radius:4px;display:flex;align-items:center;justify-content:center"><span style="font-size:8px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35)">'+weHC+'</span></div>';
               }
               if(hasRe){
                 var rse=!ensReelWks[we-1],ree=!ensReelWks[we+1];
