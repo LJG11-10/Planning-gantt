@@ -91,6 +91,26 @@
   const BUCKET = 'planning';
   const FILE = 'data.json';
 
+  // ── Sauvegardes automatiques horodatées ──────────────────────────────
+  // Filet de sécurité indépendant de la synchro : à chaque enregistrement
+  // réussi vers data.json, si la dernière sauvegarde horodatée date de plus
+  // de 30 minutes, on en dépose une nouvelle copie dans backups/. Objectif :
+  // en cas de souci (fusion, manip malheureuse...), pouvoir toujours revenir
+  // à un état récent. N'affecte en rien le fonctionnement existant (aucune
+  // lecture, aucune suppression — juste un dépôt de copie en plus).
+  var _lastBackupAt = 0;
+  var BACKUP_MIN_INTERVAL_MS = 30*60*1000;
+  async function _maybeBackup(store){
+    try{
+      var now = Date.now();
+      if(now - _lastBackupAt < BACKUP_MIN_INTERVAL_MS) return;
+      _lastBackupAt = now;
+      var name = 'backups/data-'+new Date(now).toISOString().replace(/[:.]/g,'-')+'.json';
+      var blob = new Blob([JSON.stringify(store)],{type:'application/json'});
+      await supa.storage.from(BUCKET).upload(name, blob, {upsert:false});
+    }catch(e){ console.error('Sauvegarde horodatée échouée (non bloquant):', e); }
+  }
+
   async function supaLoad(){
     if(!supa)return null;
     try{
@@ -122,6 +142,7 @@
         // une autre — réseau, onglet endormi, etc. — rien n'est perdu, la
         // vérification périodique existante prend toujours le relais).
         try{ if(_syncChannel)_syncChannel.send({type:'broadcast',event:'data-changed',payload:{sid:SESSION_ID,ts:Date.now()}}); }catch(e3){}
+        _maybeBackup(store);
       }
     }catch(e){
       _showMsg('Erreur sync: '+e.message,'#DC2626');
@@ -138,7 +159,7 @@
     // juste fait.
     if(typeof _stampModifiedRows==='function')_stampModifiedRows();
     clearTimeout(_syncTimeout);
-    _syncTimeout=setTimeout(function(){_mergeRemoteThenSave();},800);
+    _syncTimeout=setTimeout(function(){_syncTimeout=null;_mergeRemoteThenSave();},800);
   }
 
   // Avant d'envoyer, on récupère et fusionne la toute dernière version du
