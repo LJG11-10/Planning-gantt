@@ -15402,12 +15402,30 @@ function effHP(a){
 
 // Plie/déplie un groupe (phase, ensemble ou sous-phase) dans le récap
 // affaire courante — même principe que le pli/dépli du GANTT.
+// M\u00E9morise quels groupes sont repli\u00E9s, IND\u00C9PENDAMMENT du DOM \u2014 sans \u00E7a, un
+// rafra\u00EEchissement du r\u00E9cap (synchro avec un coll\u00E8gue, ou m\u00EAme sa propre
+// sauvegarde) reconstruit tout le tableau depuis z\u00E9ro et oublie qu'un
+// groupe venait d'\u00EAtre repli\u00E9, qui r\u00E9appara\u00EEt donc d\u00E9pli\u00E9 tout seul.
+window._recCollapsed=window._recCollapsed||{};
 function _recToggle(hdr){
   var g=hdr.dataset.group;
   var collapsed=hdr.classList.toggle('rec-collapsed');
+  if(collapsed)window._recCollapsed[g]=true;else delete window._recCollapsed[g];
   var arrow=hdr.querySelector('.rec-arrow');
   if(arrow)arrow.textContent=collapsed?'\u25B6':'\u25BC';
   document.querySelectorAll('.rec-c-'+g).forEach(function(el){el.style.display=collapsed?'none':'';});
+}
+// R\u00E9-applique les groupes repli\u00E9s m\u00E9moris\u00E9s apr\u00E8s une reconstruction
+// compl\u00E8te du r\u00E9cap (le HTML g\u00E9n\u00E9r\u00E9 part toujours "tout d\u00E9pli\u00E9").
+function _recApplyCollapsedState(){
+  Object.keys(window._recCollapsed).forEach(function(g){
+    var hdr=document.querySelector('.rec-hdr[data-group="'+g+'"]');
+    if(!hdr){delete window._recCollapsed[g];return;} // groupe disparu (structure modifi\u00E9e) : on oublie
+    hdr.classList.add('rec-collapsed');
+    var arrow=hdr.querySelector('.rec-arrow');
+    if(arrow)arrow.textContent='\u25B6';
+    document.querySelectorAll('.rec-c-'+g).forEach(function(el){el.style.display='none';});
+  });
 }
 
 function renderRecap(){
@@ -15786,6 +15804,7 @@ function renderRecap(){
   window._ftAff=_savedFtAff;
   html+='<div style="margin-top:20px">'+_ftHtml+'</div>';
   document.getElementById('rw').innerHTML=html;
+  _recApplyCollapsedState();
 }
 
 // ═══════════════════════════════
