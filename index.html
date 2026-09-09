@@ -4650,6 +4650,12 @@ function fhPrintFiche(nm){
     DN.forEach(function(dayName,di){
       var dayDate=new Date(dStart);dayDate.setDate(dStart.getDate()+di);
       var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
+      var _dKeyP=dayDate.getFullYear()+'-'+String(dayDate.getMonth()+1).padStart(2,'0')+'-'+String(dayDate.getDate()).padStart(2,'0');
+      var _dStatusP=_personDayStatus(nm,_dKeyP,wk);
+      if(_dStatusP){
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell" colspan="2" style="text-align:center;font-weight:800;color:'+_dStatusP.color+';background:'+_dStatusP.bg+'">'+_dStatusP.icon+' '+_dStatusP.label+'</td><td class="tot">—</td></tr>';
+        return;
+      }
       var _dmetaP=fhMetaGet(wk,nm,di);
       if(_dmetaP.panier)panierTotal++;
       if(_dmetaP.trajetH)trajetTotal+=(+_dmetaP.trajetH||0);
@@ -7588,6 +7594,20 @@ function dbDownloadWeek(dlMode){
       });
     }
   });
+  // 3. Congé / formation / absence / école : s'assurer que la personne
+  // apparaît quand même dans le document même si elle n'a par ailleurs
+  // aucune affaire planifiée cette semaine-là (sinon elle disparaissait
+  // complètement du planning imprimé/téléchargé).
+  allP.forEach(function(nm){
+    for(var di=0;di<5;di++){
+      var dDate=weekDayToDate(selWk,di);
+      var dKey=dDate?(dDate.getFullYear()+'-'+String(dDate.getMonth()+1).padStart(2,'0')+'-'+String(dDate.getDate()).padStart(2,'0')):null;
+      if(_personDayStatus(nm,dKey,selWk)){
+        if(!personMap[nm])personMap[nm]={};
+        break;
+      }
+    }
+  });
   var persons=Object.keys(personMap).sort();
   if(!persons.length){alert('Aucune activité planifiée cette semaine.');return;}
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
@@ -7604,7 +7624,15 @@ function dbDownloadWeek(dlMode){
     for(var di=0;di<5;di++){
       var dayEntries=dayMap[di]||[];
       var cardsHtml='';
-      if(!dayEntries.length){
+      var dDateDl=weekDayToDate(selWk,di);
+      var dKeyDl=dDateDl?(dDateDl.getFullYear()+'-'+String(dDateDl.getMonth()+1).padStart(2,'0')+'-'+String(dDateDl.getDate()).padStart(2,'0')):null;
+      var _statusDl=_personDayStatus(nm,dKeyDl,selWk);
+      if(_statusDl){
+        cardsHtml='<div class="card" style="background:'+_statusDl.bg+';border-left-color:'+_statusDl.color+';text-align:center">'
+          +'<div style="font-size:16px">'+_statusDl.icon+'</div>'
+          +'<div class="card-aff" style="color:'+_statusDl.color+'">'+_statusDl.label+'</div>'
+          +'</div>';
+      } else if(!dayEntries.length){
         cardsHtml='<span class="empty">— Rien de planifié —</span>';
       } else {
         dayEntries.forEach(function(e){
@@ -7857,6 +7885,22 @@ function clearAllConges(name){
   renderAbsences();
 }
 
+// Statut spécial d'une personne pour un jour donné (congé / formation /
+// absence / école) — centralisé ici pour être réutilisé partout où on
+// affiche les heures d'une personne (feuille d'heure, Planning Réunion,
+// documents imprimés/téléchargés) sans dupliquer cette logique à chaque
+// endroit. dateISO = jour précis ('YYYY-MM-DD'°; wk = semaine (l'école se
+// marque semaine par semaine, pas jour par jour — dateISO peut être omis
+// si on ne veut vérifier que l'école).
+function _personDayStatus(nm,dateISO,wk){
+  var ad=STORE.absences&&STORE.absences[nm];
+  if(!ad)return null;
+  if(dateISO&&(ad.congesDays||[]).indexOf(dateISO)>=0)return {icon:'🏖',label:'Congé',color:'#DC2626',bg:'#FEE2E2',bg2:'#FECACA'};
+  if(dateISO&&(ad.formationDays||[]).indexOf(dateISO)>=0)return {icon:'📚',label:'Formation',color:'#6D28D9',bg:'#EDE9FE',bg2:'#DDD6FE'};
+  if(dateISO&&(ad.absenceDays||[]).indexOf(dateISO)>=0)return {icon:'🚫',label:'Absence',color:'#374151',bg:'#F3F4F6',bg2:'#E5E7EB'};
+  if(wk!=null&&(ad.school||[]).indexOf(wk)>=0)return {icon:'🏫',label:'École',color:'#6457F4',bg:'#EFEDFE',bg2:'#DCD8FB'};
+  return null;
+}
 function getCongesDays(name){
   if(!STORE.absences||!STORE.absences[name]||!STORE.absences[name].congesDays)return [];
   return STORE.absences[name].congesDays;
@@ -8325,6 +8369,19 @@ window._fhSbPick=function(item,ev){
 
 function fhBuildDayCell(nm,aff,w,di,isTD){
   var nmEsc=nm.replace(/'/g,"\\'");
+  // Congé / formation / absence / école ce jour-là : on l'affiche
+  // directement à la place de la case de saisie habituelle, pour que ce
+  // soit visible tout de suite sur la feuille d'heure (et donc aussi à
+  // l'impression/téléchargement, qui réutilise cette même fonction).
+  var _fhDDate=weekDayToDate(w,di);
+  var _fhDKey=_fhDDate?(_fhDDate.getFullYear()+'-'+String(_fhDDate.getMonth()+1).padStart(2,'0')+'-'+String(_fhDDate.getDate()).padStart(2,'0')):null;
+  var _fhStatus=_personDayStatus(nm,_fhDKey,w);
+  if(_fhStatus){
+    return '<div style="vertical-align:top;padding:6px;background:'+(isTD?'#FFFBEB':'inherit')+';border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:80px;text-align:center;background-image:linear-gradient(135deg,'+_fhStatus.bg+','+_fhStatus.bg2+')">'
+      +'<div style="font-size:22px">'+_fhStatus.icon+'</div>'
+      +'<div style="font-size:11px;font-weight:800;color:'+_fhStatus.color+'">'+_fhStatus.label+'</div>'
+      +'</div>';
+  }
   var lines=fhGet(aff,nm,w,di);
   var dayT=lines.reduce(function(s,l){return s+(l.hours===''?0:+l.hours||0);},0);
   var meta=fhMetaGet(w,nm,di);
@@ -13862,6 +13919,21 @@ function fhTelecharger(){
 // à la suite, avec saut de page entre chacune. Pas besoin de choisir qui.
 function fhGenerateWeekHTML(wk,cb){
   var persons=fhWeekPersons(wk);
+  // Ajouter aussi les personnes en congé/formation/absence/école cette
+  // semaine-là qui n'ont par ailleurs aucune ligne dans le planning (sinon
+  // elles étaient absentes du document, comme pour Planning Réunion).
+  var _delPw=STORE._deletedPersons||{};
+  Object.keys(STORE.globalPersons||{}).forEach(function(nm){
+    if(persons.indexOf(nm)>=0||_delPw[nm])return;
+    var pInfo=STORE.globalPersons[nm];
+    if(!pInfo||pInfo.service!=='els_chantier')return;
+    for(var _di=0;_di<5;_di++){
+      var _dd=weekDayToDate(wk,_di);
+      var _dk=_dd?(_dd.getFullYear()+'-'+String(_dd.getMonth()+1).padStart(2,'0')+'-'+String(_dd.getDate()).padStart(2,'0')):null;
+      if(_personDayStatus(nm,_dk,wk)){persons.push(nm);break;}
+    }
+  });
+  persons.sort();
   if(!persons.length){alert('Aucune personne pour la semaine S'+wk+'.');return;}
   var fhAff=window._fhAff||STORE.current;
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
@@ -13882,6 +13954,12 @@ function fhGenerateWeekHTML(wk,cb){
     DN.forEach(function(dayName,di){
       var dayDate=new Date(dStart);dayDate.setDate(dStart.getDate()+di);
       var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
+      var _dKeyW=dayDate.getFullYear()+'-'+String(dayDate.getMonth()+1).padStart(2,'0')+'-'+String(dayDate.getDate()).padStart(2,'0');
+      var _dStatusW=_personDayStatus(nm,_dKeyW,wk);
+      if(_dStatusW){
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell" colspan="2" style="text-align:center;font-weight:800;color:'+_dStatusW.color+';background:'+_dStatusW.bg+'">'+_dStatusW.icon+' '+_dStatusW.label+'</td><td class="tot">—</td></tr>';
+        return;
+      }
       var meta=fhMetaGet(wk,nm,di);
       if(meta.panier)panierTotal++;
       if(meta.trajetH)trajetTotal+=(+meta.trajetH||0);
@@ -13982,6 +14060,12 @@ function fhGenerateHTML(nm,cb){
     DN.forEach(function(dayName,di){
       var dayDate=new Date(dStart);dayDate.setDate(dStart.getDate()+di);
       var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
+      var _dKeyG=dayDate.getFullYear()+'-'+String(dayDate.getMonth()+1).padStart(2,'0')+'-'+String(dayDate.getDate()).padStart(2,'0');
+      var _dStatusG=_personDayStatus(nm,_dKeyG,wk);
+      if(_dStatusG){
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell" colspan="2" style="text-align:center;font-weight:800;color:'+_dStatusG.color+';background:'+_dStatusG.bg+'">'+_dStatusG.icon+' '+_dStatusG.label+'</td><td class="tot">—</td></tr>';
+        return;
+      }
       var _dmeta=fhMetaGet(wk,nm,di);
       if(_dmeta.panier)panierTotal++;
       if(_dmeta.trajetH)trajetTotal+=(+_dmeta.trajetH||0);
