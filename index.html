@@ -9446,7 +9446,11 @@ function updBudgetManuel(){
   // Sauvegarder les H vendues saisies manuellement
   var inp=document.getElementById('inp-bud');
   if(inp)currP().budget=parseFloat(inp.value)||0;
-  saveNow();
+  // saveNow() différé (voir fhMetaSetDebounced/fhPut) : évite de resauvegarder
+  // tout le fichier à chaque chiffre tapé. L'affichage (updBudget ci-dessous)
+  // reste instantané, seul l'enregistrement disque/réseau est groupé.
+  clearTimeout(updBudgetManuel._t);
+  updBudgetManuel._t=setTimeout(saveNow,400);
   updBudget();
 }
 function updBudget(){
@@ -13271,7 +13275,13 @@ function fhPut(aff,nm,w,d,lines){
   if(!p._fhModAt[nm])p._fhModAt[nm]={};
   if(!p._fhModAt[nm][w])p._fhModAt[nm][w]={};
   p._fhModAt[nm][w][d]=Date.now();
-  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
+  // Enregistrement sur disque/réseau différé (comme fhMetaSetDebounced) :
+  // sinon chaque caractère tapé dans une case d'heures resauvegardait TOUT
+  // le fichier (JSON.stringify complet + localStorage), ce qui ralentissait
+  // la saisie. La donnée en mémoire (STORE), elle, est déjà à jour tout de
+  // suite ci-dessus — rien n'est perdu, juste l'écriture est groupée.
+  clearTimeout(fhPut._persistT);
+  fhPut._persistT=setTimeout(function(){localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();},400);
   // Auto-sync to GANTT on every fiche save
   syncFichesToGantt();
   // Mettre à jour la barre budget
