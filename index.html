@@ -24,12 +24,19 @@
       if(!_logoImg)return;
       var _setFavicon=function(){
         try{
+          // Le logo complet contient l'icône (derrick) ET le texte "PétroSphère"
+          // en dessous — en réduisant tout le logo pour tenir dans la petite
+          // case de l'onglet, l'icône devenait minuscule et illisible. On ne
+          // garde donc que la partie icône (recadrage sur sa zone réelle dans
+          // l'image d'origine, mesurée une fois pour toutes), agrandie pour
+          // remplir tout le cadre de l'onglet.
+          var _sx=82,_sy=40,_sw=235,_sh=226;
           var _sz=128;
           var _cv=document.createElement('canvas');_cv.width=_sz;_cv.height=_sz;
           var _ctx=_cv.getContext('2d');
-          var _scale=Math.min(_sz/_logoImg.naturalWidth,_sz/_logoImg.naturalHeight);
-          var _w=_logoImg.naturalWidth*_scale,_h=_logoImg.naturalHeight*_scale;
-          _ctx.drawImage(_logoImg,(_sz-_w)/2,(_sz-_h)/2,_w,_h);
+          var _scale=Math.min(_sz/_sw,_sz/_sh);
+          var _w=_sw*_scale,_h=_sh*_scale;
+          _ctx.drawImage(_logoImg,_sx,_sy,_sw,_sh,(_sz-_w)/2,(_sz-_h)/2,_w,_h);
           var _favLink=document.createElement('link');
           _favLink.rel='icon';
           _favLink.href=_cv.toDataURL('image/png');
