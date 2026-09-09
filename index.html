@@ -12576,6 +12576,29 @@ function pedShowEditSubForm(id){
   var inp=document.createElement('input');inp.type='text';inp.id='pf-sub-lb';inp.value=r.lb;
   inp.style.cssText='border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%;margin-bottom:8px';
   d.appendChild(l);d.appendChild(inp);
+  // Personnes notées sur cette ligne (ex: ajoutées à la main il y a longtemps,
+  // ou restées d'une ancienne feuille d'heures) — il n'existait jusqu'ici
+  // aucun endroit pour les retirer, alors qu'elles peuvent apparaître dans
+  // le récap ("Qui a travaillé dessus") sans lien avec une vraie feuille
+  // d'heures actuelle.
+  var _namedP=(r.p||[]).filter(function(pp){return pp&&pp.name&&pp.name.trim();});
+  if(_namedP.length){
+    var pl=document.createElement('div');pl.style.cssText='margin-bottom:10px';
+    var plTitle=document.createElement('label');plTitle.textContent='PERSONNES NOTÉES ICI';plTitle.style.fontSize='9px';
+    pl.appendChild(plTitle);
+    _namedP.forEach(function(pp){
+      var origIdx=r.p.indexOf(pp);
+      var row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px;background:var(--bg3);border-radius:var(--r);margin-top:4px;font-size:11px';
+      var lbl=document.createElement('span');lbl.textContent=pp.name+(pp.heures?' · '+pp.heures+'H':'')+(pp.fromFH?' (feuille d’heures)':'');
+      var delBtn=document.createElement('button');delBtn.textContent='×';delBtn.title='Retirer';
+      delBtn.style.cssText='background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;line-height:1;padding:0 2px';
+      delBtn.onclick=function(){pedDelSbPerson(id,origIdx);};
+      row.appendChild(lbl);row.appendChild(delBtn);
+      pl.appendChild(row);
+    });
+    d.appendChild(pl);
+  }
   var br=document.createElement('div');br.style.cssText='display:flex;gap:8px';
   var ok=document.createElement('button');ok.className='btn btn-a';ok.textContent='✓ Sauvegarder';
   ok.onclick=function(){var nv=document.getElementById('pf-sub-lb').value.trim();if(!nv)return;var _cur2=D().find(function(x){return x.id===id;});if(!_cur2)return;_cur2.lb=nv;saveNow();clearFormArea();renderPlanEditor();refreshAllTabs();};
@@ -12583,6 +12606,13 @@ function pedShowEditSubForm(id){
   br.appendChild(ok);br.appendChild(cn);d.appendChild(br);fa.appendChild(d);
   fa.scrollIntoView({behavior:'smooth',block:'nearest'});
   inp.focus();
+}
+function pedDelSbPerson(id,i){
+  var r=D().find(function(x){return x.id===id;});if(!r||!r.p)return;
+  r.p.splice(i,1);
+  saveNow();
+  refreshAllTabs();
+  pedShowEditSubForm(id); // rafraîchir le formulaire pour refléter la suppression
 }
 function pedShowEditPhaseForm(pk,ph,isCustom){
   var fa=document.getElementById('ped-form-area');if(!fa)return;
