@@ -10969,6 +10969,20 @@ function _gcComputeWindow(wrap,DW,NC){
 // _reRenderGanttKeepScroll) pour que la nouvelle zone visible ait de vraies
 // cases au lieu d'une case vide. Un léger délai évite de reconstruire à
 // chaque pixel scrollé.
+// Calcule la zone RÉELLEMENT visible (sans la marge de confort ajoutée par
+// _gcComputeWindow), pour savoir si on s'approche du bord de ce qui est déjà
+// construit. Important : #gw défile aussi verticalement (liste des tâches),
+// ce qui déclenche 'scroll' sans changer scrollLeft — comparer directement
+// deux fenêtres AVEC marge (comme une première version le faisait) les
+// trouve alors systématiquement "proches du bord" et reconstruit tout à
+// chaque coup de molette vertical, ce qui donnait exactement la lenteur/
+// décalage remonté. En comparant la zone visible SANS marge, un scroll
+// purement vertical ne change rien et ne déclenche donc aucune reconstruction.
+function _gcVisibleRange(wrap,DW){
+  var startPx=Math.max(0,wrap.scrollLeft-293);
+  var endPx=startPx+wrap.clientWidth;
+  return {start:Math.floor(startPx/DW),end:Math.ceil(endPx/DW)};
+}
 (function(){
   var _gcScrollT=null;
   var _gw0=document.getElementById('gw');
@@ -10976,9 +10990,16 @@ function _gcComputeWindow(wrap,DW,NC){
     clearTimeout(_gcScrollT);
     _gcScrollT=setTimeout(function(){
       if(!_gcCurrentWin)return;
-      var w=_gcComputeWindow(_gw0,ZOOM_DW,GANTT_WIDE_WEEKS*7);
+      var v=_gcVisibleRange(_gw0,ZOOM_DW);
       var margin=5*7; // ~5 semaines : reconstruire avant d'atteindre le bord, pas après
-      if(w.start<_gcCurrentWin.start+margin || w.end>_gcCurrentWin.end-margin){
+      // Ne reconstruire que s'il y a réellement quelque chose de plus à
+      // révéler de ce côté-là (sinon, tout au début ou tout à la fin de la
+      // plage de dates, "on est près du bord" est toujours vrai et ça
+      // redéclencherait une reconstruction à chaque défilement, même
+      // purement vertical).
+      var needMoreLeft=v.start<_gcCurrentWin.start+margin && _gcCurrentWin.start>0;
+      var needMoreRight=v.end>_gcCurrentWin.end-margin && _gcCurrentWin.end<GANTT_WIDE_WEEKS*7;
+      if(needMoreLeft || needMoreRight){
         _reRenderGanttKeepScroll();
       }
     },120);
@@ -11200,11 +11221,14 @@ function renderGantt(){
         var _tx=Math.max(0,(TODAY.w-2)*7*DW);
         _gw2.scrollLeft=_tx;
         // Le premier rendu ci-dessus a été construit avec le scroll d'avant
-        // ce saut vers "aujourd'hui" (donc virtualisé sur la mauvaise zone) —
-        // on reconstruit une fois de plus, cette fois avec le bon scroll, puis
-        // on replace le scroll (la reconstruction le remet à zéro).
-        renderGantt();
-        _gw2.scrollLeft=_tx;
+        // ce saut vers "aujourd'hui" (donc virtualisé sur la mauvaise zone) ;
+        // pas besoin de reconstruire ici à la main — affecter scrollLeft
+        // déclenche un vrai événement 'scroll', que l'écouteur posé sur #gw
+        // (voir plus haut) détecte et traite tout seul (reconstruction avec
+        // la bonne zone, position de scroll préservée). Le forcer ici en plus
+        // provoquait un ré-affichage prématuré (avant que le navigateur ait
+        // terminé de positionner le scroll) qui pouvait faire "revenir" sur
+        // les toutes premières semaines au lieu de la semaine actuelle.
       }
     });});
   }
