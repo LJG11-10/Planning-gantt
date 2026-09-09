@@ -10794,7 +10794,7 @@ function esc0(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 // cocher une case, changer un %...). Le résultat est rigoureusement
 // identique dans les deux cas : c'est la même fonction, appelée une fois par
 // ligne dans les deux chemins — aucun risque de divergence entre eux.
-function _gcActRowHtml(row,DW,NC,_MG){
+function _gcActRowHtml(row,DW,NC,_MG,winStart,winEnd){
   const ph=PH_get(row.pk);
   if(!row.p||!Array.isArray(row.p))row.p=[]; // garde-fou : jamais planter le GANTT sur une ligne corrompue
   const nb=row.p.filter(p=>p.name.trim()).length;
@@ -10813,13 +10813,23 @@ function _gcActRowHtml(row,DW,NC,_MG){
   const reelStartDay=_reelSet.length?_reelSet[0]:0;
   _reelSet.length?_reelSet[_reelSet.length-1]:0; // fin réelle
 
-  for(let w=1;w<=GANTT_WIDE_WEEKS;w++){
+  if(typeof winStart!=='number')winStart=0;
+  if(typeof winEnd!=='number')winEnd=GANTT_WIDE_WEEKS*7;
+  // Virtualisation horizontale : seule la zone visible (+marge) est
+  // construite en détail (cases cliquables/glissables) ; le reste est
+  // remplacé par une case vide de la bonne largeur — invisible pour
+  // l'utilisateur (hors écran de toute façon), mais qui évite de fabriquer
+  // des dizaines de milliers d'éléments DOM à chaque ouverture du GANTT.
+  // Dès qu'on scroll jusque-là, la zone est reconstruite normalement (voir
+  // l'écouteur de scroll posé sur #gw, plus bas dans le fichier).
+  if(winStart>0)dc+=`<td colspan="${winStart}" style="padding:0;border:none"></td>`;
+  for(let absDay=winStart;absDay<winEnd;absDay++){
+    const w=Math.floor(absDay/7)+1;
+    const d=absDay%7;
     const sep=_MG.some(m=>m.e===w);
     const isTW=TODAY&&TODAY.w===w;
-
-    for(let d=0;d<7;d++){
+    {
       const isWE=d>=5;
-      const absDay=(w-1)*7+d;
       const d5=isWE?-1:(w-1)*5+d; // Equivalent 5-col pour les barres
       const inPrev=!isWE&&_prevSet.indexOf(d5)>=0;
       const inReel=!isWE&&_reelSet.indexOf(d5)>=0;
@@ -10882,6 +10892,7 @@ function _gcActRowHtml(row,DW,NC,_MG){
       </td>`;
     }
   }
+  if(winEnd<GANTT_WIDE_WEEKS*7)dc+=`<td colspan="${GANTT_WIDE_WEEKS*7-winEnd}" style="padding:0;border:none"></td>`;
   // Statut visuel de la ligne
   const todayD5=TODAY?(TODAY.w-1)*5+(TODAY.di||0):0;
   // Rouge UNIQUEMENT si la fin de la barre RÉEL est dépassée
@@ -10934,6 +10945,46 @@ function _gcActRowHtml(row,DW,NC,_MG){
       ${dc}</tr>`;
 }
 
+// ── Virtualisation horizontale du GANTT ──────────────────────────────
+// Le GANTT peut afficher jusqu'à 110 semaines (GANTT_WIDE_WEEKS), mais un
+// écran n'en montre qu'une petite partie à la fois. _gcActRowHtml ne
+// construit désormais en détail (cases cliquables/glissables) que la zone
+// visible + une marge ; le reste est une case vide. On garde toujours les
+// 110 semaines réellement disponibles au scroll — rien n'est raccourci,
+// on évite juste de fabriquer les cases hors écran.
+var GANTT_RENDER_BUFFER_DAYS=15*7; // ~15 semaines de marge de chaque côté
+var _gcCurrentWin=null; // fenêtre {start,end} (en jours) actuellement construite
+function _gcComputeWindow(wrap,DW,NC){
+  wrap=wrap||document.getElementById('gw');
+  if(!wrap||!DW)return {start:0,end:NC||GANTT_WIDE_WEEKS*7};
+  var totalDays=NC||GANTT_WIDE_WEEKS*7;
+  var startPx=wrap.scrollLeft-293; // 293 = largeur des 2 colonnes fixes (255+38)
+  var endPx=startPx+wrap.clientWidth;
+  var startDay=Math.max(0,Math.floor(startPx/DW)-GANTT_RENDER_BUFFER_DAYS);
+  var endDay=Math.min(totalDays,Math.ceil(endPx/DW)+GANTT_RENDER_BUFFER_DAYS);
+  return {start:startDay,end:endDay};
+}
+// Pendant le scroll horizontal, si on s'approche du bord de la zone déjà
+// construite, on reconstruit le tableau (en gardant la position de scroll —
+// _reRenderGanttKeepScroll) pour que la nouvelle zone visible ait de vraies
+// cases au lieu d'une case vide. Un léger délai évite de reconstruire à
+// chaque pixel scrollé.
+(function(){
+  var _gcScrollT=null;
+  var _gw0=document.getElementById('gw');
+  if(_gw0)_gw0.addEventListener('scroll',function(){
+    clearTimeout(_gcScrollT);
+    _gcScrollT=setTimeout(function(){
+      if(!_gcCurrentWin)return;
+      var w=_gcComputeWindow(_gw0,ZOOM_DW,GANTT_WIDE_WEEKS*7);
+      var margin=5*7; // ~5 semaines : reconstruire avant d'atteindre le bord, pas après
+      if(w.start<_gcCurrentWin.start+margin || w.end>_gcCurrentWin.end-margin){
+        _reRenderGanttKeepScroll();
+      }
+    },120);
+  });
+})();
+
 // Met à jour UNE SEULE ligne déjà affichée dans le GANTT, sans reconstruire
 // tout le tableau (110 semaines × toutes les lignes) — utilisée après les
 // actions fréquentes qui ne changent qu'une tâche à la fois (peindre une
@@ -10953,7 +11004,7 @@ function _gcUpdateRowInPlace(rid){
   try{
     var DW=ZOOM_DW,NC=GANTT_WIDE_WEEKS*7;
     var _MG=_computeMonthGroupsRange(1,GANTT_WIDE_WEEKS);
-    var html=_gcActRowHtml(row,DW,NC,_MG);
+    var html=_gcActRowHtml(row,DW,NC,_MG,_gcCurrentWin?_gcCurrentWin.start:0,_gcCurrentWin?_gcCurrentWin.end:NC);
     var tmp=document.createElement('tbody');
     tmp.innerHTML=html;
     var newTr=tmp.querySelector('tr');
@@ -10969,6 +11020,8 @@ function renderGantt(){
   const DW=ZOOM_DW,NC=GANTT_WIDE_WEEKS*7;
   const wrap=document.getElementById('gw');
   const _MG=_computeMonthGroupsRange(1,GANTT_WIDE_WEEKS);
+  const _win=_gcComputeWindow(wrap,DW,NC);
+  _gcCurrentWin=_win;
   // Mois
   let mH='';
   _MG.forEach(m=>{
@@ -11134,7 +11187,7 @@ function renderGantt(){
       html+=`<tr><td class="s0" style="position:sticky;left:0;z-index:10;background:${ph.s};color:${ph.t};opacity:.92;padding:0 12px 0 34px;font-size:11px;font-weight:600;height:19px;white-space:nowrap;border-right:1px solid rgba(0,0,0,.08)">\u25C6 &nbsp;${row.lb}${_sbPctBadge}${_sbBudBadge}</td><td colspan="${2+NC}" style="background:${ph.s};opacity:.92;height:19px"></td></tr>`;return;
     }
     if(!row.p||!Array.isArray(row.p))row.p=[]; // garde-fou : jamais planter le GANTT sur une ligne corrompue
-    html+=_gcActRowHtml(row,DW,NC,_MG);
+    html+=_gcActRowHtml(row,DW,NC,_MG,_win.start,_win.end);
   });
     html+='</tbody></table>';
   wrap.innerHTML=html;
@@ -11145,6 +11198,12 @@ function renderGantt(){
       var _gw2=document.getElementById('gw');
       if(_gw2){
         var _tx=Math.max(0,(TODAY.w-2)*7*DW);
+        _gw2.scrollLeft=_tx;
+        // Le premier rendu ci-dessus a été construit avec le scroll d'avant
+        // ce saut vers "aujourd'hui" (donc virtualisé sur la mauvaise zone) —
+        // on reconstruit une fois de plus, cette fois avec le bon scroll, puis
+        // on replace le scroll (la reconstruction le remet à zéro).
+        renderGantt();
         _gw2.scrollLeft=_tx;
       }
     });});
