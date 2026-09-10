@@ -4652,7 +4652,7 @@ function fhPrintFiche(nm){
       var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
       var _dKeyP=dayDate.getFullYear()+'-'+String(dayDate.getMonth()+1).padStart(2,'0')+'-'+String(dayDate.getDate()).padStart(2,'0');
       var _dStatusP=_personDayStatus(nm,_dKeyP,wk);
-      if(_dStatusP){
+      if(_dStatusP&&_dStatusP.type!=='formation'){
         rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell" colspan="2" style="text-align:center;font-weight:800;color:'+_dStatusP.color+';background:'+_dStatusP.bg+'">'+_dStatusP.icon+' '+_dStatusP.label+'</td><td class="tot">—</td></tr>';
         return;
       }
@@ -4667,6 +4667,7 @@ function fhPrintFiche(nm){
       if(_dmetaP.vehicule)_metaCellP+='<span class="meta-badge">'+esc(_dmetaP.vehicule)+'</span>';
       if(_dmetaP.lieu)_metaCellP+='<span class="meta-badge meta-lieu">\u{1F4CD} '+esc(_dmetaP.lieu)+'</span>';
       if(!_metaCellP)_metaCellP='<span style="color:#ccc">—</span>';
+      if(_dStatusP&&_dStatusP.type==='formation')_metaCellP='<span class="meta-badge" style="background:'+_dStatusP.bg+';color:'+_dStatusP.color+'">'+_dStatusP.icon+' '+_dStatusP.label+'</span>'+_metaCellP;
       var lines=wkData[di]||[];
       if(!Array.isArray(lines))lines=[];
       var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
@@ -7895,10 +7896,10 @@ function clearAllConges(name){
 function _personDayStatus(nm,dateISO,wk){
   var ad=STORE.absences&&STORE.absences[nm];
   if(!ad)return null;
-  if(dateISO&&(ad.congesDays||[]).indexOf(dateISO)>=0)return {icon:'🏖',label:'Congé',color:'#DC2626',bg:'#FEE2E2',bg2:'#FECACA'};
-  if(dateISO&&(ad.formationDays||[]).indexOf(dateISO)>=0)return {icon:'📚',label:'Formation',color:'#6D28D9',bg:'#EDE9FE',bg2:'#DDD6FE'};
-  if(dateISO&&(ad.absenceDays||[]).indexOf(dateISO)>=0)return {icon:'🚫',label:'Absence',color:'#374151',bg:'#F3F4F6',bg2:'#E5E7EB'};
-  if(wk!=null&&(ad.school||[]).indexOf(wk)>=0)return {icon:'🏫',label:'École',color:'#6457F4',bg:'#EFEDFE',bg2:'#DCD8FB'};
+  if(dateISO&&(ad.congesDays||[]).indexOf(dateISO)>=0)return {type:'conge',icon:'🏖',label:'Congé',color:'#DC2626',bg:'#FEE2E2',bg2:'#FECACA'};
+  if(dateISO&&(ad.formationDays||[]).indexOf(dateISO)>=0)return {type:'formation',icon:'📚',label:'Formation',color:'#6D28D9',bg:'#EDE9FE',bg2:'#DDD6FE'};
+  if(dateISO&&(ad.absenceDays||[]).indexOf(dateISO)>=0)return {type:'absence',icon:'🚫',label:'Absence',color:'#374151',bg:'#F3F4F6',bg2:'#E5E7EB'};
+  if(wk!=null&&(ad.school||[]).indexOf(wk)>=0)return {type:'ecole',icon:'🏫',label:'École',color:'#6457F4',bg:'#EFEDFE',bg2:'#DCD8FB'};
   return null;
 }
 function getCongesDays(name){
@@ -8376,12 +8377,19 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
   var _fhDDate=weekDayToDate(w,di);
   var _fhDKey=_fhDDate?(_fhDDate.getFullYear()+'-'+String(_fhDDate.getMonth()+1).padStart(2,'0')+'-'+String(_fhDDate.getDate()).padStart(2,'0')):null;
   var _fhStatus=_personDayStatus(nm,_fhDKey,w);
-  if(_fhStatus){
+  // Formation reste un jour "normal" à remplir (heures, panier, etc. sont
+  // quand même à saisir) — on affiche juste un bandeau en plus, sans
+  // remplacer la case comme pour congé/absence/école (des jours non
+  // travaillés, où rien d'autre n'a de sens à saisir).
+  if(_fhStatus&&_fhStatus.type!=='formation'){
     return '<div style="vertical-align:top;padding:6px;background:'+(isTD?'#FFFBEB':'inherit')+';border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:80px;text-align:center;background-image:linear-gradient(135deg,'+_fhStatus.bg+','+_fhStatus.bg2+')">'
       +'<div style="font-size:22px">'+_fhStatus.icon+'</div>'
       +'<div style="font-size:11px;font-weight:800;color:'+_fhStatus.color+'">'+_fhStatus.label+'</div>'
       +'</div>';
   }
+  var _fhFormationTag=(_fhStatus&&_fhStatus.type==='formation')
+    ?'<div style="text-align:center;font-size:10px;font-weight:800;color:'+_fhStatus.color+';background:'+_fhStatus.bg+';border-radius:6px;padding:3px 4px;margin-bottom:5px">'+_fhStatus.icon+' '+_fhStatus.label+'</div>'
+    :'';
   var lines=fhGet(aff,nm,w,di);
   var dayT=lines.reduce(function(s,l){return s+(l.hours===''?0:+l.hours||0);},0);
   var meta=fhMetaGet(w,nm,di);
@@ -8439,6 +8447,7 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
   }
   var hasContent=lines.some(function(l){return l&&(l.affId||l.actId||l.hours);})||meta.panier||meta.gd||(meta.lieu&&meta.lieu.trim())||(meta.zone&&meta.zone.trim())||(meta.trajetH&&+meta.trajetH>0)||(meta.vehicule&&meta.vehicule.trim());
   return '<div style="vertical-align:top;padding:6px;background:'+(isTD?'#FFFBEB':'inherit')+';border-radius:10px">'
+    +_fhFormationTag
     +metaHtml
     +linesHtml
     +'<button onclick="fhLineAdd(\''+aff+'\',\''+nmEsc+'\','+w+','+di+')" '
@@ -13956,7 +13965,7 @@ function fhGenerateWeekHTML(wk,cb){
       var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
       var _dKeyW=dayDate.getFullYear()+'-'+String(dayDate.getMonth()+1).padStart(2,'0')+'-'+String(dayDate.getDate()).padStart(2,'0');
       var _dStatusW=_personDayStatus(nm,_dKeyW,wk);
-      if(_dStatusW){
+      if(_dStatusW&&_dStatusW.type!=='formation'){
         rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell" colspan="2" style="text-align:center;font-weight:800;color:'+_dStatusW.color+';background:'+_dStatusW.bg+'">'+_dStatusW.icon+' '+_dStatusW.label+'</td><td class="tot">—</td></tr>';
         return;
       }
@@ -13971,6 +13980,7 @@ function fhGenerateWeekHTML(wk,cb){
       if(meta.vehicule)metaCell+='<span class="meta-badge">'+esc(meta.vehicule)+'</span>';
       if(meta.lieu)metaCell+='<span class="meta-badge meta-lieu">\u{1F4CD} '+esc(meta.lieu)+'</span>';
       if(!metaCell)metaCell='<span style="color:#ccc">—</span>';
+      if(_dStatusW&&_dStatusW.type==='formation')metaCell='<span class="meta-badge" style="background:'+_dStatusW.bg+';color:'+_dStatusW.color+'">'+_dStatusW.icon+' '+_dStatusW.label+'</span>'+metaCell;
       var lines=fhGetAllAff(nm,wk,di);
       var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
       var dayH=valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0);
@@ -14062,7 +14072,7 @@ function fhGenerateHTML(nm,cb){
       var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
       var _dKeyG=dayDate.getFullYear()+'-'+String(dayDate.getMonth()+1).padStart(2,'0')+'-'+String(dayDate.getDate()).padStart(2,'0');
       var _dStatusG=_personDayStatus(nm,_dKeyG,wk);
-      if(_dStatusG){
+      if(_dStatusG&&_dStatusG.type!=='formation'){
         rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell" colspan="2" style="text-align:center;font-weight:800;color:'+_dStatusG.color+';background:'+_dStatusG.bg+'">'+_dStatusG.icon+' '+_dStatusG.label+'</td><td class="tot">—</td></tr>';
         return;
       }
@@ -14077,6 +14087,7 @@ function fhGenerateHTML(nm,cb){
       if(_dmeta.vehicule)_metaCell+='<span class="meta-badge">'+esc(_dmeta.vehicule)+'</span>';
       if(_dmeta.lieu)_metaCell+='<span class="meta-badge meta-lieu">\u{1F4CD} '+esc(_dmeta.lieu)+'</span>';
       if(!_metaCell)_metaCell='<span style="color:#ccc">—</span>';
+      if(_dStatusG&&_dStatusG.type==='formation')_metaCell='<span class="meta-badge" style="background:'+_dStatusG.bg+';color:'+_dStatusG.color+'">'+_dStatusG.icon+' '+_dStatusG.label+'</span>'+_metaCell;
       var lines=wkData[di]||[];if(!Array.isArray(lines))lines=[];
       var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
       var dayH=valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0);
