@@ -423,8 +423,32 @@
     }).filter(function(r){return r!==null;});
     // Lignes qui n'existent QUE localement (pas encore envoyées) : jamais les
     // perdre — SAUF si elles ont été supprimées (par qui que ce soit).
-    localData.forEach(function(r){
-      if(r&&r.id&&!seen[r.id]&&!deletedIds[r.id])merged.push(r);
+    // On les insère à leur place d'origine (juste après leur prédécesseur
+    // local le plus proche déjà connu du serveur, ou juste avant leur
+    // successeur) plutôt qu'à la fin du tableau : sinon, dupliquer une tâche
+    // puis la déplacer ailleurs la faisait retomber tout en bas dès que la
+    // synchro suivante (800ms après) fusionnait avec un serveur qui ne
+    // connaissait pas encore cette nouvelle ligne.
+    localData.forEach(function(r,idx){
+      if(!r||!r.id||seen[r.id]||deletedIds[r.id])return;
+      seen[r.id]=true;
+      var insertAt=-1;
+      for(var pi=idx-1;pi>=0&&insertAt<0;pi--){
+        var predId=localData[pi]&&localData[pi].id;
+        if(!predId)continue;
+        var predIdx=merged.findIndex(function(m){return m&&m.id===predId;});
+        if(predIdx>=0)insertAt=predIdx+1;
+      }
+      if(insertAt<0){
+        for(var ni=idx+1;ni<localData.length&&insertAt<0;ni++){
+          var succId=localData[ni]&&localData[ni].id;
+          if(!succId)continue;
+          var succIdx=merged.findIndex(function(m){return m&&m.id===succId;});
+          if(succIdx>=0)insertAt=succIdx;
+        }
+      }
+      if(insertAt<0)insertAt=merged.length;
+      merged.splice(insertAt,0,r);
     });
     return merged;
   }
