@@ -194,6 +194,7 @@
     // contre une fusion distante qui écraserait un changement local tout
     // juste fait.
     if(typeof _stampModifiedRows==='function')_stampModifiedRows();
+    if(typeof _stampModifiedAbsences==='function')_stampModifiedAbsences();
     clearTimeout(_syncTimeout);
     _syncTimeout=setTimeout(function(){_syncTimeout=null;_mergeRemoteThenSave();},800);
   }
@@ -309,6 +310,51 @@
       window._rowSnapshots[key]=json;
     });
     _stampModifiedMeta(aff);
+  }
+  // Même principe que _stampModifiedRows, mais pour STORE.absences (congés,
+  // école/entreprise des alternants, formation, absence) — ce champ est
+  // top-level, pas par affaire, donc jamais couvert par le code ci-dessus.
+  // Sans horodatage par personne, la fusion à distance ne pouvait pas savoir
+  // qui, du local ou du serveur, avait la version la plus récente pour une
+  // personne donnée : elle gardait TOUJOURS la version locale en bloc,
+  // pouvant silencieusement effacer des semaines d'école ou des congés
+  // qu'un collègue venait tout juste de saisir ailleurs.
+  window._absSnapshots=window._absSnapshots||{};
+  function _stampModifiedAbsences(){
+    if(!STORE||!STORE.absences)return;
+    Object.keys(STORE.absences).forEach(function(nm){
+      var rec=STORE.absences[nm];
+      if(!rec)return;
+      var cmp=Object.assign({},rec);delete cmp._modAt;
+      var json=JSON.stringify(cmp);
+      if(window._absSnapshots[nm]===undefined||window._absSnapshots[nm]!==json){
+        rec._modAt=Date.now();
+      }
+      window._absSnapshots[nm]=json;
+    });
+  }
+  // Fusion fine de STORE.absences, personne par personne, en s'appuyant sur
+  // _modAt (posé par _stampModifiedAbsences) — au lieu de toujours garder le
+  // local en bloc. Si une seule des deux copies a été modifiée récemment
+  // (l'autre n'a jamais été touchée depuis le chargement), c'est celle-là
+  // qui gagne. Si aucun horodatage nulle part, le local prime (comportement
+  // historique, par sécurité).
+  function _mergeAbsences(remoteAbs,localAbs){
+    remoteAbs=remoteAbs||{};localAbs=localAbs||{};
+    var merged={};
+    var allNames={};
+    Object.keys(remoteAbs).forEach(function(k){allNames[k]=true;});
+    Object.keys(localAbs).forEach(function(k){allNames[k]=true;});
+    Object.keys(allNames).forEach(function(nm){
+      var r=remoteAbs[nm],l=localAbs[nm];
+      if(r&&l){
+        var rt=r._modAt||0,lt=l._modAt||0;
+        merged[nm]=(lt||rt)?(lt>=rt?l:r):l;
+      }else{
+        merged[nm]=l||r;
+      }
+    });
+    return merged;
   }
   // Champs d'une affaire qui ne sont PAS dans .data (donc pas couverts par
   // l'horodatage ligne par ligne ci-dessus) : couleurs de phase personnalisées,
@@ -589,7 +635,7 @@
       });
     });
     STORE._deletedWeekPlanKeys=_delWpKeys;
-    STORE.absences=Object.assign({},STORE.absences||{},_localAbsences);
+    STORE.absences=(typeof _mergeAbsences==='function')?_mergeAbsences(STORE.absences,_localAbsences):Object.assign({},STORE.absences||{},_localAbsences);
     STORE.conges=Object.assign({},STORE.conges||{},_localConges);
     // Fusion fine de fhMeta (Panier/GD/Lieu/Zone/Trajet/Véhicule des feuilles
     // d'heure) : le remote sert de base, le local prend le dessus jour par
@@ -3506,7 +3552,7 @@ function loadStore(){
       if(remote.absences){
         var _filtAbs={};
         Object.keys(remote.absences).forEach(function(k){if(!_delAll[k])_filtAbs[k]=remote.absences[k];});
-        STORE.absences=Object.assign({},_filtAbs,STORE.absences||{});
+        STORE.absences=(typeof _mergeAbsences==='function')?_mergeAbsences(_filtAbs,STORE.absences):Object.assign({},_filtAbs,STORE.absences||{});
         Object.keys(_delAll).forEach(function(k){delete STORE.absences[k];});
       }
 
@@ -7394,10 +7440,17 @@ function dbBuildPlanningGrid(){
   +'<button onclick="dbDownloadWeek(\'download\')" style="padding:5px 11px;border-radius:var(--r);border:1px solid var(--ac);background:var(--ac);cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;color:#fff">&#128229; T&eacute;l&eacute;charger</button>';
   html+='</div></div>';
   if(!persons.length){html+='<div style="text-align:center;padding:40px;color:var(--tx3)">Aucune personne trouvee.</div></div>';grid.innerHTML=html;return;}
-  html+='<div style="overflow-x:auto;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)"><table style="width:100%;border-collapse:separate;border-spacing:0;min-width:800px;background:var(--bg2)">';
+  // Pas de "overflow-x:auto" ici : dès qu'un seul axe n'est pas "visible",
+  // le CSS force l'AUTRE axe à devenir "auto" aussi (impossible d'avoir
+  // overflow-x:auto ET overflow-y:visible en même temps) — ce qui fait de
+  // ce bloc lui-même un conteneur de défilement et empêche l'en-tête
+  // (position:sticky) de se coller à la vraie zone qui défile (#db-grid-main,
+  // plus haut dans le DOM). Le défilement horizontal du tableau reste
+  // possible via #db-grid-main, qui a déjà overflow:auto sur les deux axes.
+  html+='<div style="border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)"><table style="width:100%;border-collapse:separate;border-spacing:0;min-width:800px;background:var(--bg2)">';
   html+='<thead><tr style="background:linear-gradient(135deg,var(--ac),#4B3FC7)">';
-  html+='<th style="padding:14px 16px;text-align:left;font-size:12px;font-weight:800;color:#fff;min-width:150px;border-top-left-radius:16px">&#128100; Personne</th>';
-  var _dayAccents=['#3B82F6','#6366F1','#8B5CF6','#EC4899','#F59E0B'];DN.forEach(function(d,di){var dd='';if(dLun){var dt=new Date(dLun.getTime()+di*86400000);dd='<br><span style="font-size:10px;opacity:.85;font-weight:600">'+dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+'</span>';}var _isLastDay=di===DN.length-1;html+='<th style="padding:12px 6px;text-align:center;font-size:12px;font-weight:800;color:#fff;min-width:165px'+(_isLastDay?';border-top-right-radius:16px':'')+'"><span style="display:inline-block;background:rgba(255,255,255,.22);border-radius:20px;padding:4px 14px">'+d+'</span>'+dd+'</th>';});
+  html+='<th style="position:sticky;top:0;z-index:6;padding:14px 16px;text-align:left;font-size:12px;font-weight:800;color:#fff;min-width:150px;border-top-left-radius:16px;background:linear-gradient(135deg,var(--ac),#4B3FC7)">&#128100; Personne</th>';
+  var _dayAccents=['#3B82F6','#6366F1','#8B5CF6','#EC4899','#F59E0B'];DN.forEach(function(d,di){var dd='';if(dLun){var dt=new Date(dLun.getTime()+di*86400000);dd='<br><span style="font-size:10px;opacity:.85;font-weight:600">'+dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+'</span>';}var _isLastDay=di===DN.length-1;html+='<th style="position:sticky;top:0;z-index:5;padding:12px 6px;text-align:center;font-size:12px;font-weight:800;color:#fff;min-width:165px;background:linear-gradient(135deg,var(--ac),#4B3FC7)'+(_isLastDay?';border-top-right-radius:16px':'')+'"><span style="display:inline-block;background:rgba(255,255,255,.22);border-radius:20px;padding:4px 14px">'+d+'</span>'+dd+'</th>';});
   html+='</tr></thead><tbody>';
   var _hiddenSepShown=false;
   persons.forEach(function(nm,pi){
@@ -8126,6 +8179,17 @@ function renderAbsences(){
       if(ap.name&&ap.name.trim()&&(ap.type==='Alternant'||ap.type==='Stagiaire'))
         altMap[ap.name]={name:ap.name,type:ap.type,aff:aff};
     });
+  });
+  // Compléter avec l'annuaire général (STORE.globalPersons) — une personne
+  // catégorisée Alternant/Stagiaire doit apparaître ici même si elle n'a
+  // jamais été rattachée manuellement à une affaire précise. Sans ça, elle
+  // pouvait très bien apparaître partout ailleurs (Planning Réunion, Congés
+  // — qui eux se basent déjà sur l'annuaire) mais rester invisible ici,
+  // empêchant de lui saisir ses semaines d'école.
+  Object.keys(_gp).forEach(function(nm){
+    if(altMap[nm]||_delP[nm]||!nm||!nm.trim())return;
+    var t=_gp[nm]&&_gp[nm].type;
+    if(t==='Alternant'||t==='Stagiaire')altMap[nm]={name:nm,type:t,aff:''};
   });
   var altPersons=Object.values(altMap);
 
