@@ -3803,7 +3803,7 @@ function switchTab(t){
   var gdN=document.getElementById('gd-nav');
   if(gdN&&t!=='gantt')gdN.innerHTML='';
   // Rendre le contenu
-  if(t==='gantt'){renderGantt();}
+  if(t==='gantt'){window._scrollToToday=true;renderGantt();}
   else if(t==='planning-reunion'){renderPlanningReunionTab();}
   else if(t==='recap'){switchTdbTab(window._tdbTab||'overview');}
   else if(t==='modifications'){renderModificationsTab();}
@@ -6256,7 +6256,7 @@ function downloadPlanning(mode){
 
   // ── En-tête affaire ──────────────────────────────
   body+='<div style="background:linear-gradient(135deg,#1F4E79,#2563EB);color:#fff;border-radius:16px;padding:28px 32px;margin-bottom:28px">'
-    +'<div style="font-size:26px;font-weight:900;margin-bottom:6px">'+esc(aff)+(_infHdr.numeroClient?' <span style="font-size:16px;font-weight:700;opacity:.85">&middot; N&deg; client : '+esc(_infHdr.numeroClient)+'</span>':'')+'</div>'
+    +'<div style="font-size:26px;font-weight:900;margin-bottom:6px">'+esc(_infHdr.numero||aff)+(_infHdr.numeroClient?' <span style="font-size:16px;font-weight:700;opacity:.85">&middot; N&deg; client : '+esc(_infHdr.numeroClient)+'</span>':'')+'</div>'
     +(_infHdr.libelle?'<div style="font-size:15px;font-weight:600;opacity:.92;margin-bottom:6px">'+esc(_infHdr.libelle)+'</div>':'')
     +'<div style="font-size:13px;opacity:.8">Rapport généré le '+dateStr+'</div>'
     +'</div>';
