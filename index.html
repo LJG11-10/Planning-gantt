@@ -13834,6 +13834,38 @@ function fhGetAllWeeksAllAff(nm){
   });
   return combined;
 }
+// Heures "générales" d'une affaire : lignes de feuille d'heure où la
+// personne a bien choisi cette affaire mais AUCUNE sous-phase précise
+// (actId vide) — cas typique du chef de chantier, qui pointe souvent sur
+// l'affaire en général sans détailler. Jusqu'ici ces heures ne comptaient
+// nulle part dans le suivi budgétaire par phase (voir syncFichesToGantt,
+// qui ignore les lignes sans actId) ; on les rassemble ici pour les
+// rattacher à la phase CHANTIER de l'affaire, sans toucher au stockage.
+function fhGeneralHoursForAff(aff){
+  var totalH=0,persons={};
+  Object.keys(STORE.projects).forEach(function(bucketAff){
+    var p=STORE.projects[bucketAff];
+    if(!p||!p.fh)return;
+    Object.keys(p.fh).forEach(function(nm){
+      var nmData=p.fh[nm]||{};
+      Object.keys(nmData).forEach(function(wk){
+        var wkData=nmData[wk]||{};
+        Object.keys(wkData).forEach(function(di){
+          (wkData[di]||[]).forEach(function(l){
+            if(!l||l.actId)return;
+            var effAff=l.affId||bucketAff;
+            if(effAff!==aff)return;
+            var h=+(l.hours||l.h)||0;
+            if(!h)return;
+            totalH+=h;
+            persons[nm]=(persons[nm]||0)+h;
+          });
+        });
+      });
+    });
+  });
+  return {totalH:Math.round(totalH*10)/10,persons:persons};
+}
 function fhPut(aff,nm,w,d,lines){
   var p=STORE.projects[aff];if(!p)return;
   if(!p.fh)p.fh={};
@@ -16050,6 +16082,12 @@ function renderRecap(){
     </div>
   </div>`;
 
+  // Heures "générales" de cette affaire (sans sous-phase précise, voir
+  // fhGeneralHoursForAff) — à rattacher à la phase CHANTIER pour qu'elles
+  // comptent quand même dans son Réel H, comme demandé.
+  var _chantierPh=D().find(function(r){return r.t==='ph'&&_isChantierPhase(r.pk);});
+  var _genHoursAff=(hasView('budget_recap')&&_chantierPh)?fhGeneralHoursForAff(STORE.current):{totalH:0,persons:{}};
+
   // Budget par phase
   var _hBud=D().some(function(r){return r.t==='ph'&&r.budgetH>0;})&&hasView('budget_recap');
   if(_hBud){
@@ -16058,7 +16096,8 @@ function renderRecap(){
     D().filter(function(r){return r.t==='ph';}).forEach(function(ph_r){
       var _a=D().filter(function(r){return (r.t==='act'||r.t==='sb')&&r.pk===ph_r.pk;});
       var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
-      var _rv=Math.round(_a.reduce(function(s,a){return s+(+a.hReel||0);},0)*10)/10;
+      var _isChantierRow=_chantierPh&&ph_r.pk===_chantierPh.pk;
+      var _rv=Math.round((_a.reduce(function(s,a){return s+(+a.hReel||0);},0)+(_isChantierRow?_genHoursAff.totalH:0))*10)/10;
       var _bv=ph_r.budgetH||0;
       var _dp=_bv>0?Math.round((_pv-_bv)*10)/10:null;
       var _dr=_bv>0?Math.round((_rv-_bv)*10)/10:null;
@@ -16072,6 +16111,18 @@ function renderRecap(){
       html+='<td style="font-weight:700;color:'+_cr+'">'+(_dr!==null?(_dr>0?'+':'')+_dr+'H':'&mdash;')+'</td>';
       html+='</tr>';
     });
+    html+='</tbody></table>';
+  }
+  // Heures générales / Affaire : ligne dédiée montrant qui a pointé sur
+  // l'affaire sans préciser de sous-phase, et combien — ces heures sont
+  // déjà comptées ci-dessus dans le Réel H de la phase CHANTIER.
+  if(_chantierPh&&_genHoursAff.totalH>0){
+    var _genPersDetail=Object.keys(_genHoursAff.persons).sort().map(function(nm){
+      return '<span style="display:inline-block;background:var(--bg3);border-radius:10px;padding:1px 8px;margin:1px 3px 1px 0;font-size:10px;font-weight:700">'+nm+' &middot; '+(Math.round(_genHoursAff.persons[nm]*10)/10)+'H</span>';
+    }).join('');
+    html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Heures g&eacute;n&eacute;rales / Affaire (sans sous-phase pr&eacute;cise)</h3>';
+    html+='<table class="rt"><thead><tr><th>Phase</th><th>R&eacute;el H</th><th>Qui a travaill&eacute; dessus</th></tr></thead><tbody>';
+    html+='<tr><td style="font-weight:700">'+_chantierPh.lb+'</td><td style="font-weight:700">'+_genHoursAff.totalH+'H</td><td>'+_genPersDetail+'</td></tr>';
     html+='</tbody></table>';
   }
   // Budget par ensemble
