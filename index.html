@@ -8877,9 +8877,11 @@ function modsSaveResponsables(){
   document.querySelectorAll('#mods-contacts-modif [data-naf-row]').forEach(function(row){
     var nomI=row.querySelector('input[data-field="nom"]');
     var emI=row.querySelector('input[data-field="email"]');
+    var telI=row.querySelector('input[data-field="telephone"]');
     var n=(nomI?nomI.value:'').trim();
     var e=(emI?emI.value:'').trim();
-    if(n||e)contacts.push({nom:n,email:e});
+    var t=(telI?telI.value:'').trim();
+    if(n||e||t)contacts.push({nom:n,email:e,telephone:t});
   });
   resp.contacts=contacts;
   saveNow();
@@ -8888,49 +8890,102 @@ function modsSaveResponsables(){
 }
 
 // ── Notification par email (réutilise l'infrastructure send-rappels) ──
+// Numéro français local (0X XX XX XX XX, avec ou sans espaces/points/tirets)
+// converti au format international +33XXXXXXXXX attendu par les fournisseurs
+// SMS. Renvoie '' si le numéro ne ressemble à rien d'exploitable (pour
+// pouvoir l'ignorer sans planter l'envoi aux autres destinataires).
+function _smsNormalizePhone(raw){
+  if(!raw)return '';
+  var d=String(raw).trim();
+  if(d.charAt(0)==='+')return '+'+d.slice(1).replace(/[^0-9]/g,'');
+  d=d.replace(/[^0-9]/g,'');
+  if(d.slice(0,2)==='00')d='+'+d.slice(2); // format "00 33 ..." = équivalent de "+33 ..."
+  if(d.charAt(0)==='+')return d;
+  if(d.length===10&&d.charAt(0)==='0')return '+33'+d.slice(1);
+  if(d.length===9)return '+33'+d;
+  return '';
+}
 function modsNotify(doc,version,eventLabel){
   var resp=_modsResponsables();
-  var emails=(resp.contacts||[]).map(function(c){return c.email;}).filter(function(e){return e&&e.trim()&&e.includes('@');});
-  if(!emails.length)return; // pas de responsables configurés : pas d'envoi, pas d'erreur
+  var contacts=resp.contacts||[];
+  var emails=contacts.map(function(c){return c.email;}).filter(function(e){return e&&e.trim()&&e.includes('@');});
+  var phones=contacts.map(function(c){return _smsNormalizePhone(c.telephone);}).filter(function(p){return p;});
+  if(!emails.length&&!phones.length)return; // pas de responsables configurés : pas d'envoi, pas d'erreur
   var num=(currP().infos&&currP().infos.numero)||STORE.current;
   var lib=(currP().infos&&currP().infos.libelle)||'';
-  var sujet='[ELS - '+num+'] '+eventLabel+' : '+doc.nom;
-  var corps='<h2 style="color:#1F4E79">Notification — '+esc2(eventLabel)+'</h2>'
-    +'<table style="font-size:14px;border-collapse:collapse;width:100%">'
-    +'<tr><td style="padding:6px 12px;font-weight:700;width:160px">Affaire</td><td style="padding:6px 12px"><strong>'+esc2(num)+'</strong> — '+esc2(lib)+'</td></tr>'
-    +'<tr style="background:#F8F9FA"><td style="padding:6px 12px;font-weight:700">Document</td><td style="padding:6px 12px">'+esc2(doc.nom)+'</td></tr>'
-    +'<tr><td style="padding:6px 12px;font-weight:700">Version</td><td style="padding:6px 12px">v'+esc2(version.version)+'</td></tr>'
-    +'<tr style="background:#F8F9FA"><td style="padding:6px 12px;font-weight:700">Date</td><td style="padding:6px 12px">'+esc2(version.date)+'</td></tr>'
-    +'</table>'
-    +'<p style="margin-top:20px;font-size:12px;color:#888">Pétrosphère — Planning Pétrole — ELS/Génesienne</p>';
+
   var sv=document.getElementById('sv');
-  function flash(txt,ok){
-    if(!sv)return;
-    sv.textContent=txt;
-    sv.style.color=ok?'':'var(--rd)';
+  var _statusParts=[];
+  function flash(){
+    if(!sv||!_statusParts.length)return;
+    sv.textContent=_statusParts.join('  ·  ');
+    sv.style.color=_statusParts.some(function(s){return s.indexOf('⚠️')>=0;})?'var(--rd)':'';
     sv.style.display='inline';
     clearTimeout(modsNotify._t);
-    modsNotify._t=setTimeout(function(){sv.style.display='none';sv.style.color='';},4000);
+    modsNotify._t=setTimeout(function(){sv.style.display='none';sv.style.color='';},5000);
   }
-  fetch(SUPA_URL+'/functions/v1/send-rappels',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY,'apikey':SUPA_KEY},
-    body:JSON.stringify({emails:emails,subject:sujet,html:corps})
-  }).then(function(res){
-    var status=res.status;
-    return res.text().then(function(txt){
-      var data={};try{data=JSON.parse(txt);}catch(e){}
-      if(status===200&&data.ok){
-        flash('✉️ Email envoyé à '+emails.length+' responsable(s)',true);
-      }else{
-        console.error('Notification non envoyée (status '+status+') :',txt);
-        flash('⚠️ Document enregistré, email NON envoyé (voir console)',false);
-      }
+  var _pending=0;
+  function done(msg){_statusParts.push(msg);_pending--;if(_pending<=0)flash();}
+
+  if(emails.length){
+    _pending++;
+    var sujet='[ELS - '+num+'] '+eventLabel+' : '+doc.nom;
+    var corps='<h2 style="color:#1F4E79">Notification — '+esc2(eventLabel)+'</h2>'
+      +'<table style="font-size:14px;border-collapse:collapse;width:100%">'
+      +'<tr><td style="padding:6px 12px;font-weight:700;width:160px">Affaire</td><td style="padding:6px 12px"><strong>'+esc2(num)+'</strong> — '+esc2(lib)+'</td></tr>'
+      +'<tr style="background:#F8F9FA"><td style="padding:6px 12px;font-weight:700">Document</td><td style="padding:6px 12px">'+esc2(doc.nom)+'</td></tr>'
+      +'<tr><td style="padding:6px 12px;font-weight:700">Version</td><td style="padding:6px 12px">v'+esc2(version.version)+'</td></tr>'
+      +'<tr style="background:#F8F9FA"><td style="padding:6px 12px;font-weight:700">Date</td><td style="padding:6px 12px">'+esc2(version.date)+'</td></tr>'
+      +'</table>'
+      +'<p style="margin-top:20px;font-size:12px;color:#888">Pétrosphère — Planning Pétrole — ELS/Génesienne</p>';
+    fetch(SUPA_URL+'/functions/v1/send-rappels',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY,'apikey':SUPA_KEY},
+      body:JSON.stringify({emails:emails,subject:sujet,html:corps})
+    }).then(function(res){
+      var status=res.status;
+      return res.text().then(function(txt){
+        var data={};try{data=JSON.parse(txt);}catch(e){}
+        if(status===200&&data.ok){
+          done('✉️ Email envoyé à '+emails.length+' responsable(s)');
+        }else{
+          console.error('Notification email non envoyée (status '+status+') :',txt);
+          done('⚠️ Email NON envoyé (voir console)');
+        }
+      });
+    }).catch(function(e){
+      console.error('Erreur réseau envoi email :',e);
+      done('⚠️ Échec réseau email');
     });
-  }).catch(function(e){
-    console.error('Erreur réseau envoi notification :',e);
-    flash('⚠️ Document enregistré, échec réseau email',false);
-  });
+  }
+
+  if(phones.length){
+    _pending++;
+    // Format demandé : "Modification ELSXXXXXX <document> <version>" (et
+    // "Terminé ..." quand la case "Fait" vient d'être cochée) — volontairement
+    // court, un SMS n'a pas vocation à tout détailler comme l'email.
+    var prefixeSms=(eventLabel==='document terminé')?'Terminé':'Modification';
+    var smsTexte=prefixeSms+' '+num+' '+doc.nom+' '+version.version;
+    fetch(SUPA_URL+'/functions/v1/send-sms',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY,'apikey':SUPA_KEY},
+      body:JSON.stringify({phones:phones,message:smsTexte,sender:'Petrosphere'})
+    }).then(function(res){
+      var status=res.status;
+      return res.text().then(function(txt){
+        var data={};try{data=JSON.parse(txt);}catch(e){}
+        if(status===200&&data.ok){
+          done('📱 SMS envoyé à '+phones.length+' responsable(s)');
+        }else{
+          console.error('Notification SMS non envoyée (status '+status+') :',txt);
+          done('⚠️ SMS NON envoyé (voir console)');
+        }
+      });
+    }).catch(function(e){
+      console.error('Erreur réseau envoi SMS :',e);
+      done('⚠️ Échec réseau SMS');
+    });
+  }
 }
 
 // ── Pièces jointes : upload / téléchargement / export / purge ─────────
@@ -10470,12 +10525,18 @@ function _getContacts(resp){
   if(!emails.length)return [{nom:nom,email:''}];
   return emails.map(function(e,i){return {nom:i===0?nom:'',email:e};});
 }
-function _nafContactRow(k,nom,email,cls){
-  return '<div data-naf-row="1" data-resp="'+k+'" style="display:grid;grid-template-columns:1fr 1fr auto;gap:4px;margin-bottom:4px;align-items:center">'+
+function _nafContactRow(k,nom,email,cls,tel){
+  // Un numéro de téléphone n'a de sens que pour les responsables de l'onglet
+  // Modifications (notification SMS) — les autres usages de ce composant
+  // (Infos affaire, annuaire général) restent inchangés avec juste nom/email.
+  var isModif=(k==='modif');
+  return '<div data-naf-row="1" data-resp="'+k+'" style="display:grid;grid-template-columns:'+(isModif?'1fr 1fr 1fr auto':'1fr 1fr auto')+';gap:4px;margin-bottom:4px;align-items:center">'+
     '<input placeholder="Nom" data-field="nom" data-resp="'+k+'" value="'+escHtml(nom||'')+'" '+
     'style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 7px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+
     '<input placeholder="email@exemple.com" data-field="email" data-resp="'+k+'" value="'+escHtml(email||'')+'" '+
     'style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 7px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+
+    (isModif?'<input type="tel" placeholder="06 12 34 56 78" data-field="telephone" data-resp="'+k+'" value="'+escHtml(tel||'')+'" '+
+    'style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 7px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">':'')+
     '<button onclick="_nafRemoveContact(this,\''+cls+'\',\''+k+'\')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;line-height:1;padding:0 4px" title="Retirer">×</button>'+
     '</div>';
 }
@@ -10579,12 +10640,17 @@ function _nafRespBlock(k,label,contactsIn,cls,addFn){
     var color=pi?pi.color:'#6B7280';
     var ini=ct.nom.trim().charAt(0).toUpperCase();
     var em=ct.email||'';
+    var tel=ct.telephone||'';
     chipsHtml+='<div data-naf-row="1" style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:'+color+'15;border:1px solid '+color+'40;border-radius:20px;margin-bottom:4px">'
       +'<span style="width:22px;height:22px;border-radius:50%;background:'+color+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0">'+ini+'</span>'
       +'<span style="flex:1;min-width:0">'
       +'<div style="font-size:11px;font-weight:700;color:var(--tx)">'+escHtml(ct.nom)+'</div>'
       +(em?'<div style="font-size:9px;color:var(--tx3)">'+escHtml(em)+'</div>':'')
       +'</span>'
+      // Le téléphone n'est connu nulle part ailleurs dans l'annuaire — il
+      // faut le saisir ici manuellement pour pouvoir envoyer un SMS à cette
+      // personne (uniquement pour l'onglet Modifications).
+      +(k==='modif'?'<input type="tel" placeholder="📱 Téléphone" data-field="telephone" value="'+escHtml(tel)+'" style="width:110px;flex-shrink:0;border:1px solid '+color+'40;border-radius:12px;padding:3px 8px;font-size:10px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">':'')
       +'<button onclick="_nafRemoveContact(this,\''+cls+'\',\''+k+'\')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;line-height:1;padding:0 2px" title="Retirer">×</button>'
       +'<input type="hidden" data-field="nom" value="'+escHtml(ct.nom)+'">'
       +'<input type="hidden" data-field="email" value="'+escHtml(em)+'">'
@@ -16099,10 +16165,12 @@ function renderRecap(){
       var _isChantierRow=_chantierPh&&ph_r.pk===_chantierPh.pk;
       var _rv=Math.round((_a.reduce(function(s,a){return s+(+a.hReel||0);},0)+(_isChantierRow?_genHoursAff.totalH:0))*10)/10;
       var _bv=ph_r.budgetH||0;
-      var _dp=_bv>0?Math.round((_pv-_bv)*10)/10:null;
-      var _dr=_bv>0?Math.round((_rv-_bv)*10)/10:null;
-      var _cp=_dp>0?'#DC2626':_dp<0?'#059669':'var(--tx2)';
-      var _cr=_dr>0?'#DC2626':_dr<0?'#059669':'var(--tx2)';
+      // Ecart = ce qu'il RESTE du budget (positif/vert) ou le dépassement
+      // (négatif/rouge) — Budget moins Prévu/Réel, pas l'inverse.
+      var _dp=_bv>0?Math.round((_bv-_pv)*10)/10:null;
+      var _dr=_bv>0?Math.round((_bv-_rv)*10)/10:null;
+      var _cp=_dp<0?'#DC2626':_dp>0?'#059669':'var(--tx2)';
+      var _cr=_dr<0?'#DC2626':_dr>0?'#059669':'var(--tx2)';
       html+='<tr>';
       html+='<td style="font-weight:700">'+ph_r.lb+'</td>';
       html+='<td style="font-weight:700">'+(_bv>0?_bv+'H':'&mdash;')+'</td>';
@@ -16142,10 +16210,10 @@ function renderRecap(){
       var _rv=Math.round(_a.reduce(function(s,a){return s+(+a.hReel||0);},0)*10)/10;
       var _bv=ens_r.budgetH||0;
       if(!_bv)return;
-      var _dp=Math.round((_pv-_bv)*10)/10;
-      var _dr=Math.round((_rv-_bv)*10)/10;
-      var _cp=_dp>0?'#DC2626':_dp<0?'#059669':'var(--tx2)';
-      var _cr=_dr>0?'#DC2626':_dr<0?'#059669':'var(--tx2)';
+      var _dp=Math.round((_bv-_pv)*10)/10;
+      var _dr=Math.round((_bv-_rv)*10)/10;
+      var _cp=_dp<0?'#DC2626':_dp>0?'#059669':'var(--tx2)';
+      var _cr=_dr<0?'#DC2626':_dr>0?'#059669':'var(--tx2)';
       html+='<tr>';
       html+='<td style="font-weight:700">'+ens_r.lb+'</td>';
       html+='<td style="color:var(--tx3)">'+ens_r.pk+'</td>';
@@ -16174,8 +16242,8 @@ function renderRecap(){
       }
       var _rv=Math.round((+sb_r.hReel||0)*10)/10;
       var _bv=sb_r.budgetH||0;
-      var _dr=Math.round((_rv-_bv)*10)/10;
-      var _cr=_dr>0?'#DC2626':_dr<0?'#059669':'var(--tx2)';
+      var _dr=Math.round((_bv-_rv)*10)/10;
+      var _cr=_dr<0?'#DC2626':_dr>0?'#059669':'var(--tx2)';
       var _persons=(sb_r.p||[]).filter(function(pp){return pp.name&&pp.name.trim();});
       var _persDetail=_persons.length
         ?_persons.map(function(pp){return '<span style="display:inline-block;background:var(--bg3);border-radius:10px;padding:1px 8px;margin:1px 3px 1px 0;font-size:10px;font-weight:700">'+pp.name+' &middot; '+pp.heures+'H</span>';}).join('')
