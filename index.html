@@ -8508,7 +8508,12 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
   var _fhFormationTag=(_fhStatus&&_fhStatus.type==='formation')
     ?'<div style="text-align:center;font-size:10px;font-weight:800;color:'+_fhStatus.color+';background:'+_fhStatus.bg+';border-radius:6px;padding:3px 4px;margin-bottom:5px">'+_fhStatus.icon+' '+_fhStatus.label+'</div>'
     :'';
-  var lines=fhGet(aff,nm,w,di);
+  // Toutes les heures de cette personne ce jour-là, peu importe sous quelle
+  // affaire le chef de chantier les a saisies — sinon des heures bien
+  // réelles restaient invisibles ici dès que l'affaire actuellement ouverte
+  // ne correspondait pas à celle utilisée au moment de la saisie (alors que
+  // le total semaine et l'impression, eux, cherchent déjà partout).
+  var lines=fhGetAllAffWithSource(nm,w,di);
   var dayT=lines.reduce(function(s,l){return s+(l.hours===''?0:+l.hours||0);},0);
   var meta=fhMetaGet(w,nm,di);
   // Les heures de trajet comptent maintenant aussi dans le total du jour
@@ -8541,28 +8546,32 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
     var selAff2=ln.affId||'';
     var _sbTree=selAff2?buildSbTree(selAff2,ln.actId||''):{label:'',panel:''};
     var _fhWidId='fhsb-'+nmEsc.replace(/[^a-z0-9]/gi,'_')+'-'+w+'-'+di+'-'+li;
+    // Affaire où cette ligne est RÉELLEMENT enregistrée (peut différer de
+    // l'affaire actuellement ouverte à l'écran) — c'est elle qu'il faut
+    // utiliser pour modifier/supprimer la ligne, pas l'affaire ouverte.
+    var _bucket=ln._bucket||aff,_idx=(ln._idx!=null?ln._idx:li);
     // Couleur par chantier — même palette et même fonction que Planning
     // Réunion (affColor), pour que le même chantier ait toujours la même
     // couleur peu importe où il apparaît sur le site.
     var _c=selAff2?affColor(selAff2):null;
     linesHtml+='<div style="background:'+(_c?_c.f:'var(--bg3)')+';border-left:4px solid '+(_c?_c.h:'var(--bd)')+';border-radius:10px;padding:7px 9px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.08)">'
       +'<div style="font-size:8px;font-weight:800;color:'+(_c?_c.h:'var(--tx3)')+';letter-spacing:.3px;margin-bottom:3px">AFFAIRE</div>'
-      +'<select onchange="fhLineSetAff(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+',this.value)" '
+      +'<select onchange="fhLineSetAff(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+',this.value)" '
       +'style="width:100%;border:none;border-radius:6px;padding:4px 6px;font-size:10px;font-weight:700;font-family:inherit;background:var(--bg2);color:'+(_c?_c.xd:'var(--tx)')+';outline:none;margin-bottom:6px">'
       +affOpts+'</select>'
       +(selAff2
         ?'<div style="font-size:8px;font-weight:800;color:'+(_c?_c.h:'var(--ac)')+';letter-spacing:.3px;margin-bottom:3px">SOUS-PHASE (rempli automatiquement)</div>'
-         +'<div id="'+_fhWidId+'" class="wpat-trigger" data-aff="'+aff+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+li+'" onclick="window._wpActPickerToggle(this)" style="width:100%;border-radius:6px;padding:4px 6px;font-size:10px;font-family:inherit;background:var(--bg2);color:'+(_c?_c.xd:'var(--tx)')+';cursor:pointer;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||'— Choisir une sous-phase —')+'</div>'
-         +'<div class="wpat-panel" data-aff="'+aff+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+li+'" style="display:none;max-height:200px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:4px;background:var(--bg2);box-shadow:0 4px 12px rgba(0,0,0,.14);position:relative;z-index:20;margin-bottom:6px">'+_sbTree.panel+'</div>'
+         +'<div id="'+_fhWidId+'" class="wpat-trigger" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" onclick="window._wpActPickerToggle(this)" style="width:100%;border-radius:6px;padding:4px 6px;font-size:10px;font-family:inherit;background:var(--bg2);color:'+(_c?_c.xd:'var(--tx)')+';cursor:pointer;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||'— Choisir une sous-phase —')+'</div>'
+         +'<div class="wpat-panel" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" style="display:none;max-height:200px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:4px;background:var(--bg2);box-shadow:0 4px 12px rgba(0,0,0,.14);position:relative;z-index:20;margin-bottom:6px">'+_sbTree.panel+'</div>'
         :'')
       +'<div style="display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px dashed '+(_c?_c.xl:'var(--bd)')+'">'
       +'<span style="font-size:8px;color:'+(_c?_c.xd:'var(--tx3)')+';font-weight:700">HEURES</span>'
       +'<input type="number" min="0" max="24" step="0.5" value="'+(ln.hours===''?'':ln.hours)+'" placeholder="0" '
       +'style="flex:1;border:none;border-radius:6px;padding:4px;font-size:12px;font-weight:800;font-family:\'Courier New\',monospace;color:'+(_c?_c.h:'var(--ac)')+';background:'+(isTD?'#FEF9C3':'var(--bg2)')+';outline:none;text-align:center;min-width:0" '
-      +'oninput="fhLineSet(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+',\'hours\',this.value)" '
-      +'onblur="fhLineSet(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+',\'hours\',this.value)">'
+      +'oninput="fhLineSet(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+',\'hours\',this.value)" '
+      +'onblur="fhLineSet(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+',\'hours\',this.value)">'
       +'<span style="font-size:9px;color:'+(_c?_c.xd:'var(--tx3)')+'">H</span>'
-      +'<button onmousedown="event.preventDefault();fhLineDel(\''+aff+'\',\''+nmEsc+'\','+w+','+di+','+li+')" '
+      +'<button onmousedown="event.preventDefault();fhLineDel(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+')" '
       +'style="background:rgba(0,0,0,.06);border:none;border-radius:6px;cursor:pointer;color:var(--rd);font-size:10px;font-weight:700;padding:2px 6px">\u2715</button>'
       +'</div></div>';
   }
@@ -13773,6 +13782,24 @@ function fhGet(aff,nm,w,d){
 // actuellement ouverte a changé depuis. Chaque ligne garde une trace de
 // son affaire d'origine (affId), déjà utilisée ailleurs pour retrouver le
 // bon libellé de tâche.
+// Comme fhGetAllAff, mais garde trace du "vrai" endroit où chaque ligne est
+// stockée (_bucket = l'affaire dans laquelle elle vit réellement, _idx = sa
+// position dans ce tableau-là) — nécessaire pour pouvoir MODIFIER une ligne
+// qui vit dans une autre affaire que celle actuellement ouverte, sans se
+// tromper de tableau. Utilisé par la case éditable de la feuille d'heure
+// (fhBuildDayCell), qui doit montrer TOUTES les heures d'une personne pour
+// ce jour, peu importe sous quelle affaire le chef de chantier les a
+// saisies (voir le bug : heures invisibles à l'écran mais présentes à
+// l'impression, qui elle cherchait déjà dans toutes les affaires).
+function fhGetAllAffWithSource(nm,w,d){
+  var combined=[];
+  Object.keys(STORE.projects).forEach(function(bucketAff){
+    fhGet(bucketAff,nm,w,d).forEach(function(l,idx){
+      if(l&&(l.actId||l.affId||l.hours))combined.push(Object.assign({},l,{affId:l.affId||bucketAff,_bucket:bucketAff,_idx:idx}));
+    });
+  });
+  return combined;
+}
 function fhGetAllAff(nm,w,d){
   var combined=[];
   Object.keys(STORE.projects).forEach(function(aff){
@@ -13835,8 +13862,13 @@ function fhPut(aff,nm,w,d,lines){
   if(typeof updBudget==='function')updBudget();
 }
 function fhLineSetAff(aff,nm,wk,d,ei,newAff){
-  // Utiliser fhGet/fhPut (same as fhLineSet) pour écrire au bon endroit
-  var a=window._fhAff||aff;
+  // Utiliser fhGet/fhPut (same as fhLineSet) pour écrire au bon endroit —
+  // TOUJOURS l'affaire passée en paramètre (celle où la ligne vit vraiment),
+  // jamais window._fhAff : une ligne peut très bien être enregistrée sous
+  // une affaire différente de celle actuellement ouverte à l'écran (voir
+  // fhBuildDayCell, qui affiche maintenant les lignes de toutes les
+  // affaires) — utiliser window._fhAff ici la modifierait au mauvais endroit.
+  var a=aff;
   var lines=fhGet(a,nm,wk,d).slice();
   while(lines.length<=ei)lines.push({actId:'',hours:''});
   lines[ei].affId=newAff;
