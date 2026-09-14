@@ -5010,7 +5010,7 @@ function exportRecapCSV(){
   const rows=[['Phase','Activité','Terminé','H.Affectées','H.Prévues','H.Réelles','Δ Heures','Début','Fin']];
   all.forEach(r=>{
     const tot=r.p.reduce((s,p)=>s+(+p.heures||0),0);
-    const dlt=(r.hPrev&&r.hReel)?(r.hReel-r.hPrev):'';
+    const dlt=(r.hPrev&&r.hReel)?(r.hPrev-r.hReel):'';
     rows.push([r.pk,r.lb,r.done?'OUI':'NON',tot,r.hPrev||'',r.hReel||'',dlt,'S'+isoWeekOf(r.s),'S'+isoWeekOf(r.e)]);
   });
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
@@ -5187,7 +5187,7 @@ function dbRecap(){
     +'<div style="font-size:11px;font-weight:700;color:var(--ac)">GLOBAL</div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--or)">'+gPrev+'H</div><div style="font-size:8px;color:var(--tx3)">PRÉVUES</div></div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--gn)">'+gReel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
-    +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:'+(gReel-gPrev>0?'var(--rd)':gReel-gPrev<0?'var(--gn)':'var(--tx3)')+'">'+(gReel-gPrev===0?'—':(gReel-gPrev>0?'+':'')+( gReel-gPrev)+'H')+'</div><div style="font-size:8px;color:var(--tx3)">Δ</div></div>'
+    +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:'+(gPrev-gReel<0?'var(--rd)':gPrev-gReel>0?'var(--gn)':'var(--tx3)')+'">'+(gPrev-gReel===0?'—':(gPrev-gReel>0?'+':'')+(gPrev-gReel)+'H')+'</div><div style="font-size:8px;color:var(--tx3)">Δ</div></div>'
     +(hasView('budget_recap')?'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gBud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gDone+'/'+gActs+'</div><div style="font-size:8px;color:var(--tx3)">TERMINÉES</div></div>'
     +'</div>';
@@ -5199,7 +5199,7 @@ function dbRecap(){
     var bud=p.budget||0;
     var prev=acts.reduce(function(s,a){return s+(+a.hPrev||0);},0);
     var reel=acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
-    var delta=reel-prev;
+    var delta=prev-reel;
     var done=acts.filter(function(a){return a.done;}).length;
     // Avancement pondéré par H Prévues sur les % de tâches saisis
     var pct=calcHierProgress(p.data,{});
@@ -5234,7 +5234,7 @@ function dbRecap(){
       +'<div style="display:flex;gap:12px;flex-wrap:wrap">'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--or)">'+prev+'H</div><div style="font-size:8px;color:var(--tx3)">PRÉVUES</div></div>'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--gn)">'+reel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
-      +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:'+(delta>0?'var(--rd)':delta<0?'var(--gn)':'var(--tx3)')+'">'+(delta===0?'—':(delta>0?'+':'')+delta+'H')+'</div><div style="font-size:8px;color:var(--tx3)">DELTA</div></div>'
+      +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:'+(delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--tx3)')+'">'+(delta===0?'—':(delta>0?'+':'')+delta+'H')+'</div><div style="font-size:8px;color:var(--tx3)">DELTA</div></div>'
       +(hasView('budget_recap')?'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+bud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+done+'/'+acts.length+'</div><div style="font-size:8px;color:var(--tx3)">TERMIN.</div></div>'
       +'</div></div>'
@@ -6251,7 +6251,9 @@ function downloadPlanning(mode){
   var done=acts.filter(function(a){return a.done;}).length;
   var pct=calcHierProgress(p.data,{includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}});
   var bud=p.budget||0;
-  var ecart=Math.round((totR-totP)*10)/10;
+  // Ecart = ce qu'il reste de prévu (positif/vert) ou le dépassement
+  // (négatif/rouge) — même logique que le récap à l'écran.
+  var ecart=Math.round((totP-totR)*10)/10;
 
   var _infHdr=p.infos||{};
   var body='';
@@ -6326,7 +6328,7 @@ function downloadPlanning(mode){
     if(!_clientRowIncluded(r.pk,curEnsIdZ,curSbIdZ,r.id))return;
     var hP=+r.hPrev||0;
     var hR=Math.round((+r.hReel||0)*10)/10;
-    var d=Math.round((hR-hP)*10)/10;
+    var d=Math.round((hP-hR)*10)/10;
     var persons=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim();}).map(function(pp){return esc(pp.name);}).join(', ');
     var _rowGroups=[curPhGroupId,curEnsGroupId,curSbGroupId].filter(Boolean).join(' ');
     var _rowClasses=[curPhGroupId,curEnsGroupId,curSbGroupId].filter(Boolean).map(function(g){return 'pc-c-'+g;}).join(' ');
@@ -6338,7 +6340,7 @@ function downloadPlanning(mode){
       +(mode!=='client'
         ?('<td style="padding:7px 10px;text-align:center;font-weight:700;color:#D97706">'+hP+'H</td>'
           +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:#059669">'+hR+'H</td>'
-          +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:'+(d>0?'#DC2626':d<0?'#059669':'#888')+'">'+(d===0?'—':(d>0?'+':'')+d+'H')+'</td>'
+          +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:'+(d<0?'#DC2626':d>0?'#059669':'#888')+'">'+(d===0?'—':(d>0?'+':'')+d+'H')+'</td>'
           +'<td style="padding:7px 10px;font-size:10px;color:#555">'+persons+'</td>')
         :'')
       +'<td style="padding:7px 10px;text-align:center;white-space:nowrap">'+(r.done?'<span style="background:#DCFCE7;color:#15803D;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700">✓ Terminé</span>':'<span style="background:#FEF3C7;color:#92400E;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700">En cours</span>')+'</td>'
@@ -6348,7 +6350,7 @@ function downloadPlanning(mode){
     body+='<tr style="background:#EFF6FF;font-weight:700"><td colspan="3" style="padding:8px 10px;text-align:right;color:#1F4E79">TOTAL</td>'
     +'<td style="padding:8px 10px;text-align:center;color:#D97706">'+Math.round(totP)+'H</td>'
     +'<td style="padding:8px 10px;text-align:center;color:#059669">'+Math.round(totR)+'H</td>'
-    +'<td style="padding:8px 10px;text-align:center;color:'+(ecart>0?'#DC2626':'#059669')+'">'+(ecart>=0?'+':'')+ecart+'H</td>'
+    +'<td style="padding:8px 10px;text-align:center;color:'+(ecart<0?'#DC2626':'#059669')+'">'+(ecart>=0?'+':'')+ecart+'H</td>'
     +'<td colspan="2"></td></tr>';
   }
   body+='</tbody></table>';
@@ -6382,8 +6384,8 @@ function downloadPlanning(mode){
       var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
       var _rv=Math.round(_a.reduce(function(s,a){return s+(+a.hReel||0);},0)*10)/10;
       var _bv=ph_r.budgetH||0;
-      var _df=_bv>0?Math.round((_pv-_bv)*10)/10:null;
-      var _cl=_df>0?'#DC2626':_df<0?'#059669':'#374151';
+      var _df=_bv>0?Math.round((_bv-_pv)*10)/10:null;
+      var _cl=_df<0?'#DC2626':_df>0?'#059669':'#374151';
       body+='<div style="background:#F8F9FA;border-radius:10px;padding:14px 18px;border-top:3px solid #1F4E79;min-width:180px">';
       body+='<div style="font-weight:800;font-size:12px;color:#1F4E79;margin-bottom:8px">'+esc(ph_r.lb)+'</div>';
       body+='<div style="display:flex;gap:12px;font-size:11px">';
@@ -11284,7 +11286,7 @@ function _gcActRowHtml(row,DW,NC,_MG,winStart,winEnd){
   const nb=row.p.filter(p=>p.name.trim()).length;
   const isE=EXP===row.id,done=!!row.done;
   const tH=row.p.reduce((s,p)=>s+(+p.heures||0),0);
-  const diff=(row.hPrev&&row.hReel)?row.hReel-row.hPrev:null; // positif=dépassement(rouge), négatif=économie(vert)
+  const diff=(row.hPrev&&row.hReel)?row.hPrev-row.hReel:null; // positif=reste du prévu(vert), négatif=dépassement(rouge)
   // Tâche non planifiée (pas de semaine de début)
 
   // Day cells — deux barres indépendantes : Prévue (haut, couleur claire) + Réelle (bas, couleur foncée)
@@ -11418,7 +11420,7 @@ function _gcActRowHtml(row,DW,NC,_MG,winStart,winEnd){
             ${(!row.s&&(!row.reelDays||!row.reelDays.length))?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-weight:700">📌 Non planifiée</span>':''}
             ${(row.hPrev>0)?'<span style="font-size:10px;color:var(--or);font-weight:600;padding:1px 4px;border-radius:3px;background:rgba(237,137,0,.1)">P:'+row.hPrev+'H</span>':''}
             ${row.hReel?`<span style="font-size:10px;color:var(--gn);font-weight:600;background:rgba(22,163,74,.1);padding:1px 4px;border-radius:3px">R:${row.hReel}H</span>`:''}
-            ${diff!==null?`<span style="font-size:10px;font-weight:700;color:${diff>0?'var(--rd)':'var(--gn)'};padding:1px 3px;border-radius:3px">${diff>0?'+'+diff:diff}H</span>`:''}
+            ${diff!==null?`<span style="font-size:10px;font-weight:700;color:${diff<0?'var(--rd)':'var(--gn)'};padding:1px 3px;border-radius:3px">${diff>0?'+'+diff:diff}H</span>`:''}
             ${tH?`<span style="font-size:10px;color:var(--tx3);padding:1px 3px;">👥${tH}H</span>`:''}
           </div>
         </div>
@@ -11614,7 +11616,7 @@ function renderGantt(){
       const _phActs=D().filter(function(r){return r.t==='act'&&r.pk===row.pk;});
       const _phPrev=_phActs.reduce(function(s,a){return s+(+a.hPrev||0);},0);
       const _phReel=_phActs.reduce(function(s,a){return s+(+a.hReel||0);},0);
-      const _phDiff=_phReel-_phPrev;
+      const _phDiff=_phPrev-_phReel; // positif=reste du prévu, négatif=dépassement
       const _phBudget=row.budgetH||0;
       const _phProgress=calcHierProgress(D(),{filterPk:row.pk});
       const _phBudgetBadge=hasView('budget_gantt')
@@ -11628,7 +11630,7 @@ function renderGantt(){
         +`<span onclick="event.stopPropagation();phSetNotifResps('${row.pk}')" style="font-size:10px;font-weight:700;margin-left:6px;padding:0 6px;background:${row.notifResps&&row.notifResps.length?'rgba(255,255,255,.4)':'rgba(255,255,255,.15)'};border-radius:4px;cursor:pointer" title="Responsables alertes retard">${row.notifResps&&row.notifResps.length?'\uD83D\uDD14 '+row.notifResps.length+' resp.':'\uD83D\uDD14 Alertes'}</span>`
         +(_phPrev>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">P:${_phPrev}H</span>`:'')
         +(_phReel>0?`<span style="font-size:10px;font-weight:700;opacity:.9;margin-left:6px">R:${_phReel}H</span>`:'')
-        +(hasView('budget_gantt')&&_phBudget>0&&_phPrev>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 4px;background:rgba(0,0,0,.2);border-radius:3px">${_phPrev>_phBudget?'⚠+'+(_phPrev-_phBudget)+'H':(_phPrev<_phBudget?'✓-'+(_phBudget-_phPrev)+'H':'=')}</span>`:'')
+        +(hasView('budget_gantt')&&_phBudget>0&&_phPrev>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;padding:0 4px;background:rgba(0,0,0,.2);border-radius:3px">${_phPrev>_phBudget?'⚠-'+(_phPrev-_phBudget)+'H':(_phPrev<_phBudget?'✓+'+(_phBudget-_phPrev)+'H':'=')}</span>`:'')
         +(!_phBudget&&_phPrev>0&&_phReel>0?`<span style="font-size:10px;font-weight:700;margin-left:6px;opacity:.85">${_phDiff>0?'Δ+'+_phDiff:_phDiff<0?'Δ'+_phDiff:''}</span>`:'');
       // Couleur selon statut de la phase
       const _phBg=row.phStatus==='done'?'#059669':row.phStatus==='inprogress'?'#D97706':ph.h;
@@ -13546,7 +13548,7 @@ function pedConfirmAddPhase(){
       const hEnd=Math.min(24,hStart+hDur);
       const hLbl=`${String(Math.floor(hStart)).padStart(2,'0')}h→${String(Math.floor(hEnd)).padStart(2,'0')}h`;
       const tH=a.p.reduce((s,p)=>s+(+p.heures||0),0);
-      const diff2=(a.hPrev&&a.hReel)?a.hReel-a.hPrev:null;
+      const diff2=(a.hPrev&&a.hReel)?a.hPrev-a.hReel:null;
 
       tbody+=`<tr data-rid="${a.id}" style="border-bottom:1px solid var(--bd)">
         <td style="padding:5px 8px;width:220px;min-width:220px;position:sticky;left:0;background:${isE?'var(--ac2)':done?'var(--gn2)':'var(--bg2)'};z-index:8;border-right:2px solid var(--bd2);cursor:pointer;vertical-align:top" onclick="event.stopPropagation();toggleExp('${a.id}')">
@@ -13558,7 +13560,7 @@ function pedConfirmAddPhase(){
             <span style="font-size:8px;background:var(--bg3);color:var(--tx3);padding:1px 4px;border-radius:3px">${hLbl} · ${hDur}H/j</span>
             ${a.hPrev?`<span style="font-size:8px;color:var(--or)">P:${a.hPrev}H</span>`:''}
             ${a.hReel?`<span style="font-size:8px;color:var(--gn)">R:${a.hReel}H</span>`:''}
-            ${diff2!==null?`<span style="font-size:8px;font-weight:700;color:${diff2>0?'var(--rd)':'var(--gn)'}">Δ${diff2>0?'+':''}${diff2}H</span>`:''}
+            ${diff2!==null?`<span style="font-size:8px;font-weight:700;color:${diff2<0?'var(--rd)':'var(--gn)'}">Δ${diff2>0?'+':''}${diff2}H</span>`:''}
             ${tH?`<span style="font-size:8px;color:var(--tx3);padding:1px 4px;background:var(--bg3);border-radius:3px">👥${a.p.filter(p=>p.name.trim()).length}</span>`:''}
           </div>
         </td>
@@ -13606,7 +13608,7 @@ function buildExpandPanel(row,ph,nd){
   const hDurR=row.hDurR!=null?row.hDurR:hDurP;
   const dDurP=row.dDur!=null?row.dDur:(row.e&&row.s?(row.e-row.s)*5+5:0);
   const dDurR=row.dDurR!=null?row.dDurR:dDurP;
-  const _hPrevCalc=row.hPrev||(row.dDur&&row.hDur?Math.round(row.dDur*row.hDur*10)/10:0);const diff2=(_hPrevCalc||row.hReel)?(row.hReel||0)-_hPrevCalc:null;
+  const _hPrevCalc=row.hPrev||(row.dDur&&row.hDur?Math.round(row.dDur*row.hDur*10)/10:0);const diff2=(_hPrevCalc||row.hReel)?_hPrevCalc-(row.hReel||0):null;
 
   return `<div class="ei" style="background:${ph.f};--ei-c:${ph.x}">
     <button class="ei-x" onclick="event.stopPropagation();closeExp()">×</button>
@@ -13647,7 +13649,7 @@ function buildExpandPanel(row,ph,nd){
           </div>
         </div>
         <div style="margin-top:6px;height:8px;background:var(--gn);border-radius:4px;opacity:.7" title="Barre réelle"></div>
-        ${diff2!==null?`<div style="margin-top:4px;font-size:9px;font-weight:700;color:${diff2>0?'var(--rd)':diff2<0?'var(--gn)':'var(--tx3)'}">Δ ${diff2>0?'+':''}${diff2} H</div>`:''}
+        ${diff2!==null?`<div style="margin-top:4px;font-size:9px;font-weight:700;color:${diff2<0?'var(--rd)':diff2>0?'var(--gn)':'var(--tx3)'}">Δ ${diff2>0?'+':''}${diff2} H</div>`:''}
         <div style="font-size:8px;color:var(--gn);margin-top:3px;opacity:.8">${(row.sReel||row.s)?'S'+isoWeekOf(row.sReel||row.s)+' → S'+isoWeekOf(row.eReel||row.e):'Non placée'}</div>
       </div>
     </div>
@@ -15554,10 +15556,10 @@ function updAct(id,f,v){
   // Refresh delta badge inline without full re-render
   const deltaEl=document.getElementById('ei-delta-'+id);
   if(deltaEl&&r.hPrev&&r.hReel){
-    const d=r.hReel-r.hPrev;
+    const d=r.hPrev-r.hReel;
     deltaEl.textContent='Δ '+(d>0?'+':'')+d+' H';
-    deltaEl.style.color=d>0?'var(--rd)':'var(--gn)';
-    deltaEl.style.background=d>0?'var(--rd2)':'var(--gn2)';
+    deltaEl.style.color=d<0?'var(--rd)':'var(--gn)';
+    deltaEl.style.background=d<0?'var(--rd2)':'var(--gn2)';
   }
 }
 function updActRange(id,f,v){
@@ -15898,9 +15900,9 @@ function renderRecap(){
              `<td style="text-align:right;font-weight:600;color:var(--ac)">${+p.heures||''}</td>`;
     }).join('')+Array.from({length:maxP-r.p.length},()=>'<td></td><td></td><td></td>').join('');
     const hp=effHP(r),hr=r.hReel||0;
-    const delta=(r.hPrev!=null||r.hReel!=null)?(hr-hp):null;
+    const delta=(r.hPrev!=null||r.hReel!=null)?(hp-hr):null;
     const deltaCell=delta!==null
-      ?`<td style="text-align:center;font-weight:700;font-size:10px;color:${delta>0?'var(--rd)':delta<0?'var(--gn)':'var(--tx3)'}">${delta>0?'+':''}${delta}H</td>`
+      ?`<td style="text-align:center;font-weight:700;font-size:10px;color:${delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--tx3)'}">${delta>0?'+':''}${delta}H</td>`
       :'<td style="text-align:center;color:var(--tx3)">—</td>';
     // Plage dates depuis prevDays/reelDays (cohérent avec GANTT)
     let _dateStr='—';
@@ -16419,7 +16421,7 @@ function renderSkids(){
     const bud=getSkBud(grp);
     const used=sActs.reduce((s,a)=>s+a.p.reduce((s2,p2)=>s2+(+p2.heures||0),0),0);
     const usedReel=sActs.reduce((s,a)=>s+(+a.hReel||0),0);
-    const delta=used-bud;
+    const delta=bud-used; // positif = reste du budget (vert), négatif = dépassement (rouge)
     const rem=bud-used;
     const hp=bud?Math.min(100,used/bud*100):0;
     const sMn=sActs.length?Math.min(...sActs.map(a=>a.s)):0;
@@ -16468,8 +16470,8 @@ function renderSkids(){
             <div class="stat-v" style="color:var(--gn)">${usedReel} H</div>
             <div class="stat-l">H RÉELLES</div>
           </div>
-          <div class="stat" style="background:${delta>0?'var(--rd2)':delta<0?'var(--gn2)':'var(--bg3)'};border-color:${delta>0?'var(--rd)':delta<0?'var(--gn)':'var(--bd)'}">
-            <div class="stat-v" style="color:${delta>0?'var(--rd)':delta<0?'var(--gn)':'var(--tx3)'}">
+          <div class="stat" style="background:${delta<0?'var(--rd2)':delta>0?'var(--gn2)':'var(--bg3)'};border-color:${delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--bd)'}">
+            <div class="stat-v" style="color:${delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--tx3)'}">
               ${delta===0?'—':(delta>0?'+':'')+delta+' H'}
             </div>
             <div class="stat-l">DELTA</div>
@@ -16487,7 +16489,7 @@ function renderSkids(){
         ${progBar(wp,'var(--gn)','Avancement travail',done+'/'+sActs.length+' activités cochées')}
         ${progBar(hp,'var(--C2)','Avancement heures vs budget',used+'H prévues / '+bud+'H budget')}
         ${progBar(tp,'#D4A017','Avancement temporel',sMn?'S'+isoWeekOf(cw)+' / S'+isoWeekOf(sMn)+'→S'+isoWeekOf(sMx):'')}
-        ${bud>0&&delta>0?`<div style="margin-top:6px;padding:5px 10px;background:var(--rd2);color:var(--rd);border-radius:var(--r);font-size:11px;font-weight:700;border:1px solid var(--rd)">⚠ Dépassement budget de ${delta} H</div>`:''}
+        ${bud>0&&delta<0?`<div style="margin-top:6px;padding:5px 10px;background:var(--rd2);color:var(--rd);border-radius:var(--r);font-size:11px;font-weight:700;border:1px solid var(--rd)">⚠ Dépassement budget de ${Math.abs(delta)} H</div>`:''}
       </div>
       ${persons.length?`<div style="font-size:10px;font-weight:700;color:var(--tx2);margin:12px 0 8px">RÉPARTITION PAR PERSONNE</div><div class="p-grid">${pCards}</div>`:'<div style="color:var(--tx3);font-size:11px;margin-top:10px">Aucune personne affectée à ce Skid.</div>'}
     </div>`;
