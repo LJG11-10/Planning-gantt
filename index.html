@@ -8515,7 +8515,7 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
   // réelles restaient invisibles ici dès que l'affaire actuellement ouverte
   // ne correspondait pas à celle utilisée au moment de la saisie (alors que
   // le total semaine et l'impression, eux, cherchent déjà partout).
-  var lines=fhGetAllAffWithSource(nm,w,di);
+  var lines=fhGetAllAffWithSource(nm,w,di,aff);
   var dayT=lines.reduce(function(s,l){return s+(l.hours===''?0:+l.hours||0);},0);
   var meta=fhMetaGet(w,nm,di);
   // Les heures de trajet comptent maintenant aussi dans le total du jour
@@ -13859,11 +13859,17 @@ function fhGet(aff,nm,w,d){
 // ce jour, peu importe sous quelle affaire le chef de chantier les a
 // saisies (voir le bug : heures invisibles à l'écran mais présentes à
 // l'impression, qui elle cherchait déjà dans toutes les affaires).
-function fhGetAllAffWithSource(nm,w,d){
+function fhGetAllAffWithSource(nm,w,d,curAff){
   var combined=[];
   Object.keys(STORE.projects).forEach(function(bucketAff){
     fhGet(bucketAff,nm,w,d).forEach(function(l,idx){
-      if(l&&(l.actId||l.affId||l.hours))combined.push(Object.assign({},l,{affId:l.affId||bucketAff,_bucket:bucketAff,_idx:idx}));
+      // Les lignes de l'affaire actuellement ouverte sont TOUJOURS incluses,
+      // même vides — sinon une ligne tout juste ajoutée via "+ Sous-phase"
+      // (pas encore remplie) disparaissait aussitôt de l'écran. Celles des
+      // AUTRES affaires ne sont incluses que si elles ont un contenu réel
+      // (une case vide qui traîne ailleurs n'a rien à montrer ici).
+      var isCur=bucketAff===curAff;
+      if(l&&(isCur||l.actId||l.affId||l.hours))combined.push(Object.assign({},l,{affId:l.affId||bucketAff,_bucket:bucketAff,_idx:idx}));
     });
   });
   return combined;
