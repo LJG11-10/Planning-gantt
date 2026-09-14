@@ -4769,11 +4769,13 @@ function fhPrintFiche(nm){
       var lines=wkData[di]||[];
       if(!Array.isArray(lines))lines=[];
       var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
-      var dayH=valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0);
+      // Les heures de trajet comptent maintenant aussi dans le total du jour
+      // et de la semaine, en plus de rester visibles à part (trajetTotal).
+      var dayH=Math.round((valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0)+(+_dmetaP.trajetH||0))*10)/10;
       wkTotal+=dayH;
 
       if(!valid.length){
-        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCellP+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="tot">0H</td></tr>';
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCellP+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="tot'+(dayH?' day-tot':'')+'">'+(dayH?dayH+'H':'0H')+'</td></tr>';
       } else {
         // Regrouper les lignes du jour par affaire (dans l'ordre d'apparition),
         // pour n'afficher le numéro d'affaire qu'une seule fois, avec le détail
@@ -8509,6 +8511,9 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
   var lines=fhGet(aff,nm,w,di);
   var dayT=lines.reduce(function(s,l){return s+(l.hours===''?0:+l.hours||0);},0);
   var meta=fhMetaGet(w,nm,di);
+  // Les heures de trajet comptent maintenant aussi dans le total du jour
+  // (en plus de rester visibles séparément dans le total de trajet).
+  dayT=Math.round((dayT+(+meta.trajetH||0))*10)/10;
   var zoneOpts='<option value="">Zone —</option>';
   for(var _zi=1;_zi<=7;_zi++){zoneOpts+='<option value="Zone '+_zi+'"'+(meta.zone==='Zone '+_zi?' selected':'')+'>Zone '+_zi+'</option>';}
   var vehOpts='<option value="">V\u00e9hicule —</option>'
@@ -13671,6 +13676,9 @@ function fhWeekTotalAllAff(nm,wk){
       (wkData[di]||[]).forEach(function(l){total+=(l&&l.hours!==''&&+l.hours)||0;});
     });
   });
+  // Heures de trajet : comptées une seule fois par jour (fhMeta est unique,
+  // pas par affaire, contrairement à fh) — s'ajoutent maintenant au total.
+  for(var _d=0;_d<5;_d++){total+=(+fhMetaGet(wk,nm,_d).trajetH||0);}
   return Math.round(total*10)/10;
 }
 // Liste des personnes "chantier" à afficher pour une semaine donnée :
@@ -13694,6 +13702,28 @@ function fhWeekPersons(wk){
     var pInfo=_gpChantier[nm];
     if(!pInfo||pInfo.service!=='els_chantier')return;
     names[nm]=true;
+  });
+  // Une personne avec des heures réellement saisies cette semaine-là doit
+  // apparaître ici même sans affectation Planning Réunion ni case
+  // panier/zone/etc. cochée pour cette semaine — sinon ses heures restaient
+  // invisibles dans la vue d'ensemble (et dans "imprimer toute la semaine"),
+  // alors qu'imprimer sa fiche individuelle (qui lit les heures brutes
+  // directement, sans ce filtre) les montrait bien.
+  Object.values(STORE.projects||{}).forEach(function(p){
+    if(!p||!p.fh)return;
+    Object.keys(p.fh).forEach(function(nm){
+      if(!nm||_delP[nm]||names[nm])return;
+      var wkData=p.fh[nm]&&p.fh[nm][wk];
+      if(!wkData)return;
+      var hasHours=Object.keys(wkData).some(function(di){
+        var ls=wkData[di];
+        return Array.isArray(ls)&&ls.some(function(l){return l&&(+l.hours||0)>0;});
+      });
+      if(!hasHours)return;
+      var pInfo=_gpChantier[nm];
+      if(!pInfo||pInfo.service!=='els_chantier')return;
+      names[nm]=true;
+    });
   });
   return Object.keys(names).sort();
 }
@@ -14099,10 +14129,12 @@ function fhGenerateWeekHTML(wk,cb){
       if(_dStatusW&&_dStatusW.type==='formation')metaCell='<span class="meta-badge" style="background:'+_dStatusW.bg+';color:'+_dStatusW.color+'">'+_dStatusW.icon+' '+_dStatusW.label+'</span>'+metaCell;
       var lines=fhGetAllAff(nm,wk,di);
       var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
-      var dayH=valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0);
+      // Les heures de trajet comptent maintenant aussi dans le total du jour
+      // et de la semaine, en plus de rester visibles à part (trajetTotal).
+      var dayH=Math.round((valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0)+(+meta.trajetH||0))*10)/10;
       wkTotal+=dayH;
       if(!valid.length){
-        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+metaCell+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="tot">0H</td></tr>';
+        rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+metaCell+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="tot'+(dayH?' day-tot':'')+'">'+(dayH?dayH+'H':'0H')+'</td></tr>';
       }else{
         var _order=[];var _groups={};
         valid.forEach(function(l){
@@ -14206,9 +14238,11 @@ function fhGenerateHTML(nm,cb){
       if(_dStatusG&&_dStatusG.type==='formation')_metaCell='<span class="meta-badge" style="background:'+_dStatusG.bg+';color:'+_dStatusG.color+'">'+_dStatusG.icon+' '+_dStatusG.label+'</span>'+_metaCell;
       var lines=wkData[di]||[];if(!Array.isArray(lines))lines=[];
       var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
-      var dayH=valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0);
+      // Les heures de trajet comptent maintenant aussi dans le total du jour
+      // et de la semaine, en plus de rester visibles à part (trajetTotal).
+      var dayH=Math.round((valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0)+(+_dmeta.trajetH||0))*10)/10;
       wkTotal+=dayH;
-      if(!valid.length){rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCell+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="tot">0H</td></tr>';}
+      if(!valid.length){rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell">'+_metaCell+'</td><td class="act" style="color:#aaa;font-style:italic">—</td><td class="tot'+(dayH?' day-tot':'')+'">'+(dayH?dayH+'H':'0H')+'</td></tr>';}
       else{
         // Regrouper les lignes du jour par affaire (ordre d'apparition)
         var _order=[];var _groups={};
