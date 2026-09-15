@@ -8527,6 +8527,12 @@ window._fhSbPick=function(item,ev){
 
 function fhBuildDayCell(nm,aff,w,di,isTD){
   var nmEsc=nm.replace(/'/g,"\\'");
+  // Identifiant DOM stable (personne/semaine/jour) permettant de mettre à
+  // jour le total du jour affiché en bas de la case sans devoir reconstruire
+  // toute la case — voir fhLiveUpdateTotals, appelé après chaque saisie
+  // d'heures ou de trajet pour que l'affichage soit à jour immédiatement,
+  // sans devoir changer d'onglet puis revenir.
+  var _dtId='fhdt-'+nm.replace(/[^a-z0-9]/gi,'_')+'-'+w+'-'+di;
   // Congé / formation / absence / école ce jour-là : on l'affiche
   // directement à la place de la case de saisie habituelle, pour que ce
   // soit visible tout de suite sur la feuille d'heure (et donc aussi à
@@ -8623,7 +8629,7 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
     +'style="width:100%;background:var(--ac2);border:1.5px dashed var(--ac3);border-radius:20px;color:var(--ac);font-size:10px;font-weight:700;cursor:pointer;padding:5px;font-family:inherit;margin-top:3px">+ Sous-phase</button>'
     +(hasContent?'<button onclick="fhToggleDupPicker(this,\''+aff+'\',\''+nmEsc+'\','+w+','+di+')" '
       +'style="width:100%;background:var(--bg3);border:1.5px dashed var(--tx3);border-radius:20px;color:var(--tx2);font-size:9px;font-weight:700;cursor:pointer;padding:4px;font-family:inherit;margin-top:3px">\u29C9 Dupliquer ce jour</button>':'')
-    +'<div style="text-align:center;font-family:\'Courier New\';font-size:12px;font-weight:800;color:'+(dayT?'var(--ac)':'var(--tx3)')+';margin-top:5px;padding-top:4px;border-top:1px solid var(--bd)">'+(dayT?dayT+'H':'—')+'</div>'
+    +'<div id="'+_dtId+'" style="text-align:center;font-family:\'Courier New\';font-size:12px;font-weight:800;color:'+(dayT?'var(--ac)':'var(--tx3)')+';margin-top:5px;padding-top:4px;border-top:1px solid var(--bd)">'+(dayT?dayT+'H':'—')+'</div>'
     +'</div>';
 }
 function fhToggleDupPicker(btn,aff,nm,w,srcDi){
@@ -8691,7 +8697,7 @@ function fhBuildPersonWeekBlock(nm,w){
   return '<div style="margin-bottom:16px;border:1px solid '+(isTW?'#F59E0B':'var(--bd)')+';border-radius:var(--r2);overflow:hidden">'
     +'<div style="padding:8px 14px;background:'+(isTW?'#FEF3C7':'var(--ac2)')+';color:'+(isTW?'#92400E':'var(--ac)')+';display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
     +'<span style="font-size:13px;font-weight:800">'+escHtml(nm)+'</span>'
-    +'<span style="font-family:\'Courier New\';font-weight:700;font-size:14px">'+(total?total+' H':'—')+'</span>'
+    +'<span id="fhwt-'+nm.replace(/[^a-z0-9]/gi,'_')+'-'+w+'" style="font-family:\'Courier New\';font-weight:700;font-size:14px">'+(total?total+' H':'—')+'</span>'
     +'</div>'
     +'<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">'
     +'<thead><tr style="background:var(--bg3)">'+dayThs+'</tr></thead>'
@@ -9228,7 +9234,8 @@ function renderFiche(){
   });});
   Object.keys(fhNm).forEach(function(wk){
     if(selWk!=='all'&&+wk!==+selWk)return;
-    for(var d=0;d<5;d++){fhGet(selAff,selNm,+wk,d).forEach(function(l){savedT+=l.hours===''?0:+l.hours||0;});}
+    // Même calcul que partout ailleurs (toutes affaires + trajet) — voir wkT plus bas.
+    savedT+=fhWeekTotalAllAff(selNm,+wk);
   });
 
   var header='<div class="fh">'
@@ -9294,8 +9301,10 @@ function renderFiche(){
 
   weeks.forEach(function(w){
     var isTW=TODAY&&TODAY.w===w;
-    var wkT=0;
-    for(var d=0;d<5;d++){fhGet(selAff,selNm,w,d).forEach(function(l){wkT+=l.hours===''?0:+l.hours||0;});}
+    // Même calcul que partout ailleurs (impression, téléchargement, vue
+    // semaine) : toutes affaires confondues + heures de trajet — sinon ce
+    // total affiché divergeait des autres documents.
+    var wkT=fhWeekTotalAllAff(selNm,w);
 
     // Day column headers
     var dayThs='';
@@ -13765,6 +13774,10 @@ function fhMetaSet(wk,nm,day,field,value){
   if(!STORE.fhMeta[wk][nm][day])STORE.fhMeta[wk][nm][day]={panier:false,gd:false,lieu:''};
   STORE.fhMeta[wk][nm][day][field]=value;
   saveNow();
+  // Les heures de trajet comptent dans les totaux jour/semaine (voir
+  // fhBuildDayCell) — sans ça, changer le trajet ne mettait à jour
+  // l'affichage qu'au prochain rendu complet de la feuille.
+  if(field==='trajetH'&&typeof fhTotals==='function')fhTotals(nm,wk);
 }
 // Version "avec un léger délai" pour les champs texte/nombre qui enregistrent
 // à chaque frappe (oninput) : on attend une petite pause dans la saisie
@@ -14045,7 +14058,7 @@ function fhLineSet(aff,nm,w,d,li,field,val){
     lines[li][field]=val;
   }
   fhPut(aff,nm,w,d,lines);
-  fhTotals(aff,nm,w);
+  fhTotals(nm,w);
   if(field==='actId')renderFiche();
   if(field==='hours'){
     clearTimeout(fhLineSet._t);
@@ -14095,26 +14108,46 @@ function fhWeekDel(aff,nm,w){
   renderFiche();
   if(typeof syncFichesToGantt==='function')syncFichesToGantt();
 }
-function fhTotals(aff,nm,w){
-  var wkT=0;
+// Met à jour, EN PLACE (sans reconstruire toute la feuille), tous les
+// totaux affichés qui dépendent des heures d'un jour donné : le total du
+// jour dans la case elle-même, le total de la semaine (vue "une personne"
+// ET vue "semaine, toutes les personnes"), et le total général. Appelé
+// après chaque saisie d'heures ou de trajet — sans ça, ces totaux
+// n'étaient recalculés qu'au prochain rendu complet (changer d'onglet puis
+// revenir), ce qui donnait l'impression que la saisie n'était pas prise en
+// compte immédiatement.
+function fhTotals(nm,w){
+  var safeNm=nm.replace(/[^a-z0-9]/gi,'_');
   for(var d=0;d<5;d++){
-    var dt=0;
-    fhGet(aff,nm,w,d).forEach(function(l){if(l.hours!==''&&l.hours!==null&&l.hours!==undefined)dt+=+l.hours||0;});
-    wkT+=dt;
-    var de=document.getElementById('ftd-'+w+'-'+d);
+    var meta=fhMetaGet(w,nm,d);
+    var dt=Math.round((fhGetAllAff(nm,w,d).reduce(function(s,l){return s+(l.hours===''?0:+l.hours||0);},0)+(+meta.trajetH||0))*10)/10;
+    var de=document.getElementById('fhdt-'+safeNm+'-'+w+'-'+d);
     if(de)de.textContent=dt?dt+'H':'—';
   }
+  // Même calcul que fhBuildDayCell/impression/téléchargement : toutes
+  // affaires confondues + heures de trajet.
+  var wkT=fhWeekTotalAllAff(nm,w);
   var we=document.getElementById('ftw-'+w);
   if(we)we.textContent=wkT?wkT+' H':'—';
-  // Grand total
-  var p=STORE.projects[aff];
-  var fhNm=(p&&p.fh&&p.fh[nm])||{};
-  var gt=0;
-  Object.keys(fhNm).forEach(function(wk){
-    for(var dd=0;dd<5;dd++){
-      fhGet(aff,nm,+wk,dd).forEach(function(l){if(l.hours!==''&&l.hours!==null&&l.hours!==undefined)gt+=+l.hours||0;});
-    }
+  var wpe=document.getElementById('fhwt-'+safeNm+'-'+w);
+  if(wpe)wpe.textContent=wkT?wkT+' H':'—';
+  // Grand total ("SAISI") : respecte le filtre de semaine de la vue "une
+  // personne" s'il est actif (semaine précise plutôt que "toutes"), sinon
+  // additionne fhWeekTotalAllAff sur toutes les semaines connues de cette
+  // personne, dans TOUTES les affaires (pas seulement celle affichée).
+  var selWkEl=document.getElementById('fc-wk');
+  var selWk=selWkEl?selWkEl.value:'all';
+  var allWeeks={};
+  Object.keys(STORE.projects).forEach(function(aff){
+    var fhP=(STORE.projects[aff].fh||{})[nm]||{};
+    Object.keys(fhP).forEach(function(wk){allWeeks[+wk]=true;});
   });
+  var gt=0;
+  Object.keys(allWeeks).forEach(function(wk){
+    if(selWk!=='all'&&+wk!==+selWk)return;
+    gt+=fhWeekTotalAllAff(nm,+wk);
+  });
+  gt=Math.round(gt*10)/10;
   var ge=document.getElementById('ft-gt');if(ge)ge.textContent=gt+' H';
   var gh=document.getElementById('ft-gt-hdr');if(gh)gh.textContent=gt+' H';
 }
