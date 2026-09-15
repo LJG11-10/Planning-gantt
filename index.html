@@ -1490,6 +1490,8 @@ window.PresseEtoupe = (function () {
       content: "puissance", // 'puissance' | 'instrumentation' | 'both'
       itemsPuissance: [],
       itemsInstrumentation: [],
+      useCustomGap: false, // écartement (jeu) entre presse-étoupes forcé, au lieu du calcul automatique
+      customGap: 5,
       result: null,
     };
   }
@@ -1641,14 +1643,18 @@ window.PresseEtoupe = (function () {
     };
   }
 
-  function findBestFit(items, plateW, plateH) {
+  function findBestFit(items, plateW, plateH, fixedGap) {
+    // Écartement forcé par l'utilisateur (mm) au lieu de la recherche
+    // automatique du plus grand jeu qui rentre — un seul candidat au lieu
+    // de toute la liste GAP_CANDIDATES.
+    const gapCandidates = (fixedGap != null && !isNaN(fixedGap)) ? [fixedGap] : GAP_CANDIDATES;
     for (let mi = 0; mi < MARGIN_CANDIDATES.length; mi++) {
       const margin = MARGIN_CANDIDATES[mi];
       const availW = plateW - 2 * margin;
       const availH = plateH - 2 * margin;
       if (availW <= 0 || availH <= 0) continue;
-      for (let gi = 0; gi < GAP_CANDIDATES.length; gi++) {
-        const gap = GAP_CANDIDATES[gi];
+      for (let gi = 0; gi < gapCandidates.length; gi++) {
+        const gap = gapCandidates[gi];
         const res = computeLayout(items, availW, availH, gap);
         if (res.fits) {
           const placements = placementsFromLayout(res, availW, availH, margin, gap);
@@ -1664,8 +1670,8 @@ window.PresseEtoupe = (function () {
       const availW = plateW - 2 * margin;
       const availH = plateH - 2 * margin;
       if (availW <= 0 || availH <= 0) continue;
-      for (let gi = 0; gi < GAP_CANDIDATES.length; gi++) {
-        const gap = GAP_CANDIDATES[gi];
+      for (let gi = 0; gi < gapCandidates.length; gi++) {
+        const gap = gapCandidates[gi];
         const resC = computeLayoutCompact(items, availW, availH, gap, margin);
         if (resC.fits) {
           return { ok: true, mode: "compact", margin: margin, gap: gap, placements: resC.placements, availH: availH, availW: availW };
@@ -1675,7 +1681,7 @@ window.PresseEtoupe = (function () {
     const distinctDiams = Array.from(new Set(items.map(function (it) { return it.sizeId; }))).map(diamOf);
     distinctDiams.sort(function (a, b) { return b - a; });
     const bareMin = distinctDiams.reduce(function (a, b) { return a + b; }, 0);
-    return { ok: false, bareMin: bareMin, plateH: plateH };
+    return { ok: false, bareMin: bareMin, plateH: plateH, fixedGap: fixedGap != null ? fixedGap : null };
   }
 
   function findMinWidthForHeight(items, availH, gap, maxW) {
@@ -1705,14 +1711,15 @@ window.PresseEtoupe = (function () {
     return null;
   }
 
-  function findBestFitSplit(itemsLeft, itemsRight, plateW, plateH) {
+  function findBestFitSplit(itemsLeft, itemsRight, plateW, plateH, fixedGap) {
+    const gapCandidates = (fixedGap != null && !isNaN(fixedGap)) ? [fixedGap] : GAP_CANDIDATES;
     for (let mi = 0; mi < MARGIN_CANDIDATES.length; mi++) {
       const margin = MARGIN_CANDIDATES[mi];
       const availH = plateH - 2 * margin;
       const availW = plateW - 2 * margin;
       if (availH <= 0 || availW <= 0) continue;
-      for (let gi = 0; gi < GAP_CANDIDATES.length; gi++) {
-        const gap = GAP_CANDIDATES[gi];
+      for (let gi = 0; gi < gapCandidates.length; gi++) {
+        const gap = gapCandidates[gi];
         const divider = Math.max(15, gap);
         const budget = availW - divider;
         if (budget <= 0) continue;
@@ -1745,8 +1752,8 @@ window.PresseEtoupe = (function () {
       const availH = plateH - 2 * margin;
       const availW = plateW - 2 * margin;
       if (availH <= 0 || availW <= 0) continue;
-      for (let gi = 0; gi < GAP_CANDIDATES.length; gi++) {
-        const gap = GAP_CANDIDATES[gi];
+      for (let gi = 0; gi < gapCandidates.length; gi++) {
+        const gap = gapCandidates[gi];
         const divider = Math.max(15, gap);
         const budget = availW - divider;
         if (budget <= 0) continue;
@@ -1774,7 +1781,7 @@ window.PresseEtoupe = (function () {
     const distinctDiams = Array.from(new Set(allItems.map(function (it) { return it.sizeId; }))).map(diamOf);
     distinctDiams.sort(function (a, b) { return b - a; });
     const bareMin = distinctDiams.reduce(function (a, b) { return a + b; }, 0);
-    return { ok: false, bareMin: bareMin, plateH: plateH };
+    return { ok: false, bareMin: bareMin, plateH: plateH, fixedGap: fixedGap != null ? fixedGap : null };
   }
 
   function applyBonusPerItem(items) {
@@ -1934,12 +1941,13 @@ function downloadDXF(text, filename) {
     const plateSize = getPlateSize(plate);
     const itemsP = applyBonusPerItem(plate.itemsPuissance);
     const itemsI = applyBonusPerItem(plate.itemsInstrumentation);
+    const fixedGap = (plate.useCustomGap && plate.customGap != null && !isNaN(plate.customGap)) ? plate.customGap : null;
     let result;
     if (plate.content === "both") {
-      result = findBestFitSplit(itemsI, itemsP, plateSize.width, plateSize.height);
+      result = findBestFitSplit(itemsI, itemsP, plateSize.width, plateSize.height, fixedGap);
     } else {
       const items = plate.content === "puissance" ? itemsP : itemsI;
-      result = findBestFit(items, plateSize.width, plateSize.height);
+      result = findBestFit(items, plateSize.width, plateSize.height, fixedGap);
     }
     plate.result = result;
     saveState();
@@ -2008,6 +2016,13 @@ function downloadDXF(text, filename) {
       html += '</div>';
     }
 
+    html += '<label class="petool-checkbox"><input type="checkbox" id="petool-custom-gap"' + (plate.useCustomGap ? ' checked' : '') + '/> Ecartement personnalise entre presse-etoupes (au lieu du calcul automatique)</label>';
+    if (plate.useCustomGap) {
+      html += '<div class="petool-row">';
+      html += '<div><label>Ecartement (mm)</label><input id="petool-custom-gap-val" type="number" min="0" step="0.1" value="' + plate.customGap + '"/></div>';
+      html += '</div>';
+    }
+
     html += '<label class="petool-label-block">Contenu de la plaque</label>';
     html += '<div class="petool-content-choice">';
     [["puissance", "Puissance seule"], ["instrumentation", "Instrumentation seule"], ["both", "Les deux"]].forEach(function (opt) {
@@ -2032,9 +2047,12 @@ function downloadDXF(text, filename) {
     if (plate.result) {
       if (plate.result.ok) {
         var _modeLbl = plate.result.mode === "compact" ? " (rangement compact, pas aligné en lignes)" : "";
-        html += '<div class="petool-alert petool-alert-ok">Rangement trouve — marge ' + plate.result.margin + 'mm, jeu ' + plate.result.gap + 'mm' + _modeLbl + '. ' + plate.result.placements.length + ' presse-etoupe places.</div>';
+        html += '<div class="petool-alert petool-alert-ok">Rangement trouve — marge ' + plate.result.margin + 'mm, jeu ' + plate.result.gap + 'mm' + (plate.useCustomGap ? ' (ecartement fixe)' : '') + _modeLbl + '. ' + plate.result.placements.length + ' presse-etoupe places.</div>';
       } else {
-        html += '<div class="petool-alert petool-alert-error">Ca ne rentre pas, meme a marge/jeu minimal. Les tailles distinctes demandees necessitent au moins ' + plate.result.bareMin.toFixed(0) + 'mm de hauteur cumulee pour une plaque de ' + plate.result.plateH.toFixed(0) + 'mm. Reduisez les quantites ou choisissez une plaque plus grande.</div>';
+        var _gapMsg = plate.result.fixedGap != null
+          ? 'Ca ne rentre pas avec un ecartement fixe de ' + plate.result.fixedGap + 'mm entre presse-etoupes. '
+          : 'Ca ne rentre pas, meme a marge/jeu minimal. ';
+        html += '<div class="petool-alert petool-alert-error">' + _gapMsg + 'Les tailles distinctes demandees necessitent au moins ' + plate.result.bareMin.toFixed(0) + 'mm de hauteur cumulee pour une plaque de ' + plate.result.plateH.toFixed(0) + 'mm. Reduisez l\'ecartement, les quantites, ou choisissez une plaque plus grande.</div>';
       }
     }
 
@@ -2227,6 +2245,25 @@ function downloadDXF(text, filename) {
     const customH = document.getElementById("petool-custom-h");
     if (customH) customH.addEventListener("input", function () {
       plates[activeIndex].customHeight = parseFloat(customH.value || "0");
+      plates[activeIndex].result = null;
+      saveState();
+    });
+
+    const customGapCb = document.getElementById("petool-custom-gap");
+    if (customGapCb) customGapCb.addEventListener("change", function () {
+      plates[activeIndex].useCustomGap = customGapCb.checked;
+      // Plaque créée avant l'existence de ce champ (chargée depuis un
+      // ancien enregistrement) : lui donner une valeur de départ correcte.
+      if (plates[activeIndex].customGap == null || isNaN(plates[activeIndex].customGap)) {
+        plates[activeIndex].customGap = 5;
+      }
+      plates[activeIndex].result = null;
+      saveState();
+      paint();
+    });
+    const customGapVal = document.getElementById("petool-custom-gap-val");
+    if (customGapVal) customGapVal.addEventListener("input", function () {
+      plates[activeIndex].customGap = parseFloat(customGapVal.value || "0");
       plates[activeIndex].result = null;
       saveState();
     });
