@@ -218,6 +218,28 @@
     supaSave(STORE);
   }
 
+  // ── Filet de sécurité : ne jamais laisser un dernier changement dans
+  // l'antichambre des 800ms si l'utilisateur ferme l'onglet/l'ordinateur ────
+  // scheduleSupa() attend 800ms avant d'envoyer vers Supabase (pour grouper
+  // les frappes rapprochées). Si l'utilisateur ferme l'onglet, met
+  // l'ordinateur en veille ou change d'appli DANS cette fenêtre de 800ms, le
+  // timer n'a jamais l'occasion de se déclencher : la modification reste
+  // uniquement dans le localStorage de CET appareil, invisible pour les
+  // collègues, et peut donner l'impression au retour que "le site n'a pas
+  // gardé la dernière version". 'visibilitychange' (déclenché dès qu'on
+  // quitte l'onglet, AVANT même une éventuelle fermeture) permet de forcer
+  // l'envoi immédiatement au lieu d'attendre le reste du délai.
+  function _flushPendingSaveIfAny(){
+    if(!_syncTimeout)return; // rien en attente : déjà envoyé ou aucune modif
+    clearTimeout(_syncTimeout);
+    _syncTimeout=null;
+    _mergeRemoteThenSave();
+  }
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden)_flushPendingSaveIfAny();
+  });
+  window.addEventListener('pagehide',_flushPendingSaveIfAny);
+
   var _pollInterval=null,_lastEtag=null,_syncChannel=null;
 
   // Vérifie et applique une nouvelle version distante (partagé entre le
