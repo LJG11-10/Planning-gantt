@@ -14179,6 +14179,16 @@ function syncFichesToGantt(){
     });
     p.data.forEach(function(r){
       if(r.t!=='act'&&r.t!=='sb')return; // heures comptées sur la tâche OU la sous-phase, selon ce qui est ciblé
+      // Horodater CETTE ligne uniquement si le report des heures change
+      // réellement quelque chose — sinon, comme cette fonction tourne très
+      // souvent (à chaque saisie d'heure, à chaque ouverture du Récap...),
+      // elle rafraîchissait _modAt sur des lignes dont les heures n'avaient
+      // pourtant pas bougé. Résultat : une barre de couleur déplacée par un
+      // collègue sur le Gantt (qui, elle, horodate correctement) pouvait se
+      // faire "doubler" en fraîcheur par ce faux rafraîchissement fait sur
+      // une autre machine qui n'avait pas encore reçu son changement — et
+      // perdre la fusion suivante alors que rien de réel ne s'y opposait.
+      var _beforeSnap=JSON.stringify({hReel:r.hReel,_hReelFromFH:r._hReelFromFH,p:r.p});
       var data=actMap[r.id];
       if(!data){
         // Aucune heure de Feuille d'heures pour cette ligne actuellement.
@@ -14195,28 +14205,28 @@ function syncFichesToGantt(){
           r._hReelFromFH=false;
           r.p=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim()&&!pp.fromFH;});
           if(!r.p.length)r.p=[{name:'',ent:'',heures:0}];
-          r._modAt=Date.now();
         }
-        return;
+      } else {
+        r.hReel=Math.round(data.totalH*10)/10;
+        r._hReelFromFH=true;
+        var projPersons=p.persons||[];
+        function getType(nm){var m=projPersons.find(function(ap){return ap.name===nm;});return m?m.type||'':'';}
+        var newP=[];
+        Object.keys(data.persons).forEach(function(nm){
+          newP.push({name:nm,ent:getType(nm),heures:Math.round(data.persons[nm]*10)/10,fromFH:true});
+        });
+        // Ne conserver que les entrées qui n'ont JAMAIS été alimentées par une
+        // Feuille d'heures (ajoutées à la main directement sur le GANTT) —
+        // sinon, supprimer une ligne dans la Feuille d'heures (ex: le bouton
+        // "✕") ne retirait jamais les heures correspondantes ici, elles
+        // restaient affichées à tort après suppression.
+        (r.p||[]).forEach(function(pp){
+          if(pp.name&&pp.name.trim()&&!data.persons[pp.name]&&!pp.fromFH)newP.push(pp);
+        });
+        r.p=newP.length?newP:[{name:'',ent:'',heures:0}];
       }
-      r.hReel=Math.round(data.totalH*10)/10;
-      r._hReelFromFH=true;
-      r._modAt=Date.now();
-      var projPersons=p.persons||[];
-      function getType(nm){var m=projPersons.find(function(ap){return ap.name===nm;});return m?m.type||'':'';}
-      var newP=[];
-      Object.keys(data.persons).forEach(function(nm){
-        newP.push({name:nm,ent:getType(nm),heures:Math.round(data.persons[nm]*10)/10,fromFH:true});
-      });
-      // Ne conserver que les entrées qui n'ont JAMAIS été alimentées par une
-      // Feuille d'heures (ajoutées à la main directement sur le GANTT) —
-      // sinon, supprimer une ligne dans la Feuille d'heures (ex: le bouton
-      // "✕") ne retirait jamais les heures correspondantes ici, elles
-      // restaient affichées à tort après suppression.
-      (r.p||[]).forEach(function(pp){
-        if(pp.name&&pp.name.trim()&&!data.persons[pp.name]&&!pp.fromFH)newP.push(pp);
-      });
-      r.p=newP.length?newP:[{name:'',ent:'',heures:0}];
+      var _afterSnap=JSON.stringify({hReel:r.hReel,_hReelFromFH:r._hReelFromFH,p:r.p});
+      if(_beforeSnap!==_afterSnap)r._modAt=Date.now();
     });
   });
   localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
