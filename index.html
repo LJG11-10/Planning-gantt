@@ -278,14 +278,29 @@
   // au lieu de toujours garder la version locale par défaut.
   window._rowSnapshots=window._rowSnapshots||{};
   var _META_FIELDS=['customPhases','budget','infos','documents','sk1','sk2','persons'];
+  // Champs qui définissent la POSITION des barres Gantt (Prévu/Réel) d'une
+  // activité — horodatés à part (_barsModAt) du reste de la ligne (statut,
+  // %, terminé...). Sans ça, cocher/décocher "terminé" (ou modifier tout
+  // autre champ sans rapport) sur une copie de la ligne pas encore à jour
+  // rajeunissait TOUTE la ligne, y compris une position de barre périmée,
+  // qui pouvait alors écraser au prochain envoi la position plus récente
+  // qu'un collègue avait peinte entre-temps sur cette même tâche.
+  var _BAR_FIELDS=['prevDays','reelDays','s','e','sPrev','ePrev','sReel','eReel','dStart','dEnd','dStartR','dEndR','dDur','dDurR','weekendPrev','weekendReel','barComments'];
+  window._barSnapshots=window._barSnapshots||{};
   function _refreshRowSnapshots(){
     window._rowSnapshots={};
+    window._barSnapshots={};
     if(!STORE||!STORE.projects)return;
     Object.keys(STORE.projects).forEach(function(aff){
       (STORE.projects[aff].data||[]).forEach(function(r){
         if(!r||!r.id)return;
-        var cmp=Object.assign({},r);delete cmp._modAt;
+        var cmp=Object.assign({},r);delete cmp._modAt;delete cmp._barsModAt;
         window._rowSnapshots[aff+'::'+r.id]=JSON.stringify(cmp);
+        if(r.t==='act'){
+          var bcmp={};
+          _BAR_FIELDS.forEach(function(f){bcmp[f]=r[f];});
+          window._barSnapshots[aff+'::'+r.id]=JSON.stringify(bcmp);
+        }
       });
       var _cmpMeta={};
       _META_FIELDS.forEach(function(f){_cmpMeta[f]=STORE.projects[aff][f];});
@@ -298,7 +313,7 @@
     (STORE.projects[aff].data||[]).forEach(function(r){
       if(!r||!r.id)return;
       var key=aff+'::'+r.id;
-      var cmp=Object.assign({},r);delete cmp._modAt;
+      var cmp=Object.assign({},r);delete cmp._modAt;delete cmp._barsModAt;
       var json=JSON.stringify(cmp);
       // Si cette ligne n'a jamais eu de référence enregistrée (ex: un
       // ensemble/une tâche ajouté(e) récemment), on l'horodate quand même —
@@ -310,7 +325,27 @@
       }
       window._rowSnapshots[key]=json;
     });
+    _stampModifiedBars(aff);
     _stampModifiedMeta(aff);
+  }
+  // Horodatage SÉPARÉ pour la position des barres Gantt (voir _BAR_FIELDS
+  // ci-dessus) : ne se déclenche QUE si prevDays/reelDays/etc. ont vraiment
+  // changé, jamais parce qu'un champ sans rapport (terminé, %, libellé...)
+  // a été modifié. C'est ce qui permet à la fusion de comparer "la barre la
+  // plus récente" indépendamment de "le reste de la ligne le plus récent".
+  function _stampModifiedBars(aff){
+    if(!STORE||!STORE.projects[aff])return;
+    (STORE.projects[aff].data||[]).forEach(function(r){
+      if(!r||!r.id||r.t!=='act')return;
+      var key=aff+'::'+r.id;
+      var cmp={};
+      _BAR_FIELDS.forEach(function(f){cmp[f]=r[f];});
+      var json=JSON.stringify(cmp);
+      if(window._barSnapshots[key]===undefined||window._barSnapshots[key]!==json){
+        r._barsModAt=Date.now();
+      }
+      window._barSnapshots[key]=json;
+    });
   }
   // Même principe que _stampModifiedRows, mais pour STORE.absences (congés,
   // école/entreprise des alternants, formation, absence) — ce champ est
@@ -441,8 +476,24 @@
           // Les deux côtés ont cette ligne : le CONTENU le plus récemment
           // modifié gagne (indépendamment de quel côté fournit l'ordre).
           var bt=r._modAt||0,ot=o._modAt||0;
-          if(bt||ot)return bt>=ot?r:o;
-          return r;
+          var winner=(bt||ot)?(bt>=ot?r:o):r;
+          // Fusion INDÉPENDANTE de la position des barres Gantt (Prévu/Réel)
+          // pour une activité : sans ça, cocher/décocher "terminé" (ou
+          // modifier n'importe quel autre champ) sur une copie de la ligne
+          // pas encore à jour ferait gagner TOUTE la ligne — y compris une
+          // position de barre périmée — contre la position plus récente
+          // qu'un collègue a peinte entre-temps sur cette même tâche.
+          if(r.t==='act'||o.t==='act'){
+            var bbt=r._barsModAt||0,bot=o._barsModAt||0;
+            var barSrc=(bbt||bot)?(bbt>=bot?r:o):null;
+            if(barSrc&&barSrc!==winner){
+              var merged=Object.assign({},winner);
+              _BAR_FIELDS.forEach(function(f){merged[f]=barSrc[f];});
+              merged._barsModAt=barSrc._barsModAt;
+              return merged;
+            }
+          }
+          return winner;
         }
       }
       return r;
