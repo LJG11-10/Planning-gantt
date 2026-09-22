@@ -15194,12 +15194,12 @@ function gcContextMenu(rid,w,d,ev){
   var seg=_gcSegBounds(getTaskDays5(r,mode),d5);
   if(!seg)return; // pas de barre de ce type précisément sous le clic
   window._gcCtxTarget={rid:rid,mode:mode,segStart:seg.start,segEnd:seg.end};
-  _gcShowContextMenu(ev.clientX,ev.clientY,r,mode,seg.start);
+  _gcShowContextMenu(ev.clientX,ev.clientY,r,mode,seg.start,seg.end);
 }
-function _gcShowContextMenu(x,y,r,mode,segStart){
+function _gcShowContextMenu(x,y,r,mode,segStart,segEnd){
   _gcCloseContextMenu();
   var modeLabel=mode==='prev'?'Prévu':'Réel';
-  var hasComment=!!(r.barComments&&r.barComments[mode]&&r.barComments[mode][segStart]);
+  var hasComment=!!_gcFindComment(r.barComments&&r.barComments[mode],segStart,segEnd);
   var menu=document.createElement('div');
   menu.id='_gcCtxMenu';
   var mw=220,mh=90;
@@ -15234,14 +15234,23 @@ function gcCtxComment(){
   if(!t)return;
   var r=D().find(function(x){return x.id===t.rid;});
   if(!r)return;
-  var cur=(r.barComments&&r.barComments[t.mode]&&r.barComments[t.mode][t.segStart])||'';
+  var cur=_gcFindComment(r.barComments&&r.barComments[t.mode],t.segStart,t.segEnd);
   var periodLabel=_gcPeriodLabel(t.segStart,t.segEnd);
   var txt=prompt('Commentaire pour la barre '+(t.mode==='prev'?'Prévu':'Réel')+' de "'+(r.lb||'')+'" ('+periodLabel+') :',cur);
   if(txt===null)return; // annulé, on ne touche à rien
   txt=txt.trim();
   if(!r.barComments)r.barComments={};
   if(!r.barComments[t.mode])r.barComments[t.mode]={};
-  if(txt)r.barComments[t.mode][t.segStart]=txt;else delete r.barComments[t.mode][t.segStart];
+  // Si un commentaire existait déjà sous une AUTRE clé à l'intérieur de ce
+  // même segment (posé avant un agrandissement/rétrécissement de la barre —
+  // voir _gcFindComment), on le retire de son ancienne clé au passage pour ne
+  // pas laisser un doublon fantôme : la valeur est toujours réenregistrée au
+  // VRAI départ actuel du segment.
+  Object.keys(r.barComments[t.mode]).forEach(function(k){
+    var kn=+k;
+    if(kn>=t.segStart&&kn<=t.segEnd)delete r.barComments[t.mode][k];
+  });
+  if(txt)r.barComments[t.mode][t.segStart]=txt;
   // Chaque barre (Prévu / Réel) garde son propre commentaire, totalement
   // indépendant de l'autre — pas de recopie automatique entre les deux.
   // Sécurité : même si une étape annexe (calcul de budget, etc.) échoue
