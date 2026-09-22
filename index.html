@@ -5954,9 +5954,18 @@ function _parseICSDate(s){
 }
 
 
-function _getISOWeek(d){
-  var jan1=new Date(d.getFullYear(),0,1);
-  return Math.ceil((_daysBetween(jan1,d)+jan1.getDay()+1)/7);
+// Convertit une VRAIE date calendaire vers la semaine INTERNE du site (w) —
+// l'inverse de weekDayToDate(w,di). Toujours utiliser cette fonction (pas le
+// numéro de semaine ISO calendaire brut) pour stocker une date importée
+// quelque part où le reste du site compare avec "w" (ex: STORE.absences,
+// écoles) : le numéro ISO calendaire (1-52/53, qui repart à 1 chaque
+// nouvelle année) ne correspond PAS à "w" (qui compte en continu depuis
+// W1_2025 sans jamais repartir à 1) — les confondre décale silencieusement
+// la semaine d'école d'une personne, qui peut alors sembler "disponible"
+// dans le Planning Réunion alors qu'elle est marquée à l'école ailleurs (ou
+// inversement), le décalage exact dépendant de l'année en cours.
+function _weekOfDate(d){
+  return Math.floor(_daysBetween(W1_2025,d)/7)+1;
 }
 
 
@@ -6068,6 +6077,16 @@ function absImport(e,person){
     if(!STORE.absences)STORE.absences={};
     if(!STORE.absences[person])STORE.absences[person]={school:[],company:[]};
     var schoolWeeks=[];
+    // Bornes (semaines internes) de la période couverte par le fichier importé —
+    // pour ne remplir en "Entreprise" QUE les semaines réellement concernées par
+    // cet import, jamais une plage fixe "1 à 52" qui ne correspond plus à rien
+    // depuis que la numérotation de semaine du site est continue d'une année
+    // sur l'autre (voir _weekOfDate).
+    var minWk=null,maxWk=null;
+    function _trackWk(wk){
+      if(minWk===null||wk<minWk)minWk=wk;
+      if(maxWk===null||wk>maxWk)maxWk=wk;
+    }
     if(txt.indexOf('BEGIN:VEVENT')>=0){
       var evts=txt.split('BEGIN:VEVENT');evts.shift();
       evts.forEach(function(evBlock){
@@ -6078,14 +6097,14 @@ function absImport(e,person){
         var end2=de?_parseICSDate(de[1].trim()):new Date(s.getTime()+7*86400000);
         var cur=new Date(s);
         while(cur<end2){
-          if(cur.getDay()>=1&&cur.getDay()<=5){var wk=_getISOWeek(cur);if(wk>=1&&wk<=52&&schoolWeeks.indexOf(wk)<0)schoolWeeks.push(wk);}
+          if(cur.getDay()>=1&&cur.getDay()<=5){var wk=_weekOfDate(cur);_trackWk(wk);if(wk>=1&&schoolWeeks.indexOf(wk)<0)schoolWeeks.push(wk);}
           cur.setDate(cur.getDate()+1);
         }
       });
     } else {
       txt.split(/[\n\r]+/).forEach(function(line){
         var d2=new Date(line.trim().split(/[,;\t]+/)[0]);
-        if(!isNaN(d2)){var wk=_getISOWeek(d2);if(wk>=1&&wk<=52&&schoolWeeks.indexOf(wk)<0)schoolWeeks.push(wk);}
+        if(!isNaN(d2)){var wk=_weekOfDate(d2);_trackWk(wk);if(wk>=1&&schoolWeeks.indexOf(wk)<0)schoolWeeks.push(wk);}
       });
     }
     if(schoolWeeks.length){
@@ -6093,7 +6112,7 @@ function absImport(e,person){
         if(STORE.absences[person].school.indexOf(w)<0)STORE.absences[person].school.push(w);
         var ci=STORE.absences[person].company.indexOf(w);if(ci>=0)STORE.absences[person].company.splice(ci,1);
       });
-      for(var w=1;w<=52;w++){
+      for(var w=minWk;w<=maxWk;w++){
         if(STORE.absences[person].school.indexOf(w)<0&&STORE.absences[person].company.indexOf(w)<0)
           STORE.absences[person].company.push(w);
       }
@@ -6753,8 +6772,8 @@ function downloadPlanning(mode){
           }
           var _dbCmtP='',_dbCmtR='';
           if(_db<5){
-            if(_dbInP&&r.barComments&&r.barComments.prev){var _sgP=_dAbs;while(_prevDaysSet.has(_sgP-1))_sgP--;_dbCmtP=r.barComments.prev[_sgP]||'';}
-            if(_dbInR&&r.barComments&&r.barComments.reel){var _sgR=_dAbs;while(_reelDaysSet.has(_sgR-1))_sgR--;_dbCmtR=r.barComments.reel[_sgR]||'';}
+            if(_dbInP&&r.barComments&&r.barComments.prev){var _sgP=_dAbs;while(_prevDaysSet.has(_sgP-1))_sgP--;var _sgPe=_dAbs;while(_prevDaysSet.has(_sgPe+1))_sgPe++;_dbCmtP=_gcFindComment(r.barComments.prev,_sgP,_sgPe);}
+            if(_dbInR&&r.barComments&&r.barComments.reel){var _sgR=_dAbs;while(_reelDaysSet.has(_sgR-1))_sgR--;var _sgRe=_dAbs;while(_reelDaysSet.has(_sgRe+1))_sgRe++;_dbCmtR=_gcFindComment(r.barComments.reel,_sgR,_sgRe);}
           }
           _dayBarHtml+='<div style="flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid #F1F2F5;height:100%">'
             +'<div style="flex:1;background:'+(_dbInP?phC.xl:(_db>=5?'#FAFAFA':'transparent'))+';display:flex;align-items:center;justify-content:center;overflow:hidden"'+(_dbCmtP?' title="'+esc(_dbCmtP)+'"':'')+'>'+(_dbCmtP?'<span style="font-size:13px">💬</span>':'')+'</div>'
@@ -11485,8 +11504,8 @@ function _gcActRowHtml(row,DW,NC,_MG,winStart,winEnd){
       // barres séparées (ex: 20/08→30/08 puis 11/11→20/11), chacune avec
       // son propre commentaire indépendant.
       let _prevSegStart=null,_reelSegStart=null,_prevCmt=null,_reelCmt=null;
-      if(inPrev){_prevSegStart=d5;while(_prevSet.indexOf(_prevSegStart-1)>=0)_prevSegStart--;_prevCmt=row.barComments&&row.barComments.prev&&row.barComments.prev[_prevSegStart];}
-      if(inReel){_reelSegStart=d5;while(_reelSet.indexOf(_reelSegStart-1)>=0)_reelSegStart--;_reelCmt=row.barComments&&row.barComments.reel&&row.barComments.reel[_reelSegStart];}
+      if(inPrev){_prevSegStart=d5;while(_prevSet.indexOf(_prevSegStart-1)>=0)_prevSegStart--;let _prevSegEnd=d5;while(_prevSet.indexOf(_prevSegEnd+1)>=0)_prevSegEnd++;_prevCmt=_gcFindComment(row.barComments&&row.barComments.prev,_prevSegStart,_prevSegEnd);}
+      if(inReel){_reelSegStart=d5;while(_reelSet.indexOf(_reelSegStart-1)>=0)_reelSegStart--;let _reelSegEnd=d5;while(_reelSet.indexOf(_reelSegEnd+1)>=0)_reelSegEnd++;_reelCmt=_gcFindComment(row.barComments&&row.barComments.reel,_reelSegStart,_reelSegEnd);}
       const _cmtParts=[];
       if(_prevCmt)_cmtParts.push('💬 Prévu : '+_prevCmt);
       if(_reelCmt)_cmtParts.push('💬 Réel : '+_reelCmt);
@@ -13660,8 +13679,8 @@ function pedConfirmAddPhase(){
         // Commentaire éventuel sur le segment auquel appartient ce jour —
         // même logique que la vue Semaines (clic droit sur une barre).
         let cmtP='',cmtR='';
-        if(inPrev&&a.barComments&&a.barComments.prev){let sgP=d5;while(_prevDaysArrLive.indexOf(sgP-1)>=0)sgP--;cmtP=a.barComments.prev[sgP]||'';}
-        if(inReel&&a.barComments&&a.barComments.reel){let sgR=d5;while(_reelDaysArrLive.indexOf(sgR-1)>=0)sgR--;cmtR=a.barComments.reel[sgR]||'';}
+        if(inPrev&&a.barComments&&a.barComments.prev){let sgP=d5;while(_prevDaysArrLive.indexOf(sgP-1)>=0)sgP--;let sgPe=d5;while(_prevDaysArrLive.indexOf(sgPe+1)>=0)sgPe++;cmtP=_gcFindComment(a.barComments.prev,sgP,sgPe);}
+        if(inReel&&a.barComments&&a.barComments.reel){let sgR=d5;while(_reelDaysArrLive.indexOf(sgR-1)>=0)sgR--;let sgRe=d5;while(_reelDaysArrLive.indexOf(sgRe+1)>=0)sgRe++;cmtR=_gcFindComment(a.barComments.reel,sgR,sgRe);}
 
         cells+=`<td style="width:${COL_W}px;min-width:${COL_W}px;height:${ROW_H}px;background:${day.isFerieDay?'rgba(254,226,226,.4)':isToday?'rgba(254,243,199,.3)':'var(--bg2)'};border-left:${borderL};${day.isFerieDay?'border-top:2px solid rgba(239,68,68,.3);':''}border-bottom:1px solid var(--bd);padding:0;vertical-align:top;position:relative;cursor:pointer;isolation:isolate;z-index:1" onclick="toggleDayExp(event,'${a.id}',${dayAbsIdx},'${dayLbl}')" oncontextmenu="gcContextMenu('${a.id}',${day.w},${day.d},event)">
           ${inPrev?`<div style="position:absolute;left:2px;width:46%;top:${blockTopP}%;height:${blockHtP}%;background:${ph.xl};border-radius:3px 0 0 3px;border:2px solid ${ph.x};border-right:none;z-index:1;display:flex;align-items:flex-start;justify-content:center;overflow:hidden"${cmtP?` title="💬 ${esc(cmtP)}"`:''}>${lblP?`<span style="font-size:9px;font-weight:900;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);margin-top:3px">${lblP}</span>`:''}${cmtP?`<span style="font-size:13px;position:absolute;top:0px;right:0px">💬</span>`:''}</div>`:''}
@@ -15119,6 +15138,26 @@ function _gcSegBounds(daysArr,d5){
   var s=d5;while(set[s-1])s--;
   var e=d5;while(set[e+1])e++;
   return {start:s,end:e};
+}
+// Retrouve le commentaire d'un segment de barre à partir de ses bornes
+// ACTUELLES, plutôt que d'exiger que la clé stockée corresponde exactement
+// au jour de départ recalculé. Un commentaire est posé sur le jour de départ
+// du segment AU MOMENT où on l'ajoute (voir gcCtxComment) ; si la barre est
+// ensuite agrandie plus tôt par un simple cliquer-glisser (gcCommit, qui ne
+// déplace pas les commentaires — seul _gcCommitMove, "Déplacer tout", le
+// fait), le jour de départ recalculé change alors que la clé stockée reste
+// la même : un lookup par correspondance exacte rendait alors le
+// commentaire invisible alors qu'il est toujours bien présent dans les
+// données. Chercher n'importe quelle clé comprise dans les bornes actuelles
+// du segment règle ça sans avoir à réécrire chaque endroit qui modifie une
+// barre.
+function _gcFindComment(commentsObj,segStart,segEnd){
+  if(!commentsObj)return '';
+  for(var k in commentsObj){
+    var kn=+k;
+    if(kn>=segStart&&kn<=segEnd)return commentsObj[k]||'';
+  }
+  return '';
 }
 // Cherche dans daysArr un segment qui chevauche ou touche [start,end]
 // (tolérance 1 jour, pour capter un segment "Réel" légèrement décalé par
