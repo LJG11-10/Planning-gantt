@@ -1411,6 +1411,11 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
         <div style="font-size:16px;font-weight:800;color:#1C1A33">Gestion des droits</div>
         <div style="font-size:12px;color:#9A96B3;margin-top:6px;line-height:1.5">Qui voit quoi, qui peut modifier quoi</div>
       </div>
+      <div id="petro-hub-tile-backups" onclick="petroHubEnterBackups()" style="cursor:pointer;background:#fff;border-radius:16px;padding:32px 28px;width:280px;box-shadow:0 8px 28px rgba(60,40,160,.08);border:2px solid #E4E1F0;transition:transform .15s,box-shadow .15s,border-color .15s;text-align:center" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 14px 36px rgba(60,40,160,.15)';this.style.borderColor='#6457F4'" onmouseout="this.style.transform='none';this.style.boxShadow='0 8px 28px rgba(60,40,160,.08)';this.style.borderColor='#E4E1F0'">
+        <div style="height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;font-size:44px">🗄️</div>
+        <div style="font-size:16px;font-weight:800;color:#1C1A33">Sauvegardes</div>
+        <div style="font-size:12px;color:#9A96B3;margin-top:6px;line-height:1.5">Voir et restaurer une version antérieure</div>
+      </div>
     </div>
     <div style="text-align:center;margin-top:32px">
       <span onclick="petroHubLogout()" style="font-size:11px;color:rgba(255,255,255,.75);cursor:pointer;text-decoration:underline">Se déconnecter</span>
@@ -1442,6 +1447,15 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
   <div id="petro-droits-content" style="flex:1;min-height:0;overflow:auto;padding:24px"></div>
 </div>
 
+<!-- Conteneur "Sauvegardes" — isolé, comme Plaque PE et Gestion des droits -->
+<div id="petro-backups-shell" style="display:none;position:fixed;inset:0;z-index:8000;background:#F6F5FB;flex-direction:column;overflow:hidden;font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif">
+  <div style="padding:10px 16px;background:#fff;border-bottom:1px solid #E4E1F0;display:flex;align-items:center;gap:12px;flex-shrink:0">
+    <button onclick="petroHubBackToHub()" style="background:#F6F5FB;color:#1C1A33;border:1px solid #E4E1F0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">← Retour</button>
+    <span style="color:#1C1A33;font-size:13px;font-weight:700">Sauvegardes</span>
+  </div>
+  <div id="petro-backups-content" style="flex:1;min-height:0;overflow:auto;padding:24px"></div>
+</div>
+
 <script>
 // ── Namespace isolé pour le hub Pétrosphère : ne référence AUCUNE
 // variable/fonction interne du Planning Pétrole, uniquement le DOM public.
@@ -1466,6 +1480,8 @@ function showHub(){
   if(plaque) plaque.style.display='none';
   var droits = document.getElementById('petro-droits-shell');
   if(droits) droits.style.display='none';
+  var backups = document.getElementById('petro-backups-shell');
+  if(backups) backups.style.display='none';
   petroHubShowLogoOnHub();
 }
 function petroHubEnterPlanning(){
@@ -1492,6 +1508,15 @@ function petroHubEnterDroits(){
     window.DroitsAcces.render('petro-droits-content');
   }
 }
+function petroHubEnterBackups(){
+  var hub = document.getElementById('petro-hub-screen');
+  if(hub) hub.style.display='none';
+  var backups = document.getElementById('petro-backups-shell');
+  if(backups) backups.style.display='flex';
+  if(window.Sauvegardes && typeof window.Sauvegardes.render==='function'){
+    window.Sauvegardes.render('petro-backups-content');
+  }
+}
 function petroHubBackToHub(){
   var shell = document.getElementById('app-shell');
   if(shell) shell.style.display='none';
@@ -1499,6 +1524,8 @@ function petroHubBackToHub(){
   if(plaque) plaque.style.display='none';
   var droits = document.getElementById('petro-droits-shell');
   if(droits) droits.style.display='none';
+  var backups = document.getElementById('petro-backups-shell');
+  if(backups) backups.style.display='none';
   var hub = document.getElementById('petro-hub-screen');
   if(hub) hub.style.display='flex';
 }
@@ -1508,6 +1535,119 @@ function petroHubLogout(){
 }
 </script>
 <!-- ═══════════════════════════ /PÉTROSPHÈRE HUB ═══════════════════════ -->
+
+<!-- ═══════════════════════════ SAUVEGARDES — module isolé ═════════════ -->
+<script>
+// Lit/restaure les sauvegardes horodatées déposées automatiquement dans
+// backups/ (voir _maybeBackup) — jusqu'ici invisibles et inutilisables
+// depuis l'application : aucune donnée déjà présente n'est perdue par ce
+// module, c'est un module de LECTURE (et de restauration explicite,
+// confirmée), il n'écrit jamais tout seul sans action volontaire de l'admin.
+window.Sauvegardes = (function(){
+  var BUCKET='planning';
+
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // Les fichiers sont nommés "data-<ISO horodatage avec tirets>.json" —
+  // reconstruit une vraie Date à partir du nom pour un affichage lisible.
+  function _parseBackupDate(fileName){
+    var m=fileName.match(/^(?:avant-restauration|data)-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/);
+    if(!m)return null;
+    return new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6]));
+  }
+  function _fmtDate(d){
+    if(!d)return '(date inconnue)';
+    return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'})+' à '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+  }
+
+  async function _list(){
+    if(!window.supa)return [];
+    try{
+      var res=await window.supa.storage.from(BUCKET).list('backups',{limit:300,sortBy:{column:'name',order:'desc'}});
+      if(res.error){console.error('Erreur liste sauvegardes',res.error);return [];}
+      return (res.data||[]).filter(function(f){return f.name&&f.name.indexOf('.json')>=0;});
+    }catch(e){console.error(e);return [];}
+  }
+
+  async function render(containerId){
+    var el=document.getElementById(containerId);
+    if(!el)return;
+    if(typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE!=='admin'){
+      el.innerHTML='<div style="padding:40px;text-align:center;color:#9A96B3">Réservé aux administrateurs.</div>';
+      return;
+    }
+    el.innerHTML='<div style="padding:40px;text-align:center;color:#9A96B3">Chargement…</div>';
+    var files=await _list();
+    if(!files.length){
+      el.innerHTML='<div style="padding:40px;text-align:center;color:#9A96B3">Aucune sauvegarde disponible pour le moment.<br>Une sauvegarde automatique est déposée au maximum toutes les 30 minutes après un enregistrement.</div>';
+      return;
+    }
+    var html='<div style="max-width:720px;margin:0 auto">'
+      +'<div style="background:#FFF7ED;border:2px solid #FED7AA;border-radius:12px;padding:16px 20px;margin-bottom:20px;font-size:13px;color:#9A3412"><strong>⚠️ Restaurer une sauvegarde remplace les données actuelles, pour tout le monde.</strong> Une copie de sécurité de l\'état actuel est automatiquement créée juste avant, au cas où vous changeriez d\'avis.</div>';
+    files.forEach(function(f){
+      var d=_parseBackupDate(f.name);
+      var isPreRestore=f.name.indexOf('avant-restauration')===0;
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid #E4E1F0;border-radius:12px;padding:14px 18px;margin-bottom:10px">'
+        +'<div style="font-size:13px;font-weight:700;color:#1C1A33">'+(isPreRestore?'🛟 Juste avant une restauration — ':'📅 ')+esc(_fmtDate(d))+'</div>'
+        +'<button onclick="Sauvegardes._confirmRestore(\''+esc(f.name).replace(/'/g,"\\'")+'\')" style="background:#6457F4;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Restaurer</button>'
+        +'</div>';
+    });
+    html+='</div>';
+    el.innerHTML=html;
+  }
+
+  function _confirmRestore(fileName){
+    var d=_parseBackupDate(fileName);
+    var label=_fmtDate(d);
+    if(!confirm('Restaurer la sauvegarde du '+label+' ?\n\nCeci va REMPLACER les données actuelles pour TOUT LE MONDE par cette version. Une copie de l\'état actuel juste avant sera d\'abord sauvegardée automatiquement, au cas où.\n\nContinuer ?'))return;
+    _restore(fileName);
+  }
+
+  async function _restore(fileName){
+    if(!window.supa){alert('Connexion au serveur indisponible.');return;}
+    try{
+      // 1. Sécurité : sauvegarder l'état ACTUEL avant d'écraser quoi que ce
+      // soit (même logique de nom que _maybeBackup, préfixée pour la
+      // distinguer dans la liste — jamais écrasée, upsert:false).
+      if(typeof STORE!=='undefined'&&STORE){
+        var safetyBlob=new Blob([JSON.stringify(STORE)],{type:'application/json'});
+        var safetyName='avant-restauration-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+        await window.supa.storage.from(BUCKET).upload('backups/'+safetyName,safetyBlob,{upsert:false});
+      }
+      // 2. Récupérer le contenu de la sauvegarde choisie
+      var dl=await window.supa.storage.from(BUCKET).download('backups/'+fileName);
+      if(dl.error||!dl.data){alert('Impossible de récupérer cette sauvegarde : '+(dl.error?dl.error.message:''));return;}
+      var text=await dl.data.text();
+      var restored=JSON.parse(text);
+      if(!restored||!restored.projects||!Object.keys(restored.projects).length){alert('Fichier de sauvegarde invalide ou vide — restauration annulée.');return;}
+      // 3. Remplacer directement le fichier partagé (data.json) par cette
+      // version — volontairement SANS passer par la fusion habituelle
+      // (_applyRemote/_mergeProjectData) : une restauration doit rétablir
+      // EXACTEMENT l'état choisi, pas le re-mélanger avec l'état actuel
+      // qu'on cherche justement à corriger.
+      var mainBlob=new Blob([JSON.stringify(restored)],{type:'application/json'});
+      var up=await window.supa.storage.from(BUCKET).upload('data.json',mainBlob,{upsert:true,cacheControl:'0'});
+      if(up.error){alert('Erreur pendant la restauration : '+up.error.message);return;}
+      // 4. Vider le cache local de CET appareil : sinon son propre rechargement
+      // re-fusionnerait sa copie locale (périmée) par-dessus la version tout
+      // juste restaurée, au lieu de simplement l'afficher.
+      try{localStorage.removeItem('plan26v5');localStorage.removeItem('plan26v5_gp');}catch(e){}
+      alert('Sauvegarde restaurée. La page va se recharger. Vos collègues verront la version restaurée à leur prochaine synchronisation automatique (quelques secondes).');
+      location.reload();
+    }catch(e){
+      console.error('Erreur restauration',e);
+      alert('Erreur pendant la restauration : '+e.message);
+    }
+  }
+
+  return {render:render,_confirmRestore:_confirmRestore};
+})();
+</script>
+<!-- ═══════════════════════════ /SAUVEGARDES ═══════════════════════════ -->
 
 <!-- ═══════════════════════════ PLAQUE PE — module isolé ═══════════════ -->
 <script>
@@ -3068,9 +3208,11 @@ function applyModulePermissions(){
 function applyBudgetPermissions(){ applyModulePermissions(); }
 
 function applyRoleRestrictions() {
-  // Gestion des droits : réservé aux admins, peu importe le reste des règles ci-dessous
+  // Gestion des droits / Sauvegardes : réservées aux admins, peu importe le reste des règles ci-dessous
   var droitsTile = document.getElementById('petro-hub-tile-droits');
   if (droitsTile) droitsTile.style.display = (CURRENT_ROLE === 'admin') ? '' : 'none';
+  var backupsTile = document.getElementById('petro-hub-tile-backups');
+  if (backupsTile) backupsTile.style.display = (CURRENT_ROLE === 'admin') ? '' : 'none';
   if (CURRENT_ROLE === 'chef_chantier') {
     // Masquer tous les onglets sauf GANTT, Planning réunion, Personnel, Absences et Tableau de bord
     // (le budget à l'intérieur du Tableau de bord est déjà géré finement par le
