@@ -237,8 +237,24 @@
   }
   document.addEventListener('visibilitychange',function(){
     if(document.hidden)_flushPendingSaveIfAny();
+    else _checkNowOnReturn();
   });
   window.addEventListener('pagehide',_flushPendingSaveIfAny);
+  // ── Même filet de sécurité, dans l'autre sens ────────────────────────
+  // La vérification périodique tourne toutes les 3s, mais un navigateur
+  // RALENTIT délibérément les timers d'un onglet mis en arrière-plan (pour
+  // économiser batterie/ressources) — parfois à une vérification par minute
+  // au lieu de toutes les 3s. Résultat : quelqu'un qui revient sur l'onglet
+  // après être resté un moment ailleurs peut voir une version pas encore à
+  // jour bien plus longtemps que "3 secondes", avant que le timer ralenti ne
+  // finisse par se déclencher — donnant l'impression qu'une donnée d'un
+  // collègue "n'est pas encore arrivée", alors qu'elle attendait juste que ce
+  // timer se réveille. Revérifier IMMÉDIATEMENT dès qu'on revient sur l'onglet
+  // évite d'attendre ce réveil.
+  function _checkNowOnReturn(){
+    try{ if(typeof _checkAndApplyRemote==='function')_checkAndApplyRemote(); }catch(e){}
+  }
+  window.addEventListener('focus',_checkNowOnReturn);
 
   var _pollInterval=null,_lastEtag=null,_syncChannel=null;
 
