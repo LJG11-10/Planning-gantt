@@ -712,13 +712,18 @@
     // en bloc des données en cours de saisie qui n'ont pas encore eu le temps
     // d'être envoyées au serveur. On fusionne entrée par entrée (semaine par
     // semaine, puis personne/jour par personne/jour) au lieu d'écraser.
-    var _localWeekPlan={},_localAbsences={},_localConges={},_localFhMeta={};
+    var _localWeekPlan={},_localAbsences={},_localConges={},_localFhMeta={},_localFhWeekHidden={},_localGcBadgeDismissed={};
+    var _localFhWeekHiddenModAt=0,_localGcBadgeDismissedModAt=0;
     var _localCurrent=STORE&&STORE.current;
     try{
       if(STORE&&STORE.weekPlan)_localWeekPlan=JSON.parse(JSON.stringify(STORE.weekPlan));
       if(STORE&&STORE.absences)_localAbsences=JSON.parse(JSON.stringify(STORE.absences));
       if(STORE&&STORE.conges)_localConges=JSON.parse(JSON.stringify(STORE.conges));
       if(STORE&&STORE.fhMeta)_localFhMeta=JSON.parse(JSON.stringify(STORE.fhMeta));
+      if(STORE&&STORE.fhWeekHidden)_localFhWeekHidden=JSON.parse(JSON.stringify(STORE.fhWeekHidden));
+      _localFhWeekHiddenModAt=(STORE&&STORE._fhWeekHiddenModAt)||0;
+      if(STORE&&STORE.gcBadgeDismissed)_localGcBadgeDismissed=JSON.parse(JSON.stringify(STORE.gcBadgeDismissed));
+      _localGcBadgeDismissedModAt=(STORE&&STORE._gcBadgeDismissedModAt)||0;
     }catch(_eClone){}
     // ── Appliquer le remote puis restaurer globalPersons ────────────────
     STORE=remote;
@@ -795,6 +800,24 @@
         });
       });
     });
+    // Qui a retiré/rajouté une personne d'une semaine de feuille d'heure le
+    // plus récemment (voir fhRemovePersonFromWeek/fhAddPersonToWeek) — un
+    // seul horodatage global pour tout ce champ (comme _orderModAt), pas
+    // ligne par ligne : une action rare, pas de perte de donnée réelle
+    // possible dans le pire des cas (les heures elles-mêmes ne sont jamais
+    // touchées par ce champ, seulement leur affichage).
+    if(_localFhWeekHiddenModAt>=(STORE._fhWeekHiddenModAt||0)){
+      STORE.fhWeekHidden=_localFhWeekHidden;
+      STORE._fhWeekHiddenModAt=_localFhWeekHiddenModAt;
+    }
+    // Même principe pour les badges GANTT→Planning Réunion fermés (bouton ✕) —
+    // horodatage global unique, action rare et sans perte de donnée possible
+    // (ça ne fait que masquer un rappel affiché automatiquement, jamais une
+    // vraie donnée du GANTT ou des heures).
+    if(_localGcBadgeDismissedModAt>=(STORE._gcBadgeDismissedModAt||0)){
+      STORE.gcBadgeDismissed=_localGcBadgeDismissed;
+      STORE._gcBadgeDismissedModAt=_localGcBadgeDismissedModAt;
+    }
     // Retirer du weekPlan/absences/conges toute entrée d'une personne supprimée
     // (le remote peut encore contenir d'anciennes entrées pas encore nettoyées)
     // — mais uniquement à partir de la semaine actuelle : l'historique des
@@ -7903,18 +7926,29 @@ function dbBuildPlanningGrid(){
           // Ne pas doubler si déjà dans weekPlan
           var already=_savedForCell.some(function(e){return e.aff===affG&&e.actId===actG.id;});
           if(already)return;
+          // Badge cliquable avec champ commentaire
+          var _badgeKey='gcbadge_'+nm+'_'+di+'_'+actG.id;
+          // Ignorer un badge explicitement fermé par un utilisateur (bouton ✕)
+          // — surtout utile quand la tâche n'a pas encore de barre précise
+          // posée sur le GANTT (juste une semaine, sans jour à jour) : elle
+          // est alors affichée sur TOUS les jours de la semaine (y compris un
+          // vendredi jamais vraiment prévu) tant qu'elle n'a pas été peinte
+          // précisément — ce bouton permet de la faire disparaître sans
+          // attendre d'avoir peint la barre.
+          if(STORE.gcBadgeDismissed&&STORE.gcBadgeDismissed[_badgeKey])return;
           var ph=PH_get(actG.pk);
           var ac=affColor(affG);
           var affFullG=getAffLabel(affG);
-          // Badge cliquable avec champ commentaire
-          var _badgeKey='gcbadge_'+nm+'_'+di+'_'+actG.id;
           var _badgeComment=(window._gcBadgeComments&&window._gcBadgeComments[_badgeKey])||'';
           var _showComment=window._gcBadgeOpen&&window._gcBadgeOpen===_badgeKey;
           var _nmE=nm.replace(/"/g,'&quot;');
           html+='<div style="background:'+ac.f+';border-left:3px solid '+ac.h+';border-radius:10px;padding:5px 8px;font-size:10px;color:'+ac.xd+';margin-top:4px;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
           html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px">';
           html+='<span style="min-width:0"><span style="font-weight:800;white-space:normal;overflow-wrap:break-word;word-break:break-word">'+escHtml(affFullG)+'</span><br><span style="font-weight:600;white-space:normal;overflow-wrap:break-word;word-break:break-word">⚙ '+escHtml(actG.lb)+'</span></span>';
-          html+='<span onclick="gcBadgeToggle(\''+_badgeKey+'\')" style="cursor:pointer;font-size:10px;margin-left:6px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.1);font-weight:700;flex-shrink:0">'+(_badgeComment?'💬':'+ note')+'</span>';
+          html+='<span style="display:flex;gap:3px;flex-shrink:0">'
+            +'<span onclick="gcBadgeToggle(\''+_badgeKey+'\')" style="cursor:pointer;font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.1);font-weight:700">'+(_badgeComment?'💬':'+ note')+'</span>'
+            +'<span onclick="gcBadgeDismiss(\''+_badgeKey+'\')" title="Ne plus afficher ce bloc ici" style="cursor:pointer;font-size:10px;padding:1px 6px;border-radius:3px;background:rgba(0,0,0,.1);font-weight:700">✕</span>'
+            +'</span>';
           html+='</div>';
           if(_badgeComment&&!_showComment)html+='<div style="font-size:9px;opacity:.8;margin-top:2px;font-style:italic">'+_badgeComment+'</div>';
           if(_showComment)html+='<textarea data-bk="'+_badgeKey+'" onchange="gcBadgeSave(this)" onblur="gcBadgeSave(this)" placeholder="Commentaire..." style="width:100%;border:none;border-top:1px dashed rgba(0,0,0,.2);margin-top:3px;padding:2px;font-size:9px;font-family:inherit;background:transparent;outline:none;resize:none;min-height:28px">'+_badgeComment+'</textarea>';
@@ -8947,7 +8981,10 @@ function fhBuildPersonWeekBlock(nm,w){
   return '<div style="margin-bottom:16px;border:1px solid '+(isTW?'#F59E0B':'var(--bd)')+';border-radius:var(--r2);overflow:hidden">'
     +'<div style="padding:8px 14px;background:'+(isTW?'#FEF3C7':'var(--ac2)')+';color:'+(isTW?'#92400E':'var(--ac)')+';display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
     +'<span style="font-size:13px;font-weight:800">'+escHtml(nm)+'</span>'
+    +'<div style="display:flex;align-items:center;gap:10px">'
     +'<span id="fhwt-'+nm.replace(/[^a-z0-9]/gi,'_')+'-'+w+'" style="font-family:\'Courier New\';font-weight:700;font-size:14px">'+(total?total+' H':'—')+'</span>'
+    +'<button onclick="fhRemovePersonFromWeek('+w+',\''+nm.replace(/'/g,"\\'")+'\')" title="Retirer cette personne de la feuille d\u2019heure de cette semaine" style="background:rgba(0,0,0,.08);border:none;border-radius:6px;cursor:pointer;color:inherit;font-size:11px;font-weight:700;padding:3px 9px">\u2715 Retirer</button>'
+    +'</div>'
     +'</div>'
     +'<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">'
     +'<thead><tr style="background:var(--bg3)">'+dayThs+'</tr></thead>'
@@ -14108,6 +14145,28 @@ function fhWeekPersons(wk){
       names[nm]=true;
     });
   });
+  // Une personne en congé/formation/absence/école cette semaine-là doit
+  // apparaître ici même sans heure ni tâche planifiée — sinon un alternant
+  // "à l'école" (donc sans rien d'autre cette semaine) restait invisible
+  // dans l'onglet feuille d'heure alors qu'il apparaissait bien, lui, dans
+  // le document imprimé/téléchargé (qui a sa propre logique d'ajout
+  // équivalente, dupliquée ici pour que les deux s'accordent toujours).
+  Object.keys(_gpChantier).forEach(function(nm){
+    if(!nm||_delP[nm]||names[nm])return;
+    var pInfo=_gpChantier[nm];
+    if(!pInfo||pInfo.service!=='els_chantier')return;
+    for(var _di=0;_di<5;_di++){
+      var _dd=weekDayToDate(wk,_di);
+      var _dk=_dd?(_dd.getFullYear()+'-'+String(_dd.getMonth()+1).padStart(2,'0')+'-'+String(_dd.getDate()).padStart(2,'0')):null;
+      if(_personDayStatus(nm,_dk,wk)){names[nm]=true;break;}
+    }
+  });
+  // Une personne explicitement retirée de cette semaine (bouton "Retirer")
+  // ne doit jamais réapparaître ici tant qu'elle n'a pas été rajoutée à la
+  // main via "+ Ajouter une personne" — même si elle a par ailleurs des
+  // heures, une tâche ou un statut cette semaine-là.
+  var _hiddenWk=(STORE.fhWeekHidden&&STORE.fhWeekHidden[wk])||{};
+  Object.keys(_hiddenWk).forEach(function(nm){delete names[nm];});
   return Object.keys(names).sort();
 }
 function fhAddPersonToWeek(wk){
@@ -14117,6 +14176,29 @@ function fhAddPersonToWeek(wk){
   if(!STORE.fhMeta)STORE.fhMeta={};
   if(!STORE.fhMeta[wk])STORE.fhMeta[wk]={};
   if(!STORE.fhMeta[wk][nm])STORE.fhMeta[wk][nm]={};
+  // La rajouter explicitement annule un retrait précédent (bouton "Retirer")
+  // pour cette semaine — sinon "+ Ajouter une personne" n'aurait aucun effet
+  // visible sur quelqu'un qu'on venait de retirer.
+  if(STORE.fhWeekHidden&&STORE.fhWeekHidden[wk])delete STORE.fhWeekHidden[wk][nm];
+  // Horodater ce champ à part (comme _orderModAt/_metaModAt) pour que la
+  // fusion avec le serveur (_applyRemote) sache quel côté, du local ou du
+  // distant, a la version la plus récente au lieu de toujours garder le
+  // distant en bloc.
+  STORE._fhWeekHiddenModAt=Date.now();
+  saveNow();
+  renderFiche();
+}
+// Retire une personne de l'affichage de la feuille d'heure pour CETTE
+// semaine précise uniquement (pas des autres semaines, pas de l'annuaire) —
+// réversible via "+ Ajouter une personne". Les heures déjà saisies ne sont
+// jamais supprimées, seulement masquées tant que la personne reste retirée ;
+// elles réapparaissent telles quelles si on la rajoute.
+function fhRemovePersonFromWeek(wk,nm){
+  if(!confirm('Retirer '+nm+' de la feuille d’heure de cette semaine ?\n\nSes heures déjà saisies ne seront pas supprimées, juste masquées tant qu’elle reste retirée — vous pourrez la rajouter à tout moment via "+ Ajouter une personne".'))return;
+  if(!STORE.fhWeekHidden)STORE.fhWeekHidden={};
+  if(!STORE.fhWeekHidden[wk])STORE.fhWeekHidden[wk]={};
+  STORE.fhWeekHidden[wk][nm]=true;
+  STORE._fhWeekHiddenModAt=Date.now();
   saveNow();
   renderFiche();
 }
@@ -14552,8 +14634,9 @@ function fhGenerateWeekHTML(wk,cb){
   // semaine-là qui n'ont par ailleurs aucune ligne dans le planning (sinon
   // elles étaient absentes du document, comme pour Planning Réunion).
   var _delPw=STORE._deletedPersons||{};
+  var _hiddenWkDl=(STORE.fhWeekHidden&&STORE.fhWeekHidden[wk])||{};
   Object.keys(STORE.globalPersons||{}).forEach(function(nm){
-    if(persons.indexOf(nm)>=0||_delPw[nm])return;
+    if(persons.indexOf(nm)>=0||_delPw[nm]||_hiddenWkDl[nm])return;
     var pInfo=STORE.globalPersons[nm];
     if(!pInfo||pInfo.service!=='els_chantier')return;
     for(var _di=0;_di<5;_di++){
@@ -15664,6 +15747,19 @@ function gcBadgeSave(ta){
   // Optionnel : fermer après saisie
   // window._gcBadgeOpen=null;
   // dbBuildPlanningGrid();
+}
+// Fait disparaître définitivement un bloc "GANTT → Planning Réunion" affiché
+// automatiquement (sans y toucher, il réapparaîtrait) — utile en particulier
+// tant qu'une tâche n'a pas encore de barre précise peinte sur le GANTT : elle
+// s'affiche alors sur tous les jours de la semaine par défaut (faute de mieux
+// savoir lesquels), y compris des jours jamais vraiment prévus.
+if(!STORE.gcBadgeDismissed)STORE.gcBadgeDismissed={};
+function gcBadgeDismiss(key){
+  if(!STORE.gcBadgeDismissed)STORE.gcBadgeDismissed={};
+  STORE.gcBadgeDismissed[key]=true;
+  STORE._gcBadgeDismissedModAt=Date.now();
+  saveNow();
+  dbBuildPlanningGrid();
 }
 
 function pedDaysModal(actId, pIdx){
