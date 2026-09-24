@@ -8016,9 +8016,14 @@ function dbDownloadWeek(dlMode){
           // Vérifier pas déjà dans weekPlan
           var already=(personMap[nm]&&personMap[nm][di]||[]).some(function(e){return e.aff===affG&&e.actLb===actG.lb;});
           if(already)return;
+          var gcKey='gcbadge_'+nm+'_'+di+'_'+actG.id;
+          // Même clé et même règle que dans Planning Réunion à l'écran (bouton
+          // ✕) — sans ce contrôle ici aussi, un bloc fermé côté écran
+          // réapparaissait quand même dans le document imprimé/téléchargé,
+          // qui a sa propre copie de cette logique de surfaçage.
+          if(STORE.gcBadgeDismissed&&STORE.gcBadgeDismissed[gcKey])return;
           if(!personMap[nm])personMap[nm]={};
           if(!personMap[nm][di])personMap[nm][di]=[];
-          var gcKey='gcbadge_'+nm+'_'+di+'_'+actG.id;
           var gcComment=(window._gcBadgeComments&&window._gcBadgeComments[gcKey])||'';
           personMap[nm][di].push({aff:affG,actLb:actG.lb,actPk:actG.pk,comment:gcComment,isGantt:true});
         });
