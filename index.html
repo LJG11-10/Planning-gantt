@@ -9937,8 +9937,6 @@ function _avTaskHtml(r,level,inSb){
       +'</div>';
   }else if(excl){
     h+='<div style="margin-top:6px;font-size:11px;color:var(--tx3)">Ne compte pas dans le calcul d’avancement</div>';
-  }else if(!isDone){
-    h+='<div style="margin-top:6px;font-size:11px;color:var(--tx3)">Pas encore commencée</div>';
   }
   if(!inSb&&!excl){
     h+='<div style="margin-top:6px;font-size:11px;font-weight:700;color:#B45309">Hors sous-phase : ne compte pas dans le total de l’affaire</div>';
@@ -10338,7 +10336,7 @@ function avBuildDownloadHtml(sel){
     var badge=excl?'<span class="st st-ex">Hors avancement</span>'
       :done?'<span class="st st-ok">✓ Terminée</span>'
       :r.inProgress?'<span class="st st-pr">⚡ En cours</span>'
-      :'<span class="st st-no">Pas commencée</span>';
+      :'';
     return '<div class="task"><div class="tl"><span class="tn">'+esc(r.lb)+'</span>'+badge+'<span class="dt">'+esc(_avDateLbl(r))+'</span></div>'
       +(excl?'':'<div class="tr">'+bar(pct,done?'#16A34A':'#F59E0B')+'<span class="pc">'+pct+'%</span></div>')+'</div>';
   }
@@ -10349,9 +10347,15 @@ function avBuildDownloadHtml(sel){
     var pct=calcHierProgress(D(),opts);
     var kids=n.kids.map(function(k){return nodeHtml(k,color);}).join('');
     var lbl=n.type==='ph'?n.row.pk:n.row.lb;
-    return '<div class="grp g-'+n.type+'"'+(n.type==='ph'?' style="border-left-color:'+color+'"':'')+'>'
-      +'<div class="gh"><span class="gn">'+esc(lbl)+'</span>'+bar(pct,color)+'<span class="pc">'+pct+'%</span></div>'
-      +(kids?'<div class="gk">'+kids+'</div>':'')+'</div>';
+    var st=n.type==='ph'?' style="border-left-color:'+color+'"':'';
+    var head='<span class="gn">'+esc(lbl)+'</span>'+bar(pct,color)+'<span class="pc">'+pct+'%</span>';
+    if(!kids)return '<div class="grp g-'+n.type+'"'+st+'><div class="gh"><span class="ar"></span>'+head+'</div></div>';
+    // <details> : pli/dépli natif du navigateur, sans script — marche aussi
+    // quand le fichier est ouvert depuis une pièce jointe. Phases ouvertes,
+    // ensembles et sous-phases repliés au départ.
+    return '<details class="grp g-'+n.type+'"'+st+(n.type==='ph'?' open':'')+'>'
+      +'<summary class="gh"><span class="ar">▶</span>'+head+'</summary>'
+      +'<div class="gk">'+kids+'</div></details>';
   }
   // Les couleurs de phase du site sont des variables CSS (var(--...)) qui
   // n'existent pas dans le fichier téléchargé : on les résout en vraie
@@ -10381,8 +10385,16 @@ function avBuildDownloadHtml(sel){
     +'.tr{display:flex;align-items:center;gap:10px;margin-top:4px}'
     +'.st{font-size:10px;font-weight:700;padding:1px 8px;border-radius:10px}'
     +'.st-ok{background:#DCFCE7;color:#15803D}.st-pr{background:#FEF3C7;color:#B45309}.st-no{background:#F3F4F6;color:#6B7280}.st-ex{background:#F3F4F6;color:#6B7280;border:1px dashed #9CA3AF}'
+    +'summary.gh{list-style:none;cursor:pointer;user-select:none}summary.gh::-webkit-details-marker{display:none}summary.gh:hover .gn{color:#1F4E79}'
+    +'.ar{display:inline-block;width:12px;flex-shrink:0;font-size:10px;color:#9CA3AF;transition:transform .15s}details[open]>summary .ar{transform:rotate(90deg)}'
+    +'.tools{display:flex;gap:8px;margin:-8px 0 16px}.tools button{font-family:inherit;font-size:12px;font-weight:700;padding:5px 12px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#374151;cursor:pointer}.tools button:hover{background:#F3F4F6}'
     +'.logo{position:absolute;top:20px;right:28px;height:40px}'
-    +'@media print{body{padding:0}@page{size:A4 portrait;margin:12mm}.logo{position:fixed;top:0;right:0}}';
+    +'@media print{body{padding:0}@page{size:A4 portrait;margin:12mm}.logo{position:fixed;top:0;right:0}.tools{display:none}.ar{visibility:hidden}}';
+  // Boutons "tout déplier / tout replier", et impression toujours complète
+  // (tout est déplié le temps d'imprimer, puis on remet l'état d'avant).
+  var js='function avAll(o){document.querySelectorAll("details.grp").forEach(function(d){d.open=o;});}'
+    +'var _pst=null;window.addEventListener("beforeprint",function(){var ds=document.querySelectorAll("details.grp");_pst=[].map.call(ds,function(d){return d.open;});ds.forEach(function(d){d.open=true;});});'
+    +'window.addEventListener("afterprint",function(){if(!_pst)return;document.querySelectorAll("details.grp").forEach(function(d,i){d.open=_pst[i];});_pst=null;});';
   return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Avancement — '+esc(getAffLabel(aff))+'</title><style>'+css+'</style></head><body>'
     +(typeof LOGO_ELS_B64!=='undefined'?'<img class="logo" src="'+LOGO_ELS_B64+'">':'')
     +'<h1>Avancement</h1>'
@@ -10390,7 +10402,9 @@ function avBuildDownloadHtml(sel){
     +'<div class="kpis"><div class="kpi"><div class="l">Avancement de l’affaire</div><div class="v">'+glob+'%</div></div>'
     +'<div class="kpi"><div class="l">Tâches en cours</div><div class="v">'+c.p+'</div></div>'
     +'<div class="kpi"><div class="l">Tâches terminées</div><div class="v">'+c.d+'</div></div></div>'
+    +'<div class="tools"><button type="button" onclick="avAll(true)">▼ Tout déplier</button><button type="button" onclick="avAll(false)">▶ Tout replier</button></div>'
     +body
+    +'<script>'+js+'<\/script>'
     +'</body></html>';
 }
 // ── Calcul hiérarchique de l'avancement ────────────────────────────────
