@@ -4329,6 +4329,13 @@ function saveGlobalPerson(origNm, newNm, type, habsArr, service, email){
 
 function deleteGlobalPerson(nm){
   if(!confirm('Supprimer '+nm+' de l\'annuaire et de toutes les tâches ?'))return;
+  // Ses heures des feuilles d'heure : au choix. Un salarié parti peut avoir
+  // des heures bien réelles à garder dans le récap (historique) ; une
+  // personne de test, non. Sans cette question, les heures restaient
+  // comptées dans le récap mais devenaient invisibles et impossibles à
+  // effacer (la personne n'apparaît plus dans la feuille d'heure).
+  var _phDel=(typeof fhPersonHours==='function')?fhPersonHours(nm):{total:0};
+  var _eraseHours=_phDel.total>0&&confirm(nm+' a '+_phDel.total+' H saisies dans les feuilles d’heure.\n\nOK = supprimer AUSSI ces heures (elles ne compteront plus dans le récap ni dans les sous-phases).\n\nAnnuler = garder ces heures (historique : elles restent comptées dans le récap).');
   // 1. Supprimer de l'annuaire global
   var gp=_getGlobalPersons();
   delete gp[nm];
@@ -4345,8 +4352,14 @@ function deleteGlobalPerson(nm){
         row.p=row.p.filter(function(pp){return pp.name!==nm;});
     });
   });
-  // 3. Supprimer des fiches d'heure (STORE.fh)
+  // 3. Supprimer des fiches d'heure : STORE.fh est un ancien emplacement ;
+  // les vraies heures sont rangées dans chaque affaire (projects[aff].fh),
+  // effacées seulement si l'utilisateur l'a demandé juste au-dessus.
   if(STORE.fh&&STORE.fh[nm])delete STORE.fh[nm];
+  if(_eraseHours){
+    fhErasePersonHours(nm);
+    if(typeof syncFichesToGantt==='function')syncFichesToGantt();
+  }
   // 4. Supprimer du weekPlan — uniquement la semaine actuelle et les suivantes.
   // Les semaines PASSÉES restent (historique réel : la personne était bien là
   // ce jour-là, même si elle a quitté depuis).
@@ -15014,6 +15027,64 @@ function fhGeneralHoursForAff(aff){
   });
   return {totalH:Math.round(totalH*10)/10,persons:persons};
 }
+// Heures d'une personne dans les feuilles d'heure, toutes affaires :
+// {total, byAff:{affaire:heures}} (affaire = l.affId, sinon celle qui
+// contient la ligne — même règle que fhGeneralHoursForAff).
+function fhPersonHours(nm){
+  var total=0,byAff={};
+  Object.keys(STORE.projects||{}).forEach(function(bucket){
+    var p=STORE.projects[bucket],nmData=p&&p.fh&&p.fh[nm];
+    if(!nmData)return;
+    Object.keys(nmData).forEach(function(wk){
+      var wd=nmData[wk]||{};
+      Object.keys(wd).forEach(function(di){
+        (Array.isArray(wd[di])?wd[di]:[]).forEach(function(l){
+          var h=+(l&&(l.hours||l.h))||0;if(!h)return;
+          var a=(l.affId||bucket);total+=h;byAff[a]=(byAff[a]||0)+h;
+        });
+      });
+    });
+  });
+  Object.keys(byAff).forEach(function(a){byAff[a]=Math.round(byAff[a]*10)/10;});
+  return {total:Math.round(total*10)/10,byAff:byAff};
+}
+// Efface TOUTES les heures d'une personne dans les feuilles d'heure de
+// toutes les affaires. Chaque jour est vidé ([]) ET horodaté, comme le fait
+// fhPut : sans l'horodatage, la fusion avec le serveur (_mergeFh) ferait
+// réapparaître les anciennes heures encore présentes côté serveur.
+// Ne sauvegarde pas : l'appelant fait syncFichesToGantt() + la sauvegarde.
+function fhErasePersonHours(nm){
+  var now=Date.now(),n=0;
+  Object.keys(STORE.projects||{}).forEach(function(bucket){
+    var p=STORE.projects[bucket],nmData=p&&p.fh&&p.fh[nm];
+    if(!nmData)return;
+    Object.keys(nmData).forEach(function(wk){
+      var wd=nmData[wk]||{};
+      Object.keys(wd).forEach(function(di){
+        if(Array.isArray(wd[di])&&wd[di].length)n++;
+        wd[di]=[];
+        if(!p._fhModAt)p._fhModAt={};
+        if(!p._fhModAt[nm])p._fhModAt[nm]={};
+        if(!p._fhModAt[nm][wk])p._fhModAt[nm][wk]={};
+        p._fhModAt[nm][wk][di]=now;
+      });
+    });
+  });
+  return n;
+}
+// Bouton du récap : effacer les heures restantes d'une personne qui a déjà
+// été supprimée de l'annuaire (heures invisibles dans la feuille d'heure,
+// puisque la personne n'y apparaît plus, mais toujours comptées).
+function fhEraseDeletedPersonHours(nm){
+  var ph=fhPersonHours(nm);
+  if(!ph.total){renderRecap();return;}
+  var detail=Object.keys(ph.byAff).sort().map(function(a){return '  • '+(STORE.projects[a]?getAffLabelShort(a):a)+' : '+ph.byAff[a]+' H';}).join('\n');
+  if(!confirm('Supprimer toutes les heures de '+nm+' dans les feuilles d’heure ?\n\n'+detail+'\n\nTotal : '+ph.total+' H.\nElles ne compteront plus dans le récap ni dans les sous-phases.'))return;
+  fhErasePersonHours(nm);
+  if(typeof syncFichesToGantt==='function')syncFichesToGantt();
+  saveNow();
+  renderRecap();
+}
 function fhPut(aff,nm,w,d,lines){
   var p=STORE.projects[aff];if(!p)return;
   if(!p.fh)p.fh={};
@@ -17622,6 +17693,19 @@ function renderRecap(){
     +(_canBud?card('Écart',(ecart>0?'+':'')+ecart+'H',ecart<0?'var(--rd)':'var(--gn)',ecart<0?'budget dépassé':'reste du budget'):'')
     +card('H affectées',Math.round(t.affTotH)+'H','var(--ac)')
     +'</div>';
+  // Heures de personnes supprimées de l'annuaire encore comptées ici :
+  // invisibles dans la feuille d'heure (la personne n'y apparaît plus),
+  // donc impossibles à effacer ailleurs — on les signale avec un bouton.
+  var _delPers=STORE._deletedPersons||{};
+  window._rcOrph=Object.keys(_delPers).map(function(nm){return {nm:nm,h:fhPersonHours(nm).byAff[STORE.current]||0};}).filter(function(o){return o.h>0;});
+  if(window._rcOrph.length){
+    h+='<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:var(--r2);padding:12px 14px;margin-bottom:16px">'
+      +'<div style="font-size:13px;font-weight:800;color:#92400E;margin-bottom:4px">⚠️ Heures de personnes supprimées de l’annuaire, encore comptées dans cette affaire</div>'
+      +'<div style="font-size:11px;color:#92400E;margin-bottom:8px">Elles n’apparaissent plus dans la feuille d’heure. S’il s’agit d’un salarié parti, vous pouvez les garder (historique) ; sinon (test, erreur), supprimez-les.</div>'
+      +window._rcOrph.map(function(o,i){return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px dashed #FDE68A"><span style="font-size:12px;font-weight:700;color:var(--tx)">'+escHtml(o.nm)+' · '+o.h+' H</span>'
+        +'<button onclick="fhEraseDeletedPersonHours(window._rcOrph['+i+'].nm)" style="padding:5px 12px;border-radius:var(--r);border:1px solid #DC2626;background:#fff;color:#DC2626;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer">🗑 Supprimer ses heures</button></div>';}).join('')
+      +'</div>';
+  }
   var _chPk=(D().find(function(r){return r.t==='ph'&&_isChantierPhase(r.pk);})||{}).pk;
   // Mêmes phases, dans le même ordre, que le tableau du récap.
   var phases=[];
