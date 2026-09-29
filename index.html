@@ -6518,6 +6518,16 @@ function _cdlToggleAll(state){
   document.querySelectorAll('._cdl-ph-cb,._cdl-ens-cb,._cdl-sb-cb,._cdl-act-cb').forEach(function(cb){cb.checked=state;});
 }
 
+// Pastille "% d'avancement" d'une tâche pour le planning téléchargé :
+// même valeur que dans l'onglet Avancement / le récap (terminée = 100 %,
+// sinon le % saisi), seulement pour les phases qui comptent (Chantier,
+// Automatisme) et pas pour une tâche "Hors avancement".
+function _dlTaskPctHtml(r){
+  if(!r||!_countsInProgress(r.pk)||r.excludeProgress)return '';
+  var pct=r.done?100:Math.max(0,Math.min(99,Math.round(+r.progress||0)));
+  var c=_avcCol(pct);
+  return '<span style="display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+c+'1F;color:'+c+';border:1px solid '+c+'55;white-space:nowrap">'+pct+'%</span>';
+}
 function downloadPlanning(mode){
   mode=mode||'interne';
   var aff=STORE.current;
@@ -6577,6 +6587,11 @@ function downloadPlanning(mode){
     +'<div style="font-size:13px;opacity:.8">Rapport généré le '+dateStr+'</div>'
     +'</div>';
 
+  if(mode==='client'){
+    // Récap client : même présentation que le document de l'onglet
+    // Avancement (cartes + arbre repliable avec barres), voir _dlClientRecapHtml.
+    body+=_dlClientRecapHtml();
+  } else {
   // ── Cartes KPI ───────────────────────────────────
   body+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:28px">';
   [
@@ -6645,7 +6660,7 @@ function downloadPlanning(mode){
     var _rowGroups=[curPhGroupId,curEnsGroupId,curSbGroupId].filter(Boolean).join(' ');
     var _rowClasses=[curPhGroupId,curEnsGroupId,curSbGroupId].filter(Boolean).map(function(g){return 'pc-c-'+g;}).join(' ');
     body+='<tr class="pc-hidden '+_rowClasses+'" data-groups="'+_rowGroups+'" style="border-bottom:1px solid #F0EDE8;background:'+(r.done?'#F0FDF4':ri%2===0?'#fff':'#FAFAFA')+'">'
-      +'<td style="padding:7px 10px;font-weight:'+(r.done?700:400)+'">'+esc(r.lb)+(r.done?' ✓':'')+'</td>'
+      +'<td style="padding:7px 10px;font-weight:'+(r.done?700:400)+'">'+esc(r.lb)+(r.done?' ✓':'')+(_dlTaskPctHtml(r)?' '+_dlTaskPctHtml(r):'')+'</td>'
       +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.s?isoWeekOf(r.s):'—')+'</td>'
       +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.e?isoWeekOf(r.e):'—')+'</td>'
 
@@ -6666,6 +6681,93 @@ function downloadPlanning(mode){
     +'<td colspan="2"></td></tr>';
   }
   body+='</tbody></table>';
+  } // fin du récap interne (tableau) — le récap client est construit par _dlClientRecapHtml
+
+  // Récap du planning client, présenté comme le document de l'onglet
+  // Avancement : cartes, puis Phase ▸ Ensemble ▸ Sous-phase ▸ Tâche en
+  // blocs repliables (<details>, sans script) avec barre + %. Mêmes lignes
+  // que l'ancien tableau (mêmes filtres _clientRowIncluded, cases cochées
+  // dans la fenêtre d'export) et mêmes % (calcHierProgress, mêmes options).
+  function _dlClientRecapHtml(){
+    var incSb=function(sb){return _clientRowIncluded(sb.pk,sb.ensId);};
+    function col(pk){var c=getPH()[pk];return (c&&_resolveCssColorForDl(c.h))||'#1F4E79';}
+    function bar(pc,c){return '<div class="rcb"><div class="rcf" style="width:'+pc+'%;background:'+c+'"></div></div>';}
+    // Arbre, dans l'ordre des lignes, avec exactement les mêmes règles
+    // d'inclusion que l'ancien tableau.
+    var roots=[],ph=null,ens=null,sb=null,curEns=null,curSb=null;
+    (p.data||[]).forEach(function(r){
+      if(r.t==='ph'){ens=null;sb=null;curEns=null;curSb=null;ph=null;
+        if(!_clientRowIncluded(r.pk,null))return;
+        ph={type:'ph',row:r,kids:[]};roots.push(ph);return;}
+      if(r.t==='ens'){sb=null;curEns=r.id;curSb=null;ens=null;
+        if(!_clientRowIncluded(r.pk,r.id))return;
+        ens={type:'ens',row:r,kids:[]};if(ph)ph.kids.push(ens);else roots.push(ens);return;}
+      if(r.t==='sb'){curSb=r.id;sb=null;
+        if(!_clientRowIncluded(r.pk,curEns,r.id))return;
+        sb={type:'sb',row:r,kids:[]};(ens||ph?(ens||ph).kids:roots).push(sb);return;}
+      if(r.t!=='act')return;
+      if(!_clientRowIncluded(r.pk,curEns,curSb,r.id))return;
+      var t={type:'act',row:r};
+      (sb||ens||ph?(sb||ens||ph).kids:roots).push(t);
+    });
+    function taskHtml(r){
+      var cnt=_countsInProgress(r.pk),excl=!!r.excludeProgress,isDone=!!r.done;
+      var pc=isDone?100:Math.max(0,Math.min(99,Math.round(+r.progress||0)));
+      var badge=isDone?'<span class="rst rst-ok">✓ Terminée</span>'
+        :(cnt&&excl)?'<span class="rst rst-ex">Hors avancement</span>'
+        :r.inProgress?'<span class="rst rst-pr">⚡ En cours</span>':'';
+      return '<div class="rct"><div class="rctl"><span class="rctn">'+esc(r.lb)+'</span>'+badge+'<span class="rcd">'+esc(_avDateLbl(r))+'</span></div>'
+        +(cnt&&!excl?'<div class="rctr">'+bar(pc,isDone?'#16A34A':'#F59E0B')+'<span class="rcp">'+pc+'%</span></div>':'')+'</div>';
+    }
+    function nodeHtml(n,c){
+      if(n.type==='act')return taskHtml(n.row);
+      var cnt=_countsInProgress(n.row.pk);
+      var lbl=n.type==='ph'?n.row.pk:n.row.lb;
+      var pc=!cnt?null:n.type==='ph'?calcHierProgress(p.data,{filterPk:n.row.pk,includeSb:incSb})
+        :n.type==='ens'?calcHierProgress(p.data,{filterEnsId:n.row.id,includeSb:incSb})
+        :calcHierProgress(p.data,{filterSbId:n.row.id});
+      var head='<span class="rcn">'+esc(lbl)+'</span>'+(pc===null?'<span class="rcsp"></span>':bar(pc,c)+'<span class="rcp">'+pc+'%</span>');
+      var st=n.type==='ph'?' style="border-left-color:'+c+'"':'';
+      var kids=n.kids.map(function(k){return nodeHtml(k,c);}).join('');
+      if(!kids)return '<div class="rcg rc-'+n.type+'"'+st+'><div class="rch"><span class="rca"></span>'+head+'</div></div>';
+      return '<details class="rcg rc-'+n.type+'"'+st+(n.type==='ph'?' open':'')+'><summary class="rch"><span class="rca">▶</span>'+head+'</summary><div class="rck">'+kids+'</div></details>';
+    }
+    // Cartes : mêmes définitions que l'onglet Avancement (tâches des phases
+    // Chantier/Automatisme, hors "Hors avancement"), limitées aux tâches incluses.
+    var nProg=0,nDone=0,nShown=0;
+    (function walk(l){l.forEach(function(n){
+      if(n.type!=='act'){walk(n.kids);return;}
+      nShown++;
+      var r=n.row;if(!_countsInProgress(r.pk)||r.excludeProgress)return;
+      if(r.done)nDone++;else if(r.inProgress)nProg++;
+    });})(roots);
+    var css='<style>'
+      +'.rckpis{display:flex;gap:12px;margin-bottom:22px}.rckpi{flex:1;border:1px solid #E5E7EB;border-radius:10px;padding:12px 16px}'
+      +'.rckpi .l{font-size:11px;color:#6B7280;font-weight:700}.rckpi .v{font-size:26px;font-weight:900;color:#1F4E79}'
+      +'.rcg{margin-bottom:10px}.rc-ph{border:1px solid #E5E7EB;border-left:5px solid #1F4E79;border-radius:10px;padding:10px 14px;page-break-inside:avoid}'
+      +'.rc-ens,.rc-sb{margin:8px 0 0 14px}.rck{margin-top:4px}'
+      +'.rch{display:flex;align-items:center;gap:10px}.rcn{min-width:220px;font-weight:700;font-size:13px}.rc-ph>.rch .rcn{font-size:15px;font-weight:900}.rc-sb>.rch .rcn{font-weight:600;color:#4B5563}'
+      +'summary.rch{list-style:none;cursor:pointer;user-select:none}summary.rch::-webkit-details-marker{display:none}summary.rch:hover .rcn{color:#1F4E79}'
+      +'.rca{display:inline-block;width:12px;flex-shrink:0;font-size:10px;color:#9CA3AF;transition:transform .15s}details[open]>summary .rca{transform:rotate(90deg)}'
+      +'.rcb{flex:1;height:10px;background:#F1F2F5;border-radius:5px;overflow:hidden}.rcf{height:100%}.rcsp{flex:1}'
+      +'.rcp{width:44px;text-align:right;font-weight:800;font-size:12px}'
+      +'.rct{margin:6px 0 0 28px;padding:6px 0;border-top:1px dashed #E5E7EB}'
+      +'.rctl{display:flex;align-items:center;gap:8px;font-size:12px}.rctn{font-weight:600}.rcd{margin-left:auto;color:#9CA3AF;font-size:11px}'
+      +'.rctr{display:flex;align-items:center;gap:10px;margin-top:4px}'
+      +'.rst{font-size:10px;font-weight:700;padding:1px 8px;border-radius:10px}.rst-ok{background:#DCFCE7;color:#15803D}.rst-pr{background:#FEF3C7;color:#B45309}.rst-ex{background:#F3F4F6;color:#6B7280;border:1px dashed #9CA3AF}'
+      +'.rctools{display:flex;gap:8px;margin:0 0 14px}.rctools button{font-family:inherit;font-size:12px;font-weight:700;padding:5px 12px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#374151;cursor:pointer}.rctools button:hover{background:#F3F4F6}'
+      +'@media print{.rca{visibility:hidden}}'
+      +'</style>';
+    var all=function(o){return 'document.querySelectorAll(&quot;details.rcg&quot;).forEach(function(d){d.open='+o+';})';};
+    return css
+      +'<div class="rckpis"><div class="rckpi"><div class="l">Avancement de l’affaire</div><div class="v">'+pct+'%</div></div>'
+      +'<div class="rckpi"><div class="l">Tâches en cours</div><div class="v">'+nProg+'</div></div>'
+      +'<div class="rckpi"><div class="l">Tâches terminées</div><div class="v">'+nDone+'</div></div></div>'
+      +'<h2 style="font-size:15px;font-weight:800;color:#1F4E79;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #BFDBFE">📋 Activités ('+nShown+')</h2>'
+      +'<div class="rctools no-print"><button type="button" onclick="'+all(true)+'">▼ Tout déplier</button><button type="button" onclick="'+all(false)+'">▶ Tout replier</button></div>'
+      +(roots.length?roots.map(function(n){return nodeHtml(n,n.type==='ph'?col(n.row.pk):'#1F4E79');}).join(''):'<div style="color:#9CA3AF;padding:20px 0">Aucune activité.</div>')
+      +'<div style="height:18px"></div>';
+  }
 
   // ── Personnes impliquées (uniquement pour l'usage interne, pas le
   // téléchargement client — on n'affiche pas les noms de l'équipe au client) ──
@@ -6916,7 +7018,7 @@ function downloadPlanning(mode){
       html+='<td class="gsh" style="position:sticky;left:0;z-index:2;padding:0;border:1px solid #E5E7EB;background:'+(r.done?'#F0FDF4':'#FAFAFA')+';overflow:hidden">'
         +'<div style="padding:4px 6px 3px 48px;border-left:3px solid '+phC.h+'">'
         +'<div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(r.done?'#059669':'#1A1917')+'">'
-        +(r.done?'✓ ':'')+lbl+'</div>'
+        +(_dlTaskPctHtml(r)?_dlTaskPctHtml(r)+' ':'')+(r.done?'✓ ':'')+lbl+'</div>'
         +(mode!=='client'?'<div style="font-size:10px;color:#6B7280">'+hP+'H'+(nb?' · '+nb+'👤':'')+'</div>':'')
         +'</div></td>';
 
@@ -17188,7 +17290,7 @@ function _recapBudgetSections(){
       html+='</tr>';
     });
     html+='</tbody></table>';
-    _out.push({key:'budph',title:'&#128176; Budget Heures par Phase',table:html});
+    _out.push({key:'budph',title:'&#128176; R&eacute;cap heures par phase',table:html});
   }
   // Heures générales / Affaire : ligne dédiée montrant qui a pointé sur
   // l'affaire sans préciser de sous-phase, et combien — ces heures sont
@@ -17201,7 +17303,7 @@ function _recapBudgetSections(){
     html+='<table class="rt"><thead><tr><th>Phase</th><th>R&eacute;el H</th><th>Qui a travaill&eacute; dessus</th></tr></thead><tbody>';
     html+='<tr><td style="font-weight:700">'+_chantierPh.lb+'</td><td style="font-weight:700">'+_genHoursAff.totalH+'H</td><td>'+_genPersDetail+'</td></tr>';
     html+='</tbody></table>';
-    _out.push({key:'gen',title:'&#128176; Heures g&eacute;n&eacute;rales / Affaire (sans sous-phase pr&eacute;cise)',table:html});
+    _out.push({key:'gen',title:'&#128176; R&eacute;cap heures g&eacute;n&eacute;rales / Affaire (sans sous-phase pr&eacute;cise)',table:html});
   }
   // Budget par ensemble
   var _hBudEns=D().some(function(r){return r.t==='ens'&&r.budgetH>0;})&&hasView('budget_recap');
@@ -17234,7 +17336,7 @@ function _recapBudgetSections(){
       html+='</tr>';
     });
     html+='</tbody></table>';
-    _out.push({key:'budens',title:'&#128176; Budget Heures par Ensemble',table:html});
+    _out.push({key:'budens',title:'&#128176; R&eacute;cap heures par ensemble',table:html});
   }
   // Budget par sous-phase — avec détail des personnes (qui a travaillé dessus et combien d'heures)
   var _hBudSb=D().some(function(r){return r.t==='sb'&&r.budgetH>0;})&&hasView('budget_recap');
@@ -17285,7 +17387,7 @@ function _recapBudgetSections(){
       });
     });
     html+='</tbody></table>';
-    _out.push({key:'budsb',title:'&#128176; Budget Heures par Sous-phase',table:html});
+    _out.push({key:'budsb',title:'&#128176; R&eacute;cap heures par sous-phase',table:html});
   }
   return _out;
 }
