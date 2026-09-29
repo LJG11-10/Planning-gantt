@@ -620,7 +620,7 @@
       // ACTIVEMENT dans un champ de saisie de ces panneaux (en train d'écrire).
       var ae=document.activeElement;
       if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)){
-        if(ae.closest('#exp-panel-row')||ae.closest('#day-popup')||ae.closest('#db-grid'))return true;
+        if(ae.closest('#exp-panel-row')||ae.closest('#day-popup')||ae.closest('#db-grid')||ae.closest('#tdb-avancement'))return true;
       }
       // Planning Réunion : le sélecteur d'activité arborescent (Phase ▸
       // Ensemble ▸ Sous-phase) n'est pas un INPUT/SELECT classique — c'est un
@@ -878,7 +878,7 @@
       var t=document.querySelector('.nb.on');
       if(t&&t.dataset){
         var tab=t.dataset.tab;
-        if(tab==='recap'){if(!window._tdbTab||window._tdbTab==='overview')renderOverview();else{syncFichesToGantt();renderRecap();}}
+        if(tab==='recap'){if(!window._tdbTab||window._tdbTab==='overview')renderOverview();else if(window._tdbTab==='avancement')renderAvancement();else{syncFichesToGantt();renderRecap();}}
         else if(tab==='dashboard')renderDashboard();
       }
       var n=document.createElement('div');
@@ -2963,10 +2963,12 @@ window.DroitsAcces = (function () {
     <button class="tdb-tab on" data-tt="overview" onclick="switchTdbTab('overview')" style="padding:5px 14px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">🏠 Vue d'ensemble</button>
     <button class="tdb-tab" data-tt="recap-current" onclick="switchTdbTab('recap-current')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📋 Récap — Affaire courante</button>
     <button class="tdb-tab" data-tt="recap-all" onclick="switchTdbTab('recap-all')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">📊 Récap — Toutes affaires</button>
+    <button class="tdb-tab" data-tt="avancement" onclick="window._avOpen={};switchTdbTab('avancement')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">📈 Avancement</button>
   </div>
   <div id="tdb-overview" class="tdb-pane"></div>
   <div id="tdb-recap-current" class="tdb-pane pg" style="flex:1;overflow:auto"><div id="rw" class="pg"></div></div>
   <div id="tdb-recap-all" class="tdb-pane pg" style="flex:1;overflow:auto;display:none"></div>
+  <div id="tdb-avancement" class="tdb-pane pg" style="flex:1;overflow:auto;display:none"></div>
 </div>
 <div id="tab-modifications" class="tab" style="flex-direction:column">
   <div id="mods-w" class="pg" style="flex:1;overflow:auto"></div>
@@ -4070,6 +4072,8 @@ function switchTdbTab(sub){
   } else if(sub==='recap-all'){
     var pane3=document.getElementById('tdb-recap-all');
     if(pane3)pane3.innerHTML=dbRecap();
+  } else if(sub==='avancement'){
+    renderAvancement();
   }
 }
 
@@ -4096,7 +4100,7 @@ function switchTab(t){
   // Rendre le contenu
   if(t==='gantt'){window._scrollToToday=true;renderGantt();}
   else if(t==='planning-reunion'){renderPlanningReunionTab();}
-  else if(t==='recap'){switchTdbTab(window._tdbTab||'overview');}
+  else if(t==='recap'){window._avOpen={};switchTdbTab(window._tdbTab||'overview');}
   else if(t==='modifications'){renderModificationsTab();}
   // Masquer/afficher les boutons Vue+Zoom selon onglet
   var _gvb=document.getElementById('gantt-view-btns');
@@ -9846,12 +9850,216 @@ function _isProgressExcludedPhase(pk){
 function _countsInProgress(pk){
   return (_isChantierPhase(pk)||_isAutomatismePhase(pk))&&!_isProgressExcludedPhase(pk);
 }
-function toggleExcludeProgress(id){
-  var r=D().find(function(x){return x.id===id;});
-  if(!r)return;
+// ══ Tableau de bord ▸ Avancement ═══════════════════════════════════════
+// Seul endroit où l'on saisit "En cours / Terminé / % / Hors avancement"
+// (retiré du GANTT). Écrit dans exactement les mêmes champs de tâche que
+// ceux lus par calcHierProgress (inProgress, done, progress,
+// excludeProgress) : le récap n'a rien à savoir de cet onglet, et les
+// chiffres affichés ici sont ceux du récap (même fonction de calcul).
+if(!window._avOpen)window._avOpen={};
+function _avSafe(s){return String(s).replace(/[^a-z0-9]/gi,'_');}
+function _avJs(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
+function _avRow(id){return D().find(function(x){return x.id===id;});}
+function _avDateLbl(r){
+  var d=getTaskDays5(r,'prev');
+  if(!d.length)return 'Non planifiée';
+  var a=Math.min.apply(null,d),b=Math.max.apply(null,d);
+  function f(x){var dt=weekDayToDate(Math.floor(x/5)+1,x%5);return dt?dt.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):'?';}
+  return a===b?f(a):f(a)+' → '+f(b);
+}
+// Arbre Phase ▸ Ensemble ▸ Sous-phase ▸ Tâche, limité aux phases qui
+// comptent dans l'avancement (Chantier et Automatisme, comme le récap).
+function _avTree(){
+  var phases=[],byPk={},ph=null,ens=null,sb=null;
+  _groupedRowsForDisplay(D()).forEach(function(r){
+    if(r.t==='ph'){
+      ens=null;sb=null;
+      if(!_countsInProgress(r.pk)){ph=null;return;}
+      ph=byPk[r.pk];
+      if(!ph){ph={type:'ph',row:r,kids:[]};byPk[r.pk]=ph;phases.push(ph);}
+      return;
+    }
+    if(!ph)return;
+    if(r.t==='ens'){ens={type:'ens',row:r,kids:[]};ph.kids.push(ens);sb=null;return;}
+    if(r.t==='sb'){sb={type:'sb',row:r,kids:[]};(ens?ens.kids:ph.kids).push(sb);return;}
+    if(r.t==='act')(sb?sb.kids:ens?ens.kids:ph.kids).push({type:'act',row:r});
+  });
+  return phases;
+}
+function _avCounts(){
+  var c={p:0,d:0};
+  function walk(list){list.forEach(function(n){
+    if(n.type!=='act'){walk(n.kids);return;}
+    var r=n.row;if(r.excludeProgress)return;
+    if(r.done)c.d++;else if(r.inProgress)c.p++;
+  });}
+  walk(_avTree());
+  return c;
+}
+var _AV_PAD=[14,32,50,68,86];
+function _avHdrHtml(key,label,pct,level,color,note){
+  var open=!!window._avOpen[key];
+  var pad=_AV_PAD[Math.min(level,4)];
+  var st=level===0
+    ?'background:var(--bg3);border-left:4px solid '+color+';font-weight:800;font-size:14px;color:var(--tx)'
+    :level===1?'font-weight:700;font-size:13px;color:var(--tx)':'font-weight:600;font-size:12px;color:var(--tx2)';
+  return '<div onclick="_avToggle(\''+key+'\')" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:10px 14px 10px '+pad+'px;border-top:1px solid var(--bd);'+st+'">'
+    +'<span style="display:inline-block;width:12px;font-size:10px;color:var(--tx3);transition:transform .15s;transform:rotate('+(open?90:0)+'deg)">▶</span>'
+    +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(label)+'</span>'
+    +(note||'')
+    +'<span id="avp-'+key.replace(':','-')+'" style="font-size:11px;font-weight:800;padding:2px 9px;border-radius:10px;background:var(--bg2);border:1px solid var(--bd);color:var(--tx2);flex-shrink:0">'+pct+'%</span>'
+    +'</div>';
+}
+function _avBtn(label,active,on,can,onclick){
+  var bg=active?on.bg:'var(--bg2)',bd=active?on.bd:'var(--bd)',tx=active?on.tx:'var(--tx2)';
+  return '<button '+(can?'onclick="'+onclick+'"':'disabled')+' style="flex:1;min-width:0;padding:8px 10px;border-radius:var(--r);border:1.5px '+(on.dashed?'dashed':'solid')+' '+bd+';background:'+bg+';color:'+tx+';font-size:12px;font-weight:700;font-family:inherit;cursor:'+(can?'pointer':'not-allowed')+'">'+label+'</button>';
+}
+// inSb : la tâche est-elle rangée dans une sous-phase ? calcHierProgress
+// ne compte QUE les tâches des sous-phases — une tâche posée directement
+// sous un ensemble ou une phase n'entre pas dans le total du récap.
+function _avTaskHtml(r,level,inSb){
+  var can=_peutChangerStatut(r);
+  var jsId=_avJs(r.id);
+  var isDone=!!r.done,excl=!!r.excludeProgress,isProg=!isDone&&!excl&&!!r.inProgress;
+  var pct=Math.max(0,Math.min(99,+r.progress||0));
+  var h='<div style="padding:10px 14px 12px '+_AV_PAD[Math.min(level,4)]+'px;border-top:1px solid var(--bd);background:var(--bg2)">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px">'
+    +'<span style="font-size:13px;font-weight:700;color:'+(excl?'var(--tx3)':'var(--tx)')+'">'+escHtml(r.lb)+'</span>'
+    +'<span style="font-size:11px;color:var(--tx3);white-space:nowrap">'+(isDone?'Terminée':escHtml(_avDateLbl(r)))+'</span></div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  if(!excl)h+=_avBtn('⚡ En cours',isProg,{bg:'#FEF3C7',bd:'#FDE68A',tx:'#B45309'},can,"avSetStatus('"+jsId+"','prog')");
+  h+=_avBtn('✓ Terminé',isDone,{bg:'#DCFCE7',bd:'#86EFAC',tx:'#15803D'},can,"avSetStatus('"+jsId+"','done')");
+  h+=_avBtn('Ø Hors avancement',excl,{bg:'var(--bg3)',bd:'var(--tx3)',tx:'var(--tx2)',dashed:true},can,"avToggleExclude('"+jsId+"')");
+  h+='</div>';
+  if(isProg){
+    h+='<div style="display:flex;align-items:center;gap:10px;margin-top:10px">'
+      +'<input type="number" min="0" max="99" step="1" value="'+pct+'"'+(can?'':' disabled')+' oninput="avSetPct(\''+jsId+'\',this,false)" onblur="avSetPct(\''+jsId+'\',this,true)" aria-label="Pourcentage d’avancement" style="width:72px;text-align:center;font-weight:800;font-size:14px;border:1.5px solid #FDE68A;border-radius:var(--r);padding:5px;background:#FFFBEB;color:#B45309;font-family:inherit;outline:none">'
+      +'<span style="font-size:13px;font-weight:700;color:#B45309">%</span>'
+      +'<div style="flex:1;height:10px;background:var(--bg3);border-radius:5px;overflow:hidden"><div id="avbar-'+_avSafe(r.id)+'" style="height:100%;width:'+pct+'%;background:#F59E0B;transition:width .2s"></div></div>'
+      +'</div>';
+  }else if(excl){
+    h+='<div style="margin-top:6px;font-size:11px;color:var(--tx3)">Ne compte pas dans le calcul d’avancement</div>';
+  }else if(!isDone){
+    h+='<div style="margin-top:6px;font-size:11px;color:var(--tx3)">Pas encore commencée</div>';
+  }
+  if(!inSb&&!excl){
+    h+='<div style="margin-top:6px;font-size:11px;font-weight:700;color:#B45309">Hors sous-phase : ne compte pas dans le total de l’affaire</div>';
+  }
+  return h+'</div>';
+}
+function _avNodeHtml(n,level,parentType){
+  if(n.type==='act')return _avTaskHtml(n.row,level,parentType==='sb');
+  var key=n.type+':'+_avSafe(n.type==='ph'?n.row.pk:n.row.id);
+  var opts=n.type==='ph'?{filterPk:n.row.pk}:n.type==='ens'?{filterEnsId:n.row.id}:{filterSbId:n.row.id};
+  var note='';
+  if(n.type==='ph'&&!_peutChangerStatut({pk:n.row.pk})){
+    note='<span style="font-size:10px;font-weight:700;color:var(--tx3);background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:1px 7px;flex-shrink:0">Lecture seule</span>';
+  }
+  // Le récap pèse chaque sous-phase par son budget d'heures : sans budget,
+  // elle pèse zéro et ne fait pas bouger le total, même à 100 %.
+  if(n.type==='sb'&&!(+n.row.budgetH>0)){
+    note='<span title="Le total de l’affaire pèse chaque sous-phase selon son budget d’heures (à saisir sur la sous-phase dans le GANTT)" style="font-size:10px;font-weight:700;color:#B45309;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:1px 7px;flex-shrink:0">Sans budget d’heures : ne compte pas dans le total</span>';
+  }
+  var color=n.type==='ph'?(PH_get(n.row.pk).h||'var(--ac)'):null;
+  var label=n.type==='ph'?n.row.pk:n.row.lb;
+  var h=_avHdrHtml(key,label,calcHierProgress(D(),opts),level,color,note);
+  if(window._avOpen[key])h+=n.kids.map(function(k){return _avNodeHtml(k,level+1,n.type);}).join('');
+  return h;
+}
+function renderAvancement(){
+  var pane=document.getElementById('tdb-avancement');
+  if(!pane)return;
+  if(!window._avOpen)window._avOpen={};
+  var affs=Object.keys(STORE.projects).filter(function(a){return STORE.projects[a]&&!STORE.projects[a].closed;}).sort();
+  var opts=affs.map(function(a){return '<option value="'+escHtml(a)+'"'+(a===STORE.current?' selected':'')+'>'+escHtml(getAffLabel(a))+'</option>';}).join('');
+  var tree=_avTree(),c=_avCounts();
+  function card(lbl,id,val){return '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);padding:10px 14px"><div style="font-size:11px;color:var(--tx3);font-weight:700">'+lbl+'</div><div id="'+id+'" style="font-size:22px;font-weight:900;color:var(--tx)">'+val+'</div></div>';}
+  var h='<div style="max-width:920px;margin:0 auto;padding:16px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">'
+    +'<div style="font-size:16px;font-weight:800;color:var(--tx)">📈 Avancement</div>'
+    +'<select onchange="avChangeAff(this.value)" style="border:1px solid var(--bd);border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);max-width:100%">'+opts+'</select>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px">'
+    +card('Avancement de l’affaire','av-glob',calcHierProgress(D(),{})+'%')
+    +card('Tâches en cours','av-nprog',c.p)
+    +card('Tâches terminées','av-ndone',c.d)
+    +'</div>';
+  if(!tree.length){
+    h+='<div style="text-align:center;padding:40px;color:var(--tx3);border:1px dashed var(--bd);border-radius:var(--r2)">Aucune tâche Chantier ou Automatisme dans cette affaire.</div>';
+  }else{
+    h+='<div style="border:1px solid var(--bd);border-radius:var(--r2);overflow:hidden;background:var(--bg2)">'
+      +tree.map(function(ph){return _avNodeHtml(ph,0);}).join('')
+      +'</div>';
+  }
+  pane.innerHTML=h+'</div>';
+}
+function _avToggle(key){window._avOpen[key]=!window._avOpen[key];renderAvancement();}
+function avChangeAff(k){window._avOpen={};switchProjet(k);renderAvancement();}
+function _avDenied(){alert('Vous ne pouvez modifier que les tâches de la phase Chantier.');}
+// Recliquer sur le statut déjà actif l'éteint : la tâche redevient "pas
+// encore commencée".
+//
+// Toutes les fonctions de cet onglet horodatent la ligne IMMÉDIATEMENT
+// (r._modAt), jamais seulement via un saveNow() différé : si l'utilisateur
+// change d'affaire pendant le délai, _stampModifiedRows() (appelé par
+// saveNow) horodaterait les lignes de la NOUVELLE affaire courante, jamais
+// celle-ci — et le changement pourrait être écrasé par une version distante
+// plus ancienne à la synchro suivante (bug réel déjà vu : des % disparaissaient).
+function avSetStatus(id,st){
+  var r=_avRow(id);if(!r)return;
+  if(!_peutChangerStatut(r)){_avDenied();return;}
+  if(st==='done'){
+    if(r.done){r.done=false;r.inProgress=false;r.progress=0;}
+    else{r.done=true;r.inProgress=false;}
+  }else{
+    if(r.inProgress&&!r.done){r.inProgress=false;r.progress=0;}
+    else{r.done=false;r.inProgress=true;if((+r.progress||0)>=100)r.progress=0;}
+  }
+  r._modAt=Date.now();
+  saveNow();renderAvancement();
+}
+function avToggleExclude(id){
+  var r=_avRow(id);if(!r)return;
+  if(!_peutChangerStatut(r)){_avDenied();return;}
   r.excludeProgress=!r.excludeProgress;
-  if(r.excludeProgress){r.inProgress=false;r.progress=0;} // perd aussi l'icône "en cours"
-  saveNow();refreshAllTabs();
+  if(r.excludeProgress){r.inProgress=false;r.progress=0;}
+  r._modAt=Date.now();
+  saveNow();renderAvancement();
+}
+// Saisie du % : la barre suit à chaque frappe, sans reconstruire l'onglet
+// (sinon le champ perdrait le focus en pleine saisie). Sauvegarde après
+// une courte pause, ou immédiatement en quittant le champ.
+function avSetPct(id,el,final){
+  var r=_avRow(id);if(!r||!_peutChangerStatut(r))return;
+  var v=Math.max(0,Math.min(99,Math.round(+el.value||0)));
+  if(final&&el.value!==String(v))el.value=v;
+  if((+r.progress||0)!==v){r.progress=v;r._modAt=Date.now();avSetPct._pending=true;}
+  var bar=document.getElementById('avbar-'+_avSafe(id));
+  if(bar)bar.style.width=v+'%';
+  clearTimeout(avSetPct._t);
+  if(final){
+    if(avSetPct._pending){avSetPct._pending=false;saveNow();}
+    _avRefreshNumbers();
+    return;
+  }
+  avSetPct._t=setTimeout(function(){
+    if(avSetPct._pending){avSetPct._pending=false;saveNow();}
+    _avRefreshNumbers();
+  },400);
+}
+function _avRefreshNumbers(){
+  var g=document.getElementById('av-glob');if(!g)return;
+  g.textContent=calcHierProgress(D(),{})+'%';
+  var c=_avCounts();
+  document.getElementById('av-nprog').textContent=c.p;
+  document.getElementById('av-ndone').textContent=c.d;
+  D().forEach(function(r){
+    var el=null,o=null;
+    if(r.t==='ph'){el=document.getElementById('avp-ph-'+_avSafe(r.pk));o={filterPk:r.pk};}
+    else if(r.t==='ens'){el=document.getElementById('avp-ens-'+_avSafe(r.id));o={filterEnsId:r.id};}
+    else if(r.t==='sb'){el=document.getElementById('avp-sb-'+_avSafe(r.id));o={filterSbId:r.id};}
+    if(el)el.textContent=calcHierProgress(D(),o)+'%';
+  });
 }
 // ── Calcul hiérarchique de l'avancement ────────────────────────────────
 // À l'intérieur d'une sous-phase : les tâches qui comptent (non exclues)
@@ -10235,7 +10443,7 @@ function updBudgetManuel(){
   var inp=document.getElementById('inp-bud');
   if(inp){
     currP().budget=parseFloat(inp.value)||0;
-    // Horodater tout de suite (même raison que setProgress ci-dessus) : si
+    // Horodater tout de suite (même raison que dans avSetStatus) : si
     // l'utilisateur change d'affaire avant que saveNow() différé ne se déclenche,
     // le budget de CETTE affaire doit déjà être marqué comme récent.
     currP()._metaModAt=Date.now();
@@ -11738,27 +11946,20 @@ function _gcActRowHtml(row,DW,NC,_MG,winStart,winEnd){
       <td class="al s1" onclick="event.stopPropagation();toggleExp('${row.id}')" style="cursor:pointer;background:${isE?'var(--ac2)':done?'rgba(209,250,229,.5)':row.inProgress?'rgba(254,243,199,.5)':isOverdue?'rgba(254,226,226,.5)':'var(--bg2)'};color:${isE?'var(--ac)':done?'var(--gn)':row.inProgress?'#D97706':isOverdue?'#DC2626':'var(--tx)'};border-left:${rowBorderLeft};font-weight:${isE||done?600:400};font-size:13px;overflow:hidden;border-right:1px solid var(--bd);padding:3px 4px 3px 0;vertical-align:middle;position:sticky;left:0;z-index:5;">
         <div style="display:flex;flex-direction:column;gap:1px;padding-left:2px;">
           <div style="display:flex;align-items:center;gap:3px;min-width:0;">
-            <span onclick="event.stopPropagation();toggleDone('${row.id}')" title="${done?'Décocher':'Marquer terminé'}"
-              style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0;border-radius:3px;border:1.5px solid ${done?'var(--gn)':'var(--bd2)'};background:${done?'var(--gn)':'var(--bg2)'};cursor:pointer;font-size:12px;color:#fff;">${done?'✓':''}</span>
+            <span title="${done?'Terminée':'Statut modifiable dans Tableau de bord ▸ Avancement'}"
+              style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0;border-radius:3px;border:1.5px solid ${done?'var(--gn)':'var(--bd2)'};background:${done?'var(--gn)':'var(--bg2)'};font-size:12px;color:#fff;">${done?'✓':''}</span>
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;${done?'text-decoration:line-through;opacity:.6;':''}">
-              ${done?row.lb:row.lb}
+              ${row.lb}
             </span>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;padding-left:20px;margin-top:3px" onclick="event.stopPropagation()">
+          <div style="display:flex;align-items:center;gap:6px;padding-left:20px;margin-top:3px;min-height:18px">
             ${_isProgressExcludedPhase(row.pk)?'':(
               row.excludeProgress
-              ?`<span onclick="toggleExcludeProgress('${row.id}')" title="Cliquer pour réintégrer cette tâche dans l'avancement" style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;user-select:none;background:var(--bg3);color:var(--tx3);border:1px dashed var(--bd)">Ø Hors avancement</span>`
-              :`<span onclick="toggleInProgress('${row.id}')" style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;user-select:none;transition:.15s;background:${(row.inProgress&&!row.done)?'#FEF3C7':'var(--bg3)'};color:${(row.inProgress&&!row.done)?'#D97706':'var(--tx3)'};border:1px solid ${(row.inProgress&&!row.done)?'#FDE68A':'var(--bd)'}">
-              ${(row.inProgress&&!row.done)?'⚡ En cours':'⚡ En cours'}
-            </span>
-            ${(row.inProgress&&!row.done)?`
-            <input type="number" min="0" max="100" value="${row.progress||0}" onclick="event.stopPropagation()"
-              oninput="event.stopPropagation();setProgress('${row.id}',+this.value||0)"
-              style="width:48px;border:1px solid #FDE68A;border-radius:4px;padding:2px 4px;font-size:9px;font-family:inherit;background:#FFFBEB;color:#D97706;outline:none;text-align:center"
-              placeholder="%">
-            `:''}`
+              ?`<span title="Modifiable dans Tableau de bord ▸ Avancement" style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--tx3);border:1px dashed var(--bd)">Ø Hors avancement</span>`
+              :(row.inProgress&&!row.done)
+                ?`<span title="Modifiable dans Tableau de bord ▸ Avancement" style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;background:#FEF3C7;color:#D97706;border:1px solid #FDE68A">⚡ ${Math.round(+row.progress||0)}%</span>`
+                :''
             )}
-            ${_isProgressExcludedPhase(row.pk)?'':`<span onclick="toggleExcludeProgress('${row.id}')" title="${row.excludeProgress?'Réintégrer dans l avancement':'Ne compte pas dans l avancement (ex: mise à disposition)'}" style="font-size:8px;color:var(--tx3);opacity:.6;cursor:pointer;text-decoration:underline;user-select:none">${row.excludeProgress?'réintégrer':'ne compte pas'}</span>`}
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:2px;padding-left:19px;">
             ${(!row.s&&(!row.reelDays||!row.reelDays.length))?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:#FEF3C7;color:#92400E;font-weight:700">📌 Non planifiée</span>':''}
@@ -13897,7 +14098,7 @@ function pedConfirmAddPhase(){
       tbody+=`<tr data-rid="${a.id}" style="border-bottom:1px solid var(--bd)">
         <td style="padding:5px 8px;width:220px;min-width:220px;position:sticky;left:0;background:${isE?'var(--ac2)':done?'var(--gn2)':'var(--bg2)'};z-index:8;border-right:2px solid var(--bd2);cursor:pointer;vertical-align:top" onclick="event.stopPropagation();toggleExp('${a.id}')">
           <div style="display:flex;align-items:center;gap:4px">
-            <span onclick="event.stopPropagation();toggleDone('${a.id}')" style="cursor:pointer;font-size:14px;flex-shrink:0">${done?'☑':'☐'}</span>
+            <span title="${done?'Terminée':'Statut modifiable dans Tableau de bord ▸ Avancement'}" style="font-size:14px;flex-shrink:0">${done?'☑':'☐'}</span>
             <span style="font-size:10px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.lb}</span>
           </div>
           <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:2px">
@@ -15249,27 +15450,6 @@ function toggleExp(id){
 }
 
 
-function setProgress(id,val){
-  const r=D().find(x=>x.id===id);if(!r)return;
-  if(!_peutChangerStatut(r))return; // pas d'alerte ici (appelé en continu pendant le glissement du curseur)
-  r.progress=Math.min(100,Math.max(0,+val||0));
-  // Horodater tout de suite, PAS dans le saveNow() différé ci-dessous : si
-  // l'utilisateur change d'affaire dans les 400ms qui suivent, _stampModifiedRows()
-  // (appelé par saveNow) horodaterait les lignes de la NOUVELLE affaire courante,
-  // jamais celle-ci — le pourcentage resterait sans horodatage récent et pourrait
-  // être silencieusement écrasé par une version distante plus ancienne lors de
-  // la prochaine synchronisation (bug réel identifié : des % disparaissaient).
-  r._modAt=Date.now();
-  clearTimeout(setProgress._t);
-  setProgress._t=setTimeout(function(){saveNow();refreshAllTabs();},400);
-}
-function toggleInProgress(id){
-  const r=D().find(x=>x.id===id);if(!r)return;
-  if(!_peutChangerStatut(r)){alert('Vous ne pouvez modifier le statut que des activités Chantier.');return;}
-  r.inProgress=!r.inProgress;
-  if(!r.inProgress)r.progress=0;
-  saveNow();refreshAllTabs();
-}
 // ── Drag GANTT pour placer les barres ────────────────────────────────
 var _gc = {active:false, rid:null, w1:0, d1:0, w2:0, d2:0};
 window._ganttBarMode = 'prev';
@@ -15830,7 +16010,6 @@ function pedDaysModal(actId, pIdx){
   modal.onclick=function(e){if(e.target===modal){modal.remove();saveNow();_refreshPanelInPlace(actId);dbBuildPlanningGrid();}};
 }
 
-function toggleDone(id){const r=D().find(x=>x.id===id);if(!r)return;if(!_peutChangerStatut(r)){alert('Vous ne pouvez marquer terminé que les activités Chantier.');return;}r.done=!r.done;saveNow();refreshAllTabs();}
 function updDate(id,f,v){
   const n=Math.min(52,Math.max(1,parseInt(v)||1));
   const r=D().find(x=>x.id===id);if(!r)return;
@@ -15860,7 +16039,7 @@ function updPAutoEnt(id,i,name){
 function updP(id,i,f,v){
   const r=D().find(x=>x.id===id);if(!r||!r.p[i])return;
   r.p[i][f]=v;
-  r._modAt=Date.now(); // voir setProgress : horodater avant le debounce, pas après
+  r._modAt=Date.now(); // voir avSetStatus : horodater avant le debounce, pas après
   clearTimeout(updP._t);
   updP._t=setTimeout(function(){saveNow();updBudget();},300);
 }
@@ -15887,7 +16066,7 @@ function updActFull(id,f,v){
     // Si hReel=0 → effacer barres réel
     if(f==='hReel'&&(+v||0)===0){r.sReel=0;r.eReel=0;r.dDurR=0;r.reelDays=[];}
   }
-  r._modAt=Date.now(); // voir setProgress : horodater avant le debounce, pas après
+  r._modAt=Date.now(); // voir avSetStatus : horodater avant le debounce, pas après
   updBudget();
   clearTimeout(updActFull._t);
   updActFull._t=setTimeout(function(){saveNow();},300);
@@ -15928,7 +16107,7 @@ function updActDurLive(id,field,val){
       var hEl4=document.getElementById('ep-hr-'+id);if(hEl4&&document.activeElement!==hEl4)hEl4.value=newHR;
     }
   }
-  r._modAt=Date.now(); // voir setProgress : horodater avant le debounce, pas après
+  r._modAt=Date.now(); // voir avSetStatus : horodater avant le debounce, pas après
   updBudget();
   clearTimeout(updActDurLive._t);
   updActDurLive._t=setTimeout(function(){saveNow();},300);
@@ -16003,7 +16182,7 @@ function updActHSync(id,field,val){
       r.eReel=Math.min(52,(r.sReel||r.s)+Math.floor(totalR/5));
     }
   }
-  r._modAt=Date.now(); // voir setProgress : horodater avant le debounce, pas après
+  r._modAt=Date.now(); // voir avSetStatus : horodater avant le debounce, pas après
   updBudget();
   clearTimeout(updActHSync._t);
   updActHSync._t=setTimeout(function(){saveNow();},300);
