@@ -50,6 +50,10 @@
   let supa = null;
   try { supa = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) {}
   window.supa = supa; // accessible aux modules séparés (Gestion des droits, Plaque PE...)
+  // Lien "?qr=..." (QR code feuille d'heure) : la page n'ouvre alors QUE le
+  // formulaire de saisie, sans écran de connexion ni accès au reste du site
+  // (voir window.QRFeuille, en bas du fichier).
+  window._QR_TOKEN=(function(){try{return (new URLSearchParams(location.search).get('qr')||'').replace(/[^a-f0-9]/gi,'');}catch(e){return '';}})();
   let _syncTimeout = null;
 
   function _isValidStore(s){
@@ -1139,6 +1143,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
 .btn-np:hover{background:var(--ac3)}
 .btn-da{padding:3px 7px;border-radius:var(--r);font-size:10px;cursor:pointer;border:1.5px solid var(--rd);background:var(--rd2);color:var(--rd);font-family:inherit}
 .bud-box{display:flex;align-items:center;gap:7px;padding:3px 10px;background:var(--bg3);border-radius:var(--r);border:1px solid var(--bd)}
+.bud-box-off{display:none!important}
 .bud-bw{width:90px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden}
 .bud-bf{height:100%;border-radius:3px;transition:width .3s}
 .sk-inp{width:55px}
@@ -1455,6 +1460,11 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
         <div style="font-size:16px;font-weight:800;color:#1C1A33">Sauvegardes</div>
         <div style="font-size:12px;color:#9A96B3;margin-top:6px;line-height:1.5">Voir et restaurer une version antérieure</div>
       </div>
+      <div id="petro-hub-tile-qr" onclick="petroHubEnterQR()" style="display:none;cursor:pointer;background:#fff;border-radius:16px;padding:32px 28px;width:280px;box-shadow:0 8px 28px rgba(60,40,160,.08);border:2px solid #E4E1F0;transition:transform .15s,box-shadow .15s,border-color .15s;text-align:center" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 14px 36px rgba(60,40,160,.15)';this.style.borderColor='#6457F4'" onmouseout="this.style.transform='none';this.style.boxShadow='0 8px 28px rgba(60,40,160,.08)';this.style.borderColor='#E4E1F0'">
+        <div style="height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;font-size:44px">📱</div>
+        <div style="font-size:16px;font-weight:800;color:#1C1A33">QR Code</div>
+        <div style="font-size:12px;color:#9A96B3;margin-top:6px;line-height:1.5">Feuilles d’heure par QR code, validation</div>
+      </div>
     </div>
     <div style="text-align:center;margin-top:32px">
       <span onclick="petroHubLogout()" style="font-size:11px;color:rgba(255,255,255,.75);cursor:pointer;text-decoration:underline">Se déconnecter</span>
@@ -1521,7 +1531,18 @@ function showHub(){
   if(droits) droits.style.display='none';
   var backups = document.getElementById('petro-backups-shell');
   if(backups) backups.style.display='none';
+  var qrs = document.getElementById('petro-qr-shell');
+  if(qrs) qrs.style.display='none';
   petroHubShowLogoOnHub();
+}
+function petroHubEnterQR(){
+  var hub = document.getElementById('petro-hub-screen');
+  if(hub) hub.style.display='none';
+  var qrs = document.getElementById('petro-qr-shell');
+  if(qrs) qrs.style.display='flex';
+  if(window.QRFeuille && typeof window.QRFeuille.render==='function'){
+    window.QRFeuille.render('petro-qr-content');
+  }
 }
 function petroHubEnterPlanning(){
   var hub = document.getElementById('petro-hub-screen');
@@ -1565,6 +1586,8 @@ function petroHubBackToHub(){
   if(droits) droits.style.display='none';
   var backups = document.getElementById('petro-backups-shell');
   if(backups) backups.style.display='none';
+  var qrs = document.getElementById('petro-qr-shell');
+  if(qrs) qrs.style.display='none';
   var hub = document.getElementById('petro-hub-screen');
   if(hub) hub.style.display='flex';
 }
@@ -2617,6 +2640,7 @@ window.DroitsAcces = (function () {
     {key:'annuaire',  label:'Annuaire du personnel'},
     {key:'rappels',   label:'Rappels & alertes'},
     {key:'plaque_pe', label:'Plaque PE'},
+    {key:'qr_feuille', label:'QR Code feuille d\'heure (Voir = accès à l\'onglet ; Modifier = afficher le QR code, valider et débloquer les feuilles)'},
     {key:'budget_toolbar', label:'H vendues (barre d\'outils)', group:'Budget Heures'},
     {key:'budget_gantt',   label:'Budget heures dans le Gantt (par phase/ensemble/sous-phase)', group:'Budget Heures'},
     {key:'budget_recap',   label:'Heures dans le récap & les rapports', group:'Budget Heures'}
@@ -2929,7 +2953,11 @@ window.DroitsAcces = (function () {
   <span class="lbl">FIN</span>
   <input type="date" id="inp-dend" readonly="" title="Calculé automatiquement d'après la dernière barre posée sur le GANTT" style="font-size:10px;padding:3px 5px;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg3);color:var(--tx2);outline:none;cursor:default">
   <span id="inp-deadline" style="font-size:10px;font-weight:700;color:var(--tx3)"></span>
-  <div class="bud-box">
+  <!-- Case "Utilisées / Rest." retirée de la barre du GANTT (l'info est dans
+       le récap) : masquée par la règle CSS .bud-box-off (!important, pour
+       gagner sur applyModulePermissions), mais gardée dans la page car updBudget() et
+       applyModulePermissions() y écrivent encore (sinon erreur JS). -->
+  <div class="bud-box bud-box-off">
     <span class="lbl">UTILISÉES</span>
     <span style="font-weight:700;color:var(--ac);font-size:11px" id="bud-u">0 H</span>
     <div class="bud-bw"><div class="bud-bf" id="bud-f" style="width:0%;background:var(--gn)"></div></div>
@@ -3254,6 +3282,9 @@ function applyRoleRestrictions() {
   if (droitsTile) droitsTile.style.display = (CURRENT_ROLE === 'admin') ? '' : 'none';
   var backupsTile = document.getElementById('petro-hub-tile-backups');
   if (backupsTile) backupsTile.style.display = (CURRENT_ROLE === 'admin') ? '' : 'none';
+  // QR Code feuille d'heure : admins, + ceux qui ont le droit "QR Code" (Voir)
+  var qrTile = document.getElementById('petro-hub-tile-qr');
+  if (qrTile) qrTile.style.display = (CURRENT_ROLE === 'admin' || hasView('qr_feuille')) ? '' : 'none';
   if (CURRENT_ROLE === 'chef_chantier') {
     // Masquer tous les onglets sauf GANTT, Planning réunion, Personnel, Absences et Tableau de bord
     // (le budget à l'intérieur du Tableau de bord est déjà géré finement par le
@@ -18066,5 +18097,746 @@ autre@exemple.fr" style="width:100%;border:1px solid var(--bd);border-radius:var
 </div>
 </div><!-- /app-shell -->
 
+
+<!-- ═══════════════════════════ QR CODE FEUILLE D'HEURE — module isolé ═══════════
+     Deux usages dans le même fichier :
+     1) Onglet "QR Code" (accueil, personnel connecté) : afficher le QR code
+        d'une semaine, puis relire / corriger / valider les feuilles reçues.
+     2) Lien "?qr=<jeton>" (téléphone, SANS connexion) : uniquement le
+        formulaire — le reste du site n'est jamais chargé ni affiché.
+     Le formulaire ne touche JAMAIS aux données du site : il dépose sa
+     feuille dans la table Supabase "qr_submissions" via la fonction
+     qr_submit. Ce n'est qu'à la validation (chef/admin connecté) que la
+     feuille est écrite dans la Feuille d'heure (fh / fhMeta), exactement
+     comme une saisie manuelle. ═══════════════════════════════════════════ -->
+<div id="petro-qr-shell" style="display:none;position:fixed;inset:0;z-index:8000;background:#F6F5FB;flex-direction:column;overflow:hidden;font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif">
+  <div style="padding:10px 16px;background:#fff;border-bottom:1px solid #E4E1F0;display:flex;align-items:center;gap:12px;flex-shrink:0">
+    <button onclick="petroHubBackToHub()" style="background:#F6F5FB;color:#1C1A33;border:1px solid #E4E1F0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">← Retour</button>
+    <span style="color:#1C1A33;font-size:13px;font-weight:700">QR Code — Feuilles d’heure</span>
+  </div>
+  <div id="petro-qr-content" style="flex:1;min-height:0;overflow:auto;padding:24px 16px"></div>
+</div>
+<div id="qrf-modal" style="display:none;position:fixed;inset:0;z-index:9500;background:rgba(20,16,50,.45);overflow:auto;padding:24px 12px"></div>
+<div id="qr-public" style="display:none;position:fixed;inset:0;z-index:10050;overflow:auto;background:#F6F5FB;-webkit-overflow-scrolling:touch"></div>
+<style>
+.qrf,.qrf *{box-sizing:border-box}
+.qrf{font-family:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#1C1A33}
+.qrf-wrap{max-width:560px;margin:0 auto;padding:16px 14px 110px}
+.qrf-card{background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:14px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(60,40,160,.05)}
+.qrf-hero{background:linear-gradient(135deg,#3A2EAE,#6457F4);color:#fff;border-radius:18px;padding:18px;margin-bottom:14px}
+.qrf-hero .wk{font-size:32px;font-weight:900;line-height:1.1}
+.qrf-hero .sub{font-size:14px;opacity:.88;margin-top:4px}
+.qrf-btn{display:block;width:100%;border:none;border-radius:14px;padding:15px 16px;font-size:16px;font-weight:800;font-family:inherit;cursor:pointer;background:#6457F4;color:#fff}
+.qrf-btn:disabled{opacity:.45;cursor:not-allowed}
+.qrf-btn2{display:block;width:100%;border:1.5px solid #E4E1F0;background:#fff;color:#1C1A33;border-radius:14px;padding:13px 16px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer}
+.qrf-name{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1.5px solid #E4E1F0;border-radius:14px;padding:13px 16px;font-size:16px;font-weight:700;font-family:inherit;color:#1C1A33;cursor:pointer;margin-bottom:8px}
+.qrf-name:active,.qrf-day:active{background:#EFEDFE}
+.qrf-av{width:36px;height:36px;border-radius:50%;background:#EFEDFE;color:#6457F4;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;flex-shrink:0}
+.qrf-lbl{font-size:12px;font-weight:800;color:#6B6790;letter-spacing:.3px;margin:0 0 6px}
+.qrf-in{display:block;width:100%;border:1.5px solid #E4E1F0;border-radius:12px;padding:12px;font-size:16px;font-family:inherit;background:#fff;color:#1C1A33;outline:none}
+.qrf-in:focus{border-color:#6457F4}
+.qrf-in:disabled{background:#F6F5FB;color:#4B5563}
+.qrf-tog{flex:1;border:1.5px solid #E4E1F0;background:#fff;border-radius:12px;padding:12px 8px;font-size:15px;font-weight:700;font-family:inherit;color:#1C1A33;cursor:pointer}
+.qrf-tog.on{background:#EFEDFE;border-color:#6457F4;color:#3A2EAE}
+.qrf-tog:disabled{cursor:default}
+.qrf-row{display:flex;gap:8px}
+.qrf-line{border:1.5px solid #E4E1F0;border-left:5px solid #6457F4;border-radius:14px;padding:12px;margin-bottom:10px;background:#FBFAFF}
+.qrf-day{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1.5px solid #E4E1F0;border-radius:14px;padding:14px 16px;font-family:inherit;cursor:pointer;margin-bottom:8px;color:#1C1A33}
+.qrf-badge{display:inline-block;font-size:12px;font-weight:800;padding:3px 10px;border-radius:10px;margin:2px 4px 2px 0}
+.qrf-err{background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:10px;line-height:1.5}
+.qrf-foot{position:fixed;left:0;right:0;bottom:0;background:rgba(246,245,251,.97);border-top:1px solid #E4E1F0;padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
+.qrf-foot>div{max-width:560px;margin:0 auto;display:flex;gap:8px}
+.qrf summary{list-style:none}.qrf summary::-webkit-details-marker{display:none}
+.qrs-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media(max-width:760px){.qrs-grid{grid-template-columns:1fr}}
+#qrs-qr svg{display:block;width:100%;height:100%}
+</style>
+<script>
+window.QRFeuille=(function(){
+  'use strict';
+  var QR_LIB='https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+  var DAYS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
+  var MOIS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var ZONES=['Zone 1','Zone 2','Zone 3','Zone 4','Zone 5','Zone 6','Zone 7'];
+  // Mêmes valeurs que la Feuille d'heure (fhBuildDayCell), pour que la
+  // validation écrive exactement ce qu'une saisie manuelle aurait écrit.
+  var VEH=[['Véhicule perso','🚙 Perso'],['Véhicule pro','🚐 Pro']];
+  var ctxs={}; // 'pub' = formulaire du téléphone, 'rev' = relecture chef/admin
+
+  // ── Outils ──────────────────────────────────────────────────────────
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function pad(n){return String(n).padStart(2,'0');}
+  function dkey(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  function ddmm(d){return pad(d.getDate())+'/'+pad(d.getMonth()+1);}
+  function ddmmK(k){var p=String(k||'').split('-');return p.length===3?p[2]+'/'+p[1]:'';}
+  function num(v){if(v===''||v==null)return 0;var n=parseFloat(String(v).replace(',','.').trim());return isFinite(n)?Math.round(n*100)/100:NaN;}
+  function r1(n){return Math.round(n*10)/10;}
+  function fr(n){return String(n||0).replace('.',',');}
+  function initials(n){return String(n||'').trim().split(/\s+/).slice(0,2).map(function(x){return x.charAt(0).toUpperCase();}).join('');}
+  function fmtDT(iso){if(!iso)return '';var d=new Date(iso);if(isNaN(d))return '';return ddmm(d)+' à '+pad(d.getHours())+':'+pad(d.getMinutes());}
+  function isPending(s){return s&&s.status!=='validated';}
+  function emptyDay(){return {panier:false,gd:false,trajetH:'',zone:'',vehicule:'',lieu:'',lines:[]};}
+  function emptyData(){var d={days:{}};for(var i=0;i<5;i++)d.days[i]=emptyDay();return d;}
+  function normData(x){
+    var d=emptyData();
+    if(x&&x.days){for(var i=0;i<5;i++){var s=x.days[i]||x.days[String(i)];if(!s)continue;var o=d.days[i];
+      o.panier=!!s.panier;o.gd=!!s.gd;o.trajetH=(s.trajetH==null?'':String(s.trajetH));o.zone=s.zone||'';o.vehicule=s.vehicule||'';o.lieu=s.lieu||'';
+      o.lines=(s.lines||[]).map(function(l){return {affId:l.affId||'',actId:l.actId||'',hours:(l.hours==null?'':String(l.hours))};});}}
+    return d;
+  }
+  function blockOf(ctx,di){var b=ctx.payload.blocked&&ctx.payload.blocked[ctx.person];return b?(b[di]||b[String(di)]||null):null;}
+  function isOff(ctx,di){var b=blockOf(ctx,di);return !!(b&&b.t!=='formation');}
+  function affOf(ctx,k){if(!k)return null;var l=ctx.payload.affaires||[];for(var i=0;i<l.length;i++)if(l[i].k===k)return l[i];return null;}
+  function affLbl(a){return a?(a.n+(a.l?' — '+a.l:'')):'';}
+  function sbLbl(a,id){if(!a||!id)return '';var l=a.sbs||[];for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i].lb;return '';}
+  function dayTotal(d){var t=0;(d.lines||[]).forEach(function(l){var h=num(l.hours);if(h>0)t+=h;});var tr=num(d.trajetH);if(tr>0)t+=tr;return r1(t);}
+  function dayHas(d){return !!(d.panier||d.gd||num(d.trajetH)>0||d.zone||d.vehicule||(d.lieu&&String(d.lieu).trim())||(d.lines||[]).some(function(l){return l.affId||l.actId||num(l.hours)>0;}));}
+
+  // ── Contrôles avant envoi / validation ─────────────────────────────
+  function check(ctx){
+    var errs=[],any=false;
+    for(var di=0;di<5;di++){
+      if(isOff(ctx,di))continue;
+      var d=ctx.data.days[di],dn=DAYS[di];
+      if(dayHas(d))any=true;
+      var tr=num(d.trajetH);
+      if(isNaN(tr)||tr<0||tr>24)errs.push(dn+' : heures de trajet incorrectes.');
+      (d.lines||[]).forEach(function(l){
+        var h=num(l.hours);
+        if(!l.affId&&!l.actId&&!(h>0)&&!(isNaN(h)))return; // ligne laissée vide : ignorée
+        if(isNaN(h)||h<0||h>24){errs.push(dn+' : nombre d’heures incorrect.');return;}
+        if(!l.affId)errs.push(dn+' : choisissez le chantier pour la ligne de '+h+' H.');
+        else if(!affOf(ctx,l.affId))errs.push(dn+' : un chantier choisi n’existe plus, choisissez-en un autre.');
+        else if(!(h>0))errs.push(dn+' : indiquez les heures pour '+affLbl(affOf(ctx,l.affId))+'.');
+      });
+      if(dayTotal(d)>24)errs.push(dn+' : plus de 24 H dans la journée.');
+    }
+    if(!any)errs.push('La feuille est vide : remplissez au moins un jour.');
+    return errs;
+  }
+  // Version "propre" enregistrée (jours bloqués et lignes vides retirés,
+  // nombres convertis, valeurs limitées à celles de la Feuille d'heure).
+  function clean(ctx){
+    var out={days:{}};
+    for(var di=0;di<5;di++){
+      if(isOff(ctx,di))continue;
+      var d=ctx.data.days[di];if(!dayHas(d))continue;
+      var tr=num(d.trajetH);
+      var lines=(d.lines||[]).filter(function(l){return l.affId&&num(l.hours)>0;}).map(function(l){
+        var a=affOf(ctx,l.affId);
+        var act=(l.actId&&a&&(a.sbs||[]).some(function(s){return s.id===l.actId;}))?l.actId:'';
+        return {affId:l.affId,actId:act,hours:num(l.hours)};
+      });
+      out.days[di]={panier:!!d.panier,gd:!!d.gd,trajetH:(tr>0?tr:''),
+        zone:(ZONES.indexOf(d.zone)>=0?d.zone:''),
+        vehicule:((d.vehicule===VEH[0][0]||d.vehicule===VEH[1][0])?d.vehicule:''),
+        lieu:String(d.lieu||'').trim().slice(0,120),lines:lines};
+    }
+    return out;
+  }
+  function dataTotal(data){var t=0;if(data&&data.days)Object.keys(data.days).forEach(function(k){t+=dayTotal(normData({days:{0:data.days[k]}}).days[0]);});return r1(t);}
+
+  // ── Éditeur d'un jour (partagé téléphone / relecture) ───────────────
+  function q(s){return "'"+s+"'";}
+  function tog(id,di,f,lbl,on,ro){return '<button type="button" class="qrf-tog'+(on?' on':'')+'"'+(ro?' disabled':' onclick="QRFeuille._tog('+q(id)+','+di+','+q(f)+')"')+'>'+lbl+(on?' ✓':'')+'</button>';}
+  function editorHtml(id,di){
+    var ctx=ctxs[id],d=ctx.data.days[di],ro=!!ctx.readOnly,dis=ro?' disabled':'';
+    var b=blockOf(ctx,di);
+    if(b&&b.t!=='formation'){
+      return '<div class="qrf-card" style="text-align:center;padding:24px 16px"><div style="font-size:40px">'+esc(b.i)+'</div><div style="font-size:18px;font-weight:900;margin-top:6px">'+esc(b.l)+'</div><div style="font-size:14px;color:#6B6790;margin-top:4px">Rien à remplir ce jour-là.</div></div>';
+    }
+    var h='';
+    if(b)h+='<div class="qrf-badge" style="background:#EDE9FE;color:#6D28D9;margin-bottom:10px">'+esc(b.i+' '+b.l)+' — remplissez quand même les heures et options</div>';
+    h+='<div class="qrf-card"><div class="qrf-lbl">OPTIONS DU JOUR</div>';
+    h+='<div class="qrf-row" style="margin-bottom:12px">'+tog(id,di,'panier','🍽 Panier',d.panier,ro)+tog(id,di,'gd','🚗 Grand dépl.',d.gd,ro)+'</div>';
+    h+='<div class="qrf-lbl">HEURES DE TRAJET</div><input class="qrf-in" inputmode="decimal" autocomplete="off" placeholder="0" value="'+esc(d.trajetH)+'"'+dis+' oninput="QRFeuille._set('+q(id)+','+di+','+q('trajetH')+',this.value)" style="margin-bottom:12px">';
+    h+='<div class="qrf-lbl">ZONE</div><select class="qrf-in"'+dis+' onchange="QRFeuille._set('+q(id)+','+di+','+q('zone')+',this.value)" style="margin-bottom:12px"><option value="">— Choisir —</option>'
+      +ZONES.map(function(z){return '<option value="'+z+'"'+(d.zone===z?' selected':'')+'>'+z+'</option>';}).join('')+'</select>';
+    h+='<div class="qrf-lbl">VÉHICULE</div><div class="qrf-row" style="margin-bottom:12px">'
+      +VEH.map(function(v,vi){var on=d.vehicule===v[0];return '<button type="button" class="qrf-tog'+(on?' on':'')+'"'+(ro?' disabled':' onclick="QRFeuille._veh('+q(id)+','+di+','+vi+')"')+'>'+v[1]+(on?' ✓':'')+'</button>';}).join('')+'</div>';
+    h+='<div class="qrf-lbl">LIEU</div><input class="qrf-in" maxlength="120" autocomplete="off" placeholder="Ex : Lacq" value="'+esc(d.lieu)+'"'+dis+' oninput="QRFeuille._set('+q(id)+','+di+','+q('lieu')+',this.value)">';
+    h+='</div>';
+    h+='<div class="qrf-card"><div class="qrf-lbl">CHANTIERS ET HEURES</div>';
+    if(!d.lines.length)h+='<div style="font-size:14px;color:#6B6790;margin-bottom:10px">Aucun chantier pour ce jour.</div>';
+    for(var li=0;li<d.lines.length;li++)h+=lineHtml(id,di,li);
+    if(!ro)h+='<button type="button" class="qrf-btn2" onclick="QRFeuille._addLine('+q(id)+','+di+')">+ Ajouter un chantier</button>';
+    h+='<div style="text-align:right;font-size:15px;font-weight:800;margin-top:12px">Total du jour : <span id="qrf-dt-'+id+'-'+di+'">'+fr(dayTotal(d))+'</span> H</div>';
+    return h+'</div>';
+  }
+  function lineHtml(id,di,li){
+    var ctx=ctxs[id],l=ctx.data.days[di].lines[li],ro=!!ctx.readOnly,dis=ro?' disabled':'';
+    var a=affOf(ctx,l.affId);
+    var h='<div class="qrf-line">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="qrf-lbl" style="margin:0">CHANTIER '+(li+1)+'</div>'
+      +(ro?'':'<button type="button" onclick="QRFeuille._delLine('+q(id)+','+di+','+li+')" style="border:none;background:#FEE2E2;color:#B91C1C;border-radius:8px;padding:6px 10px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit">✕ Retirer</button>')+'</div>';
+    h+='<select class="qrf-in"'+dis+' onchange="QRFeuille._lineAff('+q(id)+','+di+','+li+',this.value)" style="margin-bottom:10px"><option value="">— Choisir le chantier —</option>'
+      +(ctx.payload.affaires||[]).map(function(x){return '<option value="'+esc(x.k)+'"'+(x.k===l.affId?' selected':'')+'>'+esc(affLbl(x))+'</option>';}).join('')+'</select>';
+    if(l.affId){
+      var groups={},order=[];
+      ((a&&a.sbs)||[]).forEach(function(s){var g=s.g||'';if(!groups[g]){groups[g]=[];order.push(g);}groups[g].push(s);});
+      h+='<div class="qrf-lbl">SOUS-PHASE</div><select class="qrf-in"'+dis+' onchange="QRFeuille._line('+q(id)+','+di+','+li+','+q('actId')+',this.value)" style="margin-bottom:10px"><option value="">Pas de sous-phase</option>'
+        +order.map(function(g){var o=groups[g].map(function(s){return '<option value="'+esc(s.id)+'"'+(s.id===l.actId?' selected':'')+'>'+esc(s.lb)+'</option>';}).join('');return g?'<optgroup label="'+esc(g)+'">'+o+'</optgroup>':o;}).join('')+'</select>';
+    }
+    h+='<div class="qrf-lbl">HEURES</div><input class="qrf-in" inputmode="decimal" autocomplete="off" placeholder="Ex : 7,5" value="'+esc(l.hours)+'"'+dis+' oninput="QRFeuille._line('+q(id)+','+di+','+li+','+q('hours')+',this.value)" style="font-size:20px;font-weight:800;text-align:center">';
+    return h+'</div>';
+  }
+  function _ok(id){var c=ctxs[id];return c&&!c.readOnly?c:null;}
+  function after(id,di,rerender){
+    var c=ctxs[id];if(!c)return;
+    if(rerender){var el=document.getElementById('qrf-ed-'+id+'-'+di);if(el)el.innerHTML=editorHtml(id,di);}
+    else{var t=document.getElementById('qrf-dt-'+id+'-'+di);if(t)t.textContent=fr(dayTotal(c.data.days[di]));}
+    if(c.onChange)c.onChange();
+  }
+  function _set(id,di,f,v){var c=_ok(id);if(!c)return;c.data.days[di][f]=v;after(id,di,false);}
+  function _tog(id,di,f){var c=_ok(id);if(!c)return;c.data.days[di][f]=!c.data.days[di][f];after(id,di,true);}
+  function _veh(id,di,vi){var c=_ok(id);if(!c||!VEH[vi])return;var d=c.data.days[di];d.vehicule=(d.vehicule===VEH[vi][0]?'':VEH[vi][0]);after(id,di,true);}
+  function _addLine(id,di){var c=_ok(id);if(!c)return;c.data.days[di].lines.push({affId:'',actId:'',hours:''});after(id,di,true);}
+  function _delLine(id,di,li){var c=_ok(id);if(!c)return;c.data.days[di].lines.splice(li,1);after(id,di,true);}
+  function _lineAff(id,di,li,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l.affId=v;l.actId='';after(id,di,true);}
+  function _line(id,di,li,f,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l[f]=v;after(id,di,false);}
+
+  // ══ 1) FORMULAIRE DU TÉLÉPHONE (lien ?qr=...) ══════════════════════
+  var P=null;
+  function pubEl(){return document.getElementById('qr-public');}
+  function top0(){var e=pubEl();if(e)e.scrollTop=0;try{window.scrollTo(0,0);}catch(x){}}
+  function hero(){
+    var p=P.payload;
+    return '<div class="qrf-hero"><div style="font-size:12px;font-weight:800;opacity:.85;letter-spacing:.6px">FEUILLE D’HEURE</div>'
+      +'<div class="wk">Semaine '+esc(p.iw)+'</div>'
+      +'<div class="sub">'+esc(p.iy)+' · du lundi '+ddmmK(p.days[0].date)+' au vendredi '+ddmmK(p.days[4].date)+'</div>'
+      +(P.person?'<div style="margin-top:10px;font-size:16px;font-weight:800">👤 '+esc(P.person)+'</div>':'')+'</div>';
+  }
+  function msg(icon,title,text){
+    var e=pubEl();if(!e)return;
+    e.innerHTML='<div class="qrf"><div class="qrf-wrap" style="text-align:center;padding-top:60px"><div style="font-size:56px">'+icon+'</div>'
+      +'<div style="font-size:22px;font-weight:900;margin-top:10px">'+esc(title)+'</div>'
+      +'<div style="font-size:15px;color:#6B6790;margin-top:8px;line-height:1.5">'+text+'</div></div></div>';
+  }
+  async function startPublic(token){
+    try{document.title='Feuille d’heure';}catch(x){}
+    ['login-screen','petro-hub-screen','app-shell'].forEach(function(i){var e=document.getElementById(i);if(e)e.style.display='none';});
+    var el=pubEl();if(!el)return;
+    el.style.display='block';
+    msg('⏳','Chargement…','');
+    if(!window.supa){msg('⚠️','Connexion impossible','Vérifiez votre connexion internet puis rechargez la page.');return;}
+    var r;
+    try{r=await window.supa.rpc('qr_get_week',{p_token:token});}catch(e){r={error:e};}
+    if(!r||r.error){msg('⚠️','Service indisponible','Le formulaire ne peut pas être chargé pour le moment. Réessayez dans un instant, ou prévenez votre chef de chantier.');return;}
+    if(!r.data||!r.data.payload){msg('⌛','QR code plus valable','Demandez à votre chef de chantier le QR code de la semaine.');return;}
+    P={token:token,payload:r.data.payload,done:r.data.done||[],person:''};
+    names('');
+  }
+  function freeNames(){var done={};(P.done||[]).forEach(function(n){done[n]=1;});return (P.payload.persons||[]).filter(function(n){return !done[n];});}
+  function namesList(f){
+    f=String(f||'').trim().toLowerCase();
+    var l=freeNames().filter(function(n){return !f||n.toLowerCase().indexOf(f)>=0;});
+    if(!l.length)return '<div style="color:#6B6790;font-size:14px;padding:8px 0">Aucun nom ne correspond.</div>';
+    return l.map(function(n){var i=P.payload.persons.indexOf(n);return '<button type="button" class="qrf-name" onclick="QRFeuille._pubPick('+i+')"><span class="qrf-av">'+esc(initials(n))+'</span>'+esc(n)+'</button>';}).join('');
+  }
+  function names(f){
+    P.person='';ctxs.pub=null;
+    var free=freeNames();
+    var h='<div class="qrf"><div class="qrf-wrap">'+hero()+'<div style="font-size:19px;font-weight:900;margin:4px 0 10px">Qui êtes-vous ?</div>';
+    if(!free.length){
+      h+='<div class="qrf-card" style="text-align:center;color:#6B6790">Tout le monde a déjà envoyé sa feuille d’heure pour cette semaine.</div>';
+    }else{
+      if(free.length>8)h+='<input class="qrf-in" placeholder="🔎 Rechercher votre nom" autocomplete="off" value="'+esc(f)+'" oninput="QRFeuille._pubFilter(this.value)" style="margin-bottom:12px">';
+      h+='<div id="qrf-names">'+namesList(f)+'</div>';
+    }
+    h+='<div style="font-size:12px;color:#9A96B3;text-align:center;margin-top:14px;line-height:1.5">Votre nom n’apparaît pas ? Votre feuille de cette semaine a peut-être déjà été envoyée. Sinon, prévenez votre chef de chantier.</div>';
+    pubEl().innerHTML=h+'</div></div>';top0();
+  }
+  function _pubFilter(v){var e=document.getElementById('qrf-names');if(e)e.innerHTML=namesList(v);}
+  function _pubPick(i){
+    var n=P.payload.persons[i];if(!n)return;
+    pubEl().innerHTML='<div class="qrf"><div class="qrf-wrap">'+hero()
+      +'<div class="qrf-card" style="text-align:center;padding:22px 16px"><div class="qrf-av" style="width:64px;height:64px;font-size:24px;margin:0 auto 10px">'+esc(initials(n))+'</div>'
+      +'<div style="font-size:14px;color:#6B6790">Vous êtes bien</div><div style="font-size:22px;font-weight:900;margin:4px 0 18px">'+esc(n)+' ?</div>'
+      +'<button type="button" class="qrf-btn" onclick="QRFeuille._pubConfirm('+i+')">Oui, c’est moi</button>'
+      +'<button type="button" class="qrf-btn2" style="margin-top:8px" onclick="QRFeuille._pubBack()">Non, revenir à la liste</button></div></div></div>';
+    top0();
+  }
+  function dKey(){return 'qrfh_draft_'+P.token+'_'+P.person;}
+  function saveDraft(){try{if(ctxs.pub)localStorage.setItem(dKey(),JSON.stringify(ctxs.pub.data));}catch(x){}}
+  function loadDraft(){try{var s=localStorage.getItem(dKey());return s?normData(JSON.parse(s)):null;}catch(x){return null;}}
+  function clearDraft(){try{localStorage.removeItem(dKey());}catch(x){}}
+  function _pubConfirm(i){
+    var n=P.payload.persons[i];if(!n)return;
+    P.person=n;
+    ctxs.pub={payload:P.payload,person:n,data:loadDraft()||emptyData(),readOnly:false,onChange:saveDraft};
+    days();
+  }
+  function _pubBack(){names('');}
+  function days(){
+    var c=ctxs.pub;if(!c)return names('');
+    var h='<div class="qrf"><div class="qrf-wrap">'+hero()
+      +'<div style="font-size:19px;font-weight:900;margin:4px 0 2px">Votre semaine</div>'
+      +'<div style="font-size:14px;color:#6B6790;margin-bottom:12px;line-height:1.45">Touchez un jour pour le remplir. Quand tout est bon, envoyez votre semaine en bas.</div>';
+    var tot=0;
+    for(var di=0;di<5;di++){
+      var b=blockOf(c,di),d=c.data.days[di],off=!!(b&&b.t!=='formation'),info;
+      if(off)info='<span class="qrf-badge" style="background:#F3F4F6;color:#4B5563">'+esc(b.i+' '+b.l)+'</span>';
+      else if(dayHas(d)){var nl=d.lines.filter(function(l){return l.affId&&num(l.hours)>0;}).length;tot+=dayTotal(d);
+        info='<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ '+fr(dayTotal(d))+' H'+(nl?' · '+nl+' chantier'+(nl>1?'s':''):'')+'</span>';}
+      else info='<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">À remplir</span>';
+      if(b&&!off)info+='<span class="qrf-badge" style="background:#EDE9FE;color:#6D28D9">'+esc(b.i+' '+b.l)+'</span>';
+      h+='<button type="button" class="qrf-day"'+(off?' disabled style="opacity:.75;cursor:default"':' onclick="QRFeuille._pubDay('+di+')"')+'>'
+        +'<div style="flex:1"><div style="font-size:17px;font-weight:800">'+DAYS[di]+' <span style="font-weight:600;color:#6B6790">'+ddmmK(c.payload.days[di].date)+'</span></div><div style="margin-top:5px">'+info+'</div></div>'
+        +(off?'':'<span style="font-size:24px;color:#9A96B3">›</span>')+'</button>';
+    }
+    h+='<div style="text-align:center;font-size:16px;font-weight:800;margin:10px 0 4px">Total semaine : '+fr(r1(tot))+' H</div></div>';
+    h+='<div class="qrf-foot"><div><button type="button" class="qrf-btn2" style="width:auto;padding:13px 14px" onclick="QRFeuille._pubBack()">← Nom</button>'
+      +'<button type="button" class="qrf-btn" onclick="QRFeuille._pubRecap()">Vérifier et envoyer</button></div></div></div>';
+    pubEl().innerHTML=h;top0();
+  }
+  function nextDay(di,s){for(var x=di+s;x>=0&&x<5;x+=s){if(!isOff(ctxs.pub,x))return x;}return -1;}
+  function _pubDay(di){
+    var c=ctxs.pub;if(!c||isOff(c,di))return;
+    var prev=nextDay(di,-1),next=nextDay(di,1);
+    var h='<div class="qrf"><div class="qrf-wrap"><div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
+      +'<button type="button" class="qrf-btn2" style="width:auto;padding:10px 14px;font-size:15px" onclick="QRFeuille._pubDays()">← Jours</button>'
+      +'<div><div style="font-size:21px;font-weight:900">'+DAYS[di]+' '+ddmmK(c.payload.days[di].date)+'</div><div style="font-size:13px;color:#6B6790">Semaine '+esc(c.payload.iw)+' · '+esc(P.person)+'</div></div></div>'
+      +'<div id="qrf-ed-pub-'+di+'">'+editorHtml('pub',di)+'</div></div>';
+    h+='<div class="qrf-foot"><div>'
+      +(prev>=0?'<button type="button" class="qrf-btn2" style="flex:1" onclick="QRFeuille._pubDay('+prev+')">← '+DAYS[prev]+'</button>':'')
+      +(next>=0?'<button type="button" class="qrf-btn" style="flex:1" onclick="QRFeuille._pubDay('+next+')">'+DAYS[next]+' →</button>'
+               :'<button type="button" class="qrf-btn" style="flex:1" onclick="QRFeuille._pubDays()">✓ Terminé</button>')
+      +'</div></div></div>';
+    pubEl().innerHTML=h;top0();
+  }
+  function summaryHtml(c){
+    var h='',tot=0;
+    for(var di=0;di<5;di++){
+      var b=blockOf(c,di),d=c.data.days[di];
+      h+='<div class="qrf-card" style="padding:12px 14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div style="font-size:16px;font-weight:800">'+DAYS[di]+' <span style="color:#6B6790;font-weight:600">'+ddmmK(c.payload.days[di].date)+'</span></div>';
+      if(b&&b.t!=='formation'){h+='<span class="qrf-badge" style="background:#F3F4F6;color:#4B5563">'+esc(b.i+' '+b.l)+'</span></div></div>';continue;}
+      var t=dayTotal(d);tot+=t;
+      h+='<div style="font-size:16px;font-weight:900;color:#3A2EAE">'+fr(t)+' H</div></div>';
+      if(!dayHas(d)){h+='<div style="font-size:13px;color:#9A96B3;margin-top:4px">Rien de rempli</div></div>';continue;}
+      var o=[];if(b)o.push(b.i+' '+b.l);if(d.panier)o.push('🍽 Panier');if(d.gd)o.push('🚗 Grand dépl.');if(num(d.trajetH)>0)o.push('Trajet '+num(d.trajetH)+' H');if(d.zone)o.push(d.zone);if(d.vehicule)o.push(d.vehicule);if(d.lieu&&String(d.lieu).trim())o.push('📍 '+String(d.lieu).trim());
+      if(o.length)h+='<div style="font-size:13px;color:#4B5563;margin-top:6px">'+o.map(esc).join(' · ')+'</div>';
+      d.lines.forEach(function(l){
+        if(!l.affId&&!l.actId&&!(num(l.hours)>0))return;
+        var a=affOf(c,l.affId);
+        h+='<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-top:6px;padding-top:6px;border-top:1px dashed #E4E1F0"><div><b>'+esc(a?affLbl(a):'Chantier à choisir')+'</b><div style="font-size:12px;color:#6B6790">'+esc(sbLbl(a,l.actId)||'Pas de sous-phase')+'</div></div><div style="font-weight:800;white-space:nowrap">'+esc(l.hours||'0')+' H</div></div>';
+      });
+      h+='</div>';
+    }
+    return h+'<div style="text-align:center;font-size:17px;font-weight:900;margin-top:4px">Total semaine : '+fr(r1(tot))+' H</div>';
+  }
+  function _pubRecap(){
+    var c=ctxs.pub;if(!c)return;
+    var errs=check(c);
+    var h='<div class="qrf"><div class="qrf-wrap">'+hero()+'<div style="font-size:19px;font-weight:900;margin:4px 0 10px">Vérifiez avant d’envoyer</div>';
+    if(errs.length)h+='<div class="qrf-err"><b>À corriger :</b><br>'+errs.map(esc).join('<br>')+'</div>';
+    h+=summaryHtml(c);
+    h+='<div style="font-size:13px;color:#6B6790;text-align:center;margin:14px 0;line-height:1.5">Une fois envoyée, vous ne pourrez plus la modifier. Votre chef de chantier la vérifiera et la validera.</div></div>';
+    h+='<div class="qrf-foot"><div><button type="button" class="qrf-btn2" style="width:auto;padding:13px 14px" onclick="QRFeuille._pubDays()">← Modifier</button>'
+      +'<button type="button" class="qrf-btn" id="qrf-send"'+(errs.length?' disabled':'')+' onclick="QRFeuille._pubSend()">📤 Envoyer ma semaine</button></div></div></div>';
+    pubEl().innerHTML=h;top0();
+  }
+  async function _pubSend(){
+    var c=ctxs.pub;if(!c||_pubSend._busy)return;
+    if(check(c).length){_pubRecap();return;}
+    _pubSend._busy=true;
+    var btn=document.getElementById('qrf-send');if(btn){btn.disabled=true;btn.textContent='Envoi en cours…';}
+    var data=clean(c);data.sentAt=new Date().toISOString();
+    var r;
+    try{r=await window.supa.rpc('qr_submit',{p_token:P.token,p_person:P.person,p_data:data});}catch(e){r={error:e};}
+    _pubSend._busy=false;
+    if(!r||r.error){
+      if(btn){btn.disabled=false;btn.textContent='📤 Réessayer l’envoi';}
+      alert('L’envoi a échoué (connexion ?). Vos saisies sont gardées sur ce téléphone : réessayez dans un instant.');
+      return;
+    }
+    var res=r.data;
+    if(res==='ok'){clearDraft();ctxs.pub=null;msg('✅','Feuille d’heure envoyée','Merci '+esc(P.person)+' ! Votre feuille de la semaine '+esc(P.payload.iw)+' a bien été envoyée. Votre chef de chantier va la valider.');return;}
+    if(res==='already'){clearDraft();ctxs.pub=null;msg('ℹ️','Déjà envoyée','Une feuille d’heure a déjà été envoyée pour '+esc(P.person)+' cette semaine. Pour la corriger, voyez avec votre chef de chantier.');return;}
+    if(res==='invalid'){msg('⌛','QR code plus valable','Demandez à votre chef de chantier le QR code de la semaine.');return;}
+    if(res==='unknown_person'){msg('⚠️','Nom introuvable','Votre nom n’est plus dans la liste de cette semaine. Prévenez votre chef de chantier.');return;}
+    if(btn){btn.disabled=false;btn.textContent='📤 Envoyer ma semaine';}
+    alert('Envoi refusé ('+res+'). Prévenez votre chef de chantier.');
+  }
+
+  // ══ 2) ONGLET QR CODE (personnel connecté) ═════════════════════════
+  var S={tab:'show',year:null,w:null,token:null,url:'',busy:false,err:'',warn:'',seq:0,subs:null,vErr:'',open:{}};
+  var _cid=null;
+  function isAdmin(){return typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin';}
+  function canView(){return isAdmin()||(typeof hasView==='function'&&hasView('qr_feuille'));}
+  function canEdit(){return isAdmin()||(typeof hasEdit==='function'&&hasEdit('qr_feuille'));}
+  function btnSt(primary){return 'padding:8px 14px;border-radius:10px;font-size:12px;font-weight:800;font-family:inherit;cursor:pointer;'+(primary?'background:#6457F4;color:#fff;border:1px solid #6457F4':'background:#fff;color:#1C1A33;border:1px solid #E4E1F0');}
+  function errMsg(e){
+    var m=String((e&&(e.message||e.details||e.hint))||e||'');var code=String((e&&e.code)||'');
+    if(/does not exist|Could not find the (table|function)|schema cache|PGRST20[0-9]|42P01|42883/i.test(m+' '+code))return 'La base de données n’est pas encore prête pour le QR code : il faut d’abord lancer le script SQL « QR Code » dans Supabase.';
+    if(/permission denied|row-level security|42501/i.test(m+' '+code))return 'Accès refusé par la base de données. Vérifiez que le script SQL « QR Code » a bien été lancé en entier, et que votre adresse est dans la table des rôles.';
+    return 'Erreur : '+esc(m||'inconnue');
+  }
+  function weeksOfYear(y){var out=[];for(var w=1;w<=400;w++){var th=weekDayToDate(w,3).getFullYear();if(th===y)out.push(w);else if(th>y)break;}return out;}
+  function yearOfW(w){return weekDayToDate(w,3).getFullYear();}
+  function blockedFor(nm,w){
+    var o=null;
+    for(var di=0;di<5;di++){var st=null;try{st=_personDayStatus(nm,dkey(weekDayToDate(w,di)),w);}catch(x){}
+      if(st){o=o||{};o[di]={t:st.type,l:st.label,i:st.icon};}}
+    return o;
+  }
+  // Tout ce dont le formulaire a besoin (il n'a accès à rien d'autre) :
+  // noms de la semaine, jours bloqués, affaires ouvertes et leurs sous-phases.
+  function buildPayload(w){
+    var gp=STORE.globalPersons||{},del=STORE._deletedPersons||{},hid=(STORE.fhWeekHidden&&STORE.fhWeekHidden[w])||{};
+    var names={};
+    Object.keys(gp).forEach(function(nm){if(nm&&!del[nm]&&gp[nm]&&gp[nm].service==='els_chantier'&&!hid[nm])names[nm]=1;});
+    try{fhWeekPersons(w).forEach(function(nm){if(nm&&!hid[nm]&&!del[nm])names[nm]=1;});}catch(x){}
+    var persons=Object.keys(names).sort(function(a,b){return a.localeCompare(b,'fr');});
+    var dys=[];for(var di=0;di<5;di++)dys.push({di:di,date:dkey(weekDayToDate(w,di))});
+    var blocked={};
+    persons.forEach(function(nm){var b=blockedFor(nm,w);if(b)blocked[nm]=b;});
+    var affaires=[];
+    Object.keys(STORE.projects||{}).sort().forEach(function(k){
+      var p=STORE.projects[k];if(!p||p.closed)return;
+      var parts=getAffLabelParts(k),sbs=[],ph='',ens='';
+      (p.data||[]).forEach(function(r){
+        if(r.t==='ph'){ph=r.pk||r.lb||'';ens='';}
+        else if(r.t==='ens'){ens=r.lb||'';}
+        else if(r.t==='sb'){sbs.push({id:r.id,lb:r.lb||'',g:ph+(ens?' ▸ '+ens:'')});}
+      });
+      affaires.push({k:k,n:parts.numero,l:parts.libelle,sbs:sbs});
+    });
+    return {v:1,w:w,iw:isoWeekOf(w),iy:yearOfW(w),days:dys,persons:persons,blocked:blocked,affaires:affaires};
+  }
+  function randToken(){var a=new Uint8Array(16);(window.crypto||window.msCrypto).getRandomValues(a);return Array.prototype.map.call(a,function(b){return ('0'+b.toString(16)).slice(-2);}).join('');}
+  // Un seul jeton par semaine : réafficher une semaine redonne le même QR
+  // code (celui déjà imprimé reste valable) avec des listes remises à jour.
+  async function ensureWeek(w){
+    var supa=window.supa;if(!supa)throw new Error('Pas de connexion au serveur.');
+    var payload=buildPayload(w);
+    var exp=new Date(weekDayToDate(w,4).getTime()+45*86400000).toISOString();
+    var r=await supa.from('qr_weeks').select('token').eq('week',w).limit(1);
+    if(r.error)throw r.error;
+    if(r.data&&r.data.length){
+      var tok=r.data[0].token;
+      var u=await supa.from('qr_weeks').update({payload:payload,expires_at:exp}).eq('token',tok);
+      if(u.error)throw u.error;
+      return {token:tok,payload:payload};
+    }
+    var t2=randToken();
+    var ins=await supa.from('qr_weeks').insert({token:t2,week:w,payload:payload,created_by:((typeof CURRENT_USER!=='undefined'&&CURRENT_USER&&CURRENT_USER.email)||''),expires_at:exp});
+    if(ins.error)throw ins.error;
+    return {token:t2,payload:payload};
+  }
+  function loadLib(){
+    if(window.qrcode)return Promise.resolve();
+    if(loadLib._p)return loadLib._p;
+    loadLib._p=new Promise(function(res,rej){
+      var s=document.createElement('script');s.src=QR_LIB;
+      s.onload=function(){if(window.qrcode)res();else{loadLib._p=null;rej(new Error('Générateur de QR code indisponible.'));}};
+      s.onerror=function(){loadLib._p=null;rej(new Error('Impossible de charger le générateur de QR code (connexion internet ?).'));};
+      document.head.appendChild(s);
+    });
+    return loadLib._p;
+  }
+  function qrSvg(text){var g=window.qrcode(0,'M');g.addData(text);g.make();return g.createSvgTag({cellSize:8,margin:2,scalable:true});}
+
+  function render(cid){
+    _cid=cid||_cid;
+    if(S.year==null)S.year=yearOfW((TODAY&&TODAY.w)||1);
+    draw();
+    if(canView())loadSubs();
+  }
+  function draw(){
+    var el=document.getElementById(_cid);if(!el)return;
+    if(!canView()){el.innerHTML='<div class="qrf"><div class="qrf-card" style="max-width:520px;margin:40px auto;text-align:center;color:#6B6790">Vous n’avez pas accès à cet onglet (droit « QR Code feuille d’heure » dans Gestion des droits).</div></div>';return;}
+    var np=S.subs?S.subs.filter(isPending).length:0;
+    function tb(t,l){var on=S.tab===t;return '<button type="button" onclick="QRFeuille._tab('+q(t)+')" style="padding:10px 18px;border-radius:12px;font-size:13px;font-weight:800;font-family:inherit;cursor:pointer;border:1.5px solid '+(on?'#6457F4':'#E4E1F0')+';background:'+(on?'#6457F4':'#fff')+';color:'+(on?'#fff':'#1C1A33')+'">'+l+'</button>';}
+    var h='<div class="qrf" style="max-width:1040px;margin:0 auto"><div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
+      +tb('show','📱 Afficher le QR code')
+      +tb('valid','✅ Validation'+(np?' <span style="background:#F59E0B;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:4px">'+np+'</span>':''))+'</div>';
+    h+=(S.tab==='show'?showHtml():validHtml());
+    var _ol=document.getElementById('qrs-wklist'),_olTop=_ol?_ol.scrollTop:null,_olYear=S._drawnYear;
+    el.innerHTML=h+'</div>';
+    // Liste des semaines : garder la position de défilement d'un rendu à
+    // l'autre ; à la première ouverture (ou changement d'année), se placer
+    // directement sur la semaine en cours plutôt qu'en janvier.
+    var _nl=document.getElementById('qrs-wklist');
+    if(_nl){if(_olTop!=null&&_olYear===S.year)_nl.scrollTop=_olTop;else{var _cb=_nl.querySelector('[data-cur]');if(_cb)_nl.scrollTop=Math.max(0,_cb.offsetTop-_nl.offsetTop-90);}S._drawnYear=S.year;}
+    if(S.tab==='show'&&S.token)drawQR();
+  }
+  function _tab(t){S.tab=t;draw();if(t==='valid')loadSubs();}
+  function showHtml(){
+    var y0=yearOfW((TODAY&&TODAY.w)||1);
+    var h='<div class="qrs-grid"><div class="qrf-card"><div style="font-size:16px;font-weight:900">1. Choisissez la semaine</div><div style="font-size:12px;color:#6B6790;margin:2px 0 10px">Chaque semaine a son propre QR code.</div>';
+    h+='<div style="display:flex;gap:6px;margin-bottom:6px">'+[y0,y0+1].map(function(y){var on=S.year===y;return '<button type="button" onclick="QRFeuille._year('+y+')" style="padding:6px 16px;border-radius:10px;font-size:13px;font-weight:800;font-family:inherit;cursor:pointer;border:1.5px solid '+(on?'#6457F4':'#E4E1F0')+';background:'+(on?'#EFEDFE':'#fff')+';color:'+(on?'#3A2EAE':'#1C1A33')+'">'+y+'</button>';}).join('')+'</div>';
+    var byM={},ms=[];
+    weeksOfYear(S.year).forEach(function(w){var m=weekDayToDate(w,3).getMonth();if(!byM[m]){byM[m]=[];ms.push(m);}byM[m].push(w);});
+    h+='<div id="qrs-wklist" style="max-height:470px;overflow:auto;padding-right:4px">';
+    ms.forEach(function(m){
+      h+='<div style="font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px;margin:12px 0 6px">'+MOIS[m].toUpperCase()+'</div><div style="display:flex;flex-wrap:wrap;gap:6px">';
+      byM[m].forEach(function(w){
+        var cur=!!(TODAY&&TODAY.w===w),sel=S.w===w;
+        h+='<button type="button"'+(cur?' data-cur="1"':'')+' onclick="QRFeuille._pick('+w+')" title="du lundi '+ddmm(weekDayToDate(w,0))+' au vendredi '+ddmm(weekDayToDate(w,4))+'" style="min-width:62px;padding:6px 8px;border-radius:10px;font-family:inherit;cursor:pointer;text-align:center;border:1.5px solid '+(sel?'#6457F4':cur?'#F59E0B':'#E4E1F0')+';background:'+(sel?'#6457F4':cur?'#FFFBEB':'#fff')+';color:'+(sel?'#fff':'#1C1A33')+'">'
+          +'<div style="font-size:13px;font-weight:900">S'+isoWeekOf(w)+'</div><div style="font-size:10px;opacity:.8">'+ddmm(weekDayToDate(w,0))+'</div></button>';
+      });
+      h+='</div>';
+    });
+    h+='</div></div><div class="qrf-card">'+panelHtml()+'</div></div>';
+    return h;
+  }
+  function panelHtml(){
+    if(!S.w)return '<div style="text-align:center;color:#6B6790;padding:60px 10px">Choisissez une semaine pour afficher son QR code.</div>';
+    var w=S.w;
+    var h='<div style="text-align:center"><div style="font-size:12px;font-weight:800;color:#6B6790;letter-spacing:.5px">2. QR CODE DE LA SEMAINE</div>'
+      +'<div style="font-size:36px;font-weight:900;color:#3A2EAE;line-height:1.1;margin-top:4px">Semaine '+isoWeekOf(w)+'</div>'
+      +'<div style="font-size:14px;color:#6B6790;margin-top:2px">'+yearOfW(w)+' · du lundi '+ddmm(weekDayToDate(w,0))+' au vendredi '+ddmm(weekDayToDate(w,4))+'</div>';
+    if(S.busy)h+='<div style="padding:70px 0;color:#6B6790">⏳ Préparation du QR code…</div>';
+    else if(S.err)h+='<div class="qrf-err" style="margin-top:14px;text-align:left">'+S.err+'</div>';
+    else if(S.token){
+      h+='<div id="qrs-qr" style="margin:16px auto 12px;width:260px;max-width:100%;aspect-ratio:1/1"></div>';
+      h+='<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">'
+        +'<button type="button" onclick="QRFeuille._print()" style="'+btnSt(true)+'">🖨 Imprimer</button>'
+        +'<button type="button" onclick="QRFeuille._copy()" style="'+btnSt(false)+'">📋 Copier le lien</button>'
+        +'<button type="button" onclick="QRFeuille._pick('+w+')" style="'+btnSt(false)+'" title="À refaire si vous ajoutez une personne, une affaire ou une sous-phase : le QR code reste le même">↻ Mettre à jour les listes</button></div>';
+      h+='<div style="font-size:12px;color:#6B6790;margin-top:10px">'+S.nPers+' personne(s) dans la liste · '+S.nAff+' affaire(s)</div>';
+      h+='<div style="font-size:10px;color:#9A96B3;margin-top:6px;word-break:break-all">'+esc(S.url)+'</div>';
+      if(S.warn)h+='<div style="margin-top:12px;text-align:left;background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5">'+S.warn+'</div>';
+    }
+    return h+'</div>';
+  }
+  function _year(y){S.year=y;draw();}
+  async function _pick(w){
+    if(!canEdit()){alert('Vous n’avez pas le droit d’afficher un QR code (droit « QR Code feuille d’heure », case Modifier, dans Gestion des droits).');return;}
+    if(typeof STORE==='undefined'||!STORE||!STORE.projects){alert('Les données du site ne sont pas encore chargées, réessayez dans un instant.');return;}
+    var seq=++S.seq;
+    S.w=w;S.token=null;S.err='';S.warn='';S.busy=true;draw();
+    try{
+      var res=await ensureWeek(w);
+      if(seq!==S.seq)return;
+      S.token=res.token;S.url=location.origin+location.pathname+'?qr='+res.token;
+      S.nPers=res.payload.persons.length;S.nAff=res.payload.affaires.length;
+      // Heures déjà présentes dans la Feuille d'heure cette semaine (saisie
+      // manuelle), hors personnes ayant déjà envoyé leur feuille par QR code
+      // (celles-là ne peuvent de toute façon plus renvoyer).
+      var sent={};(S.subs||[]).forEach(function(s){if(s.week===w)sent[s.person]=1;});
+      var man=res.payload.persons.filter(function(nm){if(sent[nm])return false;for(var di=0;di<5;di++){if(fhGetAllAff(nm,w,di).some(function(l){return +l.hours>0;}))return true;}return false;});
+      var warns=[];
+      if(man.length)warns.push('⚠️ Des heures sont déjà saisies dans la Feuille d’heure cette semaine pour : <b>'+man.map(esc).join(', ')+'</b>. S’ils remplissent aussi le QR code, vous serez prévenu au moment de valider, pour éviter les doublons.');
+      if(!S.nPers)warns.push('⚠️ Aucune personne dans la liste : vérifiez l’annuaire (catégorie Chantier).');
+      if(location.protocol==='file:')warns.push('⚠️ Le site est ouvert depuis un fichier sur cet ordinateur : ce QR code ne marchera pas sur un téléphone. Ouvrez le site en ligne pour afficher le QR code.');
+      S.warn=warns.join('<br><br>');
+    }catch(e){if(seq!==S.seq)return;S.err=errMsg(e);}
+    S.busy=false;draw();
+  }
+  function drawQR(){
+    var url=S.url;
+    loadLib().then(function(){if(S.url!==url)return;var b=document.getElementById('qrs-qr');if(b)b.innerHTML=qrSvg(url);})
+      .catch(function(e){var b=document.getElementById('qrs-qr');if(b){b.style.aspectRatio='auto';b.innerHTML='<div class="qrf-err">'+esc(e.message)+'</div>';}});
+  }
+  function _print(){
+    if(!S.token)return;
+    if(!window.qrcode){alert('Le QR code n’est pas encore prêt, réessayez dans un instant.');return;}
+    var w=S.w,win=window.open('','_blank','width=820,height=1000');
+    if(!win){alert('Autorisez les fenêtres pop-up pour ce site pour pouvoir imprimer.');return;}
+    win.document.write('<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>QR code — Semaine '+isoWeekOf(w)+'</title>'
+      +'<style>body{font-family:Arial,sans-serif;text-align:center;padding:24px;color:#1C1A33}h1{font-size:46px;margin:6px 0;color:#3A2EAE}.s{font-size:18px;color:#555}.qq{width:12cm;height:12cm;margin:26px auto}.qq svg{width:100%;height:100%}.i{font-size:22px;font-weight:bold;margin-top:8px}.u{font-size:10px;color:#999;margin-top:22px;word-break:break-all}@media print{@page{size:A4 portrait;margin:15mm}}</style></head>'
+      +'<body onload="setTimeout(function(){window.print()},300)"><div style="font-size:18px;font-weight:bold;letter-spacing:3px;color:#6457F4">FEUILLE D’HEURE</div><h1>Semaine '+isoWeekOf(w)+'</h1>'
+      +'<div class="s">'+yearOfW(w)+' · du lundi '+ddmm(weekDayToDate(w,0))+' au vendredi '+ddmm(weekDayToDate(w,4))+'</div>'
+      +'<div class="qq">'+qrSvg(S.url)+'</div><div class="i">📱 Scannez avec l’appareil photo de votre téléphone</div>'
+      +'<div class="s" style="margin-top:6px">Choisissez votre nom, remplissez vos jours, puis envoyez.</div><div class="u">'+esc(S.url)+'</div></body></html>');
+    win.document.close();
+  }
+  function _copy(){
+    var u=S.url;if(!u)return;
+    var fb=function(){window.prompt('Copiez ce lien :',u);};
+    try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(u).then(function(){alert('Lien copié.');},fb);else fb();}catch(x){fb();}
+  }
+
+  // ── Validation ──────────────────────────────────────────────────────
+  async function loadSubs(){
+    if(!window.supa){S.vErr='Pas de connexion au serveur.';draw();return;}
+    try{
+      var r=await window.supa.from('qr_submissions').select('id,token,week,person,data,status,created_at,validated_at,validated_by').order('week',{ascending:false}).order('created_at',{ascending:true});
+      if(r.error)throw r.error;
+      S.subs=r.data||[];S.vErr='';
+    }catch(e){S.vErr=errMsg(e);}
+    draw();
+  }
+  function findSub(id){return (S.subs||[]).filter(function(s){return s.id===id;})[0]||null;}
+  function validHtml(){
+    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:900">Feuilles reçues par QR code</div><div style="font-size:12px;color:#6B6790">Tant qu’une feuille n’est pas validée, ses heures ne comptent nulle part.</div></div>'
+      +'<button type="button" onclick="QRFeuille._reload()" style="'+btnSt(false)+'">↻ Actualiser</button></div>';
+    if(S.vErr)return h+'<div class="qrf-err">'+S.vErr+'</div>';
+    if(S.subs==null)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790">⏳ Chargement…</div>';
+    if(!S.subs.length)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790;padding:30px">Aucune feuille reçue pour le moment.</div>';
+    var byW={},order=[];
+    S.subs.forEach(function(s){if(!byW[s.week]){byW[s.week]=[];order.push(s.week);}byW[s.week].push(s);});
+    order.forEach(function(w){
+      var list=byW[w],np=list.filter(isPending).length,nv=list.length-np;
+      var open=(S.open[w]!=null)?S.open[w]:np>0;
+      h+='<details class="qrf-card" style="padding:0;overflow:hidden"'+(open?' open':'')+' ontoggle="QRFeuille._wtog('+w+',this.open)">'
+        +'<summary style="cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:18px">📁</span>'
+        +'<span style="font-size:15px;font-weight:900">Semaine '+isoWeekOf(w)+' · '+yearOfW(w)+'</span><span style="font-size:12px;color:#6B6790">du '+ddmm(weekDayToDate(w,0))+' au '+ddmm(weekDayToDate(w,4))+'</span><span style="flex:1"></span>'
+        +(np?'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">'+np+' en attente de validation</span>':'')
+        +(nv?'<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">'+nv+' validée'+(nv>1?'s':'')+'</span>':'')+'</summary>'
+        +'<div style="border-top:1px solid #E4E1F0">'+list.map(subRowHtml).join('')+'</div></details>';
+    });
+    return h;
+  }
+  function subRowHtml(s){
+    var pend=isPending(s);
+    return '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #F0EEF7;flex-wrap:wrap"><span class="qrf-av">'+esc(initials(s.person))+'</span>'
+      +'<div style="flex:1;min-width:170px"><div style="font-size:14px;font-weight:800">'+esc(s.person)+'</div><div style="font-size:12px;color:#6B6790">Envoyée le '+fmtDT(s.created_at)+' · '+fr(dataTotal(s.data))+' H'
+      +(pend?'':' · validée le '+fmtDT(s.validated_at)+(s.validated_by?' par '+esc(s.validated_by):''))+'</div></div>'
+      +(pend?'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">⏳ En attente de validation</span>':'<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ Validée</span>')
+      +'<button type="button" onclick="QRFeuille._open('+q(s.id)+')" style="'+btnSt(pend&&canEdit())+'">'+(pend&&canEdit()?'Voir et valider':'Voir')+'</button>'
+      +(canEdit()?'<button type="button" onclick="QRFeuille._unlock('+q(s.id)+')" style="'+btnSt(false)+'" title="Supprime la feuille reçue : la personne pourra renvoyer sa semaine">🔓 Débloquer</button>':'')+'</div>';
+  }
+  function _wtog(w,o){S.open[w]=!!o;}
+  function _reload(){S.subs=null;draw();loadSubs();}
+  function _open(id){
+    var s=findSub(id);if(!s)return;
+    if(typeof STORE==='undefined'||!STORE||!STORE.projects){alert('Les données du site ne sont pas encore chargées, réessayez dans un instant.');return;}
+    var pl=buildPayload(s.week); // affaires / sous-phases à jour
+    var b=blockedFor(s.person,s.week);if(b)pl.blocked[s.person]=b;
+    ctxs.rev={payload:pl,person:s.person,data:normData(s.data),readOnly:!(isPending(s)&&canEdit()),subId:id,week:s.week};
+    drawModal();
+  }
+  function drawModal(){
+    var c=ctxs.rev,m=document.getElementById('qrf-modal');if(!c||!m)return;
+    var s=findSub(c.subId)||{},w=c.week;
+    var h='<div class="qrf" style="max-width:720px;margin:0 auto;background:#F6F5FB;border-radius:18px;padding:18px 18px 0;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
+      +'<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px"><div style="flex:1"><div style="font-size:12px;font-weight:800;color:#6B6790">FEUILLE D’HEURE REÇUE PAR QR CODE</div>'
+      +'<div style="font-size:22px;font-weight:900">'+esc(c.person)+'</div><div style="font-size:13px;color:#6B6790">Semaine '+isoWeekOf(w)+' · du '+ddmm(weekDayToDate(w,0))+' au '+ddmm(weekDayToDate(w,4))+' · envoyée le '+fmtDT(s.created_at)+'</div></div>'
+      +'<button type="button" onclick="QRFeuille._close()" style="border:1px solid #E4E1F0;background:#fff;border-radius:10px;padding:8px 12px;font-size:15px;cursor:pointer">✕</button></div>';
+    if(!c.readOnly)h+='<div style="background:#EFF6FF;border:1px solid #BFDBFE;color:#1E40AF;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px;line-height:1.5">Corrigez ce qu’il faut, puis validez. À la validation, tout est ajouté à l’onglet Feuille d’heure (et compte alors dans les phases, sous-phases et le récap), où vous pourrez encore le modifier.</div>';
+    else if(isPending(s))h+='<div style="background:#F3F4F6;color:#4B5563;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px">Lecture seule : il faut le droit « QR Code feuille d’heure » (case Modifier) pour valider.</div>';
+    else h+='<div style="background:#DCFCE7;color:#15803D;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px">✓ Validée le '+fmtDT(s.validated_at)+(s.validated_by?' par '+esc(s.validated_by):'')+' : ces heures sont dans l’onglet Feuille d’heure (c’est là qu’il faut les modifier).</div>';
+    for(var di=0;di<5;di++){
+      h+='<div style="font-size:16px;font-weight:900;margin:16px 0 8px">'+DAYS[di]+' '+ddmmK(c.payload.days[di].date)+'</div><div id="qrf-ed-rev-'+di+'">'+revDayHtml(di)+'</div>';
+    }
+    h+='<div id="qrf-rev-err"></div><div style="display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:0;background:#F6F5FB;padding:12px 0 16px;border-top:1px solid #E4E1F0">'
+      +'<button type="button" onclick="QRFeuille._close()" style="'+btnSt(false)+'">Fermer</button>'
+      +(!c.readOnly?'<button type="button" id="qrf-val-btn" onclick="QRFeuille._validate()" style="'+btnSt(true)+';background:#16A34A;border-color:#16A34A;font-size:13px">✅ Valider la feuille d’heure</button>':'')+'</div></div>';
+    m.innerHTML=h;m.style.display='block';m.scrollTop=0;
+  }
+  // Relecture : un jour laissé vide par la personne tient sur une ligne
+  // (dépliable si le chef veut le compléter) ; les autres sont modifiables.
+  function revDayHtml(di){
+    var c=ctxs.rev;
+    if(isOff(c,di)||dayHas(c.data.days[di])||(c.expanded&&c.expanded[di]))return editorHtml('rev',di);
+    return '<div class="qrf-card" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px"><span style="font-size:13px;color:#9A96B3">Rien de rempli</span>'
+      +(c.readOnly?'':'<button type="button" onclick="QRFeuille._revExpand('+di+')" style="'+btnSt(false)+'">+ Compléter ce jour</button>')+'</div>';
+  }
+  function _revExpand(di){var c=ctxs.rev;if(!c||c.readOnly)return;c.expanded=c.expanded||{};c.expanded[di]=true;var el=document.getElementById('qrf-ed-rev-'+di);if(el)el.innerHTML=editorHtml('rev',di);}
+  function _close(){var m=document.getElementById('qrf-modal');if(m){m.style.display='none';m.innerHTML='';}ctxs.rev=null;}
+  // Écrit la feuille validée dans la Feuille d'heure, comme une saisie
+  // manuelle : les heures dans p.fh (rangées dans l'affaire de CHAQUE ligne,
+  // pour que syncFichesToGantt les reporte bien sur sa sous-phase) avec le
+  // même horodatage par personne/semaine/jour que fhPut (fusion _mergeFh),
+  // et panier/GD/trajet/zone/véhicule/lieu dans STORE.fhMeta (fhMetaSet).
+  // Les lignes s'AJOUTENT à celles éventuellement déjà présentes.
+  function applyToStore(nm,w,data){
+    var ops=[];
+    for(var di=0;di<5;di++){
+      var d=data.days[di]||data.days[String(di)];if(!d)continue;
+      var by={};
+      (d.lines||[]).forEach(function(l){
+        var p=STORE.projects[l.affId];if(!p)throw new Error('Affaire introuvable : '+l.affId);
+        var h=+l.hours||0;if(!(h>0))return;
+        var act=(l.actId&&(p.data||[]).some(function(r){return r.id===l.actId;}))?l.actId:'';
+        (by[l.affId]=by[l.affId]||[]).push({affId:l.affId,actId:act,hours:h});
+      });
+      ops.push({di:di,d:d,by:by});
+    }
+    var now=Date.now();
+    ops.forEach(function(o){
+      Object.keys(o.by).forEach(function(aff){
+        var p=STORE.projects[aff];
+        if(!p.fh)p.fh={};if(!p.fh[nm])p.fh[nm]={};if(!p.fh[nm][w])p.fh[nm][w]={};
+        p.fh[nm][w][o.di]=fhGet(aff,nm,w,o.di).slice().concat(o.by[aff]);
+        if(!p._fhModAt)p._fhModAt={};if(!p._fhModAt[nm])p._fhModAt[nm]={};if(!p._fhModAt[nm][w])p._fhModAt[nm][w]={};
+        p._fhModAt[nm][w][o.di]=now;
+      });
+      var d=o.d,has=d.panier||d.gd||(+d.trajetH>0)||d.zone||d.vehicule||(d.lieu&&String(d.lieu).trim());
+      if(has){
+        if(!STORE.fhMeta)STORE.fhMeta={};if(!STORE.fhMeta[w])STORE.fhMeta[w]={};if(!STORE.fhMeta[w][nm])STORE.fhMeta[w][nm]={};
+        var m=STORE.fhMeta[w][nm][o.di]||{panier:false,gd:false,lieu:''};
+        if(d.panier)m.panier=true;
+        if(d.gd)m.gd=true;
+        if(+d.trajetH>0)m.trajetH=String(+d.trajetH);
+        if(d.zone)m.zone=d.zone;
+        if(d.vehicule)m.vehicule=d.vehicule;
+        if(d.lieu&&String(d.lieu).trim())m.lieu=String(d.lieu).trim();
+        STORE.fhMeta[w][nm][o.di]=m;
+      }
+    });
+    // Une personne "retirée" de cette semaine (bouton Retirer) doit
+    // réapparaître, sinon ses heures validées resteraient invisibles.
+    if(STORE.fhWeekHidden&&STORE.fhWeekHidden[w]&&STORE.fhWeekHidden[w][nm]){delete STORE.fhWeekHidden[w][nm];STORE._fhWeekHiddenModAt=now;}
+    try{syncFichesToGantt();}catch(e){console.error('QR → Gantt',e);}
+    saveNow();
+  }
+  async function _validate(){
+    var c=ctxs.rev;if(!c||c.readOnly||_validate._busy)return;
+    var s=findSub(c.subId);if(!s||!isPending(s))return;
+    var box=document.getElementById('qrf-rev-err'),errs=check(c);
+    if(errs.length){if(box){box.innerHTML='<div class="qrf-err" style="margin-top:12px"><b>À corriger avant de valider :</b><br>'+errs.map(esc).join('<br>')+'</div>';try{box.scrollIntoView({block:'center'});}catch(x){}}return;}
+    if(box)box.innerHTML='';
+    if(typeof STORE==='undefined'||!STORE||!STORE.projects){alert('Les données du site ne sont pas chargées.');return;}
+    var data=clean(c),nm=c.person,w=c.week;
+    if(STORE._deletedPersons&&STORE._deletedPersons[nm]&&!confirm(nm+' a été supprimé(e) de l’annuaire. Valider quand même ?'))return;
+    var dup=[];
+    for(var di=0;di<5;di++){
+      if(!data.days[di])continue;
+      var ex=fhGetAllAff(nm,w,di).some(function(l){return +l.hours>0;});
+      var mt=fhMetaGet(w,nm,di);
+      var exm=mt.panier||mt.gd||(mt.lieu&&mt.lieu.trim())||(mt.zone&&mt.zone.trim())||(+mt.trajetH>0)||(mt.vehicule&&mt.vehicule.trim());
+      if(ex||exm)dup.push(DAYS[di]);
+    }
+    var txt=dup.length
+      ?('⚠️ ATTENTION : des heures ou des options ont DÉJÀ été saisies à la main pour '+nm+' le '+dup.join(', ')+' (semaine '+isoWeekOf(w)+').\n\nSi vous validez, les lignes du QR code s’AJOUTENT à celles déjà présentes : vérifiez ensuite qu’il n’y a pas de doublon dans l’onglet Feuille d’heure.\n\nValider quand même ?')
+      :('Valider la feuille d’heure de '+nm+' (semaine '+isoWeekOf(w)+') ?\n\nLes heures seront ajoutées à l’onglet Feuille d’heure.');
+    if(!confirm(txt))return;
+    _validate._busy=true;
+    var btn=document.getElementById('qrf-val-btn');if(btn){btn.disabled=true;btn.textContent='Validation…';}
+    var who=(typeof CURRENT_USER!=='undefined'&&CURRENT_USER&&CURRENT_USER.email)||'';
+    var reset=function(){_validate._busy=false;if(btn){btn.disabled=false;btn.textContent='✅ Valider la feuille d’heure';}};
+    // 1) Verrouiller d'abord en base (seulement si encore "en attente") :
+    //    deux personnes ne peuvent jamais valider la même feuille.
+    try{
+      var up=await window.supa.from('qr_submissions').update({status:'validated',validated_at:new Date().toISOString(),validated_by:who,data:data}).eq('id',s.id).eq('status','pending').select('id');
+      if(up.error)throw up.error;
+      if(!up.data||!up.data.length){reset();alert('Cette feuille a déjà été validée ou débloquée entre-temps (peut-être par un collègue).');_close();loadSubs();return;}
+    }catch(e){reset();alert(errMsg(e).replace(/<[^>]+>/g,''));return;}
+    // 2) Puis l'écrire dans la Feuille d'heure ; en cas d'échec, on remet
+    //    la feuille "en attente" pour ne rien perdre.
+    try{applyToStore(nm,w,data);}
+    catch(e){
+      try{await window.supa.from('qr_submissions').update({status:'pending',validated_at:null,validated_by:null}).eq('id',s.id);}catch(x){}
+      reset();alert('Erreur pendant l’ajout à la Feuille d’heure : la feuille n’a pas été validée ('+((e&&e.message)||e)+').');return;
+    }
+    _validate._busy=false;
+    _close();
+    await loadSubs();
+    alert('✓ Feuille validée : les heures de '+nm+' (semaine '+isoWeekOf(w)+') sont maintenant dans l’onglet Feuille d’heure.');
+  }
+  async function _unlock(id){
+    var s=findSub(id);if(!s||!canEdit())return;
+    var txt=isPending(s)
+      ?('Débloquer '+s.person+' pour la semaine '+isoWeekOf(s.week)+' ?\n\nLa feuille reçue sera supprimée (rien n’a encore été ajouté à la Feuille d’heure) et la personne pourra renvoyer sa semaine en rescannant le QR code.')
+      :('Débloquer '+s.person+' pour la semaine '+isoWeekOf(s.week)+' ?\n\nLa personne pourra renvoyer une feuille par QR code.\n\n⚠️ Les heures DÉJÀ validées restent dans l’onglet Feuille d’heure : si elle doit tout refaire, supprimez-les à la main, sinon elles seront en double.');
+    if(!confirm(txt))return;
+    try{var r=await window.supa.from('qr_submissions').delete().eq('id',id);if(r.error)throw r.error;}
+    catch(e){alert(errMsg(e).replace(/<[^>]+>/g,''));return;}
+    loadSubs();
+  }
+
+  return {
+    render:render,startPublic:startPublic,
+    _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,
+    _pubFilter:_pubFilter,_pubPick:_pubPick,_pubConfirm:_pubConfirm,_pubBack:_pubBack,_pubDays:days,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
+    _tab:_tab,_year:_year,_pick:_pick,_print:_print,_copy:_copy,_reload:_reload,_wtog:_wtog,_open:_open,_close:_close,_validate:_validate,_unlock:_unlock,_revExpand:_revExpand,
+    _test:{buildPayload:buildPayload,applyToStore:applyToStore,check:check,clean:clean,ctxs:ctxs,S:S}
+  };
+})();
+if(window._QR_TOKEN){window.QRFeuille.startPublic(window._QR_TOKEN);}
+</script>
 
 </body></html>
