@@ -2961,9 +2961,9 @@ window.DroitsAcces = (function () {
 <div id="tab-recap" class="tab" style="flex-direction:column">
   <div id="tdb-subnav" style="display:flex;gap:4px;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--bd);flex-shrink:0">
     <button class="tdb-tab on" data-tt="overview" onclick="switchTdbTab('overview')" style="padding:5px 14px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">🏠 Vue d'ensemble</button>
-    <button class="tdb-tab" data-tt="recap-current" onclick="switchTdbTab('recap-current')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📋 Récap — Affaire courante</button>
+    <button class="tdb-tab" data-tt="recap-current" onclick="_rcResetView();switchTdbTab('recap-current')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📋 Récap — Affaire courante</button>
     <button class="tdb-tab" data-tt="recap-all" onclick="switchTdbTab('recap-all')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">📊 Récap — Toutes affaires</button>
-    <button class="tdb-tab" data-tt="avancement" onclick="window._avOpen={};switchTdbTab('avancement')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">📈 Avancement</button>
+    <button class="tdb-tab" data-tt="avancement" onclick="_avResetView();switchTdbTab('avancement')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">📈 Avancement</button>
   </div>
   <div id="tdb-overview" class="tdb-pane"></div>
   <div id="tdb-recap-current" class="tdb-pane pg" style="flex:1;overflow:auto"><div id="rw" class="pg"></div></div>
@@ -4100,7 +4100,7 @@ function switchTab(t){
   // Rendre le contenu
   if(t==='gantt'){window._scrollToToday=true;renderGantt();}
   else if(t==='planning-reunion'){renderPlanningReunionTab();}
-  else if(t==='recap'){window._avOpen={};switchTdbTab(window._tdbTab||'overview');}
+  else if(t==='recap'){if(typeof _avResetView==='function')_avResetView();if(typeof _rcResetView==='function')_rcResetView();switchTdbTab(window._tdbTab||'overview');}
   else if(t==='modifications'){renderModificationsTab();}
   // Masquer/afficher les boutons Vue+Zoom selon onglet
   var _gvb=document.getElementById('gantt-view-btns');
@@ -5316,11 +5316,9 @@ function exportRecapCSV(){
 
 
 function exportRecapHTML(){
-  const rw=document.getElementById('rw');
-  if(!rw)return;
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Récap ${STORE.current}</title>
   <style>body{font-family:'Segoe UI',sans-serif;padding:20px;font-size:12px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:5px 8px;}th{background:#1F3864;color:#fff;}tr:nth-child(even)td{background:#f5f5f5;}h2{color:#1F3864;margin:16px 0 8px;}.pill{padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;}</style></head>
-  <body><h1>Récapitulatif — ${STORE.current}</h1>${rw.innerHTML}</body></html>`;
+  <body><h1>Récapitulatif — ${STORE.current}</h1>${_recapTableHtml().replace(/ onclick="_recToggle\(this\)"/g,'')}</body></html>`;
   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download=`Recapitulatif_${STORE.current.replace(/[^a-zA-Z0-9]/g,'_')}.html`;a.click();
@@ -9977,7 +9975,10 @@ function renderAvancement(){
   var h='<div style="max-width:920px;margin:0 auto;padding:16px">'
     +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">'
     +'<div style="font-size:16px;font-weight:800;color:var(--tx)">📈 Avancement</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
     +'<select onchange="avChangeAff(this.value)" style="border:1px solid var(--bd);border-radius:var(--r);padding:6px 10px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx);max-width:100%">'+opts+'</select>'
+    +(tree.length?'<button onclick="avShowDownloadModal()" style="padding:6px 14px;border-radius:var(--r);border:1px solid var(--ac);background:var(--ac);color:#fff;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer">📥 Télécharger</button>':'')
+    +'</div>'
     +'</div>'
     +'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px">'
     +card('Avancement de l’affaire','av-glob',calcHierProgress(D(),{})+'%')
@@ -9990,11 +9991,16 @@ function renderAvancement(){
     h+='<div style="border:1px solid var(--bd);border-radius:var(--r2);overflow:hidden;background:var(--bg2)">'
       +tree.map(function(ph){return _avNodeHtml(ph,0);}).join('')
       +'</div>';
+    h+=_avChartHtml();
   }
   pane.innerHTML=h+'</div>';
+  _avChartAfterRender();
 }
+// Arrivée sur l'onglet ou changement d'affaire : tout replié, graphique
+// fermé, animation des anneaux rejouée.
+function _avResetView(){window._avOpen={};window._avChartOpen=null;window._avChartFresh=true;window._avcBusy=false;}
 function _avToggle(key){window._avOpen[key]=!window._avOpen[key];renderAvancement();}
-function avChangeAff(k){window._avOpen={};switchProjet(k);renderAvancement();}
+function avChangeAff(k){_avResetView();switchProjet(k);renderAvancement();}
 function _avDenied(){alert('Vous ne pouvez modifier que les tâches de la phase Chantier.');}
 // Recliquer sur le statut déjà actif l'éteint : la tâche redevient "pas
 // encore commencée".
@@ -10060,6 +10066,332 @@ function _avRefreshNumbers(){
     else if(r.t==='sb'){el=document.getElementById('avp-sb-'+_avSafe(r.id));o={filterSbId:r.id};}
     if(el)el.textContent=calcHierProgress(D(),o)+'%';
   });
+  _avChartRefresh();
+}
+
+// ── Graphique : un anneau par sous-ensemble ─────────────────────────────
+// Un clic déroule l'anneau en barre et affiche ses sous-phases et tâches.
+// Mêmes chiffres que l'arbre et le récap (calcHierProgress). L'état ouvert
+// (window._avChartOpen) survit aux re-rendus de l'onglet (clic sur un
+// statut, synchro d'un collègue) ; les animations ne jouent qu'à l'arrivée
+// sur l'onglet (window._avChartFresh) et lors d'un clic sur un anneau.
+var _AVC_C=2*Math.PI*30;
+function _avcCol(p){return p<30?'#F59E0B':'#16A34A';}
+function _avcEnsList(){
+  var l=[];
+  _avTree().forEach(function(ph){ph.kids.forEach(function(k){if(k.type==='ens')l.push(k);});});
+  return l;
+}
+function _avcTask(r){
+  var excl=!!r.excludeProgress,done=!!r.done;
+  return {excl:excl,pct:done?100:excl?0:Math.max(0,Math.min(99,Math.round(+r.progress||0))),
+    col:done?'#16A34A':(r.inProgress&&!excl)?'#F59E0B':'var(--bd2)'};
+}
+function _avcRowsHtml(ens,anim){
+  function row(kind,id,label,pct,col,small,txt,note){
+    var sid=kind+'-'+_avSafe(id);
+    return '<div class="avc-row'+(anim?'':' in')+'">'
+      +'<span class="'+(small?'avc-tn':'avc-sn')+'" title="'+escHtml(label)+'">'+escHtml(label)+(note||'')+'</span>'
+      +'<div class="avc-trk" style="height:'+(small?8:12)+'px"><div id="avcf-'+sid+'" class="avc-fil" data-w="'+pct+'" style="background:'+col+';width:'+(anim?0:pct)+'%"></div></div>'
+      +'<span id="avcp-'+sid+'" class="avc-pc"'+(small?' style="font-weight:600;color:var(--tx3)"':'')+'>'+(txt||pct+'%')+'</span></div>';
+  }
+  function task(r,note){var t=_avcTask(r);return row('t',r.id,r.lb,t.pct,t.col,true,t.excl?'Hors av.':'',note);}
+  var h='';
+  ens.kids.forEach(function(k){
+    if(k.type==='sb'){
+      var p=calcHierProgress(D(),{filterSbId:k.row.id});
+      h+=row('sb',k.row.id,k.row.lb,p,_avcCol(p),false);
+      k.kids.forEach(function(t){if(t.type==='act')h+=task(t.row);});
+    }else if(k.type==='act'){
+      h+=task(k.row,' <span style="color:#B45309;font-size:10px">(hors sous-phase)</span>');
+    }
+  });
+  return h||'<div style="font-size:12px;color:var(--tx3)">Aucune sous-phase dans ce sous-ensemble.</div>';
+}
+function _avChartHtml(){
+  var list=_avcEnsList();
+  var h='<style>'
+    +'.avc-rc{text-align:center;cursor:pointer;padding:8px 4px;border-radius:12px;border:1px solid transparent;transition:transform .2s ease,opacity .25s ease,border-color .2s}'
+    +'.avc-rc:hover{border-color:var(--bd);transform:translateY(-2px)}'
+    +'.avc-trk{background:var(--bg3);border-radius:6px;overflow:hidden}'
+    +'.avc-fil{height:100%;border-radius:6px;transition:width .7s cubic-bezier(.2,.8,.2,1)}'
+    +'.avc-row{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr) 54px;gap:10px;align-items:center;opacity:0;transform:translateY(8px);transition:opacity .35s ease,transform .35s ease}'
+    +'.avc-row.in{opacity:1;transform:none}'
+    +'.avc-sn{font-size:13px;font-weight:700;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+    +'.avc-tn{font-size:12px;color:var(--tx2);padding-left:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+    +'.avc-pc{font-size:12px;font-weight:800;text-align:right;color:var(--tx)}'
+    +'#avc-morph{position:absolute;z-index:3;pointer-events:none;overflow:hidden;box-sizing:border-box;transition:left .55s cubic-bezier(.65,0,.35,1),top .55s cubic-bezier(.65,0,.35,1),width .55s cubic-bezier(.65,0,.35,1),height .55s cubic-bezier(.65,0,.35,1),border-radius .55s cubic-bezier(.65,0,.35,1),border-width .55s ease,background .3s}'
+    +'</style>';
+  h+='<div style="margin-top:18px;border:1px solid var(--bd);border-radius:var(--r2);background:var(--bg2);padding:16px 18px">';
+  if(!list.length){
+    return h+'<div style="font-size:12px;color:var(--tx3);text-align:center;padding:10px">Aucun sous-ensemble dans cette affaire pour le graphique.</div></div>';
+  }
+  var openId=window._avChartOpen,open=null;
+  list.forEach(function(e){if(e.row.id===openId)open=e;});
+  if(!open)window._avChartOpen=null;
+  var anim=!!window._avChartFresh;
+  h+='<div id="avc-wrap" style="position:relative;display:grid">';
+  h+='<div id="avc-grid" style="grid-area:1/1;transition:opacity .28s ease;opacity:'+(open?0:1)+';pointer-events:'+(open?'none':'auto')+'">'
+    +'<div style="font-size:13px;font-weight:800;color:var(--tx2);margin-bottom:10px">Avancement par sous-ensemble</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">';
+  list.forEach(function(e){
+    var p=calcHierProgress(D(),{filterEnsId:e.row.id}),s=_avSafe(e.row.id);
+    h+='<div class="avc-rc" id="avc-rc-'+s+'" onclick="avChartOpen(\''+_avJs(e.row.id)+'\')" role="button" title="Voir le détail de '+escHtml(e.row.lb)+'">'
+      +'<svg width="84" height="84" viewBox="0 0 84 84"><circle cx="42" cy="42" r="30" fill="none" stroke="var(--bg3)" stroke-width="10"/>'
+      +'<circle id="avc-arc-'+s+'" data-pct="'+p+'" cx="42" cy="42" r="30" fill="none" stroke="'+_avcCol(p)+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+(anim?0:(_AVC_C*p/100).toFixed(1))+' '+_AVC_C.toFixed(1)+'" transform="rotate(-90 42 42)" style="transition:stroke-dasharray .9s cubic-bezier(.2,.8,.2,1),stroke .3s"/>'
+      +'<text id="avc-txt-'+s+'" x="42" y="47" text-anchor="middle" style="font-size:16px;font-weight:800;fill:var(--tx);font-family:inherit">'+p+'%</text></svg>'
+      +'<div style="font-size:12px;color:var(--tx2);line-height:1.3;margin-top:4px">'+escHtml(e.row.lb)+'</div></div>';
+  });
+  h+='</div></div>';
+  var op=open?calcHierProgress(D(),{filterEnsId:open.row.id}):0;
+  h+='<div id="avc-det" style="grid-area:1/1;transition:opacity .28s ease;opacity:'+(open?1:0)+';pointer-events:'+(open?'auto':'none')+'">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">'
+    +'<span id="avc-dname" style="font-size:15px;font-weight:800;color:var(--tx)">'+(open?escHtml(open.row.lb):'')+'</span>'
+    +'<button onclick="avChartBack()" style="padding:5px 12px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg3);color:var(--tx);font-size:12px;font-weight:700;font-family:inherit;cursor:pointer">← Retour</button></div>'
+    +'<div style="display:grid;grid-template-columns:minmax(0,1fr) 54px;gap:10px;align-items:center;margin-bottom:16px">'
+    +'<div id="avc-dbar" class="avc-trk" style="height:14px;border-radius:7px"><div id="avc-dfill" class="avc-fil" style="border-radius:7px;background:'+_avcCol(op)+';width:'+op+'%"></div></div>'
+    +'<span id="avc-dpct" style="font-size:16px;font-weight:900;text-align:right;color:var(--tx)">'+op+'%</span></div>'
+    +'<div id="avc-rows" style="display:flex;flex-direction:column;gap:8px">'+(open?_avcRowsHtml(open,false):'')+'</div>'
+    +'</div>';
+  return h+'</div></div>';
+}
+function _avChartAfterRender(){
+  if(!window._avChartFresh)return;
+  window._avChartFresh=false;
+  setTimeout(function(){
+    document.querySelectorAll('[id^="avc-arc-"]').forEach(function(a){
+      a.setAttribute('stroke-dasharray',(_AVC_C*(+a.dataset.pct||0)/100).toFixed(1)+' '+_AVC_C.toFixed(1));
+    });
+  },60);
+}
+function _avcRel(el){
+  var a=el.getBoundingClientRect(),b=document.getElementById('avc-wrap').getBoundingClientRect();
+  return {l:a.left-b.left,t:a.top-b.top,w:a.width,h:a.height};
+}
+function _avcFindEns(id){var f=null;_avcEnsList().forEach(function(e){if(e.row.id===id)f=e;});return f;}
+function avChartOpen(ensId){
+  if(window._avcBusy||window._avChartOpen)return;
+  var e=_avcFindEns(ensId);if(!e)return;
+  var s=_avSafe(ensId),ring=document.querySelector('#avc-rc-'+s+' svg');if(!ring)return;
+  window._avcBusy=true;window._avChartOpen=ensId;
+  var p=calcHierProgress(D(),{filterEnsId:ensId}),col=_avcCol(p);
+  document.getElementById('avc-dname').textContent=e.row.lb;
+  document.getElementById('avc-dpct').textContent=p+'%';
+  var df=document.getElementById('avc-dfill');df.style.background=col;df.style.width=p+'%';
+  document.getElementById('avc-rows').innerHTML=_avcRowsHtml(e,true);
+  var wrap=document.getElementById('avc-wrap');
+  var from=_avcRel(ring),to=_avcRel(document.getElementById('avc-dbar'));
+  var m=document.createElement('div');m.id='avc-morph';
+  m.style.left=(from.l+7)+'px';m.style.top=(from.t+7)+'px';m.style.width=(from.w-14)+'px';m.style.height=(from.h-14)+'px';
+  m.style.borderRadius='50%';m.style.border='10px solid '+col;m.style.background='transparent';
+  wrap.appendChild(m);
+  var g=document.getElementById('avc-grid');g.style.opacity='0';g.style.pointerEvents='none';
+  requestAnimationFrame(function(){requestAnimationFrame(function(){
+    m.style.left=to.l+'px';m.style.top=to.t+'px';m.style.width=to.w+'px';m.style.height=to.h+'px';
+    m.style.borderRadius='7px';m.style.borderWidth='0px';m.style.background='var(--bg3)';
+    m.innerHTML='<div style="height:100%;width:'+p+'%;background:'+col+';border-radius:7px"></div>';
+  });});
+  setTimeout(function(){
+    var d=document.getElementById('avc-det');
+    if(d){d.style.opacity='1';d.style.pointerEvents='auto';}
+    setTimeout(function(){if(m.parentNode)m.remove();},120);
+    document.querySelectorAll('#avc-rows .avc-row').forEach(function(r,k){
+      setTimeout(function(){r.classList.add('in');var f=r.querySelector('.avc-fil');if(f)f.style.width=f.dataset.w+'%';},80*k);
+    });
+    window._avcBusy=false;
+  },600);
+}
+function avChartBack(){
+  if(window._avcBusy||!window._avChartOpen)return;
+  var id=window._avChartOpen,s=_avSafe(id),ring=document.querySelector('#avc-rc-'+s+' svg'),bar=document.getElementById('avc-dbar');
+  if(!ring||!bar){window._avChartOpen=null;renderAvancement();return;}
+  window._avcBusy=true;
+  var p=calcHierProgress(D(),{filterEnsId:id}),col=_avcCol(p);
+  var wrap=document.getElementById('avc-wrap');
+  var from=_avcRel(bar),to=_avcRel(ring);
+  var m=document.createElement('div');m.id='avc-morph';
+  m.style.left=from.l+'px';m.style.top=from.t+'px';m.style.width=from.w+'px';m.style.height=from.h+'px';
+  m.style.borderRadius='7px';m.style.border='0 solid '+col;m.style.background='var(--bg3)';
+  m.innerHTML='<div style="height:100%;width:'+p+'%;background:'+col+';border-radius:7px;transition:opacity .3s"></div>';
+  wrap.appendChild(m);
+  var d=document.getElementById('avc-det');d.style.opacity='0';d.style.pointerEvents='none';
+  requestAnimationFrame(function(){requestAnimationFrame(function(){
+    m.firstChild.style.opacity='0';
+    m.style.left=(to.l+7)+'px';m.style.top=(to.t+7)+'px';m.style.width=(to.w-14)+'px';m.style.height=(to.h-14)+'px';
+    m.style.borderRadius='50%';m.style.borderWidth='10px';m.style.background='transparent';
+  });});
+  setTimeout(function(){
+    // Les deux vues sont re-cherchées : une synchro a pu reconstruire l'onglet
+    // pendant l'animation.
+    var g=document.getElementById('avc-grid');if(g){g.style.opacity='1';g.style.pointerEvents='auto';}
+    var d2=document.getElementById('avc-det');if(d2){d2.style.opacity='0';d2.style.pointerEvents='none';}
+    setTimeout(function(){if(m.parentNode)m.remove();},150);
+    window._avChartOpen=null;window._avcBusy=false;
+  },580);
+}
+// Mise à jour en place pendant la saisie d'un % (sans rejouer d'animation).
+function _avChartRefresh(){
+  _avcEnsList().forEach(function(e){
+    var s=_avSafe(e.row.id),p=calcHierProgress(D(),{filterEnsId:e.row.id});
+    var t=document.getElementById('avc-txt-'+s),a=document.getElementById('avc-arc-'+s);
+    if(t)t.textContent=p+'%';
+    if(a){a.dataset.pct=p;a.setAttribute('stroke',_avcCol(p));a.setAttribute('stroke-dasharray',(_AVC_C*p/100).toFixed(1)+' '+_AVC_C.toFixed(1));}
+    if(window._avChartOpen!==e.row.id)return;
+    var dp=document.getElementById('avc-dpct'),df=document.getElementById('avc-dfill');
+    if(dp)dp.textContent=p+'%';
+    if(df){df.style.width=p+'%';df.style.background=_avcCol(p);}
+    e.kids.forEach(function(k){
+      var tasks=k.type==='sb'?k.kids:[k];
+      if(k.type==='sb'){
+        var sp=calcHierProgress(D(),{filterSbId:k.row.id}),ss='sb-'+_avSafe(k.row.id);
+        var f=document.getElementById('avcf-'+ss),pc=document.getElementById('avcp-'+ss);
+        if(f){f.style.width=sp+'%';f.style.background=_avcCol(sp);}
+        if(pc)pc.textContent=sp+'%';
+      }
+      tasks.forEach(function(tn){
+        if(tn.type!=='act')return;
+        var tv=_avcTask(tn.row),ts='t-'+_avSafe(tn.row.id);
+        var f2=document.getElementById('avcf-'+ts),pc2=document.getElementById('avcp-'+ts);
+        if(f2){f2.style.width=tv.pct+'%';f2.style.background=tv.col;}
+        if(pc2)pc2.textContent=tv.excl?'Hors av.':tv.pct+'%';
+      });
+    });
+  });
+}
+
+// ── Téléchargement du document d'avancement ─────────────────────────────
+// Même arbre que l'onglet (_avTree), avec une case à cocher par niveau.
+// Les pourcentages affichés sont ceux du récap (calcul sur toute l'affaire),
+// même si on ne coche qu'une partie : le document montre moins de lignes,
+// jamais d'autres chiffres que ceux du site.
+function _avNodeKey(n){return n.type+':'+(n.type==='ph'?n.row.pk:n.row.id);}
+function avShowDownloadModal(){
+  var old=document.getElementById('_avdl_modal');if(old)old.remove();
+  var tree=_avTree();
+  function node(n,depth){
+    var lbl=n.type==='ph'?n.row.pk:n.row.lb;
+    var st=n.type==='ph'?'font-weight:800;font-size:12px;color:var(--tx)'
+      :n.type==='act'?'font-size:11px;color:var(--tx2)':'font-weight:700;font-size:11px;color:var(--tx)';
+    var pre=n.type==='ens'?'▸ ':n.type==='sb'?'◆ ':n.type==='act'?'– ':'';
+    var h='<div class="_avdl-node"><label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer">'
+      +'<input type="checkbox" class="_avdl-cb" data-key="'+escHtml(_avNodeKey(n))+'" checked onchange="_avdlCascade(this)" style="cursor:pointer">'
+      +'<span style="'+st+'">'+pre+escHtml(lbl)+'</span></label>';
+    if(n.kids&&n.kids.length)h+='<div class="_avdl-kids" style="padding-left:18px">'+n.kids.map(function(k){return node(k,depth+1);}).join('')+'</div>';
+    return h+'</div>';
+  }
+  var modal=document.createElement('div');
+  modal.id='_avdl_modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML='<div style="background:var(--bg2);border-radius:16px;padding:28px;min-width:420px;max-width:90vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
+    +'<div style="font-size:16px;font-weight:900;color:var(--tx);margin-bottom:6px">📥 Télécharger l’avancement</div>'
+    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:16px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Le document contiendra ce qui est coché. Décocher un niveau décoche tout ce qu’il contient. Les pourcentages sont ceux du récap, calculés sur toute l’affaire.</div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:12px;font-weight:800;color:var(--tx)">À inclure</div>'
+    +'<div style="display:flex;gap:6px"><button type="button" onclick="_avdlAll(true)" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg3);cursor:pointer;font-family:inherit">Tout cocher</button>'
+    +'<button type="button" onclick="_avdlAll(false)" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg3);cursor:pointer;font-family:inherit">Tout décocher</button></div></div>'
+    +'<div style="max-height:380px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:10px 14px;margin-bottom:10px;background:var(--bg3)">'+tree.map(function(n){return node(n,0);}).join('')+'</div>'
+    +'<div id="_avdl_err" style="font-size:12px;color:var(--rd);min-height:16px;margin-bottom:8px"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+    +'<button onclick="document.getElementById(\'_avdl_modal\').remove()" style="padding:8px 18px;border-radius:8px;border:1px solid var(--bd);background:var(--bg3);font-family:inherit;font-size:13px;cursor:pointer">Annuler</button>'
+    +'<button onclick="avDownloadConfirm()" style="padding:8px 24px;border-radius:8px;border:none;background:var(--ac);color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">📥 Télécharger</button>'
+    +'</div></div>';
+  modal.onclick=function(e){if(e.target===modal)modal.remove();};
+  document.body.appendChild(modal);
+}
+function _avdlCascade(cb){
+  var n=cb.closest('._avdl-node');
+  n.querySelectorAll('._avdl-cb').forEach(function(c){c.checked=cb.checked;});
+  var p=n.parentElement.closest('._avdl-node');
+  while(p){
+    var own=p.querySelector(':scope > label > ._avdl-cb');
+    var kids=p.querySelector(':scope > ._avdl-kids');
+    own.checked=!!kids&&Array.prototype.some.call(kids.querySelectorAll('._avdl-cb'),function(c){return c.checked;});
+    p=p.parentElement.closest('._avdl-node');
+  }
+  var err=document.getElementById('_avdl_err');if(err)err.textContent='';
+}
+function _avdlAll(state){
+  document.querySelectorAll('#_avdl_modal ._avdl-cb').forEach(function(c){c.checked=state;});
+  var err=document.getElementById('_avdl_err');if(err)err.textContent='';
+}
+function avDownloadConfirm(){
+  var sel={};
+  document.querySelectorAll('#_avdl_modal ._avdl-cb').forEach(function(c){if(c.checked)sel[c.dataset.key]=true;});
+  if(!Object.keys(sel).length){document.getElementById('_avdl_err').textContent='Cochez au moins un élément.';return;}
+  var html=avBuildDownloadHtml(sel);
+  var aff=STORE.current||'affaire';
+  var blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;
+  a.download='Avancement_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+new Date().toISOString().slice(0,10)+'.html';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},5000);
+  document.getElementById('_avdl_modal').remove();
+}
+function avBuildDownloadHtml(sel){
+  var aff=STORE.current;
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function bar(pct,color){return '<div class="bar"><div class="fill" style="width:'+pct+'%;background:'+color+'"></div></div>';}
+  function taskHtml(r){
+    var excl=!!r.excludeProgress,done=!!r.done;
+    var pct=done?100:excl?0:Math.max(0,Math.min(99,Math.round(+r.progress||0)));
+    var badge=excl?'<span class="st st-ex">Hors avancement</span>'
+      :done?'<span class="st st-ok">✓ Terminée</span>'
+      :r.inProgress?'<span class="st st-pr">⚡ En cours</span>'
+      :'<span class="st st-no">Pas commencée</span>';
+    return '<div class="task"><div class="tl"><span class="tn">'+esc(r.lb)+'</span>'+badge+'<span class="dt">'+esc(_avDateLbl(r))+'</span></div>'
+      +(excl?'':'<div class="tr">'+bar(pct,done?'#16A34A':'#F59E0B')+'<span class="pc">'+pct+'%</span></div>')+'</div>';
+  }
+  function nodeHtml(n,color){
+    if(!sel[_avNodeKey(n)])return '';
+    if(n.type==='act')return taskHtml(n.row);
+    var opts=n.type==='ph'?{filterPk:n.row.pk}:n.type==='ens'?{filterEnsId:n.row.id}:{filterSbId:n.row.id};
+    var pct=calcHierProgress(D(),opts);
+    var kids=n.kids.map(function(k){return nodeHtml(k,color);}).join('');
+    var lbl=n.type==='ph'?n.row.pk:n.row.lb;
+    return '<div class="grp g-'+n.type+'"'+(n.type==='ph'?' style="border-left-color:'+color+'"':'')+'>'
+      +'<div class="gh"><span class="gn">'+esc(lbl)+'</span>'+bar(pct,color)+'<span class="pc">'+pct+'%</span></div>'
+      +(kids?'<div class="gk">'+kids+'</div>':'')+'</div>';
+  }
+  // Les couleurs de phase du site sont des variables CSS (var(--...)) qui
+  // n'existent pas dans le fichier téléchargé : on les résout en vraie
+  // couleur, comme le fait downloadPlanning.
+  function realColor(v){
+    if(!v||typeof v!=='string'||v.indexOf('var(')!==0)return v;
+    var m=v.match(/var\((--[a-zA-Z0-9-]+)\)/);
+    return (m&&getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim())||'#1F4E79';
+  }
+  var body=_avTree().map(function(ph){return nodeHtml(ph,realColor(PH_get(ph.row.pk).h)||'#1F4E79');}).join('');
+  var glob=calcHierProgress(D(),{});
+  var c=_avCounts();
+  var dateStr=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+  var css='*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    +'body{font-family:Arial,sans-serif;color:#1A1917;padding:28px;max-width:960px;margin:0 auto}'
+    +'h1{font-size:22px;font-weight:900;color:#1F4E79}.sub{font-size:12px;color:#6B7280;margin:4px 0 20px}'
+    +'.kpis{display:flex;gap:12px;margin-bottom:22px}.kpi{flex:1;border:1px solid #E5E7EB;border-radius:10px;padding:12px 16px}'
+    +'.kpi .l{font-size:11px;color:#6B7280;font-weight:700}.kpi .v{font-size:26px;font-weight:900;color:#1F4E79}'
+    +'.grp{margin-bottom:10px}.g-ph{border:1px solid #E5E7EB;border-left:5px solid #1F4E79;border-radius:10px;padding:10px 14px;page-break-inside:avoid}'
+    +'.g-ens,.g-sb{margin:8px 0 0 14px}.gk{margin-top:4px}'
+    +'.gh{display:flex;align-items:center;gap:10px}.gn{min-width:220px;font-weight:700;font-size:13px}.g-ph>.gh .gn{font-size:15px;font-weight:900}'
+    +'.g-sb>.gh .gn{font-weight:600;color:#4B5563}'
+    +'.bar{flex:1;height:10px;background:#F1F2F5;border-radius:5px;overflow:hidden}.fill{height:100%}'
+    +'.pc{width:44px;text-align:right;font-weight:800;font-size:12px}'
+    +'.task{margin:6px 0 0 28px;padding:6px 0;border-top:1px dashed #E5E7EB}'
+    +'.tl{display:flex;align-items:center;gap:8px;font-size:12px}.tn{font-weight:600}.dt{margin-left:auto;color:#9CA3AF;font-size:11px}'
+    +'.tr{display:flex;align-items:center;gap:10px;margin-top:4px}'
+    +'.st{font-size:10px;font-weight:700;padding:1px 8px;border-radius:10px}'
+    +'.st-ok{background:#DCFCE7;color:#15803D}.st-pr{background:#FEF3C7;color:#B45309}.st-no{background:#F3F4F6;color:#6B7280}.st-ex{background:#F3F4F6;color:#6B7280;border:1px dashed #9CA3AF}'
+    +'.logo{position:absolute;top:20px;right:28px;height:40px}'
+    +'@media print{body{padding:0}@page{size:A4 portrait;margin:12mm}.logo{position:fixed;top:0;right:0}}';
+  return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Avancement — '+esc(getAffLabel(aff))+'</title><style>'+css+'</style></head><body>'
+    +(typeof LOGO_ELS_B64!=='undefined'?'<img class="logo" src="'+LOGO_ELS_B64+'">':'')
+    +'<h1>Avancement</h1>'
+    +'<div class="sub">'+esc(getAffLabel(aff))+' &nbsp;·&nbsp; Édité le '+dateStr+'</div>'
+    +'<div class="kpis"><div class="kpi"><div class="l">Avancement de l’affaire</div><div class="v">'+glob+'%</div></div>'
+    +'<div class="kpi"><div class="l">Tâches en cours</div><div class="v">'+c.p+'</div></div>'
+    +'<div class="kpi"><div class="l">Tâches terminées</div><div class="v">'+c.d+'</div></div></div>'
+    +body
+    +'</body></html>';
 }
 // ── Calcul hiérarchique de l'avancement ────────────────────────────────
 // À l'intérieur d'une sous-phase : les tâches qui comptent (non exclues)
@@ -10531,6 +10863,7 @@ function switchProjet(k){
   if(k===STORE.current&&document.getElementById('plan-editor')&&document.getElementById('plan-editor').classList.contains('open'))return;
   // Reset : aller à aujourd'hui quand on change d'affaire
   window._scrollToToday = true;
+  if(k!==STORE.current)window._rcOpen={}; // récap : tout replié sur la nouvelle affaire
   EXP=null;STORE.current=k;
   const p=currP();
   document.getElementById('inp-bud').value=p.budget||500;
@@ -16505,35 +16838,10 @@ function effHP(a){
   return 0;
 }
 
-// Plie/déplie un groupe (phase, ensemble ou sous-phase) dans le récap
-// affaire courante — même principe que le pli/dépli du GANTT.
-// M\u00E9morise quels groupes sont repli\u00E9s, IND\u00C9PENDAMMENT du DOM \u2014 sans \u00E7a, un
-// rafra\u00EEchissement du r\u00E9cap (synchro avec un coll\u00E8gue, ou m\u00EAme sa propre
-// sauvegarde) reconstruit tout le tableau depuis z\u00E9ro et oublie qu'un
-// groupe venait d'\u00EAtre repli\u00E9, qui r\u00E9appara\u00EEt donc d\u00E9pli\u00E9 tout seul.
-window._recCollapsed=window._recCollapsed||{};
-function _recToggle(hdr){
-  var g=hdr.dataset.group;
-  var collapsed=hdr.classList.toggle('rec-collapsed');
-  if(collapsed)window._recCollapsed[g]=true;else delete window._recCollapsed[g];
-  var arrow=hdr.querySelector('.rec-arrow');
-  if(arrow)arrow.textContent=collapsed?'\u25B6':'\u25BC';
-  document.querySelectorAll('.rec-c-'+g).forEach(function(el){el.style.display=collapsed?'none':'';});
-}
-// R\u00E9-applique les groupes repli\u00E9s m\u00E9moris\u00E9s apr\u00E8s une reconstruction
-// compl\u00E8te du r\u00E9cap (le HTML g\u00E9n\u00E9r\u00E9 part toujours "tout d\u00E9pli\u00E9").
-function _recApplyCollapsedState(){
-  Object.keys(window._recCollapsed).forEach(function(g){
-    var hdr=document.querySelector('.rec-hdr[data-group="'+g+'"]');
-    if(!hdr){delete window._recCollapsed[g];return;} // groupe disparu (structure modifi\u00E9e) : on oublie
-    hdr.classList.add('rec-collapsed');
-    var arrow=hdr.querySelector('.rec-arrow');
-    if(arrow)arrow.textContent='\u25B6';
-    document.querySelectorAll('.rec-c-'+g).forEach(function(el){el.style.display='none';});
-  });
-}
-
-function renderRecap(){
+// Récap en tableau complet, tout déplié : ce n'est plus l'affichage à
+// l'écran (voir renderRecap), mais le contenu du fichier "Export HTML", qui
+// doit rester exhaustif même si des sections sont repliées à l'écran.
+function _recapTableHtml(){
   const maxP=Math.max(...D().filter(r=>r.t==='act').map(a=>a.p.length),1);
   const pc_hdr=Array.from({length:maxP},(_,i)=>`<th>P.${i+1}</th><th>Ent.</th><th>H</th>`).join('');
 
@@ -16696,7 +17004,74 @@ function renderRecap(){
   const phases=[];
   D().forEach(function(r){if(r.t==='ph'&&phases.indexOf(r.pk)<0)phases.push(r.pk);});
 
-  // ── Infos affaire ──────────────────────────────────────────────────
+  let html=`<div class="pg-ttl" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <span>RÉCAPITULATIF — <span style="color:var(--ac)">${STORE.current}</span></span>
+    <div style="display:flex;gap:8px">
+      <button class="btn" style="background:var(--gn2);color:var(--gn);border:1px solid var(--gn3);font-size:11px" onclick="exportRecapCSV()">↓ Export CSV</button>
+      <button class="btn btn-g" onclick="exportRecapHTML()" style="font-size:11px">↓ Export HTML</button>
+    </div>
+  </div>`;
+  html+=_recapInfosHtml();
+
+  phases.forEach(pk=>{
+    const ph=PH_get(pk);
+    const hasActs=D().some(r=>r.pk===pk&&r.t==='act');
+    if(!hasActs)return;
+    const _phGid='reg'+(_recGid++);
+    const _phHdrPct=_countsInProgress(pk)?` <span style="margin-left:8px;font-size:10px;padding:1px 8px;border-radius:10px;background:rgba(255,255,255,.25);font-weight:800">${calcHierProgress(D(),{filterPk:pk})}%</span>`:'';
+    html+=`<div style="margin-bottom:24px">
+      <div class="rec-hdr" data-group="${_phGid}" onclick="_recToggle(this)" style="cursor:pointer;background:${ph.h};color:#fff;padding:8px 14px;border-radius:var(--r) var(--r) 0 0;font-size:11px;font-weight:700;letter-spacing:1px"><span class="rec-arrow" style="display:inline-block;width:14px">▼</span>&nbsp;${pk}${_phHdrPct}</div>
+      <div class="rec-c-${_phGid}" style="overflow-x:auto;border:1px solid ${ph.h}44;border-top:none;border-radius:0 0 var(--r) var(--r)">
+        <table class="rt" style="width:100%">
+          ${tableHdr}
+          <tbody>${buildPhaseBlock(pk,_phGid)}</tbody>
+        </table>
+      </div>
+    </div>`;
+  });
+
+  // ── TOTAL AFFAIRE ────────────────────────────────
+  const _tt=_recapTotals();
+  const allActs=_tt.allActs,affTotPrev=_tt.affTotPrev,affTotReel=_tt.affTotReel,affTotH=_tt.affTotH,affDelta=_tt.affDelta,affDone=_tt.affDone,affPct=_tt.affPct;
+
+  html+=`<div style="background:var(--bg2);border:2px solid var(--ac);border-radius:var(--r2);padding:14px 18px;margin-top:8px">
+    <div style="font-size:10px;font-weight:800;color:var(--ac);letter-spacing:.8px;margin-bottom:12px">TOTAL AFFAIRE — ${STORE.current}</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch">
+      <div style="background:var(--bg3);border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px">
+        <div style="font-size:22px;font-weight:900;color:var(--ac)">${affPct}%</div>
+        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">AVANCEMENT</div>
+        <div style="font-size:10px;color:var(--tx3)">${affDone}/${allActs.length} terminées</div>
+      </div>
+      <div style="background:#FFF7ED;border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px;border-top:3px solid var(--or)">
+        <div style="font-size:22px;font-weight:900;color:var(--or)">${Math.round(affTotPrev)}H</div>
+        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">H PRÉVUES</div>
+      </div>
+      <div style="background:#F0FDF4;border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px;border-top:3px solid var(--gn)">
+        <div style="font-size:22px;font-weight:900;color:var(--gn)">${Math.round(affTotReel)}H</div>
+        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">H RÉELLES</div>
+      </div>
+      <div style="background:${affDelta>0?'#FEF2F2':'#F0FDF4'};border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px;border-top:3px solid ${affDelta>0?'var(--rd)':'var(--gn)'}">
+        <div style="font-size:22px;font-weight:900;color:${affDelta>0?'var(--rd)':'var(--gn)'}">${affDelta>=0?'+':''}${affDelta}H</div>
+        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">ΔÉCART</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px;border-top:3px solid var(--ac)">
+        <div style="font-size:22px;font-weight:900;color:var(--ac)">${Math.round(affTotH)}H</div>
+        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">H AFFECTÉES</div>
+      </div>
+    </div>
+  </div>`;
+
+  _recapBudgetSections().forEach(function(s){
+    html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">'+s.title+'</h3>'+s.table;
+  });
+  // ── Fortuites de l'affaire ─────────────────────────────────────────
+  html+='<div style="margin-top:20px">'+_recapFortuitesHtml()+'</div>';
+  return html;
+}
+
+// Carte "infos affaire" (numéro, libellé, dates, responsables) — partagée
+// par l'affichage du récap et son export HTML.
+function _recapInfosHtml(){
   const _pi=currP()&&currP().infos?currP().infos:{};
   const _pr=_pi.responsables||{};
   const _respDefs=[
@@ -16732,17 +17107,9 @@ function renderRecap(){
   var _affDateDebut=_dateRangeRecap.debut,_affDateFin=_dateRangeRecap.fin;
   var _fmtDateFr=function(d){return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});};
 
-  let html=`<div class="pg-ttl" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-    <span>RÉCAPITULATIF — <span style="color:var(--ac)">${STORE.current}</span></span>
-    <div style="display:flex;gap:8px">
-      <button class="btn" style="background:var(--gn2);color:var(--gn);border:1px solid var(--gn3);font-size:11px" onclick="exportRecapCSV()">↓ Export CSV</button>
-      <button class="btn btn-g" onclick="exportRecapHTML()" style="font-size:11px">↓ Export HTML</button>
-    </div>
-  </div>`;
-
   // Carte infos affaire (si infos renseignées OU si des dates sont calculables)
-  if(_pi.numero||_pi.libelle||_respCards||_affDateDebut){
-    html+=`<div style="background:var(--bg3);border-radius:var(--r2);border:1px solid var(--bd);padding:14px 18px;margin-bottom:18px">
+  if(!(_pi.numero||_pi.libelle||_respCards||_affDateDebut))return '';
+  return `<div style="background:var(--bg3);border-radius:var(--r2);border:1px solid var(--bd);padding:14px 18px;margin-bottom:18px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:12px;flex-wrap:wrap">
         <div>
           ${_pi.numero?`<div style="font-size:18px;font-weight:900;color:var(--tx);letter-spacing:.5px">${_pi.numero}${_pi.numeroClient?` <span style="font-size:13px;font-weight:600;color:var(--tx3);margin-left:8px">(Client: ${_pi.numeroClient})</span>`:''}</div>`:''}
@@ -16756,26 +17123,10 @@ function renderRecap(){
       </div>
       ${_respCards?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px">${_respCards}</div>`:''}
     </div>`;
-  }
+}
 
-  phases.forEach(pk=>{
-    const ph=PH_get(pk);
-    const hasActs=D().some(r=>r.pk===pk&&r.t==='act');
-    if(!hasActs)return;
-    const _phGid='reg'+(_recGid++);
-    const _phHdrPct=_countsInProgress(pk)?` <span style="margin-left:8px;font-size:10px;padding:1px 8px;border-radius:10px;background:rgba(255,255,255,.25);font-weight:800">${calcHierProgress(D(),{filterPk:pk})}%</span>`:'';
-    html+=`<div style="margin-bottom:24px">
-      <div class="rec-hdr" data-group="${_phGid}" onclick="_recToggle(this)" style="cursor:pointer;background:${ph.h};color:#fff;padding:8px 14px;border-radius:var(--r) var(--r) 0 0;font-size:11px;font-weight:700;letter-spacing:1px"><span class="rec-arrow" style="display:inline-block;width:14px">▼</span>&nbsp;${pk}${_phHdrPct}</div>
-      <div class="rec-c-${_phGid}" style="overflow-x:auto;border:1px solid ${ph.h}44;border-top:none;border-radius:0 0 var(--r) var(--r)">
-        <table class="rt" style="width:100%">
-          ${tableHdr}
-          <tbody>${buildPhaseBlock(pk,_phGid)}</tbody>
-        </table>
-      </div>
-    </div>`;
-  });
-
-  // ── TOTAL AFFAIRE ────────────────────────────────
+// Totaux de l'affaire (cartes du haut du récap et de son export).
+function _recapTotals(){
   const allActs=D().filter(r=>r.t==='act');
   const affTotPrev=allActs.reduce((s,a)=>s+(+a.hPrev||0),0);
   const affTotReel=allActs.reduce((s,a)=>s+(+a.hReel||0),0);
@@ -16784,34 +17135,13 @@ function renderRecap(){
   const affDone=allActs.filter(a=>a.done).length;
   // Avancement pondéré par H Prévues sur les % saisis manuellement
   const affPct=calcHierProgress(D(),{});
+  return {allActs:allActs,affTotPrev:affTotPrev,affTotReel:affTotReel,affTotH:affTotH,affDelta:affDelta,affDone:affDone,affPct:affPct};
+}
 
-  html+=`<div style="background:var(--bg2);border:2px solid var(--ac);border-radius:var(--r2);padding:14px 18px;margin-top:8px">
-    <div style="font-size:10px;font-weight:800;color:var(--ac);letter-spacing:.8px;margin-bottom:12px">TOTAL AFFAIRE — ${STORE.current}</div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch">
-      <div style="background:var(--bg3);border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px">
-        <div style="font-size:22px;font-weight:900;color:var(--ac)">${affPct}%</div>
-        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">AVANCEMENT</div>
-        <div style="font-size:10px;color:var(--tx3)">${affDone}/${allActs.length} terminées</div>
-      </div>
-      <div style="background:#FFF7ED;border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px;border-top:3px solid var(--or)">
-        <div style="font-size:22px;font-weight:900;color:var(--or)">${Math.round(affTotPrev)}H</div>
-        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">H PRÉVUES</div>
-      </div>
-      <div style="background:#F0FDF4;border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px;border-top:3px solid var(--gn)">
-        <div style="font-size:22px;font-weight:900;color:var(--gn)">${Math.round(affTotReel)}H</div>
-        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">H RÉELLES</div>
-      </div>
-      <div style="background:${affDelta>0?'#FEF2F2':'#F0FDF4'};border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px;border-top:3px solid ${affDelta>0?'var(--rd)':'var(--gn)'}">
-        <div style="font-size:22px;font-weight:900;color:${affDelta>0?'var(--rd)':'var(--gn)'}">${affDelta>=0?'+':''}${affDelta}H</div>
-        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">ΔÉCART</div>
-      </div>
-      <div style="background:var(--bg3);border-radius:var(--r);padding:12px 18px;text-align:center;flex:1;min-width:90px;border-top:3px solid var(--ac)">
-        <div style="font-size:22px;font-weight:900;color:var(--ac)">${Math.round(affTotH)}H</div>
-        <div style="font-size:9px;color:var(--tx3);font-weight:700;margin-top:2px">H AFFECTÉES</div>
-      </div>
-    </div>
-  </div>`;
-
+// Tableaux "Budget heures" du récap : liste de {key,title,table}, seulement
+// ceux qui ont lieu d'être affichés (mêmes conditions et même ordre qu'avant).
+function _recapBudgetSections(){
+  var _out=[];
   // Heures "générales" de cette affaire (sans sous-phase précise, voir
   // fhGeneralHoursForAff) — à rattacher à la phase CHANTIER pour qu'elles
   // comptent quand même dans son Réel H, comme demandé.
@@ -16821,7 +17151,7 @@ function renderRecap(){
   // Budget par phase
   var _hBud=D().some(function(r){return r.t==='ph'&&r.budgetH>0;})&&hasView('budget_recap');
   if(_hBud){
-    html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Budget Heures par Phase</h3>';
+    var html='';
     html+='<table class="rt"><thead><tr><th>Phase</th><th>Budget H</th><th>Pr&eacute;vu H</th><th>R&eacute;el H</th><th>Ecart Bud/Pr&eacute;vu</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
     D().filter(function(r){return r.t==='ph';}).forEach(function(ph_r){
       var _a=D().filter(function(r){return (r.t==='act'||r.t==='sb')&&r.pk===ph_r.pk;});
@@ -16844,6 +17174,7 @@ function renderRecap(){
       html+='</tr>';
     });
     html+='</tbody></table>';
+    _out.push({key:'budph',title:'&#128176; Budget Heures par Phase',table:html});
   }
   // Heures générales / Affaire : ligne dédiée montrant qui a pointé sur
   // l'affaire sans préciser de sous-phase, et combien — ces heures sont
@@ -16852,15 +17183,16 @@ function renderRecap(){
     var _genPersDetail=Object.keys(_genHoursAff.persons).sort().map(function(nm){
       return '<span style="display:inline-block;background:var(--bg3);border-radius:10px;padding:1px 8px;margin:1px 3px 1px 0;font-size:10px;font-weight:700">'+nm+' &middot; '+(Math.round(_genHoursAff.persons[nm]*10)/10)+'H</span>';
     }).join('');
-    html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Heures g&eacute;n&eacute;rales / Affaire (sans sous-phase pr&eacute;cise)</h3>';
+    var html='';
     html+='<table class="rt"><thead><tr><th>Phase</th><th>R&eacute;el H</th><th>Qui a travaill&eacute; dessus</th></tr></thead><tbody>';
     html+='<tr><td style="font-weight:700">'+_chantierPh.lb+'</td><td style="font-weight:700">'+_genHoursAff.totalH+'H</td><td>'+_genPersDetail+'</td></tr>';
     html+='</tbody></table>';
+    _out.push({key:'gen',title:'&#128176; Heures g&eacute;n&eacute;rales / Affaire (sans sous-phase pr&eacute;cise)',table:html});
   }
   // Budget par ensemble
   var _hBudEns=D().some(function(r){return r.t==='ens'&&r.budgetH>0;})&&hasView('budget_recap');
   if(_hBudEns){
-    html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Budget Heures par Ensemble</h3>';
+    var html='';
     html+='<table class="rt"><thead><tr><th>Ensemble</th><th>Phase</th><th>Budget H</th><th>Pr&eacute;vu H</th><th>R&eacute;el H</th><th>Ecart Bud/Pr&eacute;vu</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
     var _allRowsEns=D();
     _allRowsEns.filter(function(r){return r.t==='ens';}).forEach(function(ens_r){
@@ -16888,11 +17220,12 @@ function renderRecap(){
       html+='</tr>';
     });
     html+='</tbody></table>';
+    _out.push({key:'budens',title:'&#128176; Budget Heures par Ensemble',table:html});
   }
   // Budget par sous-phase — avec détail des personnes (qui a travaillé dessus et combien d'heures)
   var _hBudSb=D().some(function(r){return r.t==='sb'&&r.budgetH>0;})&&hasView('budget_recap');
   if(_hBudSb){
-    html+='<h3 style="margin:20px 0 10px;font-size:13px;font-weight:800;color:var(--tx)">&#128176; Budget Heures par Sous-phase</h3>';
+    var html='';
     html+='<table class="rt"><thead><tr><th>Sous-phase</th><th>Phase / Ensemble</th><th>Budget H</th><th>R&eacute;el H</th><th>Ecart</th><th>Qui a travaill&eacute; dessus</th></tr></thead><tbody>';
     var _allRowsSb=D();
     _allRowsSb.filter(function(r){return r.t==='sb'&&r.budgetH>0;}).forEach(function(sb_r){
@@ -16922,15 +17255,205 @@ function renderRecap(){
       html+='</tr>';
     });
     html+='</tbody></table>';
+    _out.push({key:'budsb',title:'&#128176; Budget Heures par Sous-phase',table:html});
   }
-  // ── Fortuites de l'affaire ─────────────────────────────────────────
+  return _out;
+}
+
+// Fortuites de l'affaire courante (même rendu que dans le tableau de bord).
+function _recapFortuitesHtml(){
   var _savedFtAff=window._ftAff;
   window._ftAff=STORE.current; // Forcer l'affaire courante
   var _ftHtml=dbFortuites();
   window._ftAff=_savedFtAff;
-  html+='<div style="margin-top:20px">'+_ftHtml+'</div>';
-  document.getElementById('rw').innerHTML=html;
-  _recApplyCollapsedState();
+  return _ftHtml;
+}
+
+// ══ Récap — Affaire courante (affichage à l'écran) ═════════════════════
+// Même présentation que l'onglet Avancement : un arbre Phase ▸ Ensemble ▸
+// Sous-phase ▸ Tâche, tout replié à l'arrivée. Uniquement de la mise en
+// forme : les chiffres viennent des mêmes calculs qu'avant (calcHierProgress,
+// _recapTotals, _recapBudgetSections), et l'Export HTML garde le tableau
+// complet (_recapTableHtml).
+if(!window._rcOpen)window._rcOpen={};
+function _rcResetView(){window._rcOpen={};}
+function _rcToggle(key){window._rcOpen[key]=!window._rcOpen[key];renderRecap();}
+function _rcHdrHtml(key,label,level,color,right){
+  var open=!!window._rcOpen[key];
+  var pad=_AV_PAD[Math.min(level,4)];
+  var st=level===0
+    ?'background:var(--bg3);border-left:4px solid '+color+';font-weight:800;font-size:14px;color:var(--tx)'
+    :level===1?'font-weight:700;font-size:13px;color:var(--tx)':'font-weight:600;font-size:12px;color:var(--tx2)';
+  return '<div onclick="_rcToggle(\''+key+'\')" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:10px 14px 10px '+pad+'px;border-top:1px solid var(--bd);'+st+'">'
+    +'<span style="display:inline-block;width:12px;font-size:10px;color:var(--tx3);transition:transform .15s;transform:rotate('+(open?90:0)+'deg)">▶</span>'
+    +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+label+'</span>'
+    +(right||'')
+    +'</div>';
+}
+function _rcPill(txt,color,bg){
+  return '<span style="font-size:11px;font-weight:800;padding:2px 9px;border-radius:10px;background:'+(bg||'var(--bg2)')+';border:1px solid var(--bd);color:'+(color||'var(--tx2)')+';flex-shrink:0;white-space:nowrap">'+txt+'</span>';
+}
+function _rcBadge(txt,bg,tx){
+  return '<span style="background:'+bg+';color:'+tx+';font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;white-space:nowrap">'+txt+'</span>';
+}
+function _rcH(v){return v!=null&&v>0?v+'H':'—';}
+function _rcTaskHtml(r,level){
+  // Mêmes statuts et mêmes dates que le tableau du récap (voir aRow dans
+  // _recapTableHtml) : terminée > retard réel > en cours > non planifiée.
+  var _reelDays=r.reelDays&&r.reelDays.length?r.reelDays:[];
+  var _prevDays=r.prevDays&&r.prevDays.length?r.prevDays:[];
+  var _hasBars=_reelDays.length>0||_prevDays.length>0||r.s>0;
+  var _todayD5=TODAY?(TODAY.w-1)*5+(TODAY.di||0):0;
+  var _reelEnd=_reelDays.length?Math.max.apply(null,_reelDays):-1;
+  var _isOverdue=!r.done&&_reelEnd>=0&&_todayD5>_reelEnd;
+  var _isNonPlan=!_hasBars;
+  var badges='';
+  if(_isNonPlan)badges+=_rcBadge('📌 Non plan.','#FEF3C7','#92400E');
+  else if(_isOverdue)badges+=_rcBadge('🔴 Retard','#FEE2E2','#DC2626');
+  else if(r.inProgress&&!r.done&&r.progress>0)badges+=_rcBadge('⚡ '+r.progress+'%','#FEF3C7','#D97706');
+  if(r.done)badges+=_rcBadge('✓ Terminée','#D1FAE5','#059669');
+  var dateStr;
+  if(_isNonPlan)dateStr='Non planifiée';
+  else if(_prevDays.length){
+    var wS=Math.floor(Math.min.apply(null,_prevDays)/5)+1,wE=Math.floor(Math.max.apply(null,_prevDays)/5)+1;
+    dateStr='S'+isoWeekOf(wS)+(wS!==wE?' → S'+isoWeekOf(wE):'');
+  }else if(r.s>0)dateStr='S'+isoWeekOf(r.s)+(r.e&&r.e!==r.s?' → S'+isoWeekOf(r.e):'');
+  else dateStr='—';
+  var tot=r.p.reduce(function(s,p){return s+(+p.heures||0);},0);
+  var hp=effHP(r),hr=r.hReel||0;
+  var delta=(r.hPrev!=null||r.hReel!=null)?(hp-hr):null;
+  var chips=r.p.filter(function(p){return (p.name&&p.name.trim())||+p.heures;}).map(function(p){
+    var es=p.ent?ES[p.ent]:null;
+    return '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:2px 9px;font-size:11px;font-weight:600;color:var(--tx)">'
+      +escHtml(p.name||'—')
+      +(es?'<span class="pill" style="background:'+es.bg+';color:'+es.tc+'">'+escHtml(p.ent)+'</span>':'')
+      +(+p.heures?'<span style="font-weight:800;color:var(--ac)">'+(+p.heures)+'H</span>':'')
+      +'</span>';
+  }).join('');
+  function stat(lbl,val,col){return '<span style="font-size:11px;color:var(--tx3)">'+lbl+' <b style="color:'+col+'">'+val+'</b></span>';}
+  var bg=_isOverdue?'rgba(254,226,226,.35)':r.done?'rgba(209,250,229,.25)':'var(--bg2)';
+  var h='<div style="padding:10px 14px 12px '+_AV_PAD[Math.min(level,4)]+'px;border-top:1px solid var(--bd);background:'+bg+'">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+    +'<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0"><span style="font-size:13px;font-weight:700;color:var(--tx)">'+escHtml(r.lb)+'</span>'+badges+'</span>'
+    +'<span style="font-size:11px;color:var(--tx3);white-space:nowrap'+(_isNonPlan?';font-style:italic':'')+'">'+dateStr+'</span></div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px">'
+    +'<span style="display:flex;gap:5px;flex-wrap:wrap">'+(chips||'<span style="font-size:11px;color:var(--tx3);font-style:italic">Aucune personne</span>')+'</span>'
+    +'<span style="display:flex;gap:12px;flex-wrap:wrap">'
+    +stat('Aff.',tot?tot+'H':'—',tot?'var(--ac)':'var(--tx3)')
+    +stat('Prév.',_rcH(r.hPrev),'var(--or)')
+    +stat('Réel',_rcH(r.hReel),'var(--gn)')
+    +stat('Δ',delta!==null?(delta>0?'+':'')+delta+'H':'—',delta===null?'var(--tx3)':delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--tx3)')
+    +'</span></div>';
+  return h+'</div>';
+}
+// Arbre d'une phase dans l'ordre des lignes de D() (comme le tableau du
+// récap) : ensemble ▸ sous-phase ▸ tâches.
+function _rcPhaseTree(pk){
+  var root={kids:[]},ens=null,sb=null;
+  D().filter(function(r){return r.pk===pk;}).forEach(function(r){
+    if(r.t==='ph'){ens=null;sb=null;return;}
+    if(r.t==='ens'){ens={type:'ens',row:r,kids:[]};root.kids.push(ens);sb=null;return;}
+    if(r.t==='sb'){sb={type:'sb',row:r,kids:[]};(ens?ens.kids:root.kids).push(sb);return;}
+    if(r.t==='act')(sb?sb.kids:ens?ens.kids:root.kids).push({type:'act',row:r});
+  });
+  return root.kids;
+}
+function _rcNodeHtml(n,level,pk,rows){
+  if(n.type==='act')return _rcTaskHtml(n.row,level);
+  var key=n.type+':'+_avSafe(n.row.id);
+  var nAct=0;(function w(l){l.forEach(function(k){if(k.type==='act')nAct++;else w(k.kids);});})(n.kids);
+  var right='<span style="font-size:11px;color:var(--tx3);flex-shrink:0">'+nAct+' tâche'+(nAct>1?'s':'')+'</span>';
+  if(_countsInProgress(pk))right+=_rcPill(calcHierProgress(rows,n.type==='ens'?{filterEnsId:n.row.id}:{filterSbId:n.row.id})+'%');
+  var h=_rcHdrHtml(key,escHtml(n.row.lb),level,null,right);
+  if(window._rcOpen[key])h+=n.kids.map(function(k){return _rcNodeHtml(k,level+1,pk,rows);}).join('');
+  return h;
+}
+function _rcModifsHtml(pk,rows){
+  var mods=[];
+  rows.filter(function(r){return r.t==='act';}).forEach(function(act){
+    (act.modifications||[]).forEach(function(m){
+      mods.push({actLb:act.lb,texte:m.texte,date:m.date,envoye:m.envoye,
+        dest:(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Automatisme',be:'BE',chantier:'Chantier',tableauterie:'Tableauterie'}[d]||d;}).join(', ')});
+    });
+  });
+  if(!mods.length)return '';
+  var key='mod:'+_avSafe(pk);
+  var h=_rcHdrHtml(key,'🔧 Modifications',1,null,_rcPill(mods.length));
+  if(!window._rcOpen[key])return h;
+  return h+mods.map(function(m){
+    return '<div style="padding:9px 14px 10px '+_AV_PAD[2]+'px;border-top:1px solid var(--bd);background:var(--bg2)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<span style="font-size:12px;font-weight:700;color:var(--tx)">'+m.actLb+'</span>'
+      +'<span style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--tx3);white-space:nowrap">'+m.date+'</span>'
+      +(m.envoye?_rcBadge('✓ Envoyé','#D1FAE5','var(--gn)'):_rcBadge('⏳ Non envoyé','#FEF3C7','var(--or)'))+'</span></div>'
+      +'<div style="font-size:12px;color:var(--tx);margin-top:4px">'+m.texte+'</div>'
+      +(m.dest?'<div style="font-size:11px;color:var(--tx3);margin-top:3px">→ '+m.dest+'</div>':'')
+      +'</div>';
+  }).join('');
+}
+// Bloc repliable isolé (tableaux budget, fortuites).
+function _rcSectionHtml(key,label,color,right,bodyFn){
+  var h='<div style="border:1px solid var(--bd);border-radius:var(--r2);overflow:hidden;background:var(--bg2);margin-top:12px">'
+    +_rcHdrHtml(key,label,0,color,right).replace('border-top:1px solid var(--bd);','');
+  if(window._rcOpen[key])h+='<div style="padding:12px 14px;border-top:1px solid var(--bd);overflow-x:auto">'+bodyFn()+'</div>';
+  return h+'</div>';
+}
+function renderRecap(){
+  var rw=document.getElementById('rw');
+  if(!rw)return;
+  if(!window._rcOpen)window._rcOpen={};
+  var t=_recapTotals();
+  function card(lbl,val,col,sub){return '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);padding:10px 14px"><div style="font-size:11px;color:var(--tx3);font-weight:700">'+lbl+'</div><div style="font-size:22px;font-weight:900;color:'+(col||'var(--tx)')+'">'+val+'</div>'+(sub?'<div style="font-size:11px;color:var(--tx3)">'+sub+'</div>':'')+'</div>';}
+  var h='<div style="max-width:1000px;margin:0 auto;padding:16px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">'
+    +'<div style="font-size:16px;font-weight:800;color:var(--tx);min-width:0">📋 Récap — <span style="color:var(--ac)">'+escHtml(STORE.current)+'</span></div>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+    +'<button onclick="exportRecapCSV()" style="padding:6px 14px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);color:var(--tx2);font-size:12px;font-weight:700;font-family:inherit;cursor:pointer">↓ Export CSV</button>'
+    +'<button onclick="exportRecapHTML()" style="padding:6px 14px;border-radius:var(--r);border:1px solid var(--ac);background:var(--ac);color:#fff;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer">↓ Export HTML</button>'
+    +'</div></div>';
+  h+=_recapInfosHtml();
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">'
+    +card('Avancement',t.affPct+'%','var(--ac)',t.affDone+'/'+t.allActs.length+' terminées')
+    +card('H prévues',Math.round(t.affTotPrev)+'H','var(--or)')
+    +card('H réelles',Math.round(t.affTotReel)+'H','var(--gn)')
+    +card('Écart',(t.affDelta>=0?'+':'')+t.affDelta+'H',t.affDelta>0?'var(--rd)':'var(--gn)')
+    +card('H affectées',Math.round(t.affTotH)+'H','var(--ac)')
+    +'</div>';
+  // Mêmes phases, dans le même ordre, que le tableau du récap.
+  var phases=[];
+  D().forEach(function(r){if(r.t==='ph'&&phases.indexOf(r.pk)<0)phases.push(r.pk);});
+  phases=phases.filter(function(pk){return D().some(function(r){return r.pk===pk&&r.t==='act';});});
+  if(!phases.length){
+    h+='<div style="text-align:center;padding:40px;color:var(--tx3);border:1px dashed var(--bd);border-radius:var(--r2)">Aucune tâche dans cette affaire.</div>';
+  }else{
+    h+='<div style="border:1px solid var(--bd);border-radius:var(--r2);overflow:hidden;background:var(--bg2)">';
+    phases.forEach(function(pk,i){
+      var rows=D().filter(function(r){return r.pk===pk;});
+      var acts=rows.filter(function(r){return r.t==='act';});
+      var totH=0,totPrev=0,totReel=0;
+      acts.forEach(function(a){totH+=a.p.reduce(function(s,p){return s+(+p.heures||0);},0);totPrev+=(+a.hPrev||0);if(a.hReel)totReel+=a.hReel;});
+      var key='ph:'+_avSafe(pk);
+      var right='<span style="display:flex;gap:10px;font-size:11px;font-weight:600;color:var(--tx3);flex-shrink:0;white-space:nowrap">'
+        +'<span>Aff. <b style="color:var(--ac)">'+(totH||'—')+'</b></span>'
+        +'<span>Prév. <b style="color:var(--or)">'+(totPrev||'—')+'</b></span>'
+        +'<span>Réel <b style="color:var(--gn)">'+(totReel||'—')+'</b></span></span>'
+        +(_countsInProgress(pk)?_rcPill(calcHierProgress(D(),{filterPk:pk})+'%'):'');
+      var hdr=_rcHdrHtml(key,escHtml(pk),0,PH_get(pk).h||'var(--ac)',right);
+      if(i===0)hdr=hdr.replace('border-top:1px solid var(--bd);','');
+      h+=hdr;
+      if(window._rcOpen[key]){
+        h+=_rcPhaseTree(pk).map(function(n){return _rcNodeHtml(n,1,pk,rows);}).join('');
+        h+=_rcModifsHtml(pk,rows);
+      }
+    });
+    h+='</div>';
+  }
+  _recapBudgetSections().forEach(function(s){
+    h+=_rcSectionHtml('sec:'+s.key,s.title,'var(--ac)','',function(){return s.table;});
+  });
+  var nFt=((currP()&&currP().fortuites)||[]).length;
+  h+=_rcSectionHtml('sec:fort','⚡ Fortuites','#DC2626',_rcPill(nFt),_recapFortuitesHtml);
+  rw.innerHTML=h+'</div>';
 }
 
 // ═══════════════════════════════
