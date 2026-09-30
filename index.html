@@ -158,7 +158,11 @@
       if(error||!data)return null;
       const text=await data.text();
       const parsed=JSON.parse(text);
-      return _isValidStore(parsed)?parsed:null;
+      if(!_isValidStore(parsed))return null;
+      // Garder le texte reçu : _applyRemote en fait la "dernière version du
+      // serveur connue" (fusion à trois, voir _syncBase).
+      parsed.__srvText=text;
+      return parsed;
     }catch(e){return null;}
   }
 
@@ -167,12 +171,18 @@
     if(!_isValidStore(store)){console.warn('supaSave: store vide');return;}
     try{
       _lastSaveSid=SESSION_ID;
-      const blob=new Blob([JSON.stringify(store)],{type:'application/json'});
+      var _seqAtSave=window._editSeq||0;
+      if(store&&store.__srvText!==undefined)delete store.__srvText;
+      const _json=JSON.stringify(store);
+      const blob=new Blob([_json],{type:'application/json'});
       const {error}=await supa.storage.from(BUCKET).upload(FILE,blob,{upsert:true,cacheControl:'0'});
       if(error){
         _showMsg('Erreur sync: '+error.message,'#DC2626');
         console.error('supaSave storage error:',error);
       } else {
+        // Ce qui vient d'être envoyé est maintenant la version du serveur.
+        try{_setSyncBase(JSON.parse(_json));}catch(eB){}
+        _markCleanIfIdle(_seqAtSave);
         try{var {data:_m}=await supa.storage.from(BUCKET).list('',{search:FILE});
         if(_m&&_m[0])_lastEtag=_m[0].updated_at||_m[0].created_at;}catch(e2){}
         // Prévenir tout le monde INSTANTANÉMENT qu'une nouvelle version existe,
@@ -197,8 +207,10 @@
     // seules les modifications passant par saveNow() étaient protégées
     // contre une fusion distante qui écraserait un changement local tout
     // juste fait.
+    if(typeof _markDirty==='function')_markDirty(); // modification pas encore envoyée
     if(typeof _stampModifiedRows==='function')_stampModifiedRows();
     if(typeof _stampModifiedAbsences==='function')_stampModifiedAbsences();
+    if(typeof _stampModifiedGP==='function')_stampModifiedGP();
     if(typeof _stampModifiedOrder==='function')_stampModifiedOrder();
     clearTimeout(_syncTimeout);
     _syncTimeout=setTimeout(function(){_syncTimeout=null;_mergeRemoteThenSave();},800);
@@ -274,11 +286,13 @@
         if(!meta)return;
         var etag=meta.updated_at||meta.created_at;
         if(_lastEtag&&etag===_lastEtag)return; // pas changé
-        if(_lastSaveSid===SESSION_ID){
-          _lastSaveSid=null;
-          _lastEtag=etag;
-          return;
-        }
+        // (Ancien comportement retiré : après chacune de NOS sauvegardes, le
+        // premier changement suivant était supposé être le nôtre et ignoré —
+        // alors que supaSave note déjà l'etag de notre propre envoi dans
+        // _lastEtag. Résultat : la modification d'un collègue arrivant juste
+        // après était silencieusement sautée et n'apparaissait pas. Appliquer
+        // une version qui serait finalement la nôtre ne coûte rien : la
+        // fusion est ligne par ligne, rien n'est perdu.)
         if(_isEditingUI())return;
         _lastEtag=etag;
         supaLoad().then(function(remote){
@@ -330,10 +344,15 @@
   var _BAR_FIELDS=['prevDays','reelDays','s','e','sPrev','ePrev','sReel','eReel','dStart','dEnd','dStartR','dEndR','dDur','dDurR','weekendPrev','weekendReel','barComments'];
   window._barSnapshots=window._barSnapshots||{};
   function _refreshRowSnapshots(){
-    window._rowSnapshots={};
+    window._rowSnapshots={};window._rowSnapReady=true;
     window._barSnapshots={};
+    window._orderSnapshots={};
     if(!STORE||!STORE.projects)return;
     Object.keys(STORE.projects).forEach(function(aff){
+      // Ordre des lignes de référence (sinon la 1re sauvegarde horodatait
+      // l'ordre de toutes les affaires "maintenant" et pouvait annuler un
+      // déplacement de tâche fait par un collègue).
+      if(Array.isArray(STORE.projects[aff].data))window._orderSnapshots[aff]=STORE.projects[aff].data.map(function(r){return r&&r.id;}).join(',');
       (STORE.projects[aff].data||[]).forEach(function(r){
         if(!r||!r.id)return;
         var cmp=Object.assign({},r);delete cmp._modAt;delete cmp._barsModAt;
@@ -349,9 +368,18 @@
       window._rowSnapshots[aff+'::__meta__']=JSON.stringify(_cmpMeta);
     });
   }
+  // Toutes les affaires, pas seulement celle affichée : une tâche d'une
+  // autre affaire peut aussi être modifiée (onglet Avancement, tableau de
+  // bord, feuille d'heure...) — sans horodatage, sa modification perdait
+  // contre la version du serveur à la fusion suivante.
   function _stampModifiedRows(){
-    if(!STORE||!STORE.current||!STORE.projects[STORE.current])return;
-    var aff=STORE.current;
+    // Pas avant la première fusion avec le serveur (références pas encore
+    // prises) : sinon toutes les tâches seraient vues "modifiées à l'instant".
+    if(!window._rowSnapReady)return;
+    if(!STORE||!STORE.projects)return;
+    Object.keys(STORE.projects).forEach(function(aff){if(STORE.projects[aff])_stampModifiedRowsOf(aff);});
+  }
+  function _stampModifiedRowsOf(aff){
     (STORE.projects[aff].data||[]).forEach(function(r){
       if(!r||!r.id)return;
       var key=aff+'::'+r.id;
@@ -399,6 +427,9 @@
   // qu'un collègue venait tout juste de saisir ailleurs.
   window._absSnapshots=window._absSnapshots||{};
   function _stampModifiedAbsences(){
+    // Pas avant la première fusion avec le serveur (photos pas encore prises) :
+    // sinon tout serait vu comme "modifié à l'instant" et écraserait le serveur.
+    if(!window._absSnapReady)return;
     if(!STORE||!STORE.absences)return;
     Object.keys(STORE.absences).forEach(function(nm){
       var rec=STORE.absences[nm];
@@ -411,6 +442,112 @@
       window._absSnapshots[nm]=json;
     });
   }
+  // Point de départ des comparaisons ci-dessus, SANS horodater : à appeler
+  // après chaque chargement/fusion avec le serveur. Sans ça (les photos
+  // restaient vides), la toute première sauvegarde après l'ouverture du site
+  // horodatait TOUTES les absences de cet appareil "modifiées à l'instant" —
+  // et une copie locale périmée pouvait alors écraser sur le serveur des
+  // congés qu'un collègue venait de saisir (ils disparaissaient chez tous).
+  function _refreshAbsSnapshots(){
+    window._absSnapshots={};window._absSnapReady=true;
+    if(!STORE||!STORE.absences)return;
+    Object.keys(STORE.absences).forEach(function(nm){
+      var rec=STORE.absences[nm];if(!rec)return;
+      var cmp=Object.assign({},rec);delete cmp._modAt;
+      window._absSnapshots[nm]=JSON.stringify(cmp);
+    });
+  }
+  // Annuaire (STORE.globalPersons : service, type, habilitations, case
+  // "masqué" de Planning Réunion...) — même principe, personne par personne.
+  // Jusqu'ici la synchronisation gardait TOUJOURS l'annuaire local et
+  // ignorait celui du serveur : une personne masquée (ou modifiée, ou
+  // ajoutée) par un collègue ne changeait jamais chez les autres.
+  window._gpSnapshots=window._gpSnapshots||{};
+  function _gpJson(p){var c=Object.assign({},p);delete c._modAt;return JSON.stringify(c);}
+  function _stampModifiedGP(){
+    if(!window._gpSnapReady)return; // pas avant la première fusion avec le serveur
+    if(!STORE||!STORE.globalPersons)return;
+    var ch=false;
+    Object.keys(STORE.globalPersons).forEach(function(nm){
+      var p=STORE.globalPersons[nm];if(!p||typeof p!=='object')return;
+      var json=_gpJson(p);
+      if(window._gpSnapshots[nm]===undefined||window._gpSnapshots[nm]!==json){p._modAt=Date.now();ch=true;}
+      window._gpSnapshots[nm]=json;
+    });
+    // Garder la copie locale de l'annuaire (plan26v5_gp) alignée sur l'horodatage.
+    if(ch){try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}}
+  }
+  function _refreshGPSnapshots(){
+    window._gpSnapshots={};window._gpSnapReady=true;
+    if(!STORE||!STORE.globalPersons)return;
+    Object.keys(STORE.globalPersons).forEach(function(nm){
+      var p=STORE.globalPersons[nm];if(p&&typeof p==='object')window._gpSnapshots[nm]=_gpJson(p);
+    });
+  }
+  // ── Fusion "à trois" (serveur / ici / dernière version connue) ────────
+  // window._syncBase = la dernière version du SERVEUR connue de cet
+  // appareil (reçue ou envoyée). En la comparant à la copie locale, on sait
+  // exactement ce qui a été modifié ICI depuis : seul ça est gardé ; tout le
+  // reste prend la version du serveur — donc les modifications des
+  // collègues arrivent toujours, même en se connectant des heures après
+  // avec une copie locale ancienne. Si ici ET chez un collègue la même
+  // donnée a changé, c'est la modification faite ici qui gagne.
+  // Sans version connue (_syncBase null : cas rare, voir loadStore), on
+  // retombe sur les anciennes règles.
+  window._syncBase=window._syncBase||null;
+  function _stableJ(v){
+    if(Array.isArray(v))return '['+v.map(_stableJ).join(',')+']';
+    if(v&&typeof v==='object')return '{'+Object.keys(v).sort().map(function(k){return JSON.stringify(k)+':'+_stableJ(v[k]);}).join(',')+'}';
+    return v===undefined?'~u':JSON.stringify(v);
+  }
+  function _eqJ(a,b){if(a===b)return true;if(a===undefined||b===undefined)return false;return _stableJ(a)===_stableJ(b);}
+  // Valeur retenue pour une donnée : celle d'ici si elle a changé depuis la
+  // version connue, sinon celle du serveur (undefined = donnée absente).
+  function _pick3(base,local,remote){return _eqJ(local,base)?remote:local;}
+  function _keysOf(){var o={};for(var i=0;i<arguments.length;i++){var x=arguments[i];if(x&&typeof x==='object')Object.keys(x).forEach(function(k){o[k]=1;});}return Object.keys(o);}
+  // Champs d'une affaire autres que les tâches (data) et les heures (fh),
+  // qui ont leur propre fusion : fortuits, archivage, budgets skid, dates,
+  // couleurs de phase, infos, documents... champ par champ.
+  var _PROJ_OWN_MERGE={data:1,fh:1,_fhModAt:1,_orderModAt:1,_deletedRowIds:1,_metaModAt:1};
+  function _merge3ProjectFields(baseP,localP,remoteP){
+    _keysOf(baseP,localP,remoteP).forEach(function(f){
+      if(_PROJ_OWN_MERGE[f])return;
+      var v=_pick3(baseP[f],localP[f],remoteP[f]);
+      if(v===undefined)delete remoteP[f];else remoteP[f]=v;
+    });
+    remoteP._metaModAt=Math.max(remoteP._metaModAt||0,localP._metaModAt||0);
+  }
+  // Données du serveur venant d'être reçues/envoyées = nouvelle version connue.
+  function _setSyncBase(obj){window._syncBase=obj||null;}
+  // Des modifications faites ici n'ont peut-être pas encore été envoyées :
+  // retenu d'une session à l'autre (plan26v5_dirty) pour savoir, à la
+  // prochaine connexion, si la copie locale est "propre" (= dernière version
+  // du serveur connue) ou non.
+  window._editSeq=window._editSeq||0;
+  function _markDirty(){window._editSeq++;try{localStorage.setItem('plan26v5_dirty','1');}catch(e){}}
+  function _markCleanIfIdle(seq){if(!_syncTimeout&&seq===window._editSeq){try{localStorage.setItem('plan26v5_dirty','0');}catch(e){}}}
+  // Fusion de l'annuaire : pour une personne présente des deux côtés, la
+  // version modifiée le plus récemment gagne (_modAt) ; sans horodatage
+  // nulle part, le local est gardé (comportement d'avant, par sécurité).
+  // Une personne présente d'un seul côté est gardée, sauf si elle a été
+  // supprimée (tombstone local, ou distant pour une personne venue du serveur).
+  function _mergeGlobalPersons(remoteGP,localGP,localDel,remoteDel){
+    remoteGP=remoteGP||{};localGP=localGP||{};localDel=localDel||{};remoteDel=remoteDel||{};
+    var out={};
+    Object.keys(localGP).forEach(function(nm){
+      if(localDel[nm])return;
+      var l=localGP[nm],r=remoteGP[nm];
+      if(r&&typeof r==='object'&&l&&typeof l==='object'){
+        var lt=l._modAt||0,rt=r._modAt||0;
+        out[nm]=(lt||rt)?(lt>=rt?l:r):l;
+      }else out[nm]=l;
+    });
+    Object.keys(remoteGP).forEach(function(nm){
+      if(out[nm]||localDel[nm]||remoteDel[nm])return;
+      out[nm]=remoteGP[nm];
+    });
+    return out;
+  }
   // Repère quand l'ORDRE des lignes d'une affaire a changé (glisser-déposer,
   // duplication, ajout, suppression — n'importe quoi qui change la SÉQUENCE
   // des id, pas juste leur contenu) et horodate `_orderModAt` sur l'affaire.
@@ -418,6 +555,7 @@
   // local, a le bon ordre à privilégier — voir _mergeProjectData.
   window._orderSnapshots=window._orderSnapshots||{};
   function _stampModifiedOrder(){
+    if(!window._rowSnapReady)return; // références prises par _refreshRowSnapshots
     if(!STORE||!STORE.projects)return;
     Object.keys(STORE.projects).forEach(function(aff){
       var p=STORE.projects[aff];
@@ -633,6 +771,8 @@
       // tâche pour une case jour/personne : bloquer la synchro distante ici
       // aussi, sinon une case tout juste cochée pouvait être écrasée avant
       // même que le choix ne soit sauvegardé.
+      // Même chose pendant qu'on choisit les jours où dupliquer une case.
+      if(document.querySelector('#db-grid .wp-dup-picker'))return true;
       var _openPanels=document.querySelectorAll('#db-grid .wpat-panel');
       for(var _pi=0;_pi<_openPanels.length;_pi++){
         if(_openPanels[_pi].style.display==='block')return true;
@@ -641,8 +781,13 @@
     return false;
   }
 
-  function _applyRemote(remote){
-    if(!_isValidStore(remote)){console.warn('donnees vides ignorees');return;}
+  function _applyRemote(remote,opts){
+    if(!_isValidStore(remote)){console.warn('donnees vides ignorees');return false;}
+    // Dernière version du serveur connue AVANT cette réception (fusion à
+    // trois) ; le texte reçu deviendra la nouvelle version connue à la fin.
+    var _base=window._syncBase||null;
+    var _srvText=remote.__srvText;delete remote.__srvText;
+    var _localSettings=(STORE&&STORE.settings)?JSON.parse(JSON.stringify(STORE.settings)):{};
     try{
     // ── Récupérer les tombstones LOCAUX avant tout remplacement ──────────
     // (sinon une suppression tout juste faite localement, pas encore
@@ -702,7 +847,21 @@
           // Couleurs de phase, budget, infos affaire, documents... : prendre
           // l'ensemble le plus récent (local ou distant) au lieu de toujours
           // garder celui du distant en bloc.
-          _mergeProjectMeta(remote.projects[aff],STORE.projects[aff]);
+          // Avec une version connue : champ par champ, fusion à trois (un
+          // fortuit ajouté ici, une affaire archivée par un collègue, un
+          // budget skid... chacun garde la bonne version). Sinon : ancienne règle.
+          var _bpA=_base&&_base.projects&&_base.projects[aff];
+          if(_bpA)_merge3ProjectFields(_bpA,STORE.projects[aff],remote.projects[aff]);
+          else{
+            // Sans version connue (seulement à la connexion quand des
+            // modifications n'avaient pas pu partir) : anciennes règles de
+            // connexion — la copie locale est gardée pour les champs hors
+            // tâches/heures/infos (fortuits, archivage, budgets skid...),
+            // pour ne pas perdre ce qui n'avait pas été envoyé.
+            var _lpA=STORE.projects[aff];
+            Object.keys(_lpA).forEach(function(f){if(!_PROJ_OWN_MERGE[f]&&_META_FIELDS.indexOf(f)<0&&_lpA[f]!==undefined)remote.projects[aff][f]=_lpA[f];});
+            _mergeProjectMeta(remote.projects[aff],_lpA);
+          }
           // Heures (fh) : fusion fine personne par personne, jour par jour —
           // jamais en bloc (voir _mergeFh).
           var _fhM=_mergeFh(remote.projects[aff].fh,STORE.projects[aff].fh,remote.projects[aff]._fhModAt,STORE.projects[aff]._fhModAt);
@@ -738,10 +897,13 @@
     if(_localCurrent&&STORE.projects&&STORE.projects[_localCurrent]){
       STORE.current=_localCurrent;
     }
-    // globalPersons = version locale UNIQUEMENT (GP_KEY prime sur Supabase)
-    // NE PAS appliquer les tombstones remote sur globalPersons :
-    // renderPersonnelSearch filtre deja via _deletedPersons
-    STORE.globalPersons=_localGP;
+    // globalPersons : fusion personne par personne (la version modifiée le
+    // plus récemment gagne, voir _mergeGlobalPersons) — et plus "toujours la
+    // version locale", qui empêchait toute modification d'un collègue
+    // (personne masquée dans Planning Réunion, service, type, nouvelle
+    // personne...) d'arriver chez les autres. Sans horodatage (anciennes
+    // données), le local est gardé comme avant.
+    STORE.globalPersons=_mergeGlobalPersons(STORE.globalPersons,_localGP,_localDeleted,STORE._deletedPersons);
     // Fusionner les tombstones remote ET locaux (le local ne doit jamais être perdu)
     STORE._deletedPersons=Object.assign({},STORE._deletedPersons||{},_localDeleted);
     // Nettoyer les tombstones pour les personnes réellement présentes localement
@@ -762,6 +924,27 @@
     // Les entrées supprimées (par qui que ce soit) ne doivent jamais ressusciter.
     var _delWpKeys=Object.assign({},_localDelWpKeys,remote._deletedWeekPlanKeys||{});
     STORE.weekPlan=STORE.weekPlan||{};
+    if(_base){
+      // Fusion à trois, case par case (personne/jour) : une case changée
+      // par un collègue arrive ici ; une case changée ici est gardée ; une
+      // case effacée d'un côté (sans changement de l'autre) est effacée.
+      // Une case "supprimée" (tombstone) reste supprimée, sauf si elle vient
+      // d'être re-remplie ici.
+      var _bwp=_base.weekPlan||{};
+      _keysOf(_bwp,_localWeekPlan,STORE.weekPlan).forEach(function(wk){
+        var b=_bwp[wk]||{},l=_localWeekPlan[wk]||{},r=STORE.weekPlan[wk]||{},o={};
+        _keysOf(b,l,r).forEach(function(k){
+          var lc=!_eqJ(l[k],b[k]);
+          var v=lc?l[k]:r[k];
+          if(_delWpKeys[wk+'::'+k]){
+            if(lc&&l[k]&&l[k].length)delete _delWpKeys[wk+'::'+k];
+            else v=undefined;
+          }
+          if(v!==undefined)o[k]=v;
+        });
+        STORE.weekPlan[wk]=o;
+      });
+    }else
     Object.keys(_localWeekPlan).forEach(function(wk){
       var _mergedWk=Object.assign({},STORE.weekPlan[wk]||{},_localWeekPlan[wk]);
       Object.keys(_mergedWk).forEach(function(k){
@@ -785,6 +968,15 @@
     });
     STORE._deletedWeekPlanKeys=_delWpKeys;
     STORE.absences=(typeof _mergeAbsences==='function')?_mergeAbsences(STORE.absences,_localAbsences):Object.assign({},STORE.absences||{},_localAbsences);
+    if(_base){
+      var _bcg=_base.conges||{},_rcg=STORE.conges||{},_ocg={};
+      _keysOf(_bcg,_localConges,_rcg).forEach(function(nm){var v=_pick3(_bcg[nm],_localConges[nm],_rcg[nm]);if(v!==undefined)_ocg[nm]=v;});
+      STORE.conges=_ocg;
+      // Réglages partagés (ex : adresses des rappels) : même principe.
+      var _bst=_base.settings||{},_rst=STORE.settings||{},_ost={};
+      _keysOf(_bst,_localSettings,_rst).forEach(function(k){var v=_pick3(_bst[k],_localSettings[k],_rst[k]);if(v!==undefined)_ost[k]=v;});
+      STORE.settings=_ost;
+    }else
     STORE.conges=Object.assign({},STORE.conges||{},_localConges);
     // Fusion fine de fhMeta (Panier/GD/Lieu/Zone/Trajet/Véhicule des feuilles
     // d'heure) : le remote sert de base, le local prend le dessus jour par
@@ -793,6 +985,23 @@
     // cycle de synchro automatique) pouvait effacer une case tout juste
     // cochée ou un lieu tout juste écrit, pas encore envoyé au serveur.
     STORE.fhMeta=STORE.fhMeta||{};
+    if(_base){
+      // Fusion à trois, jour par jour : un panier décoché ou une zone
+      // changée par un collègue arrive ici (avant : seule une case "active"
+      // ici comptait, et elle écrasait toujours celle du collègue).
+      var _bfm=_base.fhMeta||{};
+      _keysOf(_bfm,_localFhMeta,STORE.fhMeta).forEach(function(wk){
+        var bw=_bfm[wk]||{},lw=_localFhMeta[wk]||{},rw=STORE.fhMeta[wk]||{},ow={};
+        // Une personne présente d'un côté (même sans case remplie : "Ajouter
+        // une personne" crée une entrée vide) reste présente.
+        _keysOf(lw,rw).forEach(function(nm){
+          var bn=bw[nm]||{},ln=lw[nm]||{},rn=rw[nm]||{},on={};
+          _keysOf(bn,ln,rn).forEach(function(d){var v=_pick3(bn[d],ln[d],rn[d]);if(v!==undefined)on[d]=v;});
+          ow[nm]=on;
+        });
+        STORE.fhMeta[wk]=ow;
+      });
+    }else
     Object.keys(_localFhMeta).forEach(function(wk){
       STORE.fhMeta[wk]=STORE.fhMeta[wk]||{};
       Object.keys(_localFhMeta[wk]).forEach(function(nm){
@@ -843,11 +1052,21 @@
     localStorage.setItem(SK,JSON.stringify(STORE));
     try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}
     if(typeof _refreshRowSnapshots==='function')_refreshRowSnapshots();
+    // Nouvelles références "rien de modifié localement" pour les absences et
+    // l'annuaire, comme pour les lignes juste au-dessus : ce qui vient d'être
+    // reçu du serveur n'est pas une modification faite sur cet appareil.
+    if(typeof _refreshAbsSnapshots==='function')_refreshAbsSnapshots();
+    if(typeof _refreshGPSnapshots==='function')_refreshGPSnapshots();
+    // La version du serveur qu'on vient de recevoir devient la "dernière
+    // version connue" : ce qui a été gardé d'ici (pas encore envoyé) reste
+    // donc bien vu comme une modification locale au prochain cycle.
+    if(_srvText){try{_setSyncBase(JSON.parse(_srvText));}catch(_eB){}}
     }catch(_e2){
       console.error('Erreur _applyRemote (synchronisation ignorée pour ce cycle) :',_e2);
-      return;
+      return false;
     }
-    applySync();
+    if(!(opts&&opts.silent))applySync();
+    return true;
   }
 
   function applySync(){
@@ -3802,6 +4021,18 @@ function loadStore(){
     if(s){
       STORE=JSON.parse(s);
       if(!STORE.projects)throw new Error();
+      // Si tout avait été envoyé au serveur lors de la dernière session, cette
+      // copie locale EST la dernière version du serveur connue : la fusion de
+      // connexion (fusion à trois) prendra alors pour tout ce qui n'a pas été
+      // modifié ici la version actuelle du serveur — donc tout ce que les
+      // collègues ont changé depuis, même des heures après. Si des
+      // modifications n'avaient pas pu partir (plan26v5_dirty = '1'), on
+      // garde les anciennes règles pour ne pas les perdre.
+      var _wasDirty=null;try{_wasDirty=localStorage.getItem('plan26v5_dirty');}catch(_eD){}
+      if(typeof _setSyncBase==='function'){
+        if(_wasDirty!=='1'){try{_setSyncBase(JSON.parse(s));}catch(_eP){_setSyncBase(null);}}
+        else _setSyncBase(null);
+      }
     }else throw new Error();
   }catch{
     STORE={projects:{'Affaire 1':{data:freshData(),budget:500,sk1:200,sk2:200,fh:{}}},current:'Affaire 1'};
@@ -3837,129 +4068,21 @@ function loadStore(){
   // Charger depuis Supabase et fusionner avec local
   // Chargement depuis Supabase — source de vérité commune
   supaLoad().then(function(remote){
+    // Fusion réussie avec la version du serveur ? Sinon, ne rien envoyer
+    // (une copie locale non fusionnée écraserait le travail des collègues).
+    var _loginMergeOk=false;
     try{
     if(remote&&remote.projects){
-      // Charger tombstones EN PREMIER
-      if(remote._deletedAffaires)
-        STORE._deletedAffaires=Object.assign({},remote._deletedAffaires,STORE._deletedAffaires||{});
-      if(remote._deletedPersons)
-        STORE._deletedPersons=Object.assign({},remote._deletedPersons,STORE._deletedPersons||{});
-      var _delAffAll=STORE._deletedAffaires||{};
-      // Fusionner projets en excluant les affaires supprimées
-      var localProjs=STORE.projects||{};
-      var _filtProjs={};
-      Object.keys(remote.projects).forEach(function(k){
-        if(_delAffAll[k])return;
-        if(localProjs[k]){
-          // Fusionner les tombstones de lignes supprimées (local + distant)
-          var _delRowsMerged0=Object.assign({},
-            (remote.projects[k]&&remote.projects[k]._deletedRowIds)||{},
-            (localProjs[k]&&localProjs[k]._deletedRowIds)||{});
-          // Affaire présente des deux côtés : fusionner les tâches ligne par
-          // ligne (jamais de perte), et garder les autres réglages locaux.
-          var _merged=Object.assign({},remote.projects[k],localProjs[k]);
-          _merged.data=_mergeProjectData(remote.projects[k].data,localProjs[k].data,_delRowsMerged0,remote.projects[k]._orderModAt,localProjs[k]._orderModAt);
-          _merged._orderModAt=Math.max(remote.projects[k]._orderModAt||0,localProjs[k]._orderModAt||0);
-          _merged._deletedRowIds=_delRowsMerged0;
-          // Couleurs de phase, budget, infos affaire, documents... : repartir
-          // des valeurs distantes puis prendre l'ensemble le plus récent (local
-          // ou distant) selon l'horodatage — pas toujours le local en bloc.
-          _META_FIELDS.concat(['_metaModAt']).forEach(function(f){_merged[f]=remote.projects[k][f];});
-          _mergeProjectMeta(_merged,localProjs[k]);
-          // Heures (fh) : fusion fine personne par personne, jour par jour —
-          // jamais en bloc (voir _mergeFh).
-          var _fhM0=_mergeFh(remote.projects[k].fh,localProjs[k].fh,remote.projects[k]._fhModAt,localProjs[k]._fhModAt);
-          _merged.fh=_fhM0.fh;
-          _merged._fhModAt=_fhM0.fhModAt;
-          _filtProjs[k]=_merged;
-        }else{
-          _filtProjs[k]=remote.projects[k];
-        }
-      });
-      STORE.projects=Object.assign({},localProjs,_filtProjs);
-      // Supprimer les affaires tombstonées du local aussi
-      Object.keys(_delAffAll).forEach(function(k){delete STORE.projects[k];});
-      var _delAll=STORE._deletedPersons||{};
-
-      if(remote.weekPlan){
-        // Filtrer les entrées des personnes supprimées AVANT de fusionner —
-        // uniquement à partir de la semaine actuelle : l'historique des
-        // semaines passées reste (la personne était bien là ce jour-là).
-        var _curWkInit=TODAY?TODAY.w:0;
-        var _filtWP={};
-        Object.keys(remote.weekPlan).forEach(function(wk){
-          var wkData={};
-          var _isPastWk=(+wk<_curWkInit);
-          Object.keys(remote.weekPlan[wk]||{}).forEach(function(key){
-            var _nmWp=key.split('::')[0];
-            if(_isPastWk||!_delAll[_nmWp])wkData[key]=remote.weekPlan[wk][key];
-          });
-          _filtWP[wk]=wkData;
-        });
-        // Fusion fine entrée par entrée (pas semaine entière par semaine entière) :
-        // le remote sert de base, le local prend le dessus clé par clé — pour ne
-        // jamais perdre le travail d'une autre personne sur la même semaine.
-        // Les entrées supprimées (par qui que ce soit) ne doivent jamais ressusciter.
-        var _delWpKeys0=Object.assign({},STORE._deletedWeekPlanKeys||{},remote._deletedWeekPlanKeys||{});
-        var _localWP0=STORE.weekPlan||{};
-        STORE.weekPlan={};
-        Object.keys(_filtWP).forEach(function(wk){
-          var _mw=Object.assign({},_filtWP[wk],_localWP0[wk]||{});
-          Object.keys(_mw).forEach(function(k){
-            var _hasActiveLocal0=_localWP0[wk]&&_localWP0[wk][k]&&_localWP0[wk][k].length;
-            if(_delWpKeys0[wk+'::'+k]&&!_hasActiveLocal0)delete _mw[k];
-            else if(_hasActiveLocal0)delete _delWpKeys0[wk+'::'+k];
-          });
-          STORE.weekPlan[wk]=_mw;
-        });
-        Object.keys(_localWP0).forEach(function(wk){
-          if(!STORE.weekPlan[wk])STORE.weekPlan[wk]=_localWP0[wk];
-        });
-        Object.keys(STORE.weekPlan).forEach(function(wk){
-          Object.keys(STORE.weekPlan[wk]||{}).forEach(function(k){
-            var _hasActiveLocal1=_localWP0[wk]&&_localWP0[wk][k]&&_localWP0[wk][k].length;
-            if(_delWpKeys0[wk+'::'+k]&&!_hasActiveLocal1)delete STORE.weekPlan[wk][k];
-          });
-        });
-        STORE._deletedWeekPlanKeys=_delWpKeys0;
-      }
-
-      // Absences : filtrer les personnes supprimées
-      if(remote.absences){
-        var _filtAbs={};
-        Object.keys(remote.absences).forEach(function(k){if(!_delAll[k])_filtAbs[k]=remote.absences[k];});
-        STORE.absences=(typeof _mergeAbsences==='function')?_mergeAbsences(_filtAbs,STORE.absences):Object.assign({},_filtAbs,STORE.absences||{});
-        Object.keys(_delAll).forEach(function(k){delete STORE.absences[k];});
-      }
-
-      // globalPersons : GP_KEY est la source de vérité, toujours prioritaire
-      if(!STORE.globalPersons)STORE.globalPersons={};
-      // 1. Charger depuis remote (base) — jamais pour une personne supprimée (tombstone)
-      if(remote.globalPersons){
-        Object.keys(remote.globalPersons).forEach(function(k){
-          if(!STORE.globalPersons[k]&&!_delAll[k])STORE.globalPersons[k]=remote.globalPersons[k];
-        });
-      }
-      // 2. GP_KEY écrase tout, SAUF les personnes tombstonées localement :
-      // une suppression locale doit toujours l'emporter sur une ancienne copie GP_KEY.
-      try{
-        var _gpK=JSON.parse(localStorage.getItem('plan26v5_gp')||'{}');
-        Object.keys(_gpK).forEach(function(nm){
-          if(_delAll[nm])return; // ne pas ressusciter une personne supprimée localement
-          STORE.globalPersons[nm]=_gpK[nm];
-          // Retirer du tombstone si présent
-          if(STORE._deletedPersons&&STORE._deletedPersons[nm])
-            delete STORE._deletedPersons[nm];
-        });
-      }catch(_e){}
-
-      // conges : filtrer les personnes supprimées
-      if(remote.conges){
-        var _filtConges={};
-        Object.keys(remote.conges).forEach(function(k){if(!_delAll[k])_filtConges[k]=remote.conges[k];});
-        STORE.conges=Object.assign({},_filtConges,STORE.conges||{});
-        Object.keys(_delAll).forEach(function(k){delete STORE.conges[k];});
-      }
+      // Fusion de connexion = exactement la même que la synchronisation
+      // automatique (_applyRemote, fusion à trois avec la dernière version
+      // du serveur connue, voir loadStore). L'ancienne fusion propre à la
+      // connexion oubliait les options des feuilles d'heure (fhMeta), les
+      // retraits de la feuille d'heure et les réglages, et gardait la copie
+      // locale pour les fortuits, archivages, budgets skid, cases de
+      // Planning Réunion... puis l'envoyait aussitôt au serveur : en se
+      // connectant avec une copie locale ancienne, on effaçait ce que les
+      // collègues avaient changé entre-temps.
+      _loginMergeOk=_applyRemote(remote,{silent:true});
     }
     }catch(_mergeErr){
       // Une erreur inattendue pendant la fusion ne doit JAMAIS empêcher
@@ -3968,11 +4091,15 @@ function loadStore(){
       console.error('Erreur fusion Supabase (STORE local conservé tel quel) :',_mergeErr);
       _showMsg&&_showMsg('Erreur de synchronisation — vos données locales sont conservées','#DC2626');
     }
-    // Uploader immédiatement sur Supabase (fusion des données de tout le monde)
+    // Uploader immédiatement sur Supabase (fusion des données de tout le monde),
+    // seulement si la fusion avec la version du serveur a bien eu lieu.
     _sanitizeProjectsData(STORE.projects);
-    supaSave(STORE);
+    if(_loginMergeOk)supaSave(STORE);
     localStorage.setItem(SK,JSON.stringify(STORE));
+    try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons||{}));}catch(_eGp){}
     if(typeof _refreshRowSnapshots==='function')_refreshRowSnapshots();
+    if(typeof _refreshAbsSnapshots==='function')_refreshAbsSnapshots();
+    if(typeof _refreshGPSnapshots==='function')_refreshGPSnapshots();
     renderProjSel();
     var first=STORE.current||Object.keys(STORE.projects)[0];
     if(first)switchProjet(first);
@@ -7863,27 +7990,71 @@ function dbBuildPlanningGrid(){
     var picker=document.createElement('div');
     picker.className='wp-dup-picker';
     picker.style.cssText='display:flex;gap:3px;margin-top:3px;flex-wrap:wrap;padding-top:3px;border-top:1px dashed var(--bd)';
-    picker.innerHTML='<span style="font-size:8px;color:var(--tx3);width:100%">Dupliquer vers :</span>';
+    // On choisit d'abord UN OU PLUSIEURS jours (clic = sélectionner /
+    // désélectionner, même visuel que les boutons jour), puis on valide
+    // avec "✓ Dupliquer" : tout est copié d'un coup (avant : chaque clic
+    // dupliquait tout de suite, et il fallait rouvrir le menu pour chaque jour).
+    picker.innerHTML='<span style="font-size:8px;color:var(--tx3);width:100%">Dupliquer vers (choisissez un ou plusieurs jours) :</span>';
+    var OFF='font-size:9px;padding:2px 7px;border:1px solid var(--ac3);border-radius:10px;background:var(--ac2);color:var(--ac);cursor:pointer;font-weight:700';
+    var ON='font-size:9px;padding:2px 7px;border:1px solid var(--ac);border-radius:10px;background:var(--ac);color:#fff;cursor:pointer;font-weight:700';
     for(var d=0;d<5;d++){
       if(d===di)continue;
       var b=document.createElement('button');
+      b.type='button';
+      b.className='wp-dup-day';
       b.textContent=DAY_LBL[d];
-      b.dataset.nm=nm;b.dataset.di=di;b.dataset.ei=ei;b.dataset.target=d;
-      b.style.cssText='font-size:9px;padding:2px 7px;border:1px solid var(--ac3);border-radius:10px;background:var(--ac2);color:var(--ac);cursor:pointer;font-weight:700';
-      b.onclick=function(){window._wpDupToDay(this);};
+      b.dataset.target=d;
+      b.style.cssText=OFF;
+      b.onclick=function(){
+        var on=this.dataset.sel!=='1';
+        this.dataset.sel=on?'1':'';
+        this.style.cssText=on?ON:OFF;
+        this.textContent=DAY_LBL[+this.dataset.target]+(on?' ✓':'');
+        window._wpDupRefresh(this.closest('.wp-dup-picker'));
+      };
       picker.appendChild(b);
     }
+    var all=document.createElement('button');
+    all.type='button';all.textContent='Toute la semaine';
+    all.style.cssText='font-size:9px;padding:2px 7px;border:1px dashed var(--ac3);border-radius:10px;background:transparent;color:var(--ac);cursor:pointer;font-weight:700';
+    all.onclick=function(){
+      var pk=this.closest('.wp-dup-picker'),btns=pk.querySelectorAll('.wp-dup-day');
+      var allOn=Array.prototype.every.call(btns,function(x){return x.dataset.sel==='1';});
+      btns.forEach(function(x){x.dataset.sel=allOn?'':'1';x.style.cssText=allOn?OFF:ON;x.textContent=DAY_LBL[+x.dataset.target]+(allOn?'':' ✓');});
+      window._wpDupRefresh(pk);
+    };
+    picker.appendChild(all);
+    var go=document.createElement('button');
+    go.type='button';go.className='wp-dup-go';
+    go.dataset.nm=nm;go.dataset.di=di;go.dataset.ei=ei;
+    go.textContent='✓ Dupliquer';go.disabled=true;
+    go.style.cssText='width:100%;margin-top:3px;font-size:10px;padding:4px 8px;border:none;border-radius:10px;background:var(--ac);color:#fff;cursor:pointer;font-weight:800;opacity:.4';
+    go.onclick=function(){window._wpDupConfirm(this);};
+    picker.appendChild(go);
     wrap.appendChild(picker);
   };
-  window._wpDupToDay=function(btn){
-    var nm=btn.dataset.nm,srcDi=+btn.dataset.di,srcEi=+btn.dataset.ei,targetDi=+btn.dataset.target;
+  window._wpDupRefresh=function(pk){
+    if(!pk)return;
+    var n=pk.querySelectorAll('.wp-dup-day[data-sel="1"]').length,go=pk.querySelector('.wp-dup-go');
+    if(go){go.disabled=!n;go.style.opacity=n?'1':'.4';go.textContent=n?'✓ Dupliquer sur '+n+' jour'+(n>1?'s':''):'✓ Dupliquer';}
+  };
+  window._wpDupConfirm=function(btn){
+    var pk=btn.closest('.wp-dup-picker');if(!pk)return;
+    var targets=Array.prototype.map.call(pk.querySelectorAll('.wp-dup-day[data-sel="1"]'),function(x){return +x.dataset.target;});
+    if(!targets.length)return;
+    var nm=btn.dataset.nm,srcDi=+btn.dataset.di,srcEi=+btn.dataset.ei;
     var srcEntry=getSavedEntries(nm,srcDi)[srcEi];
     if(!srcEntry||!srcEntry.aff)return;
     if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};
-    var key=nm+'::'+targetDi;
-    var existing=getSavedEntries(nm,targetDi);
-    existing.push({aff:srcEntry.aff,actId:srcEntry.actId||'',comment:srcEntry.comment||''});
-    STORE.weekPlan[selWk][key]=existing;
+    targets.forEach(function(targetDi){
+      var key=nm+'::'+targetDi;
+      var existing=getSavedEntries(nm,targetDi);
+      // Pas de doublon si ce jour a déjà exactement la même affectation.
+      var same=existing.some(function(e){return e&&e.aff===srcEntry.aff&&(e.actId||'')===(srcEntry.actId||'')&&(e.comment||'')===(srcEntry.comment||'');});
+      if(same)return;
+      existing.push({aff:srcEntry.aff,actId:srcEntry.actId||'',comment:srcEntry.comment||''});
+      STORE.weekPlan[selWk][key]=existing;
+    });
     localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
     dbBuildPlanningGrid();
   };
@@ -15265,6 +15436,12 @@ function fhTotals(nm,w){
 // SYNC FICHES D'HEURE → GANTT
 // ═══════════════════════════════
 function syncFichesToGantt(){
+  // Sauvegarde seulement si une ligne a vraiment changé : cette fonction est
+  // aussi appelée à chaque réception d'une version d'un collègue (onglet
+  // Récap) — sauvegarder à chaque fois relançait une fusion, qui relançait
+  // un affichage, qui relançait cette fonction... en boucle (envoi du
+  // fichier complet toutes les secondes, et synchronisation perturbée).
+  var _sfgChanged=false;
   Object.keys(STORE.projects).forEach(function(aff){
     var p=STORE.projects[aff];
     if(!p||!p.fh||!p.data)return;
@@ -15336,10 +15513,10 @@ function syncFichesToGantt(){
         r.p=newP.length?newP:[{name:'',ent:'',heures:0}];
       }
       var _afterSnap=JSON.stringify({hReel:r.hReel,_hReelFromFH:r._hReelFromFH,p:r.p});
-      if(_beforeSnap!==_afterSnap)r._modAt=Date.now();
+      if(_beforeSnap!==_afterSnap){r._modAt=Date.now();_sfgChanged=true;}
     });
   });
-  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
+  if(_sfgChanged){localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
   renderGantt();
   var activeTab=document.querySelector('.nb.on');
   if(activeTab){
@@ -18287,7 +18464,7 @@ window.QRFeuille=(function(){
   function fr(n){return String(n||0).replace('.',',');}
   function initials(n){return String(n||'').trim().split(/\s+/).slice(0,2).map(function(x){return x.charAt(0).toUpperCase();}).join('');}
   function fmtDT(iso){if(!iso)return '';var d=new Date(iso);if(isNaN(d))return '';return ddmm(d)+' à '+pad(d.getHours())+':'+pad(d.getMinutes());}
-  function isPending(s){return s&&s.status!=='validated';}
+  function isPending(s){return !!s&&(s.status||'pending')==='pending';} // envoyée, en attente de validation
   function q(s){return "'"+s+"'";}
   function emptyDay(){return {panier:false,gd:false,trajetH:'',zone:'',vehicule:'',lieu:'',lines:[]};}
   function emptyData(){var d={days:{}};for(var i=0;i<5;i++)d.days[i]=emptyDay();return d;}
@@ -18495,8 +18672,11 @@ window.QRFeuille=(function(){
     var h='<div class="qrf"><div class="qrf-wrap"><div class="qrf-hero"><div style="font-size:12px;font-weight:800;opacity:.85;letter-spacing:.6px">FEUILLE D’HEURE</div><div class="wk" style="font-size:26px">Bonjour '+esc(P.person)+'</div><div class="sub">Quelle semaine voulez-vous remplir ?</div></div>';
     P.weeks.forEach(function(wk,i){
       var st=!wk.ready?'<span class="qrf-badge" style="background:#F3F4F6;color:#4B5563">Pas encore prête</span>'
+        :wk.status==='validated'?'<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ Validée</span>'
         :wk.done?'<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ Déjà envoyée</span>'
         :!wk.planned?'<span class="qrf-badge" style="background:#F3F4F6;color:#4B5563">Vous n’êtes pas prévu(e)</span>'
+        :wk.status==='reopened'?'<span class="qrf-badge" style="background:#FFEDD5;color:#C2410C">🔓 Rouverte par votre chef · à renvoyer</span>'
+        :wk.status==='draft'?'<span class="qrf-badge" style="background:#DBEAFE;color:#1D4ED8">✏️ En cours · pas encore envoyée</span>'
         :'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">À remplir</span>';
       h+='<button type="button" class="qrf-day" onclick="QRFeuille._pubWeek('+i+')"><div style="flex:1"><div style="font-size:17px;font-weight:800">'+(wk.week===cur?'Cette semaine':'Semaine dernière')+'</div>'
         +(wk.ready?'<div style="font-size:13px;color:#6B6790;margin-top:2px">'+weekLbl(wk)+'</div>':'')+'<div style="margin-top:5px">'+st+'</div></div><span style="font-size:24px;color:#9A96B3">›</span></button>';
@@ -18504,10 +18684,49 @@ window.QRFeuille=(function(){
     pubEl().innerHTML=h+logoutLink()+'</div></div>';top0();
   }
   function _pubWeek(i){openWeek(i);}
+  // ── Feuille en cours : enregistrée AU FUR ET À MESURE sur le serveur ──
+  // (qr_save_draft, statut "draft" = pas encore envoyée) — on peut remplir
+  // son lundi le lundi soir, revenir le mardi soir, finir le vendredi, même
+  // depuis un autre téléphone. Une copie reste aussi sur le téléphone, au
+  // cas où le réseau manquerait (renvoyée dès que possible).
   function dKey(){return 'qrfh_draft_'+P.person+'_'+(P.wk&&P.wk.week);}
-  function saveDraft(){try{if(ctxs.pub)localStorage.setItem(dKey(),JSON.stringify(ctxs.pub.data));}catch(x){}}
-  function loadDraft(){try{var s=localStorage.getItem(dKey());return s?normData(JSON.parse(s)):null;}catch(x){return null;}}
+  function saveLocal(){try{if(ctxs.pub)localStorage.setItem(dKey(),JSON.stringify({at:Date.now(),data:ctxs.pub.data}));}catch(x){}}
+  function loadDraft(){try{var s=localStorage.getItem(dKey());if(!s)return null;var o=JSON.parse(s);if(o&&o.data)return {at:+o.at||0,data:normData(o.data)};return {at:0,data:normData(o)};}catch(x){return null;}}
   function clearDraft(){try{localStorage.removeItem(dKey());}catch(x){}}
+  var SAVE={t:null,busy:false,dirty:false,again:false,state:'',stopped:false};
+  var SAVE_TXT={pending:'…',saving:'Enregistrement…',saved:'✓ Enregistré',error:'⚠ Pas de réseau : gardé sur ce téléphone, nouvel essai…',closed:'⚠ Semaine fermée : voyez votre chef'};
+  function saveBadge(){return '<span id="qrf-save" style="font-size:12px;font-weight:700;color:'+(SAVE.state==='error'||SAVE.state==='closed'?'#B45309':'#15803D')+'">'+(SAVE_TXT[SAVE.state]||'')+'</span>';}
+  function setSaveState(st){SAVE.state=st;var e=document.getElementById('qrf-save');if(e)e.outerHTML=saveBadge();}
+  function saveDraft(){
+    if(SAVE.stopped)return;
+    saveLocal();SAVE.dirty=true;setSaveState('pending');
+    clearTimeout(SAVE.t);SAVE.t=setTimeout(pushDraft,1200);
+  }
+  async function pushDraft(){
+    clearTimeout(SAVE.t);SAVE.t=null;
+    if(SAVE.stopped||!ctxs.pub||!P||!P.wk||!P.session)return;
+    if(SAVE.busy){SAVE.again=true;return;}
+    SAVE.busy=true;SAVE.dirty=false;setSaveState('saving');
+    var r;try{r=await window.supa.rpc('qr_save_draft',{p_session:P.session,p_week:P.wk.week,p_data:ctxs.pub?ctxs.pub.data:{}});}catch(e){r={error:e};}
+    SAVE.busy=false;
+    if(SAVE.stopped)return;
+    if(!r||r.error){SAVE.dirty=true;setSaveState('error');SAVE.t=setTimeout(pushDraft,6000);return;}
+    var res=r.data;
+    if(res==='ok'){
+      if(P.wk&&P.wk.status!=='reopened')P.wk.status='draft';
+      if(SAVE.dirty||SAVE.again){SAVE.again=false;pushDraft();return;}
+      setSaveState('saved');return;
+    }
+    if(res==='retry'){SAVE.t=setTimeout(pushDraft,500);return;}
+    if(res==='already'){SAVE.stopped=true;ctxs.pub=null;msg('ℹ️','Feuille déjà envoyée','Cette feuille a déjà été envoyée ou validée (depuis un autre téléphone, ou par votre chef). Pour la corriger, voyez avec votre chef de chantier.',logoutLink());return;}
+    if(res==='invalid_session'){SAVE.stopped=true;setSess('');loginScreen('Votre accès a changé : reconnectez-vous (vos saisies sont gardées sur ce téléphone).');return;}
+    if(res==='closed'){setSaveState('closed');return;}
+    setSaveState('error');
+  }
+  // Envoyer tout de suite ce qui attend (changement d'écran, déconnexion…).
+  function flushDraft(){if(SAVE.dirty||SAVE.t){return pushDraft();}return Promise.resolve();}
+  document.addEventListener('visibilitychange',function(){if(document.hidden&&window._QR_TOKEN)flushDraft();});
+  window.addEventListener('pagehide',function(){if(window._QR_TOKEN)flushDraft();});
   function backBtn(){return P.weeks.length>1?'<button type="button" class="qrf-btn" style="margin-top:20px" onclick="QRFeuille._pubWeeks()">← Choisir une autre semaine</button>':'';}
   function openWeek(i){
     var wk=P.weeks[i];if(!wk)return;
@@ -18517,9 +18736,20 @@ window.QRFeuille=(function(){
     P.wk=wk;
     var bl={};bl[P.person]=wk.blocked||{};
     var payload={iw:wk.iw,iy:wk.iy,days:wk.days,affaires:wk.affaires||[],blocked:bl};
-    ctxs.pub={payload:payload,person:P.person,data:loadDraft()||emptyData(),readOnly:false,onChange:saveDraft};
+    // Reprendre ce qui est déjà rempli : la version enregistrée sur le
+    // serveur (feuille en cours, ou rouverte par le chef), ou la copie du
+    // téléphone si elle est plus récente (réseau coupé au dernier passage).
+    var srvData=wk.data?normData(wk.data):null,srvAt=wk.updated_at?Date.parse(wk.updated_at):0;
+    var loc=loadDraft(),data;
+    if(loc&&(!srvData||loc.at>srvAt+2000))data=loc.data;
+    else data=srvData||emptyData();
+    SAVE={t:null,busy:false,dirty:false,again:false,state:'',stopped:false};
+    ctxs.pub={payload:payload,person:P.person,data:data,readOnly:false,onChange:saveDraft};
+    // La copie du téléphone était plus récente : la renvoyer au serveur.
+    if(loc&&data===loc.data&&dayHasAny(data)){SAVE.dirty=true;pushDraft();}
     days();
   }
+  function dayHasAny(data){for(var i=0;i<5;i++){if(data.days[i]&&dayHas(data.days[i]))return true;}return false;}
   function hero(){
     var p=ctxs.pub.payload;
     return '<div class="qrf-hero"><div style="font-size:12px;font-weight:800;opacity:.85;letter-spacing:.6px">FEUILLE D’HEURE</div>'
@@ -18529,9 +18759,12 @@ window.QRFeuille=(function(){
   }
   function days(){
     var c=ctxs.pub;if(!c){chooseWeek();return;}
+    var reo=P.wk&&P.wk.status==='reopened';
     var h='<div class="qrf"><div class="qrf-wrap">'+hero()
-      +'<div style="font-size:19px;font-weight:900;margin:4px 0 2px">Votre semaine</div>'
-      +'<div style="font-size:14px;color:#6B6790;margin-bottom:12px;line-height:1.45">Touchez un jour pour le remplir. Quand tout est bon, envoyez votre semaine en bas.</div>';
+      +(reo?'<div style="background:#FFEDD5;border:1px solid #FDBA74;color:#9A3412;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.45;margin-bottom:12px">🔓 <b>Votre chef a rouvert votre feuille.</b> Vos jours déjà remplis sont là : corrigez ce qu’il faut, puis renvoyez-la.</div>'
+           :'<div style="background:#EFF6FF;border:1px solid #BFDBFE;color:#1E40AF;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.45;margin-bottom:12px">✏️ <b>Pas encore envoyée.</b> Tout ce que vous remplissez est enregistré au fur et à mesure : vous pouvez faire un jour ce soir et revenir un autre soir pour la suite. Votre chef ne la recevra que quand vous toucherez « Envoyer ma semaine ».</div>')
+      +'<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:4px 0 2px"><div style="font-size:19px;font-weight:900">Votre semaine</div>'+saveBadge()+'</div>'
+      +'<div style="font-size:14px;color:#6B6790;margin-bottom:12px;line-height:1.45">Touchez un jour pour le remplir.</div>';
     var tot=0;
     for(var di=0;di<5;di++){
       var b=blockOf(c,di),d=c.data.days[di],off=!!(b&&b.t!=='formation'),info;
@@ -18546,16 +18779,18 @@ window.QRFeuille=(function(){
     }
     h+='<div style="text-align:center;font-size:16px;font-weight:800;margin:10px 0 4px">Total semaine : '+fr(r1(tot))+' H</div>'+logoutLink()+'</div>';
     h+='<div class="qrf-foot"><div>'+(P.weeks.length>1?'<button type="button" class="qrf-btn2" style="width:auto;padding:13px 14px" onclick="QRFeuille._pubWeeks()">← Semaines</button>':'')
-      +'<button type="button" class="qrf-btn" onclick="QRFeuille._pubRecap()">Vérifier et envoyer</button></div></div></div>';
+      +'<button type="button" class="qrf-btn" onclick="QRFeuille._pubRecap()">'+(reo?'Vérifier et renvoyer':'Vérifier et envoyer ma semaine')+'</button></div></div></div>';
     pubEl().innerHTML=h;top0();
   }
+  function _pubDays(){flushDraft();days();}
   function nextDay(di,s){for(var x=di+s;x>=0&&x<5;x+=s){if(!isOff(ctxs.pub,x))return x;}return -1;}
   function _pubDay(di){
     var c=ctxs.pub;if(!c||isOff(c,di))return;
+    flushDraft(); // le jour qu'on quitte part tout de suite au serveur
     var prev=nextDay(di,-1),next=nextDay(di,1);
     var h='<div class="qrf"><div class="qrf-wrap"><div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
       +'<button type="button" class="qrf-btn2" style="width:auto;padding:10px 14px;font-size:15px" onclick="QRFeuille._pubDays()">← Jours</button>'
-      +'<div><div style="font-size:21px;font-weight:900">'+DAYS[di]+' '+ddmmK(c.payload.days[di].date)+'</div><div style="font-size:13px;color:#6B6790">Semaine '+esc(c.payload.iw)+' · '+esc(P.person)+'</div></div></div>'
+      +'<div><div style="font-size:21px;font-weight:900">'+DAYS[di]+' '+ddmmK(c.payload.days[di].date)+'</div><div style="font-size:13px;color:#6B6790">Semaine '+esc(c.payload.iw)+' · '+esc(P.person)+' · '+saveBadge()+'</div></div></div>'
       +'<div id="qrf-ed-pub-'+di+'">'+editorHtml('pub',di)+'</div></div>';
     h+='<div class="qrf-foot"><div>'
       +(prev>=0?'<button type="button" class="qrf-btn2" style="flex:1" onclick="QRFeuille._pubDay('+prev+')">← '+DAYS[prev]+'</button>':'')
@@ -18599,12 +18834,16 @@ window.QRFeuille=(function(){
     var c=ctxs.pub;if(!c||_pubSend._busy)return;
     if(check(c).length){_pubRecap();return;}
     _pubSend._busy=true;
+    // Plus d'enregistrement "en cours" après l'envoi (sinon il répondrait
+    // "déjà envoyée" par-dessus le message de réussite).
+    clearTimeout(SAVE.t);SAVE.stopped=true;
     var btn=document.getElementById('qrf-send');if(btn){btn.disabled=true;btn.textContent='Envoi en cours…';}
     var data=clean(c);data.sentAt=new Date().toISOString();
     var r;
     try{r=await window.supa.rpc('qr_submit2',{p_session:P.session,p_week:P.wk.week,p_data:data});}catch(e){r={error:e};}
     _pubSend._busy=false;
     if(!r||r.error){
+      SAVE.stopped=false;
       if(btn){btn.disabled=false;btn.textContent='📤 Réessayer l’envoi';}
       alert('L’envoi a échoué (connexion ?). Vos saisies sont gardées sur ce téléphone : réessayez dans un instant.');
       return;
@@ -18615,20 +18854,22 @@ window.QRFeuille=(function(){
     // (le téléphone peut être celui d'un collègue) ; sinon on propose l'autre
     // semaine, avec un bouton pour terminer et se déconnecter.
     var endHtml=function(){if(others())return backBtn()+'<button type="button" class="qrf-btn2" style="margin-top:10px" onclick="QRFeuille._pubEnd()">Terminer et se déconnecter</button>';endSession();return '<div style="font-size:13px;color:#9A96B3;margin-top:16px">Vous êtes déconnecté(e).</div>';};
-    if(res==='ok'){clearDraft();wk.done=true;ctxs.pub=null;msg('✅','Feuille d’heure envoyée','Merci '+esc(P.person)+' ! Votre feuille de la semaine '+esc(wk.iw)+' a bien été envoyée. Votre chef de chantier va la valider.',endHtml());return;}
+    if(res==='ok'){clearDraft();wk.done=true;wk.status='pending';ctxs.pub=null;msg('✅','Feuille d’heure envoyée','Merci '+esc(P.person)+' ! Votre feuille de la semaine '+esc(wk.iw)+' a bien été envoyée. Votre chef de chantier va la valider.',endHtml());return;}
     if(res==='already'){clearDraft();wk.done=true;ctxs.pub=null;msg('ℹ️','Déjà envoyée','Une feuille d’heure a déjà été envoyée pour vous cette semaine. Pour la corriger, voyez avec votre chef de chantier.',endHtml());return;}
     if(res==='invalid_session'){setSess('');loginScreen('Votre accès a changé : reconnectez-vous (vos saisies sont gardées sur ce téléphone).');return;}
     if(res==='not_planned'){msg('ℹ️','Pas prévu(e) cette semaine','Vous n’êtes plus sur la feuille d’heure de cette semaine. Voyez votre chef de chantier (vos saisies sont gardées sur ce téléphone).',logoutLink());return;}
     if(res==='closed'){msg('⌛','Semaine terminée','Il est trop tard pour envoyer cette semaine par QR code : voyez votre chef de chantier.',logoutLink());return;}
+    SAVE.stopped=false;
     if(btn){btn.disabled=false;btn.textContent='📤 Envoyer ma semaine';}
     alert('Envoi refusé ('+res+'). Prévenez votre chef de chantier.');
   }
   // Fin de connexion côté serveur aussi (sans attendre la réponse : la
   // requête Supabase ne part qu'avec .then, d'où le .then vide).
   function endSession(){var s=getSess();setSess('');if(s){try{window.supa.rpc('qr_logout',{p_session:s}).then(function(){},function(){});}catch(x){}}}
-  function _pubEnd(){endSession();P=null;ctxs.pub=null;msg('👋','À bientôt','Vous êtes déconnecté(e). Scannez à nouveau le QR code pour remplir une autre feuille.');}
+  async function _pubEnd(){try{await flushDraft();}catch(x){}endSession();P=null;ctxs.pub=null;msg('👋','À bientôt','Vous êtes déconnecté(e). Scannez à nouveau le QR code pour remplir une autre feuille.');}
   async function _pubLogout(){
     if(!confirm('Se déconnecter de ce téléphone ?'))return;
+    try{await flushDraft();}catch(x){} // ce qui vient d'être tapé est enregistré avant de partir
     var s=getSess();setSess('');
     try{if(s)await window.supa.rpc('qr_logout',{p_session:s});}catch(x){}
     loginScreen('');
@@ -18755,7 +18996,8 @@ window.QRFeuille=(function(){
       +'<ol style="font-size:13px;color:#4B5563;line-height:1.7;margin:8px 0 14px;padding-left:18px">'
       +'<li>Chaque personne scanne le QR code et se connecte avec <b>son identifiant et son mot de passe</b> (onglet « Gestion des ID »). Rien n’est mémorisé : il faut se connecter à chaque scan, on peut donc utiliser le téléphone d’un collègue.</li>'
       +'<li>Elle arrive directement sur <b>sa</b> feuille de la semaine du jour (et de la semaine d’avant le lundi et le mardi, si elle est en retard).</li>'
-      +'<li>Une seule feuille par personne et par semaine. Elle arrive dans « Validation » ; rien ne compte avant votre validation.</li></ol>'
+      +'<li>Elle peut remplir au jour le jour : tout est enregistré au fur et à mesure (même en changeant de téléphone). Dans « Validation », elle apparaît « en cours · pas encore envoyée » tant qu’elle n’a pas touché « Envoyer ma semaine ».</li>'
+      +'<li>Une seule feuille par personne et par semaine ; rien ne compte avant votre validation. « Débloquer » la rouvre avec ses jours déjà remplis ; la revalider remplace ses lignes, sans doublon.</li></ol>'
       +'<div style="font-size:12px;font-weight:800;color:#6B6790;letter-spacing:.5px;margin-bottom:6px">LISTE DE CETTE SEMAINE (S'+isoWeekOf(w)+')</div>';
     if(PUB.err)h+='<div class="qrf-err" style="font-size:12px">'+PUB.err+'</div>';
     else if(!PUB.at)h+='<div style="font-size:13px;color:#6B6790">⏳ Mise à jour en cours…</div>';
@@ -18930,41 +19172,64 @@ window.QRFeuille=(function(){
   async function loadSubs(){
     if(!window.supa){S.vErr='Pas de connexion au serveur.';draw();return;}
     try{
-      var r=await window.supa.from('qr_submissions').select('id,token,week,person,data,status,created_at,validated_at,validated_by').order('week',{ascending:false}).order('created_at',{ascending:true});
+      var r=await window.supa.from('qr_submissions').select('id,token,week,person,data,status,created_at,updated_at,sent_at,validated_at,validated_by,applied').order('week',{ascending:false}).order('created_at',{ascending:true});
       if(r.error)throw r.error;
       S.subs=r.data||[];S.vErr='';
     }catch(e){S.vErr=errMsg(e);}
     draw();
   }
   function findSub(id){return (S.subs||[]).filter(function(s){return s.id===id;})[0]||null;}
+  // États d'une feuille : 'draft' = en cours de remplissage, PAS ENCORE
+  // ENVOYÉE ; 'reopened' = rouverte par le chef, pas encore renvoyée ;
+  // 'pending' = envoyée, en attente de validation ; 'validated' = validée.
+  function stOf(s){return (s&&s.status)||'pending';}
+  function isDraftSt(s){var t=stOf(s);return t==='draft'||t==='reopened';}
+  function daysFilled(data){var n=0;var d=normData(data);for(var i=0;i<5;i++){if(dayHas(d.days[i]))n++;}return n;}
+  function stBadge(s){
+    var t=stOf(s);
+    if(t==='draft')return '<span class="qrf-badge" style="background:#DBEAFE;color:#1D4ED8">✏️ En cours · pas encore envoyée</span>';
+    if(t==='reopened')return '<span class="qrf-badge" style="background:#FFEDD5;color:#C2410C">🔓 Rouverte · pas encore renvoyée</span>';
+    if(t==='validated')return '<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ Validée</span>';
+    return '<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">⏳ En attente de validation</span>';
+  }
   function validHtml(){
-    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:900">Feuilles reçues par QR code</div><div style="font-size:12px;color:#6B6790">Tant qu’une feuille n’est pas validée, ses heures ne comptent nulle part.</div></div>'
+    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:900">Feuilles reçues par QR code</div><div style="font-size:12px;color:#6B6790">Tant qu’une feuille n’est pas validée, ses heures ne comptent nulle part. Les feuilles « en cours » se remplissent au fil de la semaine et n’ont pas encore été envoyées.</div></div>'
       +'<button type="button" onclick="QRFeuille._reload()" style="'+btnSt(false)+'">↻ Actualiser</button></div>';
     if(S.vErr)return h+'<div class="qrf-err">'+S.vErr+'</div>';
     if(S.subs==null)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790">⏳ Chargement…</div>';
-    if(!S.subs.length)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790;padding:30px">Aucune feuille reçue pour le moment.</div>';
+    if(!S.subs.length)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790;padding:30px">Aucune feuille pour le moment.</div>';
     var byW={},order=[];
     S.subs.forEach(function(s){if(!byW[s.week]){byW[s.week]=[];order.push(s.week);}byW[s.week].push(s);});
     order.forEach(function(w){
-      var list=byW[w],np=list.filter(isPending).length,nv=list.length-np;
-      var open=(S.open[w]!=null)?S.open[w]:np>0;
+      // Ordre dans une semaine : à valider, puis en cours, puis validées.
+      var rank={pending:0,reopened:1,draft:2,validated:3};
+      var list=byW[w].slice().sort(function(a,b){return (rank[stOf(a)]-rank[stOf(b)])||String(a.person).localeCompare(String(b.person),'fr');});
+      var np=list.filter(function(s){return stOf(s)==='pending';}).length;
+      var nd=list.filter(isDraftSt).length;
+      var nv=list.filter(function(s){return stOf(s)==='validated';}).length;
+      var open=(S.open[w]!=null)?S.open[w]:(np+nd)>0;
       h+='<details class="qrf-card" style="padding:0;overflow:hidden"'+(open?' open':'')+' ontoggle="QRFeuille._wtog('+w+',this.open)">'
         +'<summary style="cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:18px">📁</span>'
         +'<span style="font-size:15px;font-weight:900">Semaine '+isoWeekOf(w)+' · '+yearOfW(w)+'</span><span style="font-size:12px;color:#6B6790">du '+ddmm(weekDayToDate(w,0))+' au '+ddmm(weekDayToDate(w,4))+'</span><span style="flex:1"></span>'
         +(np?'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">'+np+' en attente de validation</span>':'')
+        +(nd?'<span class="qrf-badge" style="background:#DBEAFE;color:#1D4ED8">'+nd+' en cours · pas encore envoyée'+(nd>1?'s':'')+'</span>':'')
         +(nv?'<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">'+nv+' validée'+(nv>1?'s':'')+'</span>':'')+'</summary>'
         +'<div style="border-top:1px solid #E4E1F0">'+list.map(subRowHtml).join('')+'</div></details>';
     });
     return h;
   }
   function subRowHtml(s){
-    var pend=isPending(s);
-    return '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #F0EEF7;flex-wrap:wrap"><span class="qrf-av">'+esc(initials(s.person))+'</span>'
-      +'<div style="flex:1;min-width:170px"><div style="font-size:14px;font-weight:800">'+esc(s.person)+'</div><div style="font-size:12px;color:#6B6790">Envoyée le '+fmtDT(s.created_at)+' · '+fr(dataTotal(s.data))+' H'
-      +(pend?'':' · validée le '+fmtDT(s.validated_at)+(s.validated_by?' par '+esc(s.validated_by):''))+'</div></div>'
-      +(pend?'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">⏳ En attente de validation</span>':'<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ Validée</span>')
-      +'<button type="button" onclick="QRFeuille._open('+q(s.id)+')" style="'+btnSt(pend&&canEdit())+'">'+(pend&&canEdit()?'Voir et valider':'Voir')+'</button>'
-      +(canEdit()?'<button type="button" onclick="QRFeuille._unlock('+q(s.id)+')" style="'+btnSt(false)+'" title="Supprime la feuille reçue : la personne pourra renvoyer sa semaine">🔓 Débloquer</button>':'')+'</div>';
+    var t=stOf(s),ed=canEdit();
+    var info;
+    if(isDraftSt(s))info=(t==='reopened'?'Rouverte':'Commencée')+' · dernière saisie le '+fmtDT(s.updated_at||s.created_at)+' · '+daysFilled(s.data)+' jour(s) rempli(s) · '+fr(dataTotal(s.data))+' H';
+    else info='Envoyée le '+fmtDT(s.sent_at||s.created_at)+' · '+fr(dataTotal(s.data))+' H'+(t==='validated'?' · validée le '+fmtDT(s.validated_at)+(s.validated_by?' par '+esc(s.validated_by):''):'');
+    var btns='';
+    if(t==='pending')btns+='<button type="button" onclick="QRFeuille._open('+q(s.id)+')" style="'+btnSt(ed)+'">'+(ed?'Voir et valider':'Voir')+'</button>';
+    else btns+='<button type="button" onclick="QRFeuille._open('+q(s.id)+')" style="'+btnSt(false)+'">Voir</button>';
+    if(ed&&(t==='pending'||t==='validated'))btns+='<button type="button" onclick="QRFeuille._unlock('+q(s.id)+')" style="'+btnSt(false)+'" title="Rouvre la feuille : la personne retrouve ses jours remplis, corrige et renvoie">🔓 Débloquer</button>';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #F0EEF7;flex-wrap:wrap'+(isDraftSt(s)?';background:#FBFCFF':'')+'"><span class="qrf-av">'+esc(initials(s.person))+'</span>'
+      +'<div style="flex:1;min-width:170px"><div style="font-size:14px;font-weight:800">'+esc(s.person)+'</div><div style="font-size:12px;color:#6B6790">'+info+'</div></div>'
+      +stBadge(s)+btns+'</div>';
   }
   function _wtog(w,o){S.open[w]=!!o;}
   function _reload(){S.subs=null;draw();loadSubs();}
@@ -18973,25 +19238,29 @@ window.QRFeuille=(function(){
     if(typeof STORE==='undefined'||!STORE||!STORE.projects){alert('Les données du site ne sont pas encore chargées, réessayez dans un instant.');return;}
     var pl=buildPayload(s.week); // affaires / sous-phases à jour
     var b=blockedFor(s.person,s.week);if(b)pl.blocked[s.person]=b;
-    ctxs.rev={payload:pl,person:s.person,data:normData(s.data),readOnly:!(isPending(s)&&canEdit()),subId:id,week:s.week};
+    ctxs.rev={payload:pl,person:s.person,data:normData(s.data),readOnly:!(stOf(s)!=='validated'&&canEdit()),subId:id,week:s.week};
     drawModal();
   }
   function drawModal(){
     var c=ctxs.rev,m=document.getElementById('qrf-modal');if(!c||!m)return;
-    var s=findSub(c.subId)||{},w=c.week;
+    var s=findSub(c.subId)||{},w=c.week,t=stOf(s);
     var h='<div class="qrf" style="max-width:720px;margin:0 auto;background:#F6F5FB;border-radius:18px;padding:18px 18px 0;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
-      +'<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px"><div style="flex:1"><div style="font-size:12px;font-weight:800;color:#6B6790">FEUILLE D’HEURE REÇUE PAR QR CODE</div>'
-      +'<div style="font-size:22px;font-weight:900">'+esc(c.person)+'</div><div style="font-size:13px;color:#6B6790">Semaine '+isoWeekOf(w)+' · du '+ddmm(weekDayToDate(w,0))+' au '+ddmm(weekDayToDate(w,4))+' · envoyée le '+fmtDT(s.created_at)+'</div></div>'
+      +'<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px"><div style="flex:1"><div style="font-size:12px;font-weight:800;color:#6B6790">FEUILLE D’HEURE PAR QR CODE</div>'
+      +'<div style="font-size:22px;font-weight:900">'+esc(c.person)+'</div><div style="font-size:13px;color:#6B6790">Semaine '+isoWeekOf(w)+' · du '+ddmm(weekDayToDate(w,0))+' au '+ddmm(weekDayToDate(w,4))+'</div><div style="margin-top:6px">'+stBadge(s)+'</div></div>'
       +'<button type="button" onclick="QRFeuille._close()" style="border:1px solid #E4E1F0;background:#fff;border-radius:10px;padding:8px 12px;font-size:15px;cursor:pointer">✕</button></div>';
-    if(!c.readOnly)h+='<div style="background:#EFF6FF;border:1px solid #BFDBFE;color:#1E40AF;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px;line-height:1.5">Corrigez ce qu’il faut, puis validez. À la validation, tout est ajouté à l’onglet Feuille d’heure (et compte alors dans les phases, sous-phases et le récap), où vous pourrez encore le modifier.</div>';
-    else if(isPending(s))h+='<div style="background:#F3F4F6;color:#4B5563;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px">Lecture seule : il faut le droit « QR Code feuille d’heure » (case Modifier) pour valider.</div>';
-    else h+='<div style="background:#DCFCE7;color:#15803D;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px">✓ Validée le '+fmtDT(s.validated_at)+(s.validated_by?' par '+esc(s.validated_by):'')+' : ces heures sont dans l’onglet Feuille d’heure (c’est là qu’il faut les modifier).</div>';
+    if(t==='validated')h+='<div style="background:#DCFCE7;color:#15803D;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px">✓ Validée le '+fmtDT(s.validated_at)+(s.validated_by?' par '+esc(s.validated_by):'')+' : ces heures sont dans l’onglet Feuille d’heure. Pour que la personne la corrige elle-même : « 🔓 Débloquer ».</div>';
+    else if(c.readOnly)h+='<div style="background:#F3F4F6;color:#4B5563;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px">Lecture seule : il faut le droit « QR Code feuille d’heure » (case Modifier) pour valider.</div>';
+    else if(isDraftSt(s))h+='<div style="background:#DBEAFE;border:1px solid #BFDBFE;color:#1E3A8A;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px;line-height:1.5"><b>'+esc(c.person)+' n’a pas encore envoyé cette feuille</b> ('+(t==='reopened'?'rouverte, pas encore renvoyée':'en cours de remplissage')+', dernière saisie le '+fmtDT(s.updated_at||s.created_at)+'). Vous pouvez la valider quand même, par exemple en fin de semaine si la personne a oublié de l’envoyer.</div>';
+    else h+='<div style="background:#EFF6FF;border:1px solid #BFDBFE;color:#1E40AF;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px;line-height:1.5">Envoyée le '+fmtDT(s.sent_at||s.created_at)+'. Corrigez ce qu’il faut, puis validez : tout est ajouté à l’onglet Feuille d’heure (et compte alors dans les phases, sous-phases et le récap), où vous pourrez encore le modifier.</div>';
+    if(s.validated_at&&t!=='validated'&&!c.readOnly)h+='<div style="background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:6px;line-height:1.5">Cette feuille avait déjà été validée le '+fmtDT(s.validated_at)+'. En la validant à nouveau, ses lignes dans la feuille d’heure seront <b>remplacées</b> (pas ajoutées en double).</div>';
     for(var di=0;di<5;di++){
       h+='<div style="font-size:16px;font-weight:900;margin:16px 0 8px">'+DAYS[di]+' '+ddmmK(c.payload.days[di].date)+'</div><div id="qrf-ed-rev-'+di+'">'+revDayHtml(di)+'</div>';
     }
-    h+='<div id="qrf-rev-err"></div><div style="display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:0;background:#F6F5FB;padding:12px 0 16px;border-top:1px solid #E4E1F0">'
+    var vLbl=isDraftSt(s)?'✅ Valider quand même (pas encore envoyée)':'✅ Valider la feuille d’heure';
+    h+='<div id="qrf-rev-err"></div><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;position:sticky;bottom:0;background:#F6F5FB;padding:12px 0 16px;border-top:1px solid #E4E1F0">'
+      +(canEdit()?'<button type="button" onclick="QRFeuille._delete()" style="'+btnSt(false)+';color:#B91C1C;margin-right:auto" title="Supprime cette feuille (ex. feuille de test). Ne touche pas aux heures déjà dans la feuille d’heure.">🗑 Supprimer</button>':'')
       +'<button type="button" onclick="QRFeuille._close()" style="'+btnSt(false)+'">Fermer</button>'
-      +(!c.readOnly?'<button type="button" id="qrf-val-btn" onclick="QRFeuille._validate()" style="'+btnSt(true)+';background:#16A34A;border-color:#16A34A;font-size:13px">✅ Valider la feuille d’heure</button>':'')+'</div></div>';
+      +(!c.readOnly?'<button type="button" id="qrf-val-btn" onclick="QRFeuille._validate()" style="'+btnSt(true)+';background:#16A34A;border-color:#16A34A;font-size:13px">'+vLbl+'</button>':'')+'</div></div>';
     m.innerHTML=h;m.style.display='block';m.scrollTop=0;
   }
   // Relecture : un jour laissé vide par la personne tient sur une ligne
@@ -19004,36 +19273,78 @@ window.QRFeuille=(function(){
   }
   function _revExpand(di){var c=ctxs.rev;if(!c||c.readOnly)return;c.expanded=c.expanded||{};c.expanded[di]=true;var el=document.getElementById('qrf-ed-rev-'+di);if(el)el.innerHTML=editorHtml('rev',di);}
   function _close(){var m=document.getElementById('qrf-modal');if(m){m.style.display='none';m.innerHTML='';}ctxs.rev=null;CRED=null;}
+  // Lignes de la feuille d'heure venant d'une feuille QR donnée (étiquette
+  // invisible l.qr = identifiant de la feuille, posée à la validation).
+  function taggedLines(nm,w,tag){
+    var n=0;if(!tag)return 0;
+    Object.keys(STORE.projects||{}).forEach(function(aff){
+      var wd=STORE.projects[aff]&&STORE.projects[aff].fh&&STORE.projects[aff].fh[nm]&&STORE.projects[aff].fh[nm][w];if(!wd)return;
+      Object.keys(wd).forEach(function(di){(Array.isArray(wd[di])?wd[di]:[]).forEach(function(l){if(l&&l.qr===tag)n++;});});
+    });
+    return n;
+  }
+  function stampFh(p,nm,w,di,now){
+    if(!p._fhModAt)p._fhModAt={};if(!p._fhModAt[nm])p._fhModAt[nm]={};if(!p._fhModAt[nm][w])p._fhModAt[nm][w]={};
+    p._fhModAt[nm][w][di]=now;
+  }
   // Écrit la feuille validée dans la Feuille d'heure, comme une saisie
   // manuelle : les heures dans p.fh (rangées dans l'affaire de CHAQUE ligne,
-  // pour que syncFichesToGantt les reporte bien sur sa sous-phase) avec le
+  // pour que syncFichesToGantt les reporte bien sur sa sous-phase), avec le
   // même horodatage par personne/semaine/jour que fhPut (fusion _mergeFh),
   // et panier/GD/trajet/zone/véhicule/lieu dans STORE.fhMeta (fhMetaSet).
-  // Les lignes s'AJOUTENT à celles éventuellement déjà présentes.
-  function applyToStore(nm,w,data){
+  // Chaque ligne porte l'étiquette l.qr = identifiant de la feuille : si la
+  // feuille est rouverte puis revalidée, ses anciennes lignes sont d'abord
+  // RETIRÉES (remplacement propre, jamais de doublon) ; les lignes saisies à
+  // la main ne sont jamais touchées. Première validation : les lignes
+  // s'AJOUTENT à celles éventuellement déjà présentes.
+  function applyToStore(nm,w,data,tag,revalid,prevApplied){
+    tag=tag?String(tag):'';
     var ops=[];
     for(var di=0;di<5;di++){
-      var d=data.days[di]||data.days[String(di)];if(!d)continue;
+      var d=data.days[di]||data.days[String(di)];
       var by={};
-      (d.lines||[]).forEach(function(l){
+      if(d)(d.lines||[]).forEach(function(l){
         var p=STORE.projects[l.affId];if(!p)throw new Error('Affaire introuvable : '+l.affId);
         var h=+l.hours||0;if(!(h>0))return;
         var act=(l.actId&&(p.data||[]).some(function(r){return r.id===l.actId;}))?l.actId:'';
-        (by[l.affId]=by[l.affId]||[]).push({affId:l.affId,actId:act,hours:h});
+        var nl={affId:l.affId,actId:act,hours:h};if(tag)nl.qr=tag;
+        (by[l.affId]=by[l.affId]||[]).push(nl);
       });
       ops.push({di:di,d:d,by:by});
     }
     var now=Date.now();
+    // 1) Retirer les lignes d'une validation précédente de CETTE feuille.
+    if(tag)Object.keys(STORE.projects).forEach(function(aff){
+      var p=STORE.projects[aff],wd=p&&p.fh&&p.fh[nm]&&p.fh[nm][w];if(!wd)return;
+      Object.keys(wd).forEach(function(di){
+        var arr=Array.isArray(wd[di])?wd[di]:null;if(!arr)return;
+        var keep=arr.filter(function(l){return !(l&&l.qr===tag);});
+        if(keep.length!==arr.length){wd[di]=keep;stampFh(p,nm,w,di,now);}
+      });
+    });
+    // 2) Ajouter les lignes de la feuille.
     ops.forEach(function(o){
       Object.keys(o.by).forEach(function(aff){
         var p=STORE.projects[aff];
         if(!p.fh)p.fh={};if(!p.fh[nm])p.fh[nm]={};if(!p.fh[nm][w])p.fh[nm][w]={};
         p.fh[nm][w][o.di]=fhGet(aff,nm,w,o.di).slice().concat(o.by[aff]);
-        if(!p._fhModAt)p._fhModAt={};if(!p._fhModAt[nm])p._fhModAt[nm]={};if(!p._fhModAt[nm][w])p._fhModAt[nm][w]={};
-        p._fhModAt[nm][w][o.di]=now;
+        stampFh(p,nm,w,o.di,now);
       });
-      var d=o.d,has=d.panier||d.gd||(+d.trajetH>0)||d.zone||d.vehicule||(d.lieu&&String(d.lieu).trim());
-      if(has){
+      // 3) Panier / GD / trajet / zone / véhicule / lieu.
+      var d=o.d||{};
+      var has=d.panier||d.gd||(+d.trajetH>0)||d.zone||d.vehicule||(d.lieu&&String(d.lieu).trim());
+      if(revalid){
+        // Revalidation : remplacer les options du jour par celles de la
+        // nouvelle version (y compris décocher ce qui a été décoché).
+        // Seulement les jours de l'ancienne ou de la nouvelle version : les
+        // options saisies à la main un autre jour ne sont jamais touchées.
+        var inPrev=!!(prevApplied&&prevApplied.days&&(prevApplied.days[o.di]||prevApplied.days[String(o.di)]));
+        if(!o.d&&!inPrev)return;
+        var cur=STORE.fhMeta&&STORE.fhMeta[w]&&STORE.fhMeta[w][nm]&&STORE.fhMeta[w][nm][o.di];
+        if(!has&&!cur)return;
+        if(!STORE.fhMeta)STORE.fhMeta={};if(!STORE.fhMeta[w])STORE.fhMeta[w]={};if(!STORE.fhMeta[w][nm])STORE.fhMeta[w][nm]={};
+        STORE.fhMeta[w][nm][o.di]={panier:!!d.panier,gd:!!d.gd,lieu:(d.lieu?String(d.lieu).trim():''),zone:d.zone||'',trajetH:(+d.trajetH>0?String(+d.trajetH):''),vehicule:d.vehicule||''};
+      }else if(has){
         if(!STORE.fhMeta)STORE.fhMeta={};if(!STORE.fhMeta[w])STORE.fhMeta[w]={};if(!STORE.fhMeta[w][nm])STORE.fhMeta[w][nm]={};
         var m=STORE.fhMeta[w][nm][o.di]||{panier:false,gd:false,lieu:''};
         if(d.panier)m.panier=true;
@@ -19053,41 +19364,49 @@ window.QRFeuille=(function(){
   }
   async function _validate(){
     var c=ctxs.rev;if(!c||c.readOnly||_validate._busy)return;
-    var s=findSub(c.subId);if(!s||!isPending(s))return;
+    var s=findSub(c.subId);if(!s||stOf(s)==='validated')return;
     var box=document.getElementById('qrf-rev-err'),errs=check(c);
     if(errs.length){if(box){box.innerHTML='<div class="qrf-err" style="margin-top:12px"><b>À corriger avant de valider :</b><br>'+errs.map(esc).join('<br>')+'</div>';try{box.scrollIntoView({block:'center'});}catch(x){}}return;}
     if(box)box.innerHTML='';
     if(typeof STORE==='undefined'||!STORE||!STORE.projects){alert('Les données du site ne sont pas chargées.');return;}
     var data=clean(c),nm=c.person,w=c.week;
+    var revalid=!!s.validated_at,tag=String(s.id);
     if(STORE._deletedPersons&&STORE._deletedPersons[nm]&&!confirm(nm+' a été supprimé(e) de l’annuaire. Valider quand même ?'))return;
+    // Doublons : heures déjà présentes ces jours-là, SAUF celles venant de
+    // cette même feuille (elles seront remplacées).
     var dup=[];
     for(var di=0;di<5;di++){
       if(!data.days[di])continue;
-      var ex=fhGetAllAff(nm,w,di).some(function(l){return +l.hours>0;});
-      var mt=fhMetaGet(w,nm,di);
-      var exm=mt.panier||mt.gd||(mt.lieu&&mt.lieu.trim())||(mt.zone&&mt.zone.trim())||(+mt.trajetH>0)||(mt.vehicule&&mt.vehicule.trim());
+      var ex=fhGetAllAff(nm,w,di).some(function(l){return +l.hours>0&&l.qr!==tag;});
+      var exm=false;
+      if(!revalid){var mt=fhMetaGet(w,nm,di);exm=mt.panier||mt.gd||(mt.lieu&&mt.lieu.trim())||(mt.zone&&mt.zone.trim())||(+mt.trajetH>0)||(mt.vehicule&&mt.vehicule.trim());}
       if(ex||exm)dup.push(DAYS[di]);
     }
-    var txt=dup.length
-      ?('⚠️ ATTENTION : des heures ou des options ont DÉJÀ été saisies à la main pour '+nm+' le '+dup.join(', ')+' (semaine '+isoWeekOf(w)+').\n\nSi vous validez, les lignes du QR code s’AJOUTENT à celles déjà présentes : vérifiez ensuite qu’il n’y a pas de doublon dans l’onglet Feuille d’heure.\n\nValider quand même ?')
-      :('Valider la feuille d’heure de '+nm+' (semaine '+isoWeekOf(w)+') ?\n\nLes heures seront ajoutées à l’onglet Feuille d’heure.');
+    var old=revalid&&!taggedLines(nm,w,tag); // validée avec une ancienne version (lignes sans étiquette)
+    var txt='';
+    if(isDraftSt(s))txt+='⚠️ '+nm+' n’a PAS ENCORE ENVOYÉ cette feuille (elle est encore en cours de remplissage).\n\n';
+    if(revalid)txt+='Cette feuille avait déjà été validée : ses lignes dans la feuille d’heure seront REMPLACÉES par cette nouvelle version (pas de doublon).\n\n';
+    if(old)txt+='⚠️ Elle avait été validée avec une ancienne version du site : ses anciennes lignes ne peuvent pas être repérées automatiquement. Vérifiez ensuite qu’il n’y a pas de doublon dans l’onglet Feuille d’heure.\n\n';
+    if(dup.length)txt+='⚠️ ATTENTION : des heures ou des options ont DÉJÀ été saisies à la main pour '+nm+' le '+dup.join(', ')+'. Les lignes du QR code s’AJOUTENT à celles-là : vérifiez ensuite qu’il n’y a pas de doublon.\n\n';
+    txt+='Valider la feuille d’heure de '+nm+' (semaine '+isoWeekOf(w)+') ?\n\nLes heures seront '+(revalid?'mises à jour':'ajoutées')+' dans l’onglet Feuille d’heure.';
     if(!confirm(txt))return;
     _validate._busy=true;
     var btn=document.getElementById('qrf-val-btn');if(btn){btn.disabled=true;btn.textContent='Validation…';}
     var who=(typeof CURRENT_USER!=='undefined'&&CURRENT_USER&&CURRENT_USER.email)||'';
-    var reset=function(){_validate._busy=false;if(btn){btn.disabled=false;btn.textContent='✅ Valider la feuille d’heure';}};
-    // 1) Verrouiller d'abord en base (seulement si encore "en attente") :
-    //    deux personnes ne peuvent jamais valider la même feuille.
+    var reset=function(){_validate._busy=false;if(btn){btn.disabled=false;btn.textContent=isDraftSt(s)?'✅ Valider quand même (pas encore envoyée)':'✅ Valider la feuille d’heure';}};
+    var prev={status:s.status,validated_at:s.validated_at||null,validated_by:s.validated_by||null,applied:s.applied||null};
+    // 1) Verrouiller d'abord en base (seulement si pas déjà validée) : deux
+    //    personnes ne peuvent jamais valider la même feuille en même temps.
     try{
-      var up=await window.supa.from('qr_submissions').update({status:'validated',validated_at:new Date().toISOString(),validated_by:who,data:data}).eq('id',s.id).eq('status','pending').select('id');
+      var up=await window.supa.from('qr_submissions').update({status:'validated',validated_at:new Date().toISOString(),validated_by:who,data:data,applied:data}).eq('id',s.id).neq('status','validated').select('id');
       if(up.error)throw up.error;
-      if(!up.data||!up.data.length){reset();alert('Cette feuille a déjà été validée ou débloquée entre-temps (peut-être par un collègue).');_close();loadSubs();return;}
+      if(!up.data||!up.data.length){reset();alert('Cette feuille a déjà été validée ou supprimée entre-temps (peut-être par un collègue).');_close();loadSubs();return;}
     }catch(e){reset();alert(errMsg(e).replace(/<[^>]+>/g,''));return;}
     // 2) Puis l'écrire dans la Feuille d'heure ; en cas d'échec, on remet
-    //    la feuille "en attente" pour ne rien perdre.
-    try{applyToStore(nm,w,data);}
+    //    la feuille dans son état d'avant pour ne rien perdre.
+    try{applyToStore(nm,w,data,tag,revalid,prev.applied);}
     catch(e){
-      try{await window.supa.from('qr_submissions').update({status:'pending',validated_at:null,validated_by:null}).eq('id',s.id);}catch(x){}
+      try{await window.supa.from('qr_submissions').update(prev).eq('id',s.id);}catch(x){}
       reset();alert('Erreur pendant l’ajout à la Feuille d’heure : la feuille n’a pas été validée ('+((e&&e.message)||e)+').');return;
     }
     _validate._busy=false;
@@ -19095,24 +19414,37 @@ window.QRFeuille=(function(){
     await loadSubs();
     alert('✓ Feuille validée : les heures de '+nm+' (semaine '+isoWeekOf(w)+') sont maintenant dans l’onglet Feuille d’heure.');
   }
+  // Débloquer = ROUVRIR la feuille (elle n'est plus supprimée) : la personne
+  // retrouve ses jours déjà remplis, corrige et renvoie ; à la nouvelle
+  // validation, les lignes de la précédente sont remplacées (voir applyToStore).
   async function _unlock(id){
     var s=findSub(id);if(!s||!canEdit())return;
-    var txt=isPending(s)
-      ?('Débloquer '+s.person+' pour la semaine '+isoWeekOf(s.week)+' ?\n\nLa feuille reçue sera supprimée (rien n’a encore été ajouté à la Feuille d’heure) et la personne pourra renvoyer sa semaine en rescannant le QR code.')
-      :('Débloquer '+s.person+' pour la semaine '+isoWeekOf(s.week)+' ?\n\nLa personne pourra renvoyer une feuille par QR code.\n\n⚠️ Les heures DÉJÀ validées restent dans l’onglet Feuille d’heure : si elle doit tout refaire, supprimez-les à la main, sinon elles seront en double.');
+    var t=stOf(s);if(t!=='pending'&&t!=='validated')return;
+    var txt='Débloquer la feuille de '+s.person+' (semaine '+isoWeekOf(s.week)+') ?\n\nLa personne retrouvera ses jours déjà remplis et pourra les corriger, puis la renvoyer (jusqu’au mardi soir de la semaine suivante).'
+      +(t==='validated'?'\n\nElle était déjà validée : ses heures restent dans la feuille d’heure en attendant, et seront REMPLACÉES (pas de doublon) quand vous validerez la nouvelle version.':'');
     if(!confirm(txt))return;
-    try{var r=await window.supa.from('qr_submissions').delete().eq('id',id);if(r.error)throw r.error;}
+    try{var r=await window.supa.from('qr_submissions').update({status:'reopened',updated_at:new Date().toISOString()}).eq('id',id).in('status',['pending','validated']);if(r.error)throw r.error;}
     catch(e){alert(errMsg(e).replace(/<[^>]+>/g,''));return;}
     loadSubs();
+  }
+  // Supprimer une feuille (ex. feuille de test) : ne touche pas aux heures
+  // déjà ajoutées à la feuille d'heure.
+  async function _delete(){
+    var c=ctxs.rev;if(!c||!canEdit())return;
+    var s=findSub(c.subId);if(!s)return;
+    if(!confirm('Supprimer définitivement la feuille QR de '+s.person+' (semaine '+isoWeekOf(s.week)+') ?\n\nLa personne pourra en recommencer une nouvelle.'+(s.validated_at?'\n\n⚠️ Les heures déjà validées restent dans l’onglet Feuille d’heure : supprimez-les à la main si besoin.':'')))return;
+    try{var r=await window.supa.from('qr_submissions').delete().eq('id',s.id);if(r.error)throw r.error;}
+    catch(e){alert(errMsg(e).replace(/<[^>]+>/g,''));return;}
+    _close();loadSubs();
   }
 
   return {
     render:render,startPublic:startPublic,publish:publish,
     _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,
-    _pubLogin:_pubLogin,_pubLogout:_pubLogout,_pubEnd:_pubEnd,_pubWeek:_pubWeek,_pubWeeks:chooseWeek,_pubDays:days,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
+    _pubLogin:_pubLogin,_pubLogout:_pubLogout,_pubEnd:_pubEnd,_pubWeek:_pubWeek,_pubWeeks:chooseWeek,_pubDays:_pubDays,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
     _tab:_tab,_pubNow:_pubNow,_print:_print,_copy:_copy,
     _idFilter:_idFilter,_idReload:_idReload,_idGen:_idGen,_idActive:_idActive,_idDel:_idDel,_credCopy:_credCopy,_credPrint:_credPrint,
-    _reload:_reload,_wtog:_wtog,_open:_open,_close:_close,_validate:_validate,_unlock:_unlock,_revExpand:_revExpand,
+    _reload:_reload,_wtog:_wtog,_open:_open,_close:_close,_validate:_validate,_unlock:_unlock,_delete:_delete,_revExpand:_revExpand,
     _test:{buildPayload:buildPayload,applyToStore:applyToStore,check:check,clean:clean,ctxs:ctxs,S:S,A:A,PUB:PUB,stable:stable,reqWeeks:reqWeeks}
   };
 })();
