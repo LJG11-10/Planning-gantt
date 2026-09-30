@@ -14865,6 +14865,22 @@ function fhWeekPersons(wk){
       if(_personDayStatus(nm,_dk,wk)){names[nm]=true;break;}
     }
   });
+  // Toutes les personnes "Chantier" visibles dans Planning Réunion (pas
+  // cochées "masquée"), même sans affectation ni heure : une personne tout
+  // juste ajoutée à l'annuaire doit apparaître directement dans la feuille
+  // d'heure (et donc dans la liste du QR code). Seulement à partir de la
+  // semaine précédente (feuilles en retard) : les semaines déjà passées
+  // gardent leur liste, pour ne pas ajouter de lignes vides dans les
+  // anciens documents imprimés/téléchargés.
+  var _curWkP=(TODAY&&TODAY.w)||0;
+  if(+wk>=_curWkP-1){
+    Object.keys(_gpChantier).forEach(function(nm){
+      if(!nm||_delP[nm]||names[nm])return;
+      var pInfo=_gpChantier[nm];
+      if(!pInfo||pInfo.service!=='els_chantier'||pInfo.hiddenEquipe)return;
+      names[nm]=true;
+    });
+  }
   // Une personne explicitement retirée de cette semaine (bouton "Retirer")
   // ne doit jamais réapparaître ici tant qu'elle n'a pas été rajoutée à la
   // main via "+ Ajouter une personne" — même si elle a par ailleurs des
@@ -18404,8 +18420,14 @@ window.QRFeuille=(function(){
   var P=null; // {session, person, weeks:[...], wk:semaine ouverte}
   function pubEl(){return document.getElementById('qr-public');}
   function top0(){var e=pubEl();if(e)e.scrollTop=0;try{window.scrollTo(0,0);}catch(x){}}
-  function getSess(){try{return localStorage.getItem(SESS_KEY)||'';}catch(x){return '';}}
-  function setSess(s){try{if(s)localStorage.setItem(SESS_KEY,s);else localStorage.removeItem(SESS_KEY);}catch(x){}}
+  // Connexion gardée UNIQUEMENT en mémoire, le temps que la page est
+  // ouverte : rien n'est retenu par le téléphone (un collègue peut se
+  // connecter sur le téléphone d'un autre ; à chaque scan, il faut
+  // retaper son identifiant et son mot de passe).
+  var _memSess='';
+  function getSess(){return _memSess;}
+  function setSess(s){_memSess=s||'';}
+  try{localStorage.removeItem(SESS_KEY);}catch(x){} // ancienne connexion mémorisée (version précédente)
   function msg(icon,title,text,extra){
     var e=pubEl();if(!e)return;
     e.innerHTML='<div class="qrf"><div class="qrf-wrap" style="text-align:center;padding-top:60px"><div style="font-size:56px">'+icon+'</div>'
@@ -18432,9 +18454,11 @@ window.QRFeuille=(function(){
     pubEl().innerHTML='<div class="qrf"><div class="qrf-wrap">'
       +'<div class="qrf-hero"><div style="font-size:12px;font-weight:800;opacity:.85;letter-spacing:.6px">FEUILLE D’HEURE</div><div class="wk">Connexion</div><div class="sub">Avec l’identifiant et le mot de passe donnés par votre chef de chantier.</div></div>'
       +(err?'<div class="qrf-err">'+esc(err)+'</div>':'')
-      +'<form class="qrf-card" onsubmit="event.preventDefault();QRFeuille._pubLogin();">'
-      +'<div class="qrf-lbl">IDENTIFIANT</div><input class="qrf-in" id="qrf-login" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ex : jean.dupont" style="margin-bottom:12px">'
-      +'<div class="qrf-lbl">MOT DE PASSE</div><input class="qrf-in" id="qrf-pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••••" style="margin-bottom:16px;letter-spacing:4px">'
+      +'<form class="qrf-card" autocomplete="off" onsubmit="event.preventDefault();QRFeuille._pubLogin();">'
+      // autocomplete="off" / "one-time-code" : le navigateur ne propose pas
+      // d'enregistrer l'identifiant et le mot de passe sur le téléphone.
+      +'<div class="qrf-lbl">IDENTIFIANT</div><input class="qrf-in" id="qrf-login" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ex : jean.dupont" style="margin-bottom:12px">'
+      +'<div class="qrf-lbl">MOT DE PASSE</div><input class="qrf-in" id="qrf-pin" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="••••••" style="margin-bottom:16px;letter-spacing:4px">'
       +'<button type="submit" class="qrf-btn" id="qrf-login-btn">Se connecter</button></form>'
       +'<div style="font-size:12px;color:#9A96B3;text-align:center;line-height:1.5">Identifiant ou mot de passe oublié ? Demandez-en un nouveau à votre chef de chantier.</div>'
       +'</div></div>';
@@ -18586,15 +18610,23 @@ window.QRFeuille=(function(){
       return;
     }
     var res=r.data,wk=P.wk;
-    var others=function(){return P.weeks.some(function(x){return x!==wk&&x.ready&&!x.done&&x.planned;})?backBtn():'';};
-    if(res==='ok'){clearDraft();wk.done=true;ctxs.pub=null;msg('✅','Feuille d’heure envoyée','Merci '+esc(P.person)+' ! Votre feuille de la semaine '+esc(wk.iw)+' a bien été envoyée. Votre chef de chantier va la valider.',others()+logoutLink());return;}
-    if(res==='already'){clearDraft();wk.done=true;ctxs.pub=null;msg('ℹ️','Déjà envoyée','Une feuille d’heure a déjà été envoyée pour vous cette semaine. Pour la corriger, voyez avec votre chef de chantier.',others()+logoutLink());return;}
+    var others=function(){return P.weeks.some(function(x){return x!==wk&&x.ready&&!x.done&&x.planned;});};
+    // Feuille envoyée : s'il ne reste rien à remplir, on déconnecte tout de suite
+    // (le téléphone peut être celui d'un collègue) ; sinon on propose l'autre
+    // semaine, avec un bouton pour terminer et se déconnecter.
+    var endHtml=function(){if(others())return backBtn()+'<button type="button" class="qrf-btn2" style="margin-top:10px" onclick="QRFeuille._pubEnd()">Terminer et se déconnecter</button>';endSession();return '<div style="font-size:13px;color:#9A96B3;margin-top:16px">Vous êtes déconnecté(e).</div>';};
+    if(res==='ok'){clearDraft();wk.done=true;ctxs.pub=null;msg('✅','Feuille d’heure envoyée','Merci '+esc(P.person)+' ! Votre feuille de la semaine '+esc(wk.iw)+' a bien été envoyée. Votre chef de chantier va la valider.',endHtml());return;}
+    if(res==='already'){clearDraft();wk.done=true;ctxs.pub=null;msg('ℹ️','Déjà envoyée','Une feuille d’heure a déjà été envoyée pour vous cette semaine. Pour la corriger, voyez avec votre chef de chantier.',endHtml());return;}
     if(res==='invalid_session'){setSess('');loginScreen('Votre accès a changé : reconnectez-vous (vos saisies sont gardées sur ce téléphone).');return;}
     if(res==='not_planned'){msg('ℹ️','Pas prévu(e) cette semaine','Vous n’êtes plus sur la feuille d’heure de cette semaine. Voyez votre chef de chantier (vos saisies sont gardées sur ce téléphone).',logoutLink());return;}
     if(res==='closed'){msg('⌛','Semaine terminée','Il est trop tard pour envoyer cette semaine par QR code : voyez votre chef de chantier.',logoutLink());return;}
     if(btn){btn.disabled=false;btn.textContent='📤 Envoyer ma semaine';}
     alert('Envoi refusé ('+res+'). Prévenez votre chef de chantier.');
   }
+  // Fin de connexion côté serveur aussi (sans attendre la réponse : la
+  // requête Supabase ne part qu'avec .then, d'où le .then vide).
+  function endSession(){var s=getSess();setSess('');if(s){try{window.supa.rpc('qr_logout',{p_session:s}).then(function(){},function(){});}catch(x){}}}
+  function _pubEnd(){endSession();P=null;ctxs.pub=null;msg('👋','À bientôt','Vous êtes déconnecté(e). Scannez à nouveau le QR code pour remplir une autre feuille.');}
   async function _pubLogout(){
     if(!confirm('Se déconnecter de ce téléphone ?'))return;
     var s=getSess();setSess('');
@@ -18721,7 +18753,7 @@ window.QRFeuille=(function(){
       +'</div>';
     h+='<div class="qrf-card"><div style="font-size:16px;font-weight:900">Comment ça marche</div>'
       +'<ol style="font-size:13px;color:#4B5563;line-height:1.7;margin:8px 0 14px;padding-left:18px">'
-      +'<li>Chaque personne scanne le QR code et se connecte avec <b>son identifiant et son mot de passe</b> (onglet « Gestion des ID »). Le téléphone s’en souvient ensuite.</li>'
+      +'<li>Chaque personne scanne le QR code et se connecte avec <b>son identifiant et son mot de passe</b> (onglet « Gestion des ID »). Rien n’est mémorisé : il faut se connecter à chaque scan, on peut donc utiliser le téléphone d’un collègue.</li>'
       +'<li>Elle arrive directement sur <b>sa</b> feuille de la semaine du jour (et de la semaine d’avant le lundi et le mardi, si elle est en retard).</li>'
       +'<li>Une seule feuille par personne et par semaine. Elle arrive dans « Validation » ; rien ne compte avant votre validation.</li></ol>'
       +'<div style="font-size:12px;font-weight:800;color:#6B6790;letter-spacing:.5px;margin-bottom:6px">LISTE DE CETTE SEMAINE (S'+isoWeekOf(w)+')</div>';
@@ -19077,7 +19109,7 @@ window.QRFeuille=(function(){
   return {
     render:render,startPublic:startPublic,publish:publish,
     _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,
-    _pubLogin:_pubLogin,_pubLogout:_pubLogout,_pubWeek:_pubWeek,_pubWeeks:chooseWeek,_pubDays:days,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
+    _pubLogin:_pubLogin,_pubLogout:_pubLogout,_pubEnd:_pubEnd,_pubWeek:_pubWeek,_pubWeeks:chooseWeek,_pubDays:days,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
     _tab:_tab,_pubNow:_pubNow,_print:_print,_copy:_copy,
     _idFilter:_idFilter,_idReload:_idReload,_idGen:_idGen,_idActive:_idActive,_idDel:_idDel,_credCopy:_credCopy,_credPrint:_credPrint,
     _reload:_reload,_wtog:_wtog,_open:_open,_close:_close,_validate:_validate,_unlock:_unlock,_revExpand:_revExpand,
