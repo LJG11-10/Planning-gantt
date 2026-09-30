@@ -3976,6 +3976,11 @@ function loadStore(){
     renderProjSel();
     var first=STORE.current||Object.keys(STORE.projects)[0];
     if(first)switchProjet(first);
+    // Données du serveur chargées et fusionnées : le module QR Code attend
+    // ce signal avant de publier les listes de la semaine (sinon un
+    // navigateur tout juste ouvert, encore sur sa copie locale ancienne,
+    // pourrait publier une liste périmée).
+    window._remoteLoaded=true;
     startRealtime();
     if(!window._defaultTabDone){
       window._defaultTabDone=true;
@@ -18184,15 +18189,20 @@ autre@exemple.fr" style="width:100%;border:1px solid var(--bd);border-radius:var
 
 <!-- ═══════════════════════════ QR CODE FEUILLE D'HEURE — module isolé ═══════════
      Deux usages dans le même fichier :
-     1) Onglet "QR Code" (accueil, personnel connecté) : afficher le QR code
-        d'une semaine, puis relire / corriger / valider les feuilles reçues.
-     2) Lien "?qr=<jeton>" (téléphone, SANS connexion) : uniquement le
-        formulaire — le reste du site n'est jamais chargé ni affiché.
+     1) Onglet "QR Code" (accueil, personnel connecté) : le QR code unique à
+        imprimer, la gestion des identifiants du personnel chantier, et la
+        relecture / validation des feuilles reçues.
+     2) Lien "?qr=..." (téléphone, SANS accès au site) : page de connexion
+        (identifiant + mot de passe donnés par le chef), puis uniquement la
+        feuille d'heure de la personne connectée, pour la semaine du jour
+        (et la semaine précédente jusqu'au mardi soir).
      Le formulaire ne touche JAMAIS aux données du site : il dépose sa
-     feuille dans la table Supabase "qr_submissions" via la fonction
-     qr_submit. Ce n'est qu'à la validation (chef/admin connecté) que la
-     feuille est écrite dans la Feuille d'heure (fh / fhMeta), exactement
-     comme une saisie manuelle. ═══════════════════════════════════════════ -->
+     feuille dans la table Supabase "qr_submissions" (fonction qr_submit2).
+     Ce n'est qu'à la validation (chef/admin connecté) que la feuille est
+     écrite dans la Feuille d'heure (fh / fhMeta), comme une saisie manuelle.
+     Les listes de la semaine (personnes, affaires, sous-phases, jours
+     bloqués) sont publiées automatiquement par le site ouvert (voir
+     publish), à partir de la même liste que la Feuille d'heure. ═══════════ -->
 <div id="petro-qr-shell" style="display:none;position:fixed;inset:0;z-index:8000;background:#F6F5FB;flex-direction:column;overflow:hidden;font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif">
   <div style="padding:10px 16px;background:#fff;border-bottom:1px solid #E4E1F0;display:flex;align-items:center;gap:12px;flex-shrink:0">
     <button onclick="petroHubBackToHub()" style="background:#F6F5FB;color:#1C1A33;border:1px solid #E4E1F0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">← Retour</button>
@@ -18213,8 +18223,6 @@ autre@exemple.fr" style="width:100%;border:1px solid var(--bd);border-radius:var
 .qrf-btn{display:block;width:100%;border:none;border-radius:14px;padding:15px 16px;font-size:16px;font-weight:800;font-family:inherit;cursor:pointer;background:#6457F4;color:#fff}
 .qrf-btn:disabled{opacity:.45;cursor:not-allowed}
 .qrf-btn2{display:block;width:100%;border:1.5px solid #E4E1F0;background:#fff;color:#1C1A33;border-radius:14px;padding:13px 16px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer}
-.qrf-name{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1.5px solid #E4E1F0;border-radius:14px;padding:13px 16px;font-size:16px;font-weight:700;font-family:inherit;color:#1C1A33;cursor:pointer;margin-bottom:8px}
-.qrf-name:active,.qrf-day:active{background:#EFEDFE}
 .qrf-av{width:36px;height:36px;border-radius:50%;background:#EFEDFE;color:#6457F4;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;flex-shrink:0}
 .qrf-lbl{font-size:12px;font-weight:800;color:#6B6790;letter-spacing:.3px;margin:0 0 6px}
 .qrf-in{display:block;width:100%;border:1.5px solid #E4E1F0;border-radius:12px;padding:12px;font-size:16px;font-family:inherit;background:#fff;color:#1C1A33;outline:none}
@@ -18226,6 +18234,7 @@ autre@exemple.fr" style="width:100%;border:1px solid var(--bd);border-radius:var
 .qrf-row{display:flex;gap:8px}
 .qrf-line{border:1.5px solid #E4E1F0;border-left:5px solid #6457F4;border-radius:14px;padding:12px;margin-bottom:10px;background:#FBFAFF}
 .qrf-day{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1.5px solid #E4E1F0;border-radius:14px;padding:14px 16px;font-family:inherit;cursor:pointer;margin-bottom:8px;color:#1C1A33}
+.qrf-day:active{background:#EFEDFE}
 .qrf-badge{display:inline-block;font-size:12px;font-weight:800;padding:3px 10px;border-radius:10px;margin:2px 4px 2px 0}
 .qrf-err{background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:10px;line-height:1.5}
 .qrf-foot{position:fixed;left:0;right:0;bottom:0;background:rgba(246,245,251,.97);border-top:1px solid #E4E1F0;padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
@@ -18233,18 +18242,22 @@ autre@exemple.fr" style="width:100%;border:1px solid var(--bd);border-radius:var
 .qrf summary{list-style:none}.qrf summary::-webkit-details-marker{display:none}
 .qrs-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
 @media(max-width:760px){.qrs-grid{grid-template-columns:1fr}}
-#qrs-qr svg{display:block;width:100%;height:100%}
+.qrs-qr svg{display:block;width:100%;height:100%}
+.qrs-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.qrs-tbl th{text-align:left;font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.3px;padding:8px 10px;border-bottom:1px solid #E4E1F0;background:#FBFAFF}
+.qrs-tbl td{padding:9px 10px;border-bottom:1px solid #F0EEF7;vertical-align:middle}
+.qrs-tbl tr:hover td{background:#FBFAFF}
 </style>
 <script>
 window.QRFeuille=(function(){
   'use strict';
   var QR_LIB='https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
   var DAYS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi'];
-  var MOIS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
   var ZONES=['Zone 1','Zone 2','Zone 3','Zone 4','Zone 5','Zone 6','Zone 7'];
   // Mêmes valeurs que la Feuille d'heure (fhBuildDayCell), pour que la
   // validation écrive exactement ce qu'une saisie manuelle aurait écrit.
   var VEH=[['Véhicule perso','🚙 Perso'],['Véhicule pro','🚐 Pro']];
+  var SESS_KEY='qrfh_session';
   var ctxs={}; // 'pub' = formulaire du téléphone, 'rev' = relecture chef/admin
 
   // ── Outils ──────────────────────────────────────────────────────────
@@ -18259,6 +18272,7 @@ window.QRFeuille=(function(){
   function initials(n){return String(n||'').trim().split(/\s+/).slice(0,2).map(function(x){return x.charAt(0).toUpperCase();}).join('');}
   function fmtDT(iso){if(!iso)return '';var d=new Date(iso);if(isNaN(d))return '';return ddmm(d)+' à '+pad(d.getHours())+':'+pad(d.getMinutes());}
   function isPending(s){return s&&s.status!=='validated';}
+  function q(s){return "'"+s+"'";}
   function emptyDay(){return {panier:false,gd:false,trajetH:'',zone:'',vehicule:'',lieu:'',lines:[]};}
   function emptyData(){var d={days:{}};for(var i=0;i<5;i++)d.days[i]=emptyDay();return d;}
   function normData(x){
@@ -18275,6 +18289,15 @@ window.QRFeuille=(function(){
   function sbLbl(a,id){if(!a||!id)return '';var l=a.sbs||[];for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i].lb;return '';}
   function dayTotal(d){var t=0;(d.lines||[]).forEach(function(l){var h=num(l.hours);if(h>0)t+=h;});var tr=num(d.trajetH);if(tr>0)t+=tr;return r1(t);}
   function dayHas(d){return !!(d.panier||d.gd||num(d.trajetH)>0||d.zone||d.vehicule||(d.lieu&&String(d.lieu).trim())||(d.lines||[]).some(function(l){return l.affId||l.actId||num(l.hours)>0;}));}
+  function dataTotal(data){var t=0;if(data&&data.days)Object.keys(data.days).forEach(function(k){t+=dayTotal(normData({days:{0:data.days[k]}}).days[0]);});return r1(t);}
+  // JSON avec les clés triées : jsonb (Supabase) ne garde pas l'ordre des
+  // clés, il faut donc comparer ainsi pour savoir si une liste a changé.
+  function stable(v){
+    if(Array.isArray(v))return '['+v.map(stable).join(',')+']';
+    if(v&&typeof v==='object')return '{'+Object.keys(v).sort().map(function(k){return JSON.stringify(k)+':'+stable(v[k]);}).join(',')+'}';
+    return JSON.stringify(v===undefined?null:v);
+  }
+  function qrUrl(){return location.origin+location.pathname+'?qr=1';}
 
   // ── Contrôles avant envoi / validation ─────────────────────────────
   function check(ctx){
@@ -18289,7 +18312,7 @@ window.QRFeuille=(function(){
         var h=num(l.hours);
         if(!l.affId&&!l.actId&&!(h>0)&&!(isNaN(h)))return; // ligne laissée vide : ignorée
         if(isNaN(h)||h<0||h>24){errs.push(dn+' : nombre d’heures incorrect.');return;}
-        if(!l.affId)errs.push(dn+' : choisissez le chantier pour la ligne de '+h+' H.');
+        if(!l.affId)errs.push(dn+' : choisissez le chantier pour la ligne de '+fr(h)+' H.');
         else if(!affOf(ctx,l.affId))errs.push(dn+' : un chantier choisi n’existe plus, choisissez-en un autre.');
         else if(!(h>0))errs.push(dn+' : indiquez les heures pour '+affLbl(affOf(ctx,l.affId))+'.');
       });
@@ -18318,10 +18341,8 @@ window.QRFeuille=(function(){
     }
     return out;
   }
-  function dataTotal(data){var t=0;if(data&&data.days)Object.keys(data.days).forEach(function(k){t+=dayTotal(normData({days:{0:data.days[k]}}).days[0]);});return r1(t);}
 
   // ── Éditeur d'un jour (partagé téléphone / relecture) ───────────────
-  function q(s){return "'"+s+"'";}
   function tog(id,di,f,lbl,on,ro){return '<button type="button" class="qrf-tog'+(on?' on':'')+'"'+(ro?' disabled':' onclick="QRFeuille._tog('+q(id)+','+di+','+q(f)+')"')+'>'+lbl+(on?' ✓':'')+'</button>';}
   function editorHtml(id,di){
     var ctx=ctxs[id],d=ctx.data.days[di],ro=!!ctx.readOnly,dis=ro?' disabled':'';
@@ -18379,80 +18400,111 @@ window.QRFeuille=(function(){
   function _lineAff(id,di,li,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l.affId=v;l.actId='';after(id,di,true);}
   function _line(id,di,li,f,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l[f]=v;after(id,di,false);}
 
-  // ══ 1) FORMULAIRE DU TÉLÉPHONE (lien ?qr=...) ══════════════════════
-  var P=null;
+  // ══ 1) TÉLÉPHONE (lien ?qr=...) : connexion puis sa feuille ═════════
+  var P=null; // {session, person, weeks:[...], wk:semaine ouverte}
   function pubEl(){return document.getElementById('qr-public');}
   function top0(){var e=pubEl();if(e)e.scrollTop=0;try{window.scrollTo(0,0);}catch(x){}}
-  function hero(){
-    var p=P.payload;
-    return '<div class="qrf-hero"><div style="font-size:12px;font-weight:800;opacity:.85;letter-spacing:.6px">FEUILLE D’HEURE</div>'
-      +'<div class="wk">Semaine '+esc(p.iw)+'</div>'
-      +'<div class="sub">'+esc(p.iy)+' · du lundi '+ddmmK(p.days[0].date)+' au vendredi '+ddmmK(p.days[4].date)+'</div>'
-      +(P.person?'<div style="margin-top:10px;font-size:16px;font-weight:800">👤 '+esc(P.person)+'</div>':'')+'</div>';
-  }
-  function msg(icon,title,text){
+  function getSess(){try{return localStorage.getItem(SESS_KEY)||'';}catch(x){return '';}}
+  function setSess(s){try{if(s)localStorage.setItem(SESS_KEY,s);else localStorage.removeItem(SESS_KEY);}catch(x){}}
+  function msg(icon,title,text,extra){
     var e=pubEl();if(!e)return;
     e.innerHTML='<div class="qrf"><div class="qrf-wrap" style="text-align:center;padding-top:60px"><div style="font-size:56px">'+icon+'</div>'
       +'<div style="font-size:22px;font-weight:900;margin-top:10px">'+esc(title)+'</div>'
-      +'<div style="font-size:15px;color:#6B6790;margin-top:8px;line-height:1.5">'+text+'</div></div></div>';
+      +'<div style="font-size:15px;color:#6B6790;margin-top:8px;line-height:1.5">'+text+'</div>'+(extra||'')+'</div></div>';
+    top0();
   }
-  async function startPublic(token){
+  function logoutLink(){return P&&P.person?'<div style="text-align:center;margin-top:18px"><span onclick="QRFeuille._pubLogout()" style="font-size:13px;color:#6B6790;text-decoration:underline;cursor:pointer">Ce n’est pas vous ? Se déconnecter</span></div>':'';}
+  // Semaine(s) à demander : celle du jour, + la précédente le lundi et le
+  // mardi (feuille en retard). Le serveur revérifie de son côté.
+  function reqWeeks(){var now=new Date(),w0=_weekOfDate(now),dow=now.getDay(),ws=[w0];if(dow===1||dow===2)ws.push(w0-1);return ws.filter(function(w){return w>=1;});}
+  async function startPublic(){
     try{document.title='Feuille d’heure';}catch(x){}
     ['login-screen','petro-hub-screen','app-shell'].forEach(function(i){var e=document.getElementById(i);if(e)e.style.display='none';});
     var el=pubEl();if(!el)return;
     el.style.display='block';
-    msg('⏳','Chargement…','');
     if(!window.supa){msg('⚠️','Connexion impossible','Vérifiez votre connexion internet puis rechargez la page.');return;}
-    var r;
-    try{r=await window.supa.rpc('qr_get_week',{p_token:token});}catch(e){r={error:e};}
-    if(!r||r.error){msg('⚠️','Service indisponible','Le formulaire ne peut pas être chargé pour le moment. Réessayez dans un instant, ou prévenez votre chef de chantier.');return;}
-    if(!r.data||!r.data.payload){msg('⌛','QR code plus valable','Demandez à votre chef de chantier le QR code de la semaine.');return;}
-    P={token:token,payload:r.data.payload,done:r.data.done||[],person:''};
-    names('');
+    var s=getSess();
+    if(!s){loginScreen('');return;}
+    await loadMe(s);
   }
-  function freeNames(){var done={};(P.done||[]).forEach(function(n){done[n]=1;});return (P.payload.persons||[]).filter(function(n){return !done[n];});}
-  function namesList(f){
-    f=String(f||'').trim().toLowerCase();
-    var l=freeNames().filter(function(n){return !f||n.toLowerCase().indexOf(f)>=0;});
-    if(!l.length)return '<div style="color:#6B6790;font-size:14px;padding:8px 0">Aucun nom ne correspond.</div>';
-    return l.map(function(n){var i=P.payload.persons.indexOf(n);return '<button type="button" class="qrf-name" onclick="QRFeuille._pubPick('+i+')"><span class="qrf-av">'+esc(initials(n))+'</span>'+esc(n)+'</button>';}).join('');
-  }
-  function names(f){
-    P.person='';ctxs.pub=null;
-    var free=freeNames();
-    var h='<div class="qrf"><div class="qrf-wrap">'+hero()+'<div style="font-size:19px;font-weight:900;margin:4px 0 10px">Qui êtes-vous ?</div>';
-    if(!free.length){
-      h+='<div class="qrf-card" style="text-align:center;color:#6B6790">Tout le monde a déjà envoyé sa feuille d’heure pour cette semaine.</div>';
-    }else{
-      if(free.length>8)h+='<input class="qrf-in" placeholder="🔎 Rechercher votre nom" autocomplete="off" value="'+esc(f)+'" oninput="QRFeuille._pubFilter(this.value)" style="margin-bottom:12px">';
-      h+='<div id="qrf-names">'+namesList(f)+'</div>';
-    }
-    h+='<div style="font-size:12px;color:#9A96B3;text-align:center;margin-top:14px;line-height:1.5">Votre nom n’apparaît pas ? Votre feuille de cette semaine a peut-être déjà été envoyée. Sinon, prévenez votre chef de chantier.</div>';
-    pubEl().innerHTML=h+'</div></div>';top0();
-  }
-  function _pubFilter(v){var e=document.getElementById('qrf-names');if(e)e.innerHTML=namesList(v);}
-  function _pubPick(i){
-    var n=P.payload.persons[i];if(!n)return;
-    pubEl().innerHTML='<div class="qrf"><div class="qrf-wrap">'+hero()
-      +'<div class="qrf-card" style="text-align:center;padding:22px 16px"><div class="qrf-av" style="width:64px;height:64px;font-size:24px;margin:0 auto 10px">'+esc(initials(n))+'</div>'
-      +'<div style="font-size:14px;color:#6B6790">Vous êtes bien</div><div style="font-size:22px;font-weight:900;margin:4px 0 18px">'+esc(n)+' ?</div>'
-      +'<button type="button" class="qrf-btn" onclick="QRFeuille._pubConfirm('+i+')">Oui, c’est moi</button>'
-      +'<button type="button" class="qrf-btn2" style="margin-top:8px" onclick="QRFeuille._pubBack()">Non, revenir à la liste</button></div></div></div>';
+  function loginScreen(err){
+    P=null;ctxs.pub=null;
+    pubEl().innerHTML='<div class="qrf"><div class="qrf-wrap">'
+      +'<div class="qrf-hero"><div style="font-size:12px;font-weight:800;opacity:.85;letter-spacing:.6px">FEUILLE D’HEURE</div><div class="wk">Connexion</div><div class="sub">Avec l’identifiant et le mot de passe donnés par votre chef de chantier.</div></div>'
+      +(err?'<div class="qrf-err">'+esc(err)+'</div>':'')
+      +'<form class="qrf-card" onsubmit="event.preventDefault();QRFeuille._pubLogin();">'
+      +'<div class="qrf-lbl">IDENTIFIANT</div><input class="qrf-in" id="qrf-login" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ex : jean.dupont" style="margin-bottom:12px">'
+      +'<div class="qrf-lbl">MOT DE PASSE</div><input class="qrf-in" id="qrf-pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••••" style="margin-bottom:16px;letter-spacing:4px">'
+      +'<button type="submit" class="qrf-btn" id="qrf-login-btn">Se connecter</button></form>'
+      +'<div style="font-size:12px;color:#9A96B3;text-align:center;line-height:1.5">Identifiant ou mot de passe oublié ? Demandez-en un nouveau à votre chef de chantier.</div>'
+      +'</div></div>';
     top0();
   }
-  function dKey(){return 'qrfh_draft_'+P.token+'_'+P.person;}
+  async function _pubLogin(){
+    var li=document.getElementById('qrf-login'),pi=document.getElementById('qrf-pin'),b=document.getElementById('qrf-login-btn');
+    var login=String(li&&li.value||'').trim().toLowerCase(),pin=String(pi&&pi.value||'').trim();
+    if(!login||!pin){loginScreen('Indiquez votre identifiant et votre mot de passe.');return;}
+    if(b){b.disabled=true;b.textContent='Connexion…';}
+    var r;try{r=await window.supa.rpc('qr_login',{p_login:login,p_pin:pin});}catch(e){r={error:e};}
+    if(!r||r.error){loginScreen('Connexion impossible pour le moment (réseau ?). Réessayez dans un instant.');return;}
+    var d=r.data||{};
+    if(d.ok&&d.session){setSess(d.session);await loadMe(d.session);return;}
+    loginScreen(d.reason==='locked'?'Trop d’essais : réessayez dans 15 minutes.'
+      :d.reason==='inactive'?'Votre accès est désactivé. Voyez votre chef de chantier.'
+      :'Identifiant ou mot de passe incorrect.');
+  }
+  async function loadMe(s){
+    msg('⏳','Chargement…','');
+    var r;try{r=await window.supa.rpc('qr_me',{p_session:s,p_weeks:reqWeeks()});}catch(e){r={error:e};}
+    if(!r||r.error){msg('⚠️','Service indisponible','Le formulaire ne peut pas être chargé pour le moment.','<button type="button" class="qrf-btn" style="margin-top:20px" onclick="QRFeuille.startPublic()">Réessayer</button>');return;}
+    var d=r.data||{};
+    if(!d.ok){setSess('');loginScreen(d.reason==='inactive'?'Votre accès a été désactivé. Voyez votre chef de chantier.':'Merci de vous reconnecter.');return;}
+    P={session:s,person:d.person,weeks:(d.weeks||[]).slice().sort(function(a,b){return b.week-a.week;}),wk:null};
+    chooseWeek();
+  }
+  function weekLbl(wk){return 'Semaine '+esc(wk.iw)+' · du '+ddmmK(wk.days[0].date)+' au '+ddmmK(wk.days[4].date);}
+  function chooseWeek(){
+    var ready=P.weeks.filter(function(w){return w.ready;});
+    if(!ready.length){msg('⏳','Feuille pas encore prête','Bonjour '+esc(P.person)+'. La feuille de cette semaine n’est pas encore disponible : réessayez un peu plus tard, ou prévenez votre chef de chantier.',logoutLink());return;}
+    if(P.weeks.length===1){openWeek(0);return;}
+    var cur=_weekOfDate(new Date());
+    var h='<div class="qrf"><div class="qrf-wrap"><div class="qrf-hero"><div style="font-size:12px;font-weight:800;opacity:.85;letter-spacing:.6px">FEUILLE D’HEURE</div><div class="wk" style="font-size:26px">Bonjour '+esc(P.person)+'</div><div class="sub">Quelle semaine voulez-vous remplir ?</div></div>';
+    P.weeks.forEach(function(wk,i){
+      var st=!wk.ready?'<span class="qrf-badge" style="background:#F3F4F6;color:#4B5563">Pas encore prête</span>'
+        :wk.done?'<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ Déjà envoyée</span>'
+        :!wk.planned?'<span class="qrf-badge" style="background:#F3F4F6;color:#4B5563">Vous n’êtes pas prévu(e)</span>'
+        :'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">À remplir</span>';
+      h+='<button type="button" class="qrf-day" onclick="QRFeuille._pubWeek('+i+')"><div style="flex:1"><div style="font-size:17px;font-weight:800">'+(wk.week===cur?'Cette semaine':'Semaine dernière')+'</div>'
+        +(wk.ready?'<div style="font-size:13px;color:#6B6790;margin-top:2px">'+weekLbl(wk)+'</div>':'')+'<div style="margin-top:5px">'+st+'</div></div><span style="font-size:24px;color:#9A96B3">›</span></button>';
+    });
+    pubEl().innerHTML=h+logoutLink()+'</div></div>';top0();
+  }
+  function _pubWeek(i){openWeek(i);}
+  function dKey(){return 'qrfh_draft_'+P.person+'_'+(P.wk&&P.wk.week);}
   function saveDraft(){try{if(ctxs.pub)localStorage.setItem(dKey(),JSON.stringify(ctxs.pub.data));}catch(x){}}
   function loadDraft(){try{var s=localStorage.getItem(dKey());return s?normData(JSON.parse(s)):null;}catch(x){return null;}}
   function clearDraft(){try{localStorage.removeItem(dKey());}catch(x){}}
-  function _pubConfirm(i){
-    var n=P.payload.persons[i];if(!n)return;
-    P.person=n;
-    ctxs.pub={payload:P.payload,person:n,data:loadDraft()||emptyData(),readOnly:false,onChange:saveDraft};
+  function backBtn(){return P.weeks.length>1?'<button type="button" class="qrf-btn" style="margin-top:20px" onclick="QRFeuille._pubWeeks()">← Choisir une autre semaine</button>':'';}
+  function openWeek(i){
+    var wk=P.weeks[i];if(!wk)return;
+    if(!wk.ready){msg('⏳','Feuille pas encore prête','La feuille de cette semaine n’est pas encore disponible : réessayez un peu plus tard.',backBtn()+logoutLink());return;}
+    if(wk.done){msg('✅','Déjà envoyée','Votre feuille d’heure de la semaine '+esc(wk.iw)+' a déjà été envoyée. Pour la corriger, voyez avec votre chef de chantier.',backBtn()+logoutLink());return;}
+    if(!wk.planned){msg('ℹ️','Pas prévu(e) cette semaine','Vous n’êtes pas sur la feuille d’heure de la semaine '+esc(wk.iw)+'. Demandez à votre chef de chantier de vous ajouter, puis réessayez.',backBtn()+logoutLink());return;}
+    P.wk=wk;
+    var bl={};bl[P.person]=wk.blocked||{};
+    var payload={iw:wk.iw,iy:wk.iy,days:wk.days,affaires:wk.affaires||[],blocked:bl};
+    ctxs.pub={payload:payload,person:P.person,data:loadDraft()||emptyData(),readOnly:false,onChange:saveDraft};
     days();
   }
-  function _pubBack(){names('');}
+  function hero(){
+    var p=ctxs.pub.payload;
+    return '<div class="qrf-hero"><div style="font-size:12px;font-weight:800;opacity:.85;letter-spacing:.6px">FEUILLE D’HEURE</div>'
+      +'<div class="wk">Semaine '+esc(p.iw)+'</div>'
+      +'<div class="sub">'+esc(p.iy)+' · du lundi '+ddmmK(p.days[0].date)+' au vendredi '+ddmmK(p.days[4].date)+'</div>'
+      +'<div style="margin-top:10px;font-size:16px;font-weight:800">👤 '+esc(P.person)+'</div></div>';
+  }
   function days(){
-    var c=ctxs.pub;if(!c)return names('');
+    var c=ctxs.pub;if(!c){chooseWeek();return;}
     var h='<div class="qrf"><div class="qrf-wrap">'+hero()
       +'<div style="font-size:19px;font-weight:900;margin:4px 0 2px">Votre semaine</div>'
       +'<div style="font-size:14px;color:#6B6790;margin-bottom:12px;line-height:1.45">Touchez un jour pour le remplir. Quand tout est bon, envoyez votre semaine en bas.</div>';
@@ -18468,8 +18520,8 @@ window.QRFeuille=(function(){
         +'<div style="flex:1"><div style="font-size:17px;font-weight:800">'+DAYS[di]+' <span style="font-weight:600;color:#6B6790">'+ddmmK(c.payload.days[di].date)+'</span></div><div style="margin-top:5px">'+info+'</div></div>'
         +(off?'':'<span style="font-size:24px;color:#9A96B3">›</span>')+'</button>';
     }
-    h+='<div style="text-align:center;font-size:16px;font-weight:800;margin:10px 0 4px">Total semaine : '+fr(r1(tot))+' H</div></div>';
-    h+='<div class="qrf-foot"><div><button type="button" class="qrf-btn2" style="width:auto;padding:13px 14px" onclick="QRFeuille._pubBack()">← Nom</button>'
+    h+='<div style="text-align:center;font-size:16px;font-weight:800;margin:10px 0 4px">Total semaine : '+fr(r1(tot))+' H</div>'+logoutLink()+'</div>';
+    h+='<div class="qrf-foot"><div>'+(P.weeks.length>1?'<button type="button" class="qrf-btn2" style="width:auto;padding:13px 14px" onclick="QRFeuille._pubWeeks()">← Semaines</button>':'')
       +'<button type="button" class="qrf-btn" onclick="QRFeuille._pubRecap()">Vérifier et envoyer</button></div></div></div>';
     pubEl().innerHTML=h;top0();
   }
@@ -18497,7 +18549,7 @@ window.QRFeuille=(function(){
       var t=dayTotal(d);tot+=t;
       h+='<div style="font-size:16px;font-weight:900;color:#3A2EAE">'+fr(t)+' H</div></div>';
       if(!dayHas(d)){h+='<div style="font-size:13px;color:#9A96B3;margin-top:4px">Rien de rempli</div></div>';continue;}
-      var o=[];if(b)o.push(b.i+' '+b.l);if(d.panier)o.push('🍽 Panier');if(d.gd)o.push('🚗 Grand dépl.');if(num(d.trajetH)>0)o.push('Trajet '+num(d.trajetH)+' H');if(d.zone)o.push(d.zone);if(d.vehicule)o.push(d.vehicule);if(d.lieu&&String(d.lieu).trim())o.push('📍 '+String(d.lieu).trim());
+      var o=[];if(b)o.push(b.i+' '+b.l);if(d.panier)o.push('🍽 Panier');if(d.gd)o.push('🚗 Grand dépl.');if(num(d.trajetH)>0)o.push('Trajet '+fr(num(d.trajetH))+' H');if(d.zone)o.push(d.zone);if(d.vehicule)o.push(d.vehicule);if(d.lieu&&String(d.lieu).trim())o.push('📍 '+String(d.lieu).trim());
       if(o.length)h+='<div style="font-size:13px;color:#4B5563;margin-top:6px">'+o.map(esc).join(' · ')+'</div>';
       d.lines.forEach(function(l){
         if(!l.affId&&!l.actId&&!(num(l.hours)>0))return;
@@ -18526,36 +18578,45 @@ window.QRFeuille=(function(){
     var btn=document.getElementById('qrf-send');if(btn){btn.disabled=true;btn.textContent='Envoi en cours…';}
     var data=clean(c);data.sentAt=new Date().toISOString();
     var r;
-    try{r=await window.supa.rpc('qr_submit',{p_token:P.token,p_person:P.person,p_data:data});}catch(e){r={error:e};}
+    try{r=await window.supa.rpc('qr_submit2',{p_session:P.session,p_week:P.wk.week,p_data:data});}catch(e){r={error:e};}
     _pubSend._busy=false;
     if(!r||r.error){
       if(btn){btn.disabled=false;btn.textContent='📤 Réessayer l’envoi';}
       alert('L’envoi a échoué (connexion ?). Vos saisies sont gardées sur ce téléphone : réessayez dans un instant.');
       return;
     }
-    var res=r.data;
-    if(res==='ok'){clearDraft();ctxs.pub=null;msg('✅','Feuille d’heure envoyée','Merci '+esc(P.person)+' ! Votre feuille de la semaine '+esc(P.payload.iw)+' a bien été envoyée. Votre chef de chantier va la valider.');return;}
-    if(res==='already'){clearDraft();ctxs.pub=null;msg('ℹ️','Déjà envoyée','Une feuille d’heure a déjà été envoyée pour '+esc(P.person)+' cette semaine. Pour la corriger, voyez avec votre chef de chantier.');return;}
-    if(res==='invalid'){msg('⌛','QR code plus valable','Demandez à votre chef de chantier le QR code de la semaine.');return;}
-    if(res==='unknown_person'){msg('⚠️','Nom introuvable','Votre nom n’est plus dans la liste de cette semaine. Prévenez votre chef de chantier.');return;}
+    var res=r.data,wk=P.wk;
+    var others=function(){return P.weeks.some(function(x){return x!==wk&&x.ready&&!x.done&&x.planned;})?backBtn():'';};
+    if(res==='ok'){clearDraft();wk.done=true;ctxs.pub=null;msg('✅','Feuille d’heure envoyée','Merci '+esc(P.person)+' ! Votre feuille de la semaine '+esc(wk.iw)+' a bien été envoyée. Votre chef de chantier va la valider.',others()+logoutLink());return;}
+    if(res==='already'){clearDraft();wk.done=true;ctxs.pub=null;msg('ℹ️','Déjà envoyée','Une feuille d’heure a déjà été envoyée pour vous cette semaine. Pour la corriger, voyez avec votre chef de chantier.',others()+logoutLink());return;}
+    if(res==='invalid_session'){setSess('');loginScreen('Votre accès a changé : reconnectez-vous (vos saisies sont gardées sur ce téléphone).');return;}
+    if(res==='not_planned'){msg('ℹ️','Pas prévu(e) cette semaine','Vous n’êtes plus sur la feuille d’heure de cette semaine. Voyez votre chef de chantier (vos saisies sont gardées sur ce téléphone).',logoutLink());return;}
+    if(res==='closed'){msg('⌛','Semaine terminée','Il est trop tard pour envoyer cette semaine par QR code : voyez votre chef de chantier.',logoutLink());return;}
     if(btn){btn.disabled=false;btn.textContent='📤 Envoyer ma semaine';}
     alert('Envoi refusé ('+res+'). Prévenez votre chef de chantier.');
   }
+  async function _pubLogout(){
+    if(!confirm('Se déconnecter de ce téléphone ?'))return;
+    var s=getSess();setSess('');
+    try{if(s)await window.supa.rpc('qr_logout',{p_session:s});}catch(x){}
+    loginScreen('');
+  }
 
   // ══ 2) ONGLET QR CODE (personnel connecté) ═════════════════════════
-  var S={tab:'show',year:null,w:null,token:null,url:'',busy:false,err:'',warn:'',seq:0,subs:null,vErr:'',open:{}};
+  var S={tab:'qr',subs:null,vErr:'',open:{}};
+  var A={list:null,err:'',filter:'',rows:[],orph:[],busy:false};
+  var PUB={at:null,err:'',busy:false,counts:{},weeks:[]};
   var _cid=null;
   function isAdmin(){return typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin';}
   function canView(){return isAdmin()||(typeof hasView==='function'&&hasView('qr_feuille'));}
   function canEdit(){return isAdmin()||(typeof hasEdit==='function'&&hasEdit('qr_feuille'));}
-  function btnSt(primary){return 'padding:8px 14px;border-radius:10px;font-size:12px;font-weight:800;font-family:inherit;cursor:pointer;'+(primary?'background:#6457F4;color:#fff;border:1px solid #6457F4':'background:#fff;color:#1C1A33;border:1px solid #E4E1F0');}
+  function btnSt(primary){return 'padding:8px 14px;border-radius:10px;font-size:12px;font-weight:800;font-family:inherit;cursor:pointer;white-space:nowrap;'+(primary?'background:#6457F4;color:#fff;border:1px solid #6457F4':'background:#fff;color:#1C1A33;border:1px solid #E4E1F0');}
   function errMsg(e){
     var m=String((e&&(e.message||e.details||e.hint))||e||'');var code=String((e&&e.code)||'');
-    if(/does not exist|Could not find the (table|function)|schema cache|PGRST20[0-9]|42P01|42883/i.test(m+' '+code))return 'La base de données n’est pas encore prête pour le QR code : il faut d’abord lancer le script SQL « QR Code » dans Supabase.';
+    if(/does not exist|Could not find the (table|function)|schema cache|PGRST20[0-9]|42P01|42883/i.test(m+' '+code))return 'La base de données n’est pas prête pour le QR code : il faut lancer le script SQL « QR Code » (dernière version) dans Supabase.';
     if(/permission denied|row-level security|42501/i.test(m+' '+code))return 'Accès refusé par la base de données. Vérifiez que le script SQL « QR Code » a bien été lancé en entier, et que votre adresse est dans la table des rôles.';
     return 'Erreur : '+esc(m||'inconnue');
   }
-  function weeksOfYear(y){var out=[];for(var w=1;w<=400;w++){var th=weekDayToDate(w,3).getFullYear();if(th===y)out.push(w);else if(th>y)break;}return out;}
   function yearOfW(w){return weekDayToDate(w,3).getFullYear();}
   function blockedFor(nm,w){
     var o=null;
@@ -18563,14 +18624,14 @@ window.QRFeuille=(function(){
       if(st){o=o||{};o[di]={t:st.type,l:st.label,i:st.icon};}}
     return o;
   }
-  // Tout ce dont le formulaire a besoin (il n'a accès à rien d'autre) :
-  // noms de la semaine, jours bloqués, affaires ouvertes et leurs sous-phases.
+  // Ce dont le formulaire a besoin pour une semaine : la liste des
+  // personnes = EXACTEMENT celle de la Feuille d'heure de cette semaine
+  // (fhWeekPersons : Planning Réunion partie Chantier, sans les personnes
+  // retirées/masquées), leurs jours bloqués, les affaires ouvertes et leurs
+  // sous-phases.
   function buildPayload(w){
-    var gp=STORE.globalPersons||{},del=STORE._deletedPersons||{},hid=(STORE.fhWeekHidden&&STORE.fhWeekHidden[w])||{};
-    var names={};
-    Object.keys(gp).forEach(function(nm){if(nm&&!del[nm]&&gp[nm]&&gp[nm].service==='els_chantier'&&!hid[nm])names[nm]=1;});
-    try{fhWeekPersons(w).forEach(function(nm){if(nm&&!hid[nm]&&!del[nm])names[nm]=1;});}catch(x){}
-    var persons=Object.keys(names).sort(function(a,b){return a.localeCompare(b,'fr');});
+    var persons=[];try{persons=fhWeekPersons(w).slice();}catch(x){}
+    persons.sort(function(a,b){return a.localeCompare(b,'fr');});
     var dys=[];for(var di=0;di<5;di++)dys.push({di:di,date:dkey(weekDayToDate(w,di))});
     var blocked={};
     persons.forEach(function(nm){var b=blockedFor(nm,w);if(b)blocked[nm]=b;});
@@ -18585,28 +18646,34 @@ window.QRFeuille=(function(){
       });
       affaires.push({k:k,n:parts.numero,l:parts.libelle,sbs:sbs});
     });
-    return {v:1,w:w,iw:isoWeekOf(w),iy:yearOfW(w),days:dys,persons:persons,blocked:blocked,affaires:affaires};
+    return {v:2,w:w,iw:isoWeekOf(w),iy:yearOfW(w),days:dys,persons:persons,blocked:blocked,affaires:affaires};
   }
-  function randToken(){var a=new Uint8Array(16);(window.crypto||window.msCrypto).getRandomValues(a);return Array.prototype.map.call(a,function(b){return ('0'+b.toString(16)).slice(-2);}).join('');}
-  // Un seul jeton par semaine : réafficher une semaine redonne le même QR
-  // code (celui déjà imprimé reste valable) avec des listes remises à jour.
-  async function ensureWeek(w){
-    var supa=window.supa;if(!supa)throw new Error('Pas de connexion au serveur.');
-    var payload=buildPayload(w);
-    var exp=new Date(weekDayToDate(w,4).getTime()+45*86400000).toISOString();
-    var r=await supa.from('qr_weeks').select('token').eq('week',w).limit(1);
-    if(r.error)throw r.error;
-    if(r.data&&r.data.length){
-      var tok=r.data[0].token;
-      var u=await supa.from('qr_weeks').update({payload:payload,expires_at:exp}).eq('token',tok);
-      if(u.error)throw u.error;
-      return {token:tok,payload:payload};
-    }
-    var t2=randToken();
-    var ins=await supa.from('qr_weeks').insert({token:t2,week:w,payload:payload,created_by:((typeof CURRENT_USER!=='undefined'&&CURRENT_USER&&CURRENT_USER.email)||''),expires_at:exp});
-    if(ins.error)throw ins.error;
-    return {token:t2,payload:payload};
+  // Publication automatique des listes (semaine précédente, en cours et
+  // suivante) par n'importe quel navigateur du personnel ouvert sur le
+  // site, une fois les données du serveur chargées. On n'écrit que si la
+  // liste a vraiment changé par rapport à celle déjà en ligne.
+  function pubWeeks(){var w=(TODAY&&TODAY.w)||1;return [w-1,w,w+1].filter(function(x){return x>=1;});}
+  async function publish(force){
+    if(PUB.busy||window._QR_TOKEN)return;
+    if(!window.supa||!window._remoteLoaded||typeof STORE==='undefined'||!STORE||!STORE.projects)return;
+    if(typeof CURRENT_ROLE==='undefined'||!CURRENT_ROLE)return;
+    PUB.busy=true;
+    try{
+      var ws=pubWeeks(),rows=ws.map(function(w){return {token:'w'+w,week:w,payload:buildPayload(w),expires_at:null};});
+      var r=await window.supa.from('qr_weeks').select('token,payload').in('token',rows.map(function(x){return x.token;}));
+      if(r.error)throw r.error;
+      var srv={};(r.data||[]).forEach(function(x){srv[x.token]=stable(x.payload);});
+      var changed=rows.filter(function(x){return force||srv[x.token]!==stable(x.payload);});
+      if(changed.length){var u=await window.supa.from('qr_weeks').upsert(changed,{onConflict:'token'});if(u.error)throw u.error;}
+      PUB.at=new Date();PUB.err='';PUB.weeks=ws;PUB.counts={};rows.forEach(function(x){PUB.counts[x.week]=x.payload.persons;});
+    }catch(e){PUB.err=errMsg(e);}
+    PUB.busy=false;
+    var sh=document.getElementById('petro-qr-shell');
+    if(sh&&sh.style.display!=='none'&&S.tab==='qr')draw();
   }
+  setInterval(function(){publish(false);},30000);
+  setTimeout(function(){publish(false);},8000);
+
   function loadLib(){
     if(window.qrcode)return Promise.resolve();
     if(loadLib._p)return loadLib._p;
@@ -18619,12 +18686,12 @@ window.QRFeuille=(function(){
     return loadLib._p;
   }
   function qrSvg(text){var g=window.qrcode(0,'M');g.addData(text);g.make();return g.createSvgTag({cellSize:8,margin:2,scalable:true});}
+  function fillQR(){loadLib().then(function(){document.querySelectorAll('.qrs-qr').forEach(function(b){b.innerHTML=qrSvg(qrUrl());});}).catch(function(e){document.querySelectorAll('.qrs-qr').forEach(function(b){b.style.aspectRatio='auto';b.innerHTML='<div class="qrf-err">'+esc(e.message)+'</div>';});});}
 
   function render(cid){
     _cid=cid||_cid;
-    if(S.year==null)S.year=yearOfW((TODAY&&TODAY.w)||1);
     draw();
-    if(canView())loadSubs();
+    if(canView()){loadSubs();loadAccounts();publish(false);}
   }
   function draw(){
     var el=document.getElementById(_cid);if(!el)return;
@@ -18632,104 +18699,199 @@ window.QRFeuille=(function(){
     var np=S.subs?S.subs.filter(isPending).length:0;
     function tb(t,l){var on=S.tab===t;return '<button type="button" onclick="QRFeuille._tab('+q(t)+')" style="padding:10px 18px;border-radius:12px;font-size:13px;font-weight:800;font-family:inherit;cursor:pointer;border:1.5px solid '+(on?'#6457F4':'#E4E1F0')+';background:'+(on?'#6457F4':'#fff')+';color:'+(on?'#fff':'#1C1A33')+'">'+l+'</button>';}
     var h='<div class="qrf" style="max-width:1040px;margin:0 auto"><div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
-      +tb('show','📱 Afficher le QR code')
+      +tb('qr','📱 QR code')+tb('ids','🔑 Gestion des ID')
       +tb('valid','✅ Validation'+(np?' <span style="background:#F59E0B;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:4px">'+np+'</span>':''))+'</div>';
-    h+=(S.tab==='show'?showHtml():validHtml());
-    var _ol=document.getElementById('qrs-wklist'),_olTop=_ol?_ol.scrollTop:null,_olYear=S._drawnYear;
+    h+=(S.tab==='qr'?qrHtml():S.tab==='ids'?idsHtml():validHtml());
     el.innerHTML=h+'</div>';
-    // Liste des semaines : garder la position de défilement d'un rendu à
-    // l'autre ; à la première ouverture (ou changement d'année), se placer
-    // directement sur la semaine en cours plutôt qu'en janvier.
-    var _nl=document.getElementById('qrs-wklist');
-    if(_nl){if(_olTop!=null&&_olYear===S.year)_nl.scrollTop=_olTop;else{var _cb=_nl.querySelector('[data-cur]');if(_cb)_nl.scrollTop=Math.max(0,_cb.offsetTop-_nl.offsetTop-90);}S._drawnYear=S.year;}
-    if(S.tab==='show'&&S.token)drawQR();
+    if(S.tab==='qr')fillQR();
+    if(S.tab==='ids'){var f=document.getElementById('qrs-idf');if(f&&A._focus){f.focus();try{f.setSelectionRange(f.value.length,f.value.length);}catch(x){}}A._focus=false;}
   }
-  function _tab(t){S.tab=t;draw();if(t==='valid')loadSubs();}
-  function showHtml(){
-    var y0=yearOfW((TODAY&&TODAY.w)||1);
-    var h='<div class="qrs-grid"><div class="qrf-card"><div style="font-size:16px;font-weight:900">1. Choisissez la semaine</div><div style="font-size:12px;color:#6B6790;margin:2px 0 10px">Chaque semaine a son propre QR code.</div>';
-    h+='<div style="display:flex;gap:6px;margin-bottom:6px">'+[y0,y0+1].map(function(y){var on=S.year===y;return '<button type="button" onclick="QRFeuille._year('+y+')" style="padding:6px 16px;border-radius:10px;font-size:13px;font-weight:800;font-family:inherit;cursor:pointer;border:1.5px solid '+(on?'#6457F4':'#E4E1F0')+';background:'+(on?'#EFEDFE':'#fff')+';color:'+(on?'#3A2EAE':'#1C1A33')+'">'+y+'</button>';}).join('')+'</div>';
-    var byM={},ms=[];
-    weeksOfYear(S.year).forEach(function(w){var m=weekDayToDate(w,3).getMonth();if(!byM[m]){byM[m]=[];ms.push(m);}byM[m].push(w);});
-    h+='<div id="qrs-wklist" style="max-height:470px;overflow:auto;padding-right:4px">';
-    ms.forEach(function(m){
-      h+='<div style="font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px;margin:12px 0 6px">'+MOIS[m].toUpperCase()+'</div><div style="display:flex;flex-wrap:wrap;gap:6px">';
-      byM[m].forEach(function(w){
-        var cur=!!(TODAY&&TODAY.w===w),sel=S.w===w;
-        h+='<button type="button"'+(cur?' data-cur="1"':'')+' onclick="QRFeuille._pick('+w+')" title="du lundi '+ddmm(weekDayToDate(w,0))+' au vendredi '+ddmm(weekDayToDate(w,4))+'" style="min-width:62px;padding:6px 8px;border-radius:10px;font-family:inherit;cursor:pointer;text-align:center;border:1.5px solid '+(sel?'#6457F4':cur?'#F59E0B':'#E4E1F0')+';background:'+(sel?'#6457F4':cur?'#FFFBEB':'#fff')+';color:'+(sel?'#fff':'#1C1A33')+'">'
-          +'<div style="font-size:13px;font-weight:900">S'+isoWeekOf(w)+'</div><div style="font-size:10px;opacity:.8">'+ddmm(weekDayToDate(w,0))+'</div></button>';
-      });
-      h+='</div>';
-    });
-    h+='</div></div><div class="qrf-card">'+panelHtml()+'</div></div>';
+  function _tab(t){S.tab=t;draw();if(t==='valid')loadSubs();if(t==='ids')loadAccounts();if(t==='qr')publish(false);}
+
+  // ── QR code unique ─────────────────────────────────────────────────
+  function qrHtml(){
+    var w=(TODAY&&TODAY.w)||1,list=PUB.counts[w];
+    var h='<div class="qrs-grid"><div class="qrf-card" style="text-align:center">'
+      +'<div style="font-size:12px;font-weight:800;color:#6B6790;letter-spacing:.5px">LE QR CODE DU CHANTIER</div>'
+      +'<div style="font-size:14px;color:#6B6790;margin-top:4px;line-height:1.5">Le même pour toutes les semaines : imprimez-le une fois et affichez-le sur le chantier.</div>'
+      +'<div class="qrs-qr" style="margin:16px auto 12px;width:260px;max-width:100%;aspect-ratio:1/1"></div>'
+      +'<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button type="button" onclick="QRFeuille._print()" style="'+btnSt(true)+'">🖨 Imprimer</button><button type="button" onclick="QRFeuille._copy()" style="'+btnSt(false)+'">📋 Copier le lien</button></div>'
+      +'<div style="font-size:10px;color:#9A96B3;margin-top:8px;word-break:break-all">'+esc(qrUrl())+'</div>'
+      +(location.protocol==='file:'?'<div class="qrf-err" style="margin-top:12px;text-align:left;font-size:12px">⚠️ Le site est ouvert depuis un fichier sur cet ordinateur : ce QR code ne marchera pas sur un téléphone. Ouvrez le site en ligne pour l’imprimer.</div>':'')
+      +'</div>';
+    h+='<div class="qrf-card"><div style="font-size:16px;font-weight:900">Comment ça marche</div>'
+      +'<ol style="font-size:13px;color:#4B5563;line-height:1.7;margin:8px 0 14px;padding-left:18px">'
+      +'<li>Chaque personne scanne le QR code et se connecte avec <b>son identifiant et son mot de passe</b> (onglet « Gestion des ID »). Le téléphone s’en souvient ensuite.</li>'
+      +'<li>Elle arrive directement sur <b>sa</b> feuille de la semaine du jour (et de la semaine d’avant le lundi et le mardi, si elle est en retard).</li>'
+      +'<li>Une seule feuille par personne et par semaine. Elle arrive dans « Validation » ; rien ne compte avant votre validation.</li></ol>'
+      +'<div style="font-size:12px;font-weight:800;color:#6B6790;letter-spacing:.5px;margin-bottom:6px">LISTE DE CETTE SEMAINE (S'+isoWeekOf(w)+')</div>';
+    if(PUB.err)h+='<div class="qrf-err" style="font-size:12px">'+PUB.err+'</div>';
+    else if(!PUB.at)h+='<div style="font-size:13px;color:#6B6790">⏳ Mise à jour en cours…</div>';
+    else{
+      h+='<div style="font-size:13px;color:#4B5563;line-height:1.5">'+(list&&list.length?'<b>'+list.length+' personne(s)</b> peuvent remplir leur feuille : '+list.map(esc).join(', '):'Personne pour l’instant sur la feuille d’heure de cette semaine.')+'</div>'
+        +'<div style="font-size:11px;color:#9A96B3;margin-top:6px">C’est la liste de la Feuille d’heure (Planning Réunion, partie Chantier). Elle se met à jour toute seule, en moins d’une minute. Dernière mise à jour : '+pad(PUB.at.getHours())+':'+pad(PUB.at.getMinutes())+'.</div>';
+      var acc={};(A.list||[]).forEach(function(a){if(a.active)acc[a.person]=1;});
+      var noId=A.list?(list||[]).filter(function(n){return !acc[n];}):[];
+      if(noId.length)h+='<div style="margin-top:10px;background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5">⚠️ Sans identifiant actif (ne peuvent pas se connecter) : <b>'+noId.map(esc).join(', ')+'</b>. <span onclick="QRFeuille._tab(\'ids\')" style="text-decoration:underline;cursor:pointer;font-weight:800">Gestion des ID →</span></div>';
+    }
+    h+='<div style="margin-top:12px"><button type="button" onclick="QRFeuille._pubNow()" style="'+btnSt(false)+'">↻ Mettre à jour maintenant</button></div></div></div>';
     return h;
   }
-  function panelHtml(){
-    if(!S.w)return '<div style="text-align:center;color:#6B6790;padding:60px 10px">Choisissez une semaine pour afficher son QR code.</div>';
-    var w=S.w;
-    var h='<div style="text-align:center"><div style="font-size:12px;font-weight:800;color:#6B6790;letter-spacing:.5px">2. QR CODE DE LA SEMAINE</div>'
-      +'<div style="font-size:36px;font-weight:900;color:#3A2EAE;line-height:1.1;margin-top:4px">Semaine '+isoWeekOf(w)+'</div>'
-      +'<div style="font-size:14px;color:#6B6790;margin-top:2px">'+yearOfW(w)+' · du lundi '+ddmm(weekDayToDate(w,0))+' au vendredi '+ddmm(weekDayToDate(w,4))+'</div>';
-    if(S.busy)h+='<div style="padding:70px 0;color:#6B6790">⏳ Préparation du QR code…</div>';
-    else if(S.err)h+='<div class="qrf-err" style="margin-top:14px;text-align:left">'+S.err+'</div>';
-    else if(S.token){
-      h+='<div id="qrs-qr" style="margin:16px auto 12px;width:260px;max-width:100%;aspect-ratio:1/1"></div>';
-      h+='<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">'
-        +'<button type="button" onclick="QRFeuille._print()" style="'+btnSt(true)+'">🖨 Imprimer</button>'
-        +'<button type="button" onclick="QRFeuille._copy()" style="'+btnSt(false)+'">📋 Copier le lien</button>'
-        +'<button type="button" onclick="QRFeuille._pick('+w+')" style="'+btnSt(false)+'" title="À refaire si vous ajoutez une personne, une affaire ou une sous-phase : le QR code reste le même">↻ Mettre à jour les listes</button></div>';
-      h+='<div style="font-size:12px;color:#6B6790;margin-top:10px">'+S.nPers+' personne(s) dans la liste · '+S.nAff+' affaire(s)</div>';
-      h+='<div style="font-size:10px;color:#9A96B3;margin-top:6px;word-break:break-all">'+esc(S.url)+'</div>';
-      if(S.warn)h+='<div style="margin-top:12px;text-align:left;background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5">'+S.warn+'</div>';
-    }
-    return h+'</div>';
-  }
-  function _year(y){S.year=y;draw();}
-  async function _pick(w){
-    if(!canEdit()){alert('Vous n’avez pas le droit d’afficher un QR code (droit « QR Code feuille d’heure », case Modifier, dans Gestion des droits).');return;}
-    if(typeof STORE==='undefined'||!STORE||!STORE.projects){alert('Les données du site ne sont pas encore chargées, réessayez dans un instant.');return;}
-    var seq=++S.seq;
-    S.w=w;S.token=null;S.err='';S.warn='';S.busy=true;draw();
-    try{
-      var res=await ensureWeek(w);
-      if(seq!==S.seq)return;
-      S.token=res.token;S.url=location.origin+location.pathname+'?qr='+res.token;
-      S.nPers=res.payload.persons.length;S.nAff=res.payload.affaires.length;
-      // Heures déjà présentes dans la Feuille d'heure cette semaine (saisie
-      // manuelle), hors personnes ayant déjà envoyé leur feuille par QR code
-      // (celles-là ne peuvent de toute façon plus renvoyer).
-      var sent={};(S.subs||[]).forEach(function(s){if(s.week===w)sent[s.person]=1;});
-      var man=res.payload.persons.filter(function(nm){if(sent[nm])return false;for(var di=0;di<5;di++){if(fhGetAllAff(nm,w,di).some(function(l){return +l.hours>0;}))return true;}return false;});
-      var warns=[];
-      if(man.length)warns.push('⚠️ Des heures sont déjà saisies dans la Feuille d’heure cette semaine pour : <b>'+man.map(esc).join(', ')+'</b>. S’ils remplissent aussi le QR code, vous serez prévenu au moment de valider, pour éviter les doublons.');
-      if(!S.nPers)warns.push('⚠️ Aucune personne dans la liste : vérifiez l’annuaire (catégorie Chantier).');
-      if(location.protocol==='file:')warns.push('⚠️ Le site est ouvert depuis un fichier sur cet ordinateur : ce QR code ne marchera pas sur un téléphone. Ouvrez le site en ligne pour afficher le QR code.');
-      S.warn=warns.join('<br><br>');
-    }catch(e){if(seq!==S.seq)return;S.err=errMsg(e);}
-    S.busy=false;draw();
-  }
-  function drawQR(){
-    var url=S.url;
-    loadLib().then(function(){if(S.url!==url)return;var b=document.getElementById('qrs-qr');if(b)b.innerHTML=qrSvg(url);})
-      .catch(function(e){var b=document.getElementById('qrs-qr');if(b){b.style.aspectRatio='auto';b.innerHTML='<div class="qrf-err">'+esc(e.message)+'</div>';}});
-  }
+  function _pubNow(){PUB.at=null;draw();publish(true);}
   function _print(){
-    if(!S.token)return;
     if(!window.qrcode){alert('Le QR code n’est pas encore prêt, réessayez dans un instant.');return;}
-    var w=S.w,win=window.open('','_blank','width=820,height=1000');
+    var win=window.open('','_blank','width=820,height=1000');
     if(!win){alert('Autorisez les fenêtres pop-up pour ce site pour pouvoir imprimer.');return;}
-    win.document.write('<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>QR code — Semaine '+isoWeekOf(w)+'</title>'
-      +'<style>body{font-family:Arial,sans-serif;text-align:center;padding:24px;color:#1C1A33}h1{font-size:46px;margin:6px 0;color:#3A2EAE}.s{font-size:18px;color:#555}.qq{width:12cm;height:12cm;margin:26px auto}.qq svg{width:100%;height:100%}.i{font-size:22px;font-weight:bold;margin-top:8px}.u{font-size:10px;color:#999;margin-top:22px;word-break:break-all}@media print{@page{size:A4 portrait;margin:15mm}}</style></head>'
-      +'<body onload="setTimeout(function(){window.print()},300)"><div style="font-size:18px;font-weight:bold;letter-spacing:3px;color:#6457F4">FEUILLE D’HEURE</div><h1>Semaine '+isoWeekOf(w)+'</h1>'
-      +'<div class="s">'+yearOfW(w)+' · du lundi '+ddmm(weekDayToDate(w,0))+' au vendredi '+ddmm(weekDayToDate(w,4))+'</div>'
-      +'<div class="qq">'+qrSvg(S.url)+'</div><div class="i">📱 Scannez avec l’appareil photo de votre téléphone</div>'
-      +'<div class="s" style="margin-top:6px">Choisissez votre nom, remplissez vos jours, puis envoyez.</div><div class="u">'+esc(S.url)+'</div></body></html>');
+    win.document.write('<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>QR code — Feuille d’heure</title>'
+      +'<style>body{font-family:Arial,sans-serif;text-align:center;padding:24px;color:#1C1A33}h1{font-size:44px;margin:6px 0;color:#3A2EAE}.s{font-size:18px;color:#555}.qq{width:12cm;height:12cm;margin:26px auto}.qq svg{width:100%;height:100%}.i{font-size:22px;font-weight:bold;margin-top:8px}@media print{@page{size:A4 portrait;margin:15mm}}</style></head>'
+      +'<body onload="setTimeout(function(){window.print()},300)"><div style="font-size:18px;font-weight:bold;letter-spacing:3px;color:#6457F4">PÉTROSPHÈRE</div><h1>Feuille d’heure</h1>'
+      +'<div class="s">Remplissez vos heures de la semaine depuis votre téléphone</div>'
+      +'<div class="qq">'+qrSvg(qrUrl())+'</div><div class="i">📱 Scannez avec l’appareil photo de votre téléphone</div>'
+      +'<div class="s" style="margin-top:8px">Connectez-vous avec l’identifiant et le mot de passe donnés par votre chef de chantier.</div></body></html>');
     win.document.close();
   }
   function _copy(){
-    var u=S.url;if(!u)return;
+    var u=qrUrl();
     var fb=function(){window.prompt('Copiez ce lien :',u);};
     try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(u).then(function(){alert('Lien copié.');},fb);else fb();}catch(x){fb();}
+  }
+
+  // ── Gestion des identifiants ───────────────────────────────────────
+  async function loadAccounts(){
+    if(!window.supa){A.err='Pas de connexion au serveur.';draw();return;}
+    try{
+      var r=await window.supa.from('qr_accounts').select('person,login,active,failed,locked_until,created_at,updated_at,updated_by');
+      if(r.error)throw r.error;
+      A.list=r.data||[];A.err='';
+    }catch(e){A.err=errMsg(e);}
+    if(S.tab==='ids'||S.tab==='qr')draw();
+  }
+  function chantierPersons(){
+    var gp=STORE.globalPersons||{},del=STORE._deletedPersons||{};
+    return Object.keys(gp).filter(function(nm){return nm&&!del[nm]&&gp[nm]&&gp[nm].service==='els_chantier';}).sort(function(a,b){return a.localeCompare(b,'fr');});
+  }
+  function accOf(nm){return (A.list||[]).filter(function(a){return a.person===nm;})[0]||null;}
+  function baseLogin(nm){return String(nm).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'.').replace(/^\.+|\.+$/g,'')||'personne';}
+  function uniqueLogin(nm){
+    var used={};(A.list||[]).forEach(function(a){if(a.person!==nm)used[a.login]=1;});
+    var b=baseLogin(nm),l=b,i=2;while(used[l]){l=b+i;i++;}return l;
+  }
+  function randPin(){var a=new Uint32Array(1);(window.crypto||window.msCrypto).getRandomValues(a);return String(100000+(a[0]%900000));}
+  function statusHtml(a){
+    if(!a)return '<span class="qrf-badge" style="background:#F3F4F6;color:#6B7280">Pas encore d’ID</span>';
+    if(!a.active)return '<span class="qrf-badge" style="background:#FEE2E2;color:#B91C1C">⛔ Désactivé</span>';
+    if(a.locked_until&&new Date(a.locked_until)>new Date())return '<span class="qrf-badge" style="background:#FEF3C7;color:#B45309" title="Trop de mots de passe faux">🔒 Bloqué jusqu’à '+pad(new Date(a.locked_until).getHours())+':'+pad(new Date(a.locked_until).getMinutes())+'</span>';
+    return '<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ Actif</span>';
+  }
+  function idsHtml(){
+    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:900">Identifiants du personnel chantier</div>'
+      +'<div style="font-size:12px;color:#6B6790">Chaque personne se connecte avec son identifiant et son mot de passe pour remplir sa feuille. Le mot de passe n’est affiché qu’une fois : en cas d’oubli, générez-en un nouveau.</div></div>'
+      +'<button type="button" onclick="QRFeuille._idReload()" style="'+btnSt(false)+'">↻ Actualiser</button></div>';
+    if(A.err)return h+'<div class="qrf-err">'+A.err+'</div>';
+    if(A.list==null)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790">⏳ Chargement…</div>';
+    if(typeof STORE==='undefined'||!STORE||!STORE.globalPersons)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790">Les données du site ne sont pas encore chargées.</div>';
+    var ed=canEdit(),f=A.filter.trim().toLowerCase();
+    var all=chantierPersons();
+    A.rows=all.filter(function(nm){return !f||nm.toLowerCase().indexOf(f)>=0||((accOf(nm)||{}).login||'').indexOf(f)>=0;});
+    var inList={};all.forEach(function(n){inList[n]=1;});
+    A.orph=(A.list||[]).filter(function(a){return !inList[a.person];});
+    var nAct=(A.list||[]).filter(function(a){return a.active&&inList[a.person];}).length;
+    h+='<div class="qrf-card" style="padding:0;overflow:hidden"><div style="display:flex;align-items:center;gap:10px;padding:12px 14px;flex-wrap:wrap;border-bottom:1px solid #E4E1F0">'
+      +'<input id="qrs-idf" class="qrf-in" style="max-width:280px;padding:8px 12px;font-size:13px" placeholder="🔎 Rechercher un nom" value="'+esc(A.filter)+'" oninput="QRFeuille._idFilter(this.value)">'
+      +'<span style="font-size:12px;color:#6B6790">'+all.length+' personne(s) chantier · '+nAct+' identifiant(s) actif(s)</span></div>';
+    if(!A.rows.length)h+='<div style="padding:24px;text-align:center;color:#6B6790;font-size:13px">'+(all.length?'Aucun nom ne correspond.':'Aucune personne de la catégorie Chantier dans l’annuaire.')+'</div>';
+    else{
+      h+='<div style="overflow-x:auto"><table class="qrs-tbl"><thead><tr><th>Nom</th><th>Type</th><th>Identifiant</th><th>État</th><th style="text-align:right">Actions</th></tr></thead><tbody>';
+      A.rows.forEach(function(nm,i){
+        var a=accOf(nm),t='';try{t=fhPersonTypeLabel(nm)||'';}catch(x){}
+        var act='';
+        if(ed){
+          if(!a)act='<button type="button" onclick="QRFeuille._idGen('+i+')" style="'+btnSt(true)+'">🔑 Générer ID et mot de passe</button>';
+          else{
+            act='<button type="button" onclick="QRFeuille._idGen('+i+')" style="'+btnSt(false)+'" title="En cas d’oubli : l’ancien mot de passe ne marchera plus">🔄 Nouveau mot de passe</button> '
+              +(a.active?'<button type="button" onclick="QRFeuille._idActive('+i+',false)" style="'+btnSt(false)+';color:#B91C1C">⛔ Désactiver</button>'
+                        :'<button type="button" onclick="QRFeuille._idActive('+i+',true)" style="'+btnSt(false)+';color:#15803D">✓ Réactiver</button>');
+          }
+        }
+        h+='<tr><td style="font-weight:700">'+esc(nm)+'</td><td style="color:#6B6790">'+esc(t)+'</td>'
+          +'<td style="font-family:Consolas,monospace;font-weight:700">'+(a?esc(a.login):'<span style="color:#9A96B3">—</span>')+'</td>'
+          +'<td>'+statusHtml(a)+'</td><td style="text-align:right;white-space:nowrap">'+act+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+    h+='</div>';
+    if(A.orph.length){
+      h+='<div class="qrf-card"><div style="font-size:14px;font-weight:900;margin-bottom:4px">Identifiants de personnes qui ne sont plus dans l’annuaire (catégorie Chantier)</div>'
+        +'<div style="font-size:12px;color:#6B6790;margin-bottom:8px">Renommées, supprimées ou changées de catégorie. Vous pouvez les supprimer.</div>'
+        +'<table class="qrs-tbl"><tbody>'+A.orph.map(function(a,i){return '<tr><td style="font-weight:700">'+esc(a.person)+'</td><td style="font-family:Consolas,monospace">'+esc(a.login)+'</td><td>'+statusHtml(a)+'</td><td style="text-align:right">'
+          +(ed?'<button type="button" onclick="QRFeuille._idDel('+i+')" style="'+btnSt(false)+';color:#B91C1C">🗑 Supprimer</button>':'')+'</td></tr>';}).join('')+'</tbody></table></div>';
+    }
+    return h;
+  }
+  function _idFilter(v){A.filter=v;A._focus=true;draw();}
+  function _idReload(){A.list=null;draw();loadAccounts();}
+  async function _idGen(i){
+    var nm=A.rows[i];if(!nm||!canEdit()||A.busy)return;
+    var a=accOf(nm);
+    if(a&&!confirm('Générer un nouveau mot de passe pour '+nm+' ?\n\nL’ancien ne marchera plus : '+nm+' devra se reconnecter avec le nouveau.'))return;
+    A.busy=true;
+    try{
+      var login=a?a.login:uniqueLogin(nm),pin=randPin(),r,tries=0;
+      while(true){
+        r=await window.supa.rpc('qr_set_account',{p_person:nm,p_login:login,p_pin:pin});
+        if(r.error)throw r.error;
+        if(r.data==='login_taken'&&!a&&tries<20){tries++;login=baseLogin(nm)+(tries+1);continue;}
+        break;
+      }
+      if(r.data!=='ok')throw new Error(r.data==='forbidden'?'Votre adresse n’est pas reconnue comme personnel (table des rôles).':'refusé ('+r.data+')');
+      A.busy=false;
+      await loadAccounts();
+      showCred(nm,login,pin,!a);
+    }catch(e){A.busy=false;alert(errMsg(e).replace(/<[^>]+>/g,''));}
+  }
+  async function _idActive(i,on){
+    var nm=A.rows[i];if(!nm||!canEdit())return;
+    if(!on&&!confirm('Désactiver l’accès de '+nm+' ?\n\nLa personne ne pourra plus se connecter ni envoyer de feuille. Ses heures déjà validées restent. Vous pourrez la réactiver plus tard avec le même identifiant et le même mot de passe.'))return;
+    try{var r=await window.supa.rpc('qr_set_active',{p_person:nm,p_active:!!on});if(r.error)throw r.error;if(r.data!=='ok')throw new Error('refusé ('+r.data+')');}
+    catch(e){alert(errMsg(e).replace(/<[^>]+>/g,''));return;}
+    loadAccounts();
+  }
+  async function _idDel(i){
+    var a=A.orph[i];if(!a||!canEdit())return;
+    if(!confirm('Supprimer l’identifiant « '+a.login+' » ('+a.person+') ?'))return;
+    try{var r=await window.supa.rpc('qr_delete_account',{p_person:a.person});if(r.error)throw r.error;}
+    catch(e){alert(errMsg(e).replace(/<[^>]+>/g,''));return;}
+    loadAccounts();
+  }
+  // Fenêtre affichée juste après la création : le mot de passe n'est
+  // connu qu'à ce moment-là (seule une version illisible est enregistrée).
+  var CRED=null;
+  function showCred(nm,login,pin,isNew){
+    CRED={nm:nm,login:login,pin:pin};
+    var m=document.getElementById('qrf-modal');if(!m)return;
+    m.innerHTML='<div class="qrf" style="max-width:460px;margin:40px auto;background:#fff;border-radius:18px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.25)">'
+      +'<div style="font-size:12px;font-weight:800;color:#6B6790">'+(isNew?'IDENTIFIANT CRÉÉ':'NOUVEAU MOT DE PASSE')+'</div><div style="font-size:22px;font-weight:900;margin-bottom:14px">'+esc(nm)+'</div>'
+      +'<div style="background:#F6F5FB;border-radius:12px;padding:14px 16px;margin-bottom:12px"><div class="qrf-lbl">IDENTIFIANT</div><div style="font-family:Consolas,monospace;font-size:22px;font-weight:900;margin-bottom:10px">'+esc(login)+'</div>'
+      +'<div class="qrf-lbl">MOT DE PASSE</div><div style="font-family:Consolas,monospace;font-size:30px;font-weight:900;letter-spacing:6px;color:#3A2EAE">'+esc(pin)+'</div></div>'
+      +'<div style="background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:14px">Notez-le ou imprimez la fiche <b>maintenant</b> : le mot de passe ne pourra plus être réaffiché. En cas d’oubli, générez-en un nouveau.</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button type="button" onclick="QRFeuille._credCopy()" style="'+btnSt(false)+'">📋 Copier (SMS)</button><button type="button" onclick="QRFeuille._credPrint()" style="'+btnSt(false)+'">🖨 Imprimer la fiche</button><button type="button" onclick="QRFeuille._close()" style="'+btnSt(true)+'">Fermer</button></div></div>';
+    m.style.display='block';m.scrollTop=0;
+  }
+  function credText(){return 'Feuille d’heure Pétrosphère — '+CRED.nm+'\nLien : '+qrUrl()+'\nIdentifiant : '+CRED.login+'\nMot de passe : '+CRED.pin;}
+  function _credCopy(){if(!CRED)return;var t=credText();var fb=function(){window.prompt('Copiez ce texte :',t.replace(/\n/g,' | '));};try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(function(){alert('Copié : vous pouvez le coller dans un SMS.');},fb);else fb();}catch(x){fb();}}
+  function _credPrint(){
+    if(!CRED)return;
+    var go=function(){
+      var win=window.open('','_blank','width=700,height=800');
+      if(!win){alert('Autorisez les fenêtres pop-up pour ce site pour pouvoir imprimer.');return;}
+      win.document.write('<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Identifiant — '+esc(CRED.nm)+'</title>'
+        +'<style>body{font-family:Arial,sans-serif;padding:20px;color:#1C1A33}.c{width:9cm;border:2px dashed #999;border-radius:12px;padding:16px;margin:0 auto;text-align:center}.q{width:4.5cm;height:4.5cm;margin:10px auto}.q svg{width:100%;height:100%}.l{font-size:11px;color:#666;font-weight:bold;letter-spacing:1px;margin-top:8px}.v{font-family:Consolas,monospace;font-size:20px;font-weight:bold}@media print{@page{margin:15mm}}</style></head>'
+        +'<body onload="setTimeout(function(){window.print()},300)"><div class="c"><div style="font-size:12px;font-weight:bold;letter-spacing:2px;color:#6457F4">FEUILLE D’HEURE</div><div style="font-size:18px;font-weight:bold;margin-top:4px">'+esc(CRED.nm)+'</div>'
+        +'<div class="q">'+qrSvg(qrUrl())+'</div><div class="l">IDENTIFIANT</div><div class="v">'+esc(CRED.login)+'</div><div class="l">MOT DE PASSE</div><div class="v" style="font-size:26px;letter-spacing:5px">'+esc(CRED.pin)+'</div>'
+        +'<div style="font-size:11px;color:#666;margin-top:10px">Scannez le QR code, puis connectez-vous. Ne donnez pas ce code à quelqu’un d’autre.</div></div></body></html>');
+      win.document.close();
+    };
+    if(window.qrcode)go();else loadLib().then(go).catch(function(e){alert(e.message);});
   }
 
   // ── Validation ──────────────────────────────────────────────────────
@@ -18809,7 +18971,7 @@ window.QRFeuille=(function(){
       +(c.readOnly?'':'<button type="button" onclick="QRFeuille._revExpand('+di+')" style="'+btnSt(false)+'">+ Compléter ce jour</button>')+'</div>';
   }
   function _revExpand(di){var c=ctxs.rev;if(!c||c.readOnly)return;c.expanded=c.expanded||{};c.expanded[di]=true;var el=document.getElementById('qrf-ed-rev-'+di);if(el)el.innerHTML=editorHtml('rev',di);}
-  function _close(){var m=document.getElementById('qrf-modal');if(m){m.style.display='none';m.innerHTML='';}ctxs.rev=null;}
+  function _close(){var m=document.getElementById('qrf-modal');if(m){m.style.display='none';m.innerHTML='';}ctxs.rev=null;CRED=null;}
   // Écrit la feuille validée dans la Feuille d'heure, comme une saisie
   // manuelle : les heures dans p.fh (rangées dans l'affaire de CHAQUE ligne,
   // pour que syncFichesToGantt les reporte bien sur sa sous-phase) avec le
@@ -18913,14 +19075,16 @@ window.QRFeuille=(function(){
   }
 
   return {
-    render:render,startPublic:startPublic,
+    render:render,startPublic:startPublic,publish:publish,
     _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,
-    _pubFilter:_pubFilter,_pubPick:_pubPick,_pubConfirm:_pubConfirm,_pubBack:_pubBack,_pubDays:days,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
-    _tab:_tab,_year:_year,_pick:_pick,_print:_print,_copy:_copy,_reload:_reload,_wtog:_wtog,_open:_open,_close:_close,_validate:_validate,_unlock:_unlock,_revExpand:_revExpand,
-    _test:{buildPayload:buildPayload,applyToStore:applyToStore,check:check,clean:clean,ctxs:ctxs,S:S}
+    _pubLogin:_pubLogin,_pubLogout:_pubLogout,_pubWeek:_pubWeek,_pubWeeks:chooseWeek,_pubDays:days,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
+    _tab:_tab,_pubNow:_pubNow,_print:_print,_copy:_copy,
+    _idFilter:_idFilter,_idReload:_idReload,_idGen:_idGen,_idActive:_idActive,_idDel:_idDel,_credCopy:_credCopy,_credPrint:_credPrint,
+    _reload:_reload,_wtog:_wtog,_open:_open,_close:_close,_validate:_validate,_unlock:_unlock,_revExpand:_revExpand,
+    _test:{buildPayload:buildPayload,applyToStore:applyToStore,check:check,clean:clean,ctxs:ctxs,S:S,A:A,PUB:PUB,stable:stable,reqWeeks:reqWeeks}
   };
 })();
-if(window._QR_TOKEN){window.QRFeuille.startPublic(window._QR_TOKEN);}
+if(window._QR_TOKEN){window.QRFeuille.startPublic();}
 </script>
 
 </body></html>
