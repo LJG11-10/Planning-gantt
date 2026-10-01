@@ -10710,6 +10710,7 @@ function avBuildDownloadHtml(sel){
     return (m&&getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim())||'#1F4E79';
   }
   var body=_avTree().map(function(ph){return nodeHtml(ph,realColor(PH_get(ph.row.pk).h)||'#1F4E79');}).join('');
+  var chartHtml=_avDlChartHtml(sel);
   var glob=calcHierProgress(D(),{});
   var c=_avCounts();
   var dateStr=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
@@ -10733,7 +10734,8 @@ function avBuildDownloadHtml(sel){
     +'.ar{display:inline-block;width:12px;flex-shrink:0;font-size:10px;color:#9CA3AF;transition:transform .15s}details[open]>summary .ar{transform:rotate(90deg)}'
     +'.tools{display:flex;gap:8px;margin:-8px 0 16px}.tools button{font-family:inherit;font-size:12px;font-weight:700;padding:5px 12px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#374151;cursor:pointer}.tools button:hover{background:#F3F4F6}'
     +'.logo{position:absolute;top:20px;right:28px;height:40px}'
-    +'@media print{body{padding:0}@page{size:A4 portrait;margin:12mm}.logo{position:fixed;top:0;right:0}.tools{display:none}.ar{visibility:hidden}}';
+    +'@media print{body{padding:0}@page{size:A4 portrait;margin:12mm}.logo{position:fixed;top:0;right:0}.tools{display:none}.ar{visibility:hidden}}'
+    +_AVDL_CHART_CSS;
   // Boutons "tout déplier / tout replier", et impression toujours complète
   // (tout est déplié le temps d'imprimer, puis on remet l'état d'avant).
   var js='function avAll(o){document.querySelectorAll("details.grp").forEach(function(d){d.open=o;});}'
@@ -10748,8 +10750,152 @@ function avBuildDownloadHtml(sel){
     +'<div class="kpi"><div class="l">Tâches terminées</div><div class="v">'+c.d+'</div></div></div>'
     +'<div class="tools"><button type="button" onclick="avAll(true)">▼ Tout déplier</button><button type="button" onclick="avAll(false)">▶ Tout replier</button></div>'
     +body
+    +chartHtml
     +'<script>'+js+'<\/script>'
     +'</body></html>';
+}
+// ── Graphique des anneaux dans le document téléchargé ───────────────────
+// Même rendu et même comportement que l'onglet (un anneau par sous-ensemble,
+// un clic le déroule en barre avec ses sous-phases et tâches), mais le
+// fichier vit tout seul chez le client : couleurs écrites en dur (pas de
+// var(--...)), chiffres figés au moment du téléchargement, et petit script
+// autonome (_avDlChartClient, recopié tel quel dans le fichier). Sans
+// script (aperçu de messagerie), les anneaux s'affichent quand même.
+// Seuls les sous-ensembles / sous-phases / tâches cochés sont repris.
+var _AVDL_CHART_CSS=''
+  +'.avc-box{margin-top:18px;border:1px solid #E5E7EB;border-radius:10px;padding:16px 18px;page-break-inside:avoid}'
+  +'.avc-ttl{font-size:13px;font-weight:800;color:#4B5563;margin-bottom:10px}'
+  +'.avc-rc{text-align:center;cursor:pointer;padding:8px 4px;border-radius:12px;border:1px solid transparent;transition:transform .2s ease,opacity .25s ease,border-color .2s}'
+  +'.avc-rc:hover{border-color:#E5E7EB;transform:translateY(-2px)}'
+  +'.avc-trk{background:#F1F2F5;border-radius:6px;overflow:hidden}'
+  +'.avc-fil{height:100%;border-radius:6px;transition:width .7s cubic-bezier(.2,.8,.2,1)}'
+  +'.avc-row{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr) 54px;gap:10px;align-items:center;opacity:0;transform:translateY(8px);transition:opacity .35s ease,transform .35s ease}'
+  +'.avc-row.in{opacity:1;transform:none}'
+  +'.avc-sn{font-size:13px;font-weight:700;color:#1A1917;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+  +'.avc-tn{font-size:12px;color:#4B5563;padding-left:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+  +'.avc-pc{font-size:12px;font-weight:800;text-align:right;color:#1A1917}'
+  +'.avc-back{padding:5px 12px;border-radius:8px;border:1px solid #D1D5DB;background:#F3F4F6;color:#1A1917;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer}'
+  +'#avc-morph{position:absolute;z-index:3;pointer-events:none;overflow:hidden;box-sizing:border-box;transition:left .55s cubic-bezier(.65,0,.35,1),top .55s cubic-bezier(.65,0,.35,1),width .55s cubic-bezier(.65,0,.35,1),height .55s cubic-bezier(.65,0,.35,1),border-radius .55s cubic-bezier(.65,0,.35,1),border-width .55s ease,background .3s}'
+  +'@media print{.avc-rc{cursor:default}#avc-det{display:none}#avc-grid{opacity:1!important}}';
+function _avDlChartData(sel){
+  function col(c){return c==='var(--bd2)'?'#D1D5DB':c;}
+  return _avcEnsList().filter(function(e){return sel[_avNodeKey(e)];}).map(function(e){
+    var rows=[];
+    e.kids.forEach(function(k){
+      if(!sel[_avNodeKey(k)])return;
+      if(k.type==='sb'){
+        var sp=calcHierProgress(D(),{filterSbId:k.row.id});
+        rows.push({k:'sb',lb:k.row.lb,p:sp,c:_avcCol(sp)});
+        k.kids.forEach(function(t){
+          if(t.type!=='act'||!sel[_avNodeKey(t)])return;
+          var tv=_avcTask(t.row);rows.push({k:'t',lb:t.row.lb,p:tv.pct,c:col(tv.col),x:tv.excl?1:0});
+        });
+      }else if(k.type==='act'){
+        var tv=_avcTask(k.row);rows.push({k:'t',lb:k.row.lb,p:tv.pct,c:col(tv.col),x:tv.excl?1:0,hs:1});
+      }
+    });
+    var p=calcHierProgress(D(),{filterEnsId:e.row.id});
+    return {lb:e.row.lb,p:p,c:_avcCol(p),rows:rows};
+  });
+}
+function _avDlChartHtml(sel){
+  var data=_avDlChartData(sel);
+  if(!data.length)return '';
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  var h='<div class="avc-box"><div id="avc-wrap" style="position:relative;display:grid">'
+    +'<div id="avc-grid" style="grid-area:1/1;transition:opacity .28s ease">'
+    +'<div class="avc-ttl">Avancement par sous-ensemble <span style="font-weight:600;color:#9CA3AF;font-size:11px">— cliquez sur un anneau pour voir le détail</span></div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">';
+  data.forEach(function(e,i){
+    h+='<div class="avc-rc" id="avc-rc-'+i+'" onclick="avcOpen('+i+')" role="button" title="Voir le détail de '+esc(e.lb)+'">'
+      +'<svg width="84" height="84" viewBox="0 0 84 84"><circle cx="42" cy="42" r="30" fill="none" stroke="#F1F2F5" stroke-width="10"/>'
+      +'<circle class="avc-arc" data-pct="'+e.p+'" cx="42" cy="42" r="30" fill="none" stroke="'+e.c+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+(_AVC_C*e.p/100).toFixed(1)+' '+_AVC_C.toFixed(1)+'" transform="rotate(-90 42 42)" style="transition:stroke-dasharray .9s cubic-bezier(.2,.8,.2,1)"/>'
+      +'<text x="42" y="47" text-anchor="middle" style="font-size:16px;font-weight:800;fill:#1A1917;font-family:Arial,sans-serif">'+e.p+'%</text></svg>'
+      +'<div style="font-size:12px;color:#4B5563;line-height:1.3;margin-top:4px">'+esc(e.lb)+'</div></div>';
+  });
+  h+='</div></div>'
+    +'<div id="avc-det" style="grid-area:1/1;transition:opacity .28s ease;opacity:0;pointer-events:none">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">'
+    +'<span id="avc-dname" style="font-size:15px;font-weight:800;color:#1A1917"></span>'
+    +'<button type="button" class="avc-back" onclick="avcBack()">← Retour</button></div>'
+    +'<div style="display:grid;grid-template-columns:minmax(0,1fr) 54px;gap:10px;align-items:center;margin-bottom:16px">'
+    +'<div id="avc-dbar" class="avc-trk" style="height:14px;border-radius:7px"><div id="avc-dfill" class="avc-fil" style="border-radius:7px;width:0%"></div></div>'
+    +'<span id="avc-dpct" style="font-size:16px;font-weight:900;text-align:right;color:#1A1917"></span></div>'
+    +'<div id="avc-rows" style="display:flex;flex-direction:column;gap:8px"></div></div>'
+    +'</div></div>';
+  var json=JSON.stringify(data).replace(/</g,'\\u003c');
+  return h+'<script>('+_avDlChartClient.toString()+')('+json+');<\/script>';
+}
+// ⚠ Recopiée telle quelle dans le fichier téléchargé : ne doit utiliser
+// AUCUNE variable ou fonction du site (tout est passé dans DATA).
+function _avDlChartClient(DATA){
+  var C=2*Math.PI*30,busy=false,openI=-1;
+  function $(id){return document.getElementById(id);}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function rel(el){var a=el.getBoundingClientRect(),b=$('avc-wrap').getBoundingClientRect();return {l:a.left-b.left,t:a.top-b.top,w:a.width,h:a.height};}
+  function rowsHtml(e){
+    var h=e.rows.map(function(r){
+      var sm=r.k==='t';
+      return '<div class="avc-row"><span class="'+(sm?'avc-tn':'avc-sn')+'" title="'+esc(r.lb)+'">'+esc(r.lb)
+        +(r.hs?' <span style="color:#B45309;font-size:10px">(hors sous-phase)</span>':'')+'</span>'
+        +'<div class="avc-trk" style="height:'+(sm?8:12)+'px"><div class="avc-fil" data-w="'+r.p+'" style="background:'+r.c+';width:0%"></div></div>'
+        +'<span class="avc-pc"'+(sm?' style="font-weight:600;color:#9CA3AF"':'')+'>'+(r.x?'Hors av.':r.p+'%')+'</span></div>';
+    }).join('');
+    return h||'<div style="font-size:12px;color:#9CA3AF">Aucune sous-phase dans ce sous-ensemble.</div>';
+  }
+  window.avcOpen=function(i){
+    if(busy||openI>=0)return;
+    var e=DATA[i],ring=document.querySelector('#avc-rc-'+i+' svg');if(!e||!ring)return;
+    busy=true;openI=i;
+    $('avc-dname').textContent=e.lb;$('avc-dpct').textContent=e.p+'%';
+    var df=$('avc-dfill');df.style.background=e.c;df.style.width=e.p+'%';
+    $('avc-rows').innerHTML=rowsHtml(e);
+    var from=rel(ring),to=rel($('avc-dbar'));
+    var m=document.createElement('div');m.id='avc-morph';
+    m.style.left=(from.l+7)+'px';m.style.top=(from.t+7)+'px';m.style.width=(from.w-14)+'px';m.style.height=(from.h-14)+'px';
+    m.style.borderRadius='50%';m.style.border='10px solid '+e.c;m.style.background='transparent';
+    $('avc-wrap').appendChild(m);
+    var g=$('avc-grid');g.style.opacity='0';g.style.pointerEvents='none';
+    requestAnimationFrame(function(){requestAnimationFrame(function(){
+      m.style.left=to.l+'px';m.style.top=to.t+'px';m.style.width=to.w+'px';m.style.height=to.h+'px';
+      m.style.borderRadius='7px';m.style.borderWidth='0px';m.style.background='#F1F2F5';
+      m.innerHTML='<div style="height:100%;width:'+e.p+'%;background:'+e.c+';border-radius:7px"></div>';
+    });});
+    setTimeout(function(){
+      var d=$('avc-det');d.style.opacity='1';d.style.pointerEvents='auto';
+      setTimeout(function(){if(m.parentNode)m.parentNode.removeChild(m);},120);
+      [].forEach.call(document.querySelectorAll('#avc-rows .avc-row'),function(r,k){
+        setTimeout(function(){r.classList.add('in');var f=r.querySelector('.avc-fil');if(f)f.style.width=f.getAttribute('data-w')+'%';},80*k);
+      });
+      busy=false;
+    },600);
+  };
+  window.avcBack=function(){
+    if(busy||openI<0)return;
+    var e=DATA[openI],ring=document.querySelector('#avc-rc-'+openI+' svg'),bar=$('avc-dbar');
+    busy=true;
+    var from=rel(bar),to=rel(ring);
+    var m=document.createElement('div');m.id='avc-morph';
+    m.style.left=from.l+'px';m.style.top=from.t+'px';m.style.width=from.w+'px';m.style.height=from.h+'px';
+    m.style.borderRadius='7px';m.style.border='0 solid '+e.c;m.style.background='#F1F2F5';
+    m.innerHTML='<div style="height:100%;width:'+e.p+'%;background:'+e.c+';border-radius:7px;transition:opacity .3s"></div>';
+    $('avc-wrap').appendChild(m);
+    var d=$('avc-det');d.style.opacity='0';d.style.pointerEvents='none';
+    requestAnimationFrame(function(){requestAnimationFrame(function(){
+      m.firstChild.style.opacity='0';
+      m.style.left=(to.l+7)+'px';m.style.top=(to.t+7)+'px';m.style.width=(to.w-14)+'px';m.style.height=(to.h-14)+'px';
+      m.style.borderRadius='50%';m.style.borderWidth='10px';m.style.background='transparent';
+    });});
+    setTimeout(function(){
+      var g=$('avc-grid');g.style.opacity='1';g.style.pointerEvents='auto';
+      setTimeout(function(){if(m.parentNode)m.parentNode.removeChild(m);},150);
+      openI=-1;busy=false;
+    },580);
+  };
+  // Anneaux qui se remplissent à l'ouverture du document, comme dans l'onglet
+  var arcs=document.querySelectorAll('.avc-arc');
+  [].forEach.call(arcs,function(a){a.setAttribute('stroke-dasharray','0 '+C.toFixed(1));});
+  setTimeout(function(){[].forEach.call(arcs,function(a){a.setAttribute('stroke-dasharray',(C*(+a.getAttribute('data-pct')||0)/100).toFixed(1)+' '+C.toFixed(1));});},80);
 }
 // ── Calcul hiérarchique de l'avancement ────────────────────────────────
 // À l'intérieur d'une sous-phase : les tâches qui comptent (non exclues)
