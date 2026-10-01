@@ -169,9 +169,14 @@
     if(error||!data)return null;
     return await data.text();
   }
+  // Étiquette de la version actuelle du fichier sur le serveur (jamais en cache).
+  async function _srvEtag(){
+    try{var m=await supa.storage.from(BUCKET).list('',{search:FILE});var f=m&&m.data&&m.data.find(function(x){return x.name===FILE;});return f?(f.updated_at||f.created_at):null;}catch(e){return null;}
+  }
   async function supaLoad(){
     if(!supa)return null;
     try{
+      const _et=await _srvEtag();
       const text=await _downloadFresh();
       if(!text)return null;
       const parsed=JSON.parse(text);
@@ -179,6 +184,7 @@
       // Garder le texte reçu : _applyRemote en fait la "dernière version du
       // serveur connue" (fusion à trois, voir _syncBase).
       parsed.__srvText=text;
+      parsed.__srvEtag=_et;
       return parsed;
     }catch(e){return null;}
   }
@@ -197,9 +203,19 @@
       var _sid=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
       var _preBase=window._syncBase||null;
       store.__saveId=_sid;store.__parentId=window._srvSaveId||null;
+      // Lignée : les derniers envois dont cette version tient compte (sert à savoir
+      // avec certitude si une version reçue contient déjà notre envoi).
+      var _anc=(window._srvAnc||[]).concat([_sid]);if(_anc.length>40)_anc=_anc.slice(-40);store.__anc=_anc;
       const _json=JSON.stringify(store);
       const blob=new Blob([_json],{type:'application/json'});
-      const {error}=await supa.storage.from(BUCKET).upload(FILE,blob,{upsert:true,cacheControl:'0'});
+      // Pendant l'envoi, ne pas relire le serveur : on risquait de recevoir
+      // notre propre envoi avant sa confirmation et de le prendre pour une
+      // modification d'un collègue (doublons dans le Planning réunion).
+      window._saveInFlight=(window._saveInFlight||0)+1;
+      var _upRes;
+      try{_upRes=await supa.storage.from(BUCKET).upload(FILE,blob,{upsert:true,cacheControl:'0'});}
+      finally{window._saveInFlight=Math.max(0,(window._saveInFlight||1)-1);}
+      const error=_upRes&&_upRes.error;
       if(error){
         _showMsg('Erreur sync: '+error.message,'#DC2626');
         console.error('supaSave storage error:',error);
@@ -208,9 +224,10 @@
         try{_setSyncBase(JSON.parse(_json));}catch(eB){}
         window._myLastSaveId=_sid;window._preMineBase=_preBase;window._srvSaveId=_sid;
         _markSrvSeen(_txtHash(_json));
+        window._srvAnc=_anc;
         _markCleanIfIdle(_seqAtSave);
         try{var {data:_m}=await supa.storage.from(BUCKET).list('',{search:FILE});
-        if(_m&&_m[0])_lastEtag=_m[0].updated_at||_m[0].created_at;}catch(e2){}
+        if(_m&&_m[0])_lastEtag=_m[0].updated_at||_m[0].created_at;if(_lastEtag)window._curSrvEtag=_lastEtag;}catch(e2){}
         // Prévenir tout le monde INSTANTANÉMENT qu'une nouvelle version existe,
         // au lieu d'attendre que chacun le remarque au prochain cycle de 3s.
         // La vérification toutes les 3s reste active en parallèle comme filet
@@ -226,6 +243,21 @@
     }
   }
 
+  // Envoi IMMÉDIAT (sans les 800 ms d'attente), mais toujours APRÈS avoir
+  // récupéré et fusionné les modifications des collègues. Remplace les
+  // anciens supaSave(STORE) directs (annuaire, suppression de personne ou
+  // d'affaire, notes de modification) qui envoyaient la copie locale telle
+  // quelle et effaçaient ce qu'un collègue venait de saisir (ex : des
+  // affaires du Planning réunion posées quelques secondes avant).
+  function saveNowMerged(){
+    if(typeof _markDirty==='function')_markDirty();
+    if(typeof _stampModifiedRows==='function')_stampModifiedRows();
+    if(typeof _stampModifiedAbsences==='function')_stampModifiedAbsences();
+    if(typeof _stampModifiedGP==='function')_stampModifiedGP();
+    if(typeof _stampModifiedOrder==='function')_stampModifiedOrder();
+    clearTimeout(_syncTimeout);_syncTimeout=null;
+    return _mergeRemoteThenSave();
+  }
   function scheduleSupa(){
     // Dater les lignes qui ont réellement changé — quel que soit le chemin
     // qui a mené jusqu'ici (saveNow() ou l'un des nombreux autres endroits
@@ -254,6 +286,9 @@
     try{
       // Jusqu'à 4 lectures si le serveur renvoie une vieille copie (cache) :
       // n'envoyer qu'après avoir fusionné avec la VRAIE dernière version.
+      // Un autre envoi de ce poste est encore en route : attendre qu'il soit
+      // confirmé avant de relire (sinon on relit notre propre envoi en cours).
+      for(var _w=0;_w<100&&window._saveInFlight;_w++)await new Promise(function(r){setTimeout(r,100);});
       for(var _try=0;_try<4;_try++){
         var remote=await supaLoad();
         if(remote)_applyRemote(remote);
@@ -375,6 +410,21 @@
   // qui pouvait alors écraser au prochain envoi la position plus récente
   // qu'un collègue avait peinte entre-temps sur cette même tâche.
   var _BAR_FIELDS=['prevDays','reelDays','s','e','sPrev','ePrev','sReel','eReel','dStart','dEnd','dStartR','dEndR','dDur','dDurR','weekendPrev','weekendReel','barComments'];
+  // Commentaire de tâche de l'onglet Avancement : horodatage à part
+  // (_cmtModAt), comme les barres — un commentaire du chef et un % changé
+  // par quelqu'un d'autre sur la même tâche au même moment sont gardés tous
+  // les deux (sinon la ligne entière la plus récente gagnait).
+  var _CMT_FIELDS=['avComment','avCommentBy','avCommentAt'];
+  function _mergeCmtFields(winner,a,b){
+    var at=a._cmtModAt||0,bt=b._cmtModAt||0;
+    if(!at&&!bt)return winner;
+    var src=at>=bt?a:b;
+    if(src===winner||(winner._cmtModAt||0)===(src._cmtModAt||0))return winner;
+    var out=Object.assign({},winner);
+    _CMT_FIELDS.forEach(function(f){if(src[f]===undefined)delete out[f];else out[f]=src[f];});
+    out._cmtModAt=src._cmtModAt;
+    return out;
+  }
   window._barSnapshots=window._barSnapshots||{};
   function _refreshRowSnapshots(){
     window._rowSnapshots={};window._rowSnapReady=true;
@@ -388,7 +438,7 @@
       if(Array.isArray(STORE.projects[aff].data))window._orderSnapshots[aff]=STORE.projects[aff].data.map(function(r){return r&&r.id;}).join(',');
       (STORE.projects[aff].data||[]).forEach(function(r){
         if(!r||!r.id)return;
-        var cmp=Object.assign({},r);delete cmp._modAt;delete cmp._barsModAt;
+        var cmp=Object.assign({},r);delete cmp._modAt;delete cmp._barsModAt;delete cmp._cmtModAt;_CMT_FIELDS.forEach(function(f){delete cmp[f];});
         window._rowSnapshots[aff+'::'+r.id]=JSON.stringify(cmp);
         if(r.t==='act'){
           var bcmp={};
@@ -416,7 +466,7 @@
     (STORE.projects[aff].data||[]).forEach(function(r){
       if(!r||!r.id)return;
       var key=aff+'::'+r.id;
-      var cmp=Object.assign({},r);delete cmp._modAt;delete cmp._barsModAt;
+      var cmp=Object.assign({},r);delete cmp._modAt;delete cmp._barsModAt;delete cmp._cmtModAt;_CMT_FIELDS.forEach(function(f){delete cmp[f];});
       var json=JSON.stringify(cmp);
       // Si cette ligne n'a jamais eu de référence enregistrée (ex: un
       // ensemble/une tâche ajouté(e) récemment), on l'horodate quand même —
@@ -546,15 +596,18 @@
     b=b||[];l=l||[];r=r||[];
     function sig(e){return e?(e.aff||'')+'|'+(e.actId||'')+'|'+(e.comment||''):'';}
     function count(a){var m={};a.forEach(function(e){var s=sig(e);m[s]=(m[s]||0)+1;});return m;}
-    var bc=count(b),lc=count(l),out=r.slice();
-    Object.keys(bc).forEach(function(s){
-      for(var n=bc[s]-(lc[s]||0);n>0;n--){
-        for(var i=0;i<out.length;i++){if(sig(out[i])===s){out.splice(i,1);break;}}
-      }
-    });
-    Object.keys(lc).forEach(function(s){
-      var n=lc[s]-(bc[s]||0),src=l.filter(function(e){return sig(e)===s;});
-      for(var j=0;j<n;j++)out.push(JSON.parse(JSON.stringify(src[j]||src[0])));
+    var bc=count(b),lc=count(l),rc=count(r),out=r.slice(),all={};
+    [bc,lc,rc].forEach(function(m){Object.keys(m).forEach(function(s){all[s]=1;});});
+    Object.keys(all).forEach(function(s){
+      var b0=bc[s]||0,dl=(lc[s]||0)-b0,dr=(rc[s]||0)-b0;
+      // Même ajout (ou même retrait) des deux côtés = UNE seule modification
+      // (ex : notre propre envoi qui revient, ou deux personnes qui posent la
+      // même affaire) : on ne le compte pas deux fois → pas de doublon.
+      var fin=(dl>0&&dr>0)?b0+Math.max(dl,dr):(dl<0&&dr<0)?b0+Math.min(dl,dr):b0+dl+dr;
+      if(fin<0)fin=0;
+      var cur=rc[s]||0,i;
+      for(;cur>fin;cur--){for(i=out.length-1;i>=0;i--){if(sig(out[i])===s){out.splice(i,1);break;}}}
+      if(cur<fin){var src=l.filter(function(e){return sig(e)===s;});for(;cur<fin;cur++)out.push(JSON.parse(JSON.stringify(src[0])));}
     });
     return out;
   }
@@ -596,6 +649,10 @@
     Object.keys(localGP).forEach(function(nm){
       if(localDel[nm])return;
       var l=localGP[nm],r=remoteGP[nm];
+      // Supprimée par un collègue (marque sur le serveur, plus dans son
+      // annuaire) et pas modifiée ici depuis : on applique la suppression
+      // (avant : la copie locale la faisait revenir chez tout le monde).
+      if(!r&&remoteDel[nm]&&((l&&l._modAt)||0)<=remoteDel[nm])return;
       if(r&&typeof r==='object'&&l&&typeof l==='object'){
         var lt=l._modAt||0,rt=r._modAt||0;
         out[nm]=(lt||rt)?(lt>=rt?l:r):l;
@@ -729,10 +786,10 @@
               var merged=Object.assign({},winner);
               _BAR_FIELDS.forEach(function(f){merged[f]=barSrc[f];});
               merged._barsModAt=barSrc._barsModAt;
-              return merged;
+              winner=merged;
             }
           }
-          return winner;
+          return _mergeCmtFields(winner,r,o);
         }
       }
       return r;
@@ -814,6 +871,7 @@
       // tout juste fait localement (ex: un commentaire) pourrait être
       // écrasé par une version distante encore périmée qui ne l'a pas.
       if(_syncTimeout)return true;
+      if(window._saveInFlight)return true; // notre envoi est en cours
       // On ne bloque plus la synchronisation juste parce qu'un panneau est
       // ouvert à l'écran (vous êtes juste en train de regarder une tâche) —
       // avec l'horodatage désormais en place, la fusion sait déjà préserver
@@ -846,6 +904,7 @@
     // trois) ; le texte reçu deviendra la nouvelle version connue à la fin.
     var _base=window._syncBase||null;
     var _srvText=remote.__srvText;delete remote.__srvText;
+    var _srvEt=remote.__srvEtag;delete remote.__srvEtag;
     // Copie périmée : une version du serveur DÉJÀ VUE et dépassée (cache)
     // revient — l'appliquer "effacerait" ce qui a été fait depuis. On l'ignore
     // (la lecture suivante sera la bonne).
@@ -853,6 +912,11 @@
     if(_srvText){
       var _h=_txtHash(_srvText);
       if(_h!==window._curSrvHash&&_seenSrvHash[_h]){window._lastApplyStale=true;return false;}
+      // Même contenu que la dernière version connue alors que le serveur dit
+      // avoir changé : c'est une vieille copie (on relit ; au bout de 4 fois on
+      // accepte, au cas où l'étiquette aurait juste changé entre-temps).
+      if(_h===window._curSrvHash&&_srvEt&&window._curSrvEtag&&_srvEt!==window._curSrvEtag&&(window._staleSame=(window._staleSame||0)+1)<4){window._lastApplyStale=true;return false;}
+      window._staleSame=0;if(_srvEt)window._curSrvEtag=_srvEt;
       _markSrvSeen(_h);
     }
     // Envoi "doublé" : un collègue a enregistré en partant d'une version qui
@@ -864,10 +928,12 @@
     // seule fois, sur la première version d'un autre reçue après notre envoi.
     var _lostRace=false;
     if(window._myLastSaveId&&remote.__saveId&&remote.__saveId!==window._myLastSaveId){
-      if(remote.__parentId!==window._myLastSaveId&&window._preMineBase){_base=window._preMineBase;_lostRace=true;}
+      var _hasMine=Array.isArray(remote.__anc)?remote.__anc.indexOf(window._myLastSaveId)>=0:remote.__parentId===window._myLastSaveId;
+      if(!_hasMine&&window._preMineBase){_base=window._preMineBase;_lostRace=true;}
       window._myLastSaveId=null;window._preMineBase=null;
     }
     if(remote.__saveId)window._srvSaveId=remote.__saveId;
+    if(Array.isArray(remote.__anc))window._srvAnc=remote.__anc.slice(-40);
     var _localSettings=(STORE&&STORE.settings)?JSON.parse(JSON.stringify(STORE.settings)):{};
     try{
     // ── Récupérer les tombstones LOCAUX avant tout remplacement ──────────
@@ -1195,7 +1261,7 @@
       var t=document.querySelector('.nb.on');
       if(t&&t.dataset){
         var tab=t.dataset.tab;
-        if(tab==='recap'){if(!window._tdbTab||window._tdbTab==='overview')renderOverview();else if(window._tdbTab==='avancement')renderAvancement();else{syncFichesToGantt();renderRecap();}}
+        if(tab==='recap'){if(!window._tdbTab||window._tdbTab==='overview')renderOverview();else if(window._tdbTab==='avancement'){var _avAe=document.activeElement;if(_avAe&&/^(TEXTAREA|INPUT)$/.test(_avAe.tagName)&&_avAe.closest&&_avAe.closest('#tdb-avancement'))window._avPendingRender=true;else renderAvancement();}else{syncFichesToGantt();renderRecap();}}
         else if(tab==='dashboard')renderDashboard();
         // Planning réunion : redessiner avec les données reçues (avant : l'écran
         // restait sur l'ancienne version, et un clic dessus écrasait la saisie
@@ -4573,7 +4639,7 @@ function saveGlobalPerson(origNm, newNm, type, habsArr, service, email){
   window._lastPersonSave=Date.now(); // Marquer le moment de sauvegarde personne
   if(typeof _stampModifiedRows==='function')_stampModifiedRows();
   if(typeof supaSave==='function'){
-    supaSave(STORE).catch(function(){scheduleSupa();});
+    saveNowMerged().catch(function(){scheduleSupa();});
   } else {
     scheduleSupa();
   }
@@ -4632,7 +4698,7 @@ function deleteGlobalPerson(nm){
   // Sauvegarde IMMÉDIATE (pas debounce) pour éviter le retour via polling
   localStorage.setItem('plan26v5',JSON.stringify(STORE));
   if(typeof _stampModifiedRows==='function')_stampModifiedRows();
-  supaSave(STORE); // async immédiat
+  saveNowMerged(); // immédiat, après fusion avec les collègues
   window._editingPerson=undefined;
   // Forcer la re-render complète du sous-onglet
   switchPersonnelTab('search');
@@ -7874,7 +7940,9 @@ function weekHasCongesDays(person,wk){
 function _wpBusy(){
   var g=document.getElementById('db-grid');if(!g)return false;
   var a=document.activeElement;
-  if(a&&g.contains(a)&&(a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&a.type!=='checkbox')))return true;
+  // Liste déroulante d'affaire ouverte ou tout juste choisie : on attend
+  // (sinon elle se refermait en plein choix et le clic était perdu).
+  if(a&&g.contains(a)&&(a.tagName==='TEXTAREA'||a.tagName==='SELECT'||(a.tagName==='INPUT'&&a.type!=='checkbox')))return true;
   if(g.querySelector('.wp-dup-picker'))return true;
   var ps=g.querySelectorAll('.wpat-panel');
   for(var i=0;i<ps.length;i++)if(ps[i].style.display==='block')return true;
@@ -8022,19 +8090,34 @@ function dbBuildPlanningGrid(){
   // Sans ça, un clic sur un écran périmé écrasait l'affaire d'un collègue
   // ou supprimait la mauvaise ligne. Retourne l'index à utiliser, ou -1 si
   // l'entrée affichée n'existe plus (newIfGone : créer une nouvelle entrée).
+  // data-wsig = affaire|tâche|commentaire affichés : distingue deux lignes
+  // ayant la même affaire le même jour.
+  function _wpSig(e){return e?(e.aff||'')+'|'+(e.actId||'')+'|'+(e.comment||''):'';}
   function _wpResolveEi(nm,di,ei,el,newIfGone){
     var div=el&&el.closest?el.closest('.wp-entry'):null;
     if(!div||!div.hasAttribute('data-was'))return ei;
-    var was=div.getAttribute('data-was')||'';
-    var saved=getSavedEntries(nm,di);
-    if(ei<saved.length?(saved[ei].aff||'')===was:was==='')return ei;
-    if(was==='')return saved.length; // ligne vide à l'écran : nouvelle entrée
-    for(var i=0;i<saved.length;i++)if((saved[i].aff||'')===was)return i;
+    var was=div.getAttribute('data-was')||'',ws=div.getAttribute('data-wsig');
+    var saved=getSavedEntries(nm,di),i;
+    if(ei<saved.length){
+      if(ws!==null?_wpSig(saved[ei])===ws:(saved[ei].aff||'')===was)return ei;
+    }else if(was==='')return ei;              // ligne ajoutée (+), pas encore enregistrée
+    if(was===''&&(ws===null||ws==='||'))return saved.length; // ligne vide à l'écran : nouvelle entrée
+    if(ws!==null)for(i=0;i<saved.length;i++)if(_wpSig(saved[i])===ws)return i;
+    if(was!=='')for(i=0;i<saved.length;i++)if((saved[i].aff||'')===was)return i;
     return newIfGone?saved.length:-1;
   }
   window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei0=+sel.dataset.ei;var ei=_wpResolveEi(nm,di,ei0,sel,true);
-    if(ei!==ei0){saveCellEntry(nm,di,ei,'aff',sel.value);var _sv=getSavedEntries(nm,di);if(_sv[ei])_sv[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();dbBuildPlanningGrid();return;}
-    saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var _wd=sel.closest('.wp-entry');if(_wd)_wd.setAttribute('data-was',sel.value);var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];var _newTree=sel.value?buildActTree(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null):{label:'',panel:''};as.textContent=_newTree.label||'-- Choisir activite --';as.dataset.actid='';as.style.display=sel.value?'block':'none';var _panel=as.nextElementSibling;if(_panel&&_panel.classList.contains('wpat-panel')){_panel.innerHTML=_newTree.panel;_panel.style.display='none';}}
+    var _bef=getSavedEntries(nm,di),nB=_bef.length;
+    // Nouvelle affaire : l'ancienne tâche ne vaut plus. Effacée AVANT
+    // l'enregistrement (avant : effacée après le nettoyage de la case, elle
+    // pouvait viser la ligne suivante et lui retirer sa tâche).
+    if(ei<nB&&_bef[ei])_bef[ei].actId='';
+    saveCellEntry(nm,di,ei,'aff',sel.value);
+    var saved=getSavedEntries(nm,di),realEi=ei<nB?ei:saved.length-1;
+    // Ligne retrouvée ailleurs, ajoutée ou retirée : on redessine pour que
+    // les numéros de ligne à l'écran correspondent aux données.
+    if(ei!==ei0||realEi!==ei0||saved.length!==(ei<nB?nB:nB+1)){dbBuildPlanningGrid();return;}
+    var _wd=sel.closest('.wp-entry');if(_wd){_wd.setAttribute('data-was',sel.value);_wd.setAttribute('data-wsig',_wpSig(saved[ei]));}var as=(sel.closest('.wp-entry')||document).querySelector('.wpat-trigger');if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];var _newTree=sel.value?buildActTree(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null):{label:'',panel:''};as.textContent=_newTree.label||'-- Choisir activite --';as.dataset.actid='';as.style.display=sel.value?'block':'none';var _panel=as.nextElementSibling;if(_panel&&_panel.classList.contains('wpat-panel')){_panel.innerHTML=_newTree.panel;_panel.style.display='none';}}
     var _entryDiv=sel.closest('.wp-entry');
     if(_entryDiv){
       var _c=sel.value?affColor(sel.value):null;
@@ -8123,8 +8206,16 @@ function dbBuildPlanningGrid(){
   }
 };
   window._wpCommentChange=function(ta){var nm=ta.dataset.nm,di=+ta.dataset.di,ei0=+ta.dataset.ei;var ei=_wpResolveEi(nm,di,ei0,ta,true);
-    if(ei!==ei0){if(ta.value.trim())saveCellEntry(nm,di,ei,'comment',ta.value);_wpSafeRebuild();return;}
-    saveCellEntry(nm,di,ei,'comment',ta.value);};
+    var _bef=getSavedEntries(nm,di),nB=_bef.length;
+    // Rien de changé (ex : simple clic dans le champ puis sortie) : ne rien
+    // enregistrer — avant, ça "consommait" une ligne ajoutée avec + et la
+    // faisait disparaître.
+    if(ta.value===(ei<nB?(_bef[ei].comment||''):''))return;
+    if(ei!==ei0&&!ta.value.trim()){_wpSafeRebuild();return;}
+    saveCellEntry(nm,di,ei,'comment',ta.value);
+    var saved=getSavedEntries(nm,di),realEi=ei<nB?ei:saved.length-1;
+    if(ei!==ei0||realEi!==ei0||saved.length!==(ei<nB?nB:nB+1)){_wpSafeRebuild();return;}
+    var _wd=ta.closest('.wp-entry');if(_wd)_wd.setAttribute('data-wsig',_wpSig(saved[ei]));};
   // Choisir une tâche dans l'arbre : ferme le panneau, met à jour
   // l'affichage, et déclenche la même sauvegarde qu'avant.
   window._wpActPick=function(item,ev){
@@ -8143,7 +8234,8 @@ function dbBuildPlanningGrid(){
     var _pnm=panel.dataset.nm,_pdi=+panel.dataset.di,_pei0=+panel.dataset.ei,_pei=_wpResolveEi(_pnm,_pdi,_pei0,panel,false);
     if(_pei<0){dbBuildPlanningGrid();return;}
     _wpSetActivity(_pnm,_pdi,_pei,actId);
-    if(_pei!==_pei0)dbBuildPlanningGrid();
+    if(_pei!==_pei0){dbBuildPlanningGrid();return;}
+    var _wd=panel.closest('.wp-entry');if(_wd)_wd.setAttribute('data-wsig',_wpSig(getSavedEntries(_pnm,_pdi)[_pei]));
   };
   window._wpAddEntry=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di;var key=nm+'::'+di;window._wpExtra[key]=(window._wpExtra[key]||0)+1;dbBuildPlanningGrid();};
   window._wpRemove=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di,ei=_wpResolveEi(nm,di,+btn.dataset.ei,btn,false);if(ei<0){dbBuildPlanningGrid();return;}removeEntry(nm,di,ei);};
@@ -8369,7 +8461,7 @@ function dbBuildPlanningGrid(){
         var _entryColor=sAff?affColor(sAff):null;
         // data-was = l'affaire affichée sur cette ligne au moment du dessin :
         // sert à vérifier, au clic, qu'on modifie bien la même entrée (voir _wpResolveEi).
-        html+='<div class="wp-entry" data-was="'+escHtml(sAff)+'" style="margin-bottom:5px;background:'+(_entryColor?_entryColor.f:'var(--bg3)')+';border-left:4px solid '+(_entryColor?_entryColor.h:'var(--bd)')+';border-radius:10px;padding:6px 8px;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
+        html+='<div class="wp-entry" data-was="'+escHtml(sAff)+'" data-wsig="'+escHtml(sAff+'|'+sAct+'|'+sComment)+'" style="margin-bottom:5px;background:'+(_entryColor?_entryColor.f:'var(--bg3)')+';border-left:4px solid '+(_entryColor?_entryColor.h:'var(--bd)')+';border-radius:10px;padding:6px 8px;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
         // Barre d'outils dédiée, en flux normal (pas en position absolue par-
         // dessus le contenu) : le contenu (menus déroulants, texte) démarre
         // TOUJOURS en dessous, donc plus jamais de chevauchement possible
@@ -10432,7 +10524,58 @@ function _avTaskHtml(r,level,inSb){
   if(!inSb&&!excl){
     h+='<div style="margin-top:6px;font-size:11px;font-weight:700;color:#B45309">Hors sous-phase : ne compte pas dans le total de l’affaire</div>';
   }
+  h+=_avCmtHtml(r,can);
   return h+'</div>';
+}
+// ── Commentaire de tâche (onglet Avancement uniquement) ────────────────
+// Visible et modifiable ici seulement : JAMAIS repris dans les
+// téléchargements (avancement, planning client, récap). Mêmes droits que
+// les boutons de statut (_peutChangerStatut). Stocké sur la tâche
+// (avComment / avCommentBy / avCommentAt), avec son propre horodatage
+// _cmtModAt pour la synchro (voir _mergeCmtFields).
+function _avCmtHtml(r,can){
+  var cm=r.avComment||'';
+  if(!can&&!cm)return '';
+  var who=r.avCommentBy?String(r.avCommentBy).split('@')[0]:'';
+  var when=r.avCommentAt?new Date(r.avCommentAt).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+  return '<div style="margin-top:10px">'
+    +'<div style="font-size:10px;font-weight:800;color:var(--tx3);letter-spacing:.3px;margin-bottom:3px">💬 COMMENTAIRE</div>'
+    +'<textarea class="av-cmt" data-id="'+escHtml(r.id)+'" rows="'+(cm.split('\n').length>1||cm.length>70?3:1)+'"'+(can?'':' disabled')
+    +' placeholder="Écrire un commentaire…" oninput="avCmtInput(this)" onblur="avCmtSave(this)"'
+    +' style="display:block;width:100%;box-sizing:border-box;resize:vertical;min-height:34px;border:1.5px solid var(--bd);border-radius:var(--r);padding:7px 10px;font-size:12px;line-height:1.4;font-family:inherit;background:var(--bg3);color:var(--tx);outline:none">'+escHtml(cm)+'</textarea>'
+    +'<div class="av-cmt-st" style="font-size:10px;color:var(--tx3);margin-top:3px;min-height:12px">'+(cm&&(who||when)?escHtml((who?who+' · ':'')+when):'')+'</div>'
+    +'</div>';
+}
+// Onglet Avancement : un rafraîchissement retenu pendant une saisie
+// (commentaire, %) est appliqué dès qu'on quitte le champ.
+document.addEventListener('focusout',function(e){
+  if(!window._avPendingRender||!e.target||!e.target.closest||!e.target.closest('#tdb-avancement'))return;
+  setTimeout(function(){
+    var a=document.activeElement;
+    if(a&&/^(TEXTAREA|INPUT)$/.test(a.tagName)&&a.closest&&a.closest('#tdb-avancement'))return;
+    if(window._avPendingRender){window._avPendingRender=false;renderAvancement();}
+  },120);
+});
+function avCmtInput(el){
+  clearTimeout(el._t);
+  var st=el.parentNode&&el.parentNode.querySelector('.av-cmt-st');if(st)st.textContent='Enregistrement…';
+  el._t=setTimeout(function(){avCmtSave(el);},1200);
+}
+function avCmtSave(el){
+  clearTimeout(el._t);
+  var r=_avRow(el.dataset.id);if(!r||!_peutChangerStatut(r))return;
+  var v=el.value.replace(/\s+$/,'');
+  var st=el.parentNode&&el.parentNode.querySelector('.av-cmt-st');
+  if((r.avComment||'')===v){if(st&&st.textContent==='Enregistrement…')st.textContent='';return;}
+  var now=Date.now(),me=(typeof CURRENT_USER!=='undefined'&&CURRENT_USER&&CURRENT_USER.email)||'';
+  if(v){r.avComment=v;r.avCommentBy=me;r.avCommentAt=now;}
+  else{delete r.avComment;delete r.avCommentBy;delete r.avCommentAt;}
+  r._cmtModAt=now;
+  saveNow();
+  if(st)st.textContent=v?((me?me.split('@')[0]+' · ':'')+new Date(now).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})):'';
+  // Un rafraîchissement venu d'un collègue a été retenu pendant la saisie :
+  // on l'applique maintenant que le champ est enregistré.
+  if(window._avPendingRender&&document.activeElement!==el){window._avPendingRender=false;setTimeout(renderAvancement,50);}
 }
 function _avNodeHtml(n,level,parentType){
   if(n.type==='act')return _avTaskHtml(n.row,level,parentType==='sb');
@@ -11670,7 +11813,7 @@ function sendModif(actId,doSend){
     // Sauvegarde IMMÉDIATE (pas debounce) pour éviter écrasement par polling Supabase
     localStorage.setItem('plan26v5',JSON.stringify(STORE));
     if(typeof _stampModifiedRows==='function')_stampModifiedRows();
-    supaSave(STORE);
+    saveNowMerged();
     // Rafraîchir le panneau avec try/catch
     try{
       var mp=document.getElementById('modif-panel-'+actId);
@@ -12048,7 +12191,7 @@ function openModal(type){
     // Sauvegarde IMMÉDIATE (pas debounce)
     localStorage.setItem('plan26v5',JSON.stringify(STORE));
     if(typeof _stampModifiedRows==='function')_stampModifiedRows();
-    supaSave(STORE);
+    saveNowMerged();
     renderProjSel();
     if(STORE.current)switchProjet(STORE.current);
     else document.getElementById('gw').innerHTML='';
