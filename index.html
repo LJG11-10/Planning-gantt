@@ -10709,6 +10709,9 @@ function _avRefreshNumbers(){
 // sur l'onglet (window._avChartFresh) et lors d'un clic sur un anneau.
 var _AVC_C=2*Math.PI*30;
 function _avcCol(p){return p<30?'#F59E0B':'#16A34A';}
+// Barre d'une sous-phase dans le détail : orange tant qu'elle n'est pas finie,
+// verte seulement à 100 %.
+function _avcSbCol(p){return p>=100?'#16A34A':'#F59E0B';}
 function _avcEnsList(){
   var l=[];
   _avTree().forEach(function(ph){ph.kids.forEach(function(k){if(k.type==='ens')l.push(k);});});
@@ -10732,7 +10735,7 @@ function _avcRowsHtml(ens,anim){
   ens.kids.forEach(function(k){
     if(k.type==='sb'){
       var p=calcHierProgress(D(),{filterSbId:k.row.id});
-      h+=row('sb',k.row.id,k.row.lb,p,_avcCol(p),false);
+      h+=row('sb',k.row.id,k.row.lb,p,_avcSbCol(p),false);
       k.kids.forEach(function(t){if(t.type==='act')h+=task(t.row);});
     }else if(k.type==='act'){
       h+=task(k.row,' <span style="color:#B45309;font-size:10px">(hors sous-phase)</span>');
@@ -10880,7 +10883,7 @@ function _avChartRefresh(){
       if(k.type==='sb'){
         var sp=calcHierProgress(D(),{filterSbId:k.row.id}),ss='sb-'+_avSafe(k.row.id);
         var f=document.getElementById('avcf-'+ss),pc=document.getElementById('avcp-'+ss);
-        if(f){f.style.width=sp+'%';f.style.background=_avcCol(sp);}
+        if(f){f.style.width=sp+'%';f.style.background=_avcSbCol(sp);}
         if(pc)pc.textContent=sp+'%';
       }
       tasks.forEach(function(tn){
@@ -11078,7 +11081,7 @@ function _avDlChartData(sel){
       if(!sel[_avNodeKey(k)])return;
       if(k.type==='sb'){
         var sp=calcHierProgress(D(),{filterSbId:k.row.id});
-        rows.push({k:'sb',lb:k.row.lb,p:sp,c:_avcCol(sp)});
+        rows.push({k:'sb',lb:k.row.lb,p:sp,c:_avcSbCol(sp)});
         k.kids.forEach(function(t){
           if(t.type!=='act'||!sel[_avNodeKey(t)])return;
           var tv=_avcTask(t.row);rows.push({k:'t',lb:t.row.lb,p:tv.pct,c:col(tv.col),x:tv.excl?1:0});
