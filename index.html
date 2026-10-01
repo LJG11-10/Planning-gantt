@@ -19888,10 +19888,30 @@ window.DocsChantier = (function(){
     return h;
   }
   function drawList(){ if(S.host) S.host.innerHTML=listHtml(); }
+  // Liste affichée : on regarde toutes les 5 s si un collègue a créé, modifié,
+  // signé ou supprimé une fiche (sinon il fallait cliquer sur "Actualiser").
+  function listSig(){ return S.list.map(function(r){ return r.id+':'+r.rev+':'+r.status; }).join('|'); }
+  async function listTick(){
+    if(S.cur||!S.host||S._listBusy||document.hidden) return;
+    var sh=$('petro-docs-shell'); if(sh&&sh.style.display==='none') return;
+    S._listBusy=true;
+    try{
+      var before=listSig(), hadErr=!!S.err;
+      await loadList();
+      if(S.cur) return;
+      var a=document.activeElement, typing=a&&S.host.contains(a)&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
+      if((listSig()!==before||hadErr!==!!S.err) && !typing) drawList();
+    }catch(e){}
+    finally{ S._listBusy=false; }
+  }
+  function startListPoll(){ stopListPoll(); S.listT=setInterval(listTick,5000); }
+  function stopListPoll(){ if(S.listT){ clearInterval(S.listT); S.listT=null; } }
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden&&S.listT) listTick(); });
 
   async function render(hostId){
     S.host=$(hostId)||S.host;
     stopPoll();
+    startListPoll();
     S.cur=null;
     if(!ENV.canView()){ S.host.innerHTML='<div class="dcu"><div class="dcu-wrap"><div class="dcu-card">Vous n’avez pas accès aux Docs chantier.</div></div></div>'; return; }
     S.host.innerHTML='<div class="dcu"><div class="dcu-wrap"><div class="dcu-card" style="color:#6B6790">Chargement…</div></div></div>';
@@ -19941,12 +19961,13 @@ window.DocsChantier = (function(){
   function editable(){ return ENV.canEdit() && !locked(); }
 
   async function open(id){
-    stopPoll();
+    stopPoll(); stopListPoll();
     S.host.innerHTML='<div class="dcu"><div class="dcu-wrap"><div class="dcu-card" style="color:#6B6790">Ouverture de la fiche…</div></div></div>';
     try{ var row=await DB.get(id); if(!row) throw new Error('fiche introuvable (supprimée ?)'); openRow(row); }
     catch(e){ alert('Impossible d’ouvrir la fiche : '+(e&&e.message||e)); render(); }
   }
   function openRow(row){
+    stopListPoll();
     S.cur=row; S.base=JSON.parse(JSON.stringify(row.data||{})); S.dirty={}; S.err='';
     // une copie locale plus récente (enregistrement interrompu : réseau, fermeture…)
     D=JSON.parse(JSON.stringify(row.data||{}));
@@ -20113,6 +20134,7 @@ window.DocsChantier = (function(){
   async function back(){
     if(S.cur && Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); }
     stopPoll(); S.cur=null; D={};
+    startListPoll();
     drawList();
     loadList().then(function(){ if(!S.cur) drawList(); });
   }
@@ -20317,7 +20339,7 @@ window.DocsChantier = (function(){
   return {
     render:render, refresh:function(){ render(); },
     // on quitte l'onglet (retour à l'accueil) : on envoie ce qui reste et on arrête le suivi
-    leave:function(){ if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); saveNow(); } stopPoll(); }, open:open, newDoc:newDoc, del:del, back:back,
+    leave:function(){ if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); saveNow(); } stopPoll(); stopListPoll(); }, open:open, newDoc:newDoc, del:del, back:back,
     lock:function(){ lock(false); }, reopen:reopen, print:print, pdf:pdf,
     _create:_create, _closeModal:closeModal, _sigReset:_sigReset, _sigOk:_sigOk, _sigClear:_sigClear,
     _f:function(k,val){ S[k]=val; drawList(); },
