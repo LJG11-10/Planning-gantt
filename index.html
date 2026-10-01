@@ -151,12 +151,29 @@
     }catch(e){ console.error('Sauvegarde horodatée échouée (non bloquant):', e); }
   }
 
+  // Lecture de data.json TOUJOURS fraîche : le téléchargement simple peut
+  // renvoyer pendant quelques secondes une copie en cache (CDN Supabase)
+  // d'AVANT le dernier enregistrement — la fusion croyait alors que ce qui
+  // venait d'être saisi avait été effacé, et le retirait (Planning réunion :
+  // "l'affaire que je viens de mettre saute"). Un lien signé est unique à
+  // chaque appel, donc jamais servi depuis un cache.
+  async function _downloadFresh(){
+    try{
+      var s=await supa.storage.from(BUCKET).createSignedUrl(FILE,60);
+      if(s&&!s.error&&s.data&&s.data.signedUrl){
+        var r=await fetch(s.data.signedUrl,{cache:'no-store'});
+        if(r.ok)return await r.text();
+      }
+    }catch(e){}
+    const {data,error}=await supa.storage.from(BUCKET).download(FILE);
+    if(error||!data)return null;
+    return await data.text();
+  }
   async function supaLoad(){
     if(!supa)return null;
     try{
-      const {data,error}=await supa.storage.from(BUCKET).download(FILE);
-      if(error||!data)return null;
-      const text=await data.text();
+      const text=await _downloadFresh();
+      if(!text)return null;
       const parsed=JSON.parse(text);
       if(!_isValidStore(parsed))return null;
       // Garder le texte reçu : _applyRemote en fait la "dernière version du
@@ -190,6 +207,7 @@
         // Ce qui vient d'être envoyé est maintenant la version du serveur.
         try{_setSyncBase(JSON.parse(_json));}catch(eB){}
         window._myLastSaveId=_sid;window._preMineBase=_preBase;window._srvSaveId=_sid;
+        _markSrvSeen(_txtHash(_json));
         _markCleanIfIdle(_seqAtSave);
         try{var {data:_m}=await supa.storage.from(BUCKET).list('',{search:FILE});
         if(_m&&_m[0])_lastEtag=_m[0].updated_at||_m[0].created_at;}catch(e2){}
@@ -234,8 +252,14 @@
   // sans jamais perdre un changement local récent (horodatage _modAt).
   async function _mergeRemoteThenSave(){
     try{
-      var remote=await supaLoad();
-      if(remote)_applyRemote(remote);
+      // Jusqu'à 4 lectures si le serveur renvoie une vieille copie (cache) :
+      // n'envoyer qu'après avoir fusionné avec la VRAIE dernière version.
+      for(var _try=0;_try<4;_try++){
+        var remote=await supaLoad();
+        if(remote)_applyRemote(remote);
+        if(!window._lastApplyStale)break;
+        await new Promise(function(r){setTimeout(r,700);});
+      }
     }catch(e){
       console.error('Erreur de fusion juste avant l\'envoi (sauvegarde quand même de la version locale) :',e);
     }
@@ -305,6 +329,7 @@
         _lastEtag=etag;
         supaLoad().then(function(remote){
           if(remote&&!_isEditingUI())_applyRemote(remote);
+          if(window._lastApplyStale)_lastEtag=null; // vieille copie : relire au prochain tour
         });
       });
   }
@@ -548,6 +573,11 @@
   }
   // Données du serveur venant d'être reçues/envoyées = nouvelle version connue.
   function _setSyncBase(obj){window._syncBase=obj||null;}
+  // Empreintes des versions du serveur déjà vues (reçues ou envoyées), pour
+  // reconnaître une vieille copie qui reviendrait d'un cache.
+  var _seenSrvHash={},_seenSrvOrder=[];
+  function _txtHash(t){var h=2166136261;for(var i=0;i<t.length;i++){h^=t.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h.toString(16)+':'+t.length;}
+  function _markSrvSeen(h){window._curSrvHash=h;if(!_seenSrvHash[h]){_seenSrvHash[h]=1;_seenSrvOrder.push(h);if(_seenSrvOrder.length>60)delete _seenSrvHash[_seenSrvOrder.shift()];}}
   // Des modifications faites ici n'ont peut-être pas encore été envoyées :
   // retenu d'une session à l'autre (plan26v5_dirty) pour savoir, à la
   // prochaine connexion, si la copie locale est "propre" (= dernière version
@@ -816,6 +846,15 @@
     // trois) ; le texte reçu deviendra la nouvelle version connue à la fin.
     var _base=window._syncBase||null;
     var _srvText=remote.__srvText;delete remote.__srvText;
+    // Copie périmée : une version du serveur DÉJÀ VUE et dépassée (cache)
+    // revient — l'appliquer "effacerait" ce qui a été fait depuis. On l'ignore
+    // (la lecture suivante sera la bonne).
+    window._lastApplyStale=false;
+    if(_srvText){
+      var _h=_txtHash(_srvText);
+      if(_h!==window._curSrvHash&&_seenSrvHash[_h]){window._lastApplyStale=true;return false;}
+      _markSrvSeen(_h);
+    }
     // Envoi "doublé" : un collègue a enregistré en partant d'une version qui
     // n'avait pas encore notre dernier envoi (deux enregistrements à moins
     // d'une seconde d'écart). Nos modifications ne sont alors pas sur le
