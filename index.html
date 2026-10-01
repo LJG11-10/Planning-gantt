@@ -9379,6 +9379,10 @@ function buildSbTree(aff,selId){
   });
   if(openEns)panel+='</div>';
   if(!panel)panel='<div style="padding:10px;text-align:center;font-size:10px;color:var(--tx3)">Aucune sous-phase disponible</div>';
+  // Choix "pas de sous-phase" en tête : les heures comptent alors en heures
+  // générales de l'affaire (avant : impossible de retirer une sous-phase
+  // choisie par erreur, à part supprimer la ligne et la refaire).
+  panel='<div class="wpat-item" data-id="" data-lb="" onclick="_fhSbPick(this,event)" style="cursor:pointer;font-size:10px;padding:3px 6px;border-radius:4px;font-style:italic;border-bottom:1px dashed var(--bd);margin-bottom:3px;'+(!selId?'background:var(--ac);color:#fff;font-weight:700':'color:var(--tx2)')+'">Heures générales (pas de sous-phase)</div>'+panel;
   return {label:label,panel:panel};
 }
 // Choisir une sous-phase dans l'arbre de la Feuille d'heures : ferme le
@@ -9480,7 +9484,7 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
       +affOpts+'</select>'
       +(selAff2
         ?'<div style="font-size:8px;font-weight:800;color:'+(_c?_c.h:'var(--ac)')+';letter-spacing:.3px;margin-bottom:3px">SOUS-PHASE (rempli automatiquement)</div>'
-         +'<div id="'+_fhWidId+'" class="wpat-trigger" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" onclick="window._wpActPickerToggle(this)" style="width:100%;border-radius:6px;padding:4px 6px;font-size:10px;font-family:inherit;background:var(--bg2);color:'+(_c?_c.xd:'var(--tx)')+';cursor:pointer;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||'— Choisir une sous-phase —')+'</div>'
+         +'<div id="'+_fhWidId+'" class="wpat-trigger" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" onclick="window._wpActPickerToggle(this)" style="width:100%;border-radius:6px;padding:4px 6px;font-size:10px;font-family:inherit;background:var(--bg2);color:'+(_c?_c.xd:'var(--tx)')+';cursor:pointer;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||(ln.hours?'Heures générales (pas de sous-phase)':'— Choisir une sous-phase —'))+'</div>'
          +'<div class="wpat-panel" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" style="display:none;max-height:200px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:4px;background:var(--bg2);box-shadow:0 4px 12px rgba(0,0,0,.14);position:relative;z-index:20;margin-bottom:6px">'+_sbTree.panel+'</div>'
         :'')
       +'<div style="display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px dashed '+(_c?_c.xl:'var(--bd)')+'">'
@@ -15801,7 +15805,13 @@ function fhLineSet(aff,nm,w,d,li,field,val){
   }
   fhPut(aff,nm,w,d,lines);
   fhTotals(nm,w);
-  if(field==='actId')renderFiche();
+  if(field==='actId'){
+    // Sous-phase changée (ou retirée) : reporter tout de suite les heures
+    // au bon endroit (ancienne sous-phase vidée, nouvelle créditée).
+    if(typeof syncFichesToGantt==='function')syncFichesToGantt();
+    if(typeof updBudget==='function')updBudget();
+    renderFiche();
+  }
   if(field==='hours'){
     clearTimeout(fhLineSet._t);
     fhLineSet._t=setTimeout(function(){syncFichesToGantt();if(typeof updBudget==='function')updBudget();},800);
