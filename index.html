@@ -173,6 +173,13 @@
       _lastSaveSid=SESSION_ID;
       var _seqAtSave=window._editSeq||0;
       if(store&&store.__srvText!==undefined)delete store.__srvText;
+      // Chaque envoi porte son numéro (__saveId) et celui de la version du
+      // serveur sur laquelle il a été fait (__parentId) : permet de repérer
+      // un collègue qui a enregistré "par-dessus" sans avoir vu cet envoi
+      // (voir _lostRace dans _applyRemote).
+      var _sid=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+      var _preBase=window._syncBase||null;
+      store.__saveId=_sid;store.__parentId=window._srvSaveId||null;
       const _json=JSON.stringify(store);
       const blob=new Blob([_json],{type:'application/json'});
       const {error}=await supa.storage.from(BUCKET).upload(FILE,blob,{upsert:true,cacheControl:'0'});
@@ -182,6 +189,7 @@
       } else {
         // Ce qui vient d'être envoyé est maintenant la version du serveur.
         try{_setSyncBase(JSON.parse(_json));}catch(eB){}
+        window._myLastSaveId=_sid;window._preMineBase=_preBase;window._srvSaveId=_sid;
         _markCleanIfIdle(_seqAtSave);
         try{var {data:_m}=await supa.storage.from(BUCKET).list('',{search:FILE});
         if(_m&&_m[0])_lastEtag=_m[0].updated_at||_m[0].created_at;}catch(e2){}
@@ -504,6 +512,27 @@
   // Valeur retenue pour une donnée : celle d'ici si elle a changé depuis la
   // version connue, sinon celle du serveur (undefined = donnée absente).
   function _pick3(base,local,remote){return _eqJ(local,base)?remote:local;}
+  // Planning réunion : une case = liste d'affectations {aff,actId,comment}.
+  // Fusion à trois à l'intérieur d'une case : on part de la version du
+  // serveur, on y retire ce qui a été retiré ici, on y ajoute ce qui a été
+  // ajouté ici (une affectation modifiée = retirée puis ajoutée).
+  function _wpIsCellList(x){return x===undefined||x===null||Array.isArray(x);}
+  function _wpMergeCell(b,l,r){
+    b=b||[];l=l||[];r=r||[];
+    function sig(e){return e?(e.aff||'')+'|'+(e.actId||'')+'|'+(e.comment||''):'';}
+    function count(a){var m={};a.forEach(function(e){var s=sig(e);m[s]=(m[s]||0)+1;});return m;}
+    var bc=count(b),lc=count(l),out=r.slice();
+    Object.keys(bc).forEach(function(s){
+      for(var n=bc[s]-(lc[s]||0);n>0;n--){
+        for(var i=0;i<out.length;i++){if(sig(out[i])===s){out.splice(i,1);break;}}
+      }
+    });
+    Object.keys(lc).forEach(function(s){
+      var n=lc[s]-(bc[s]||0),src=l.filter(function(e){return sig(e)===s;});
+      for(var j=0;j<n;j++)out.push(JSON.parse(JSON.stringify(src[j]||src[0])));
+    });
+    return out;
+  }
   function _keysOf(){var o={};for(var i=0;i<arguments.length;i++){var x=arguments[i];if(x&&typeof x==='object')Object.keys(x).forEach(function(k){o[k]=1;});}return Object.keys(o);}
   // Champs d'une affaire autres que les tâches (data) et les heures (fh),
   // qui ont leur propre fusion : fortuits, archivage, budgets skid, dates,
@@ -787,6 +816,19 @@
     // trois) ; le texte reçu deviendra la nouvelle version connue à la fin.
     var _base=window._syncBase||null;
     var _srvText=remote.__srvText;delete remote.__srvText;
+    // Envoi "doublé" : un collègue a enregistré en partant d'une version qui
+    // n'avait pas encore notre dernier envoi (deux enregistrements à moins
+    // d'une seconde d'écart). Nos modifications ne sont alors pas sur le
+    // serveur, et sans précaution elles passeraient pour "effacées par le
+    // collègue". On fusionne donc par rapport à la version d'AVANT notre
+    // envoi (elles restent "à garder"), puis on les renvoie. Vérifié une
+    // seule fois, sur la première version d'un autre reçue après notre envoi.
+    var _lostRace=false;
+    if(window._myLastSaveId&&remote.__saveId&&remote.__saveId!==window._myLastSaveId){
+      if(remote.__parentId!==window._myLastSaveId&&window._preMineBase){_base=window._preMineBase;_lostRace=true;}
+      window._myLastSaveId=null;window._preMineBase=null;
+    }
+    if(remote.__saveId)window._srvSaveId=remote.__saveId;
     var _localSettings=(STORE&&STORE.settings)?JSON.parse(JSON.stringify(STORE.settings)):{};
     try{
     // ── Récupérer les tombstones LOCAUX avant tout remplacement ──────────
@@ -936,8 +978,19 @@
         _keysOf(b,l,r).forEach(function(k){
           var lc=!_eqJ(l[k],b[k]);
           var v=lc?l[k]:r[k];
+          // Même case (personne/jour) modifiée ICI et par un collègue en même
+          // temps : on garde les deux (ajouts et suppressions de chacun),
+          // au lieu que l'une des deux versions écrase l'autre en entier.
+          if(lc&&!_eqJ(r[k],b[k])&&_wpIsCellList(b[k])&&_wpIsCellList(l[k])&&_wpIsCellList(r[k])){
+            v=_wpMergeCell(b[k],l[k],r[k]);
+            if(!v.length)v=undefined;
+          }
+          // Ancienne marque "case effacée" : la fusion à trois sait déjà
+          // gérer les effacements ; la marque ne doit plus effacer une case
+          // re-remplie depuis (ici OU par un collègue — avant, une vieille
+          // marque locale supprimait l'affaire qu'un collègue venait de mettre).
           if(_delWpKeys[wk+'::'+k]){
-            if(lc&&l[k]&&l[k].length)delete _delWpKeys[wk+'::'+k];
+            if(v&&v.length)delete _delWpKeys[wk+'::'+k];
             else v=undefined;
           }
           if(v!==undefined)o[k]=v;
@@ -1066,6 +1119,8 @@
       return false;
     }
     if(!(opts&&opts.silent))applySync();
+    // Nos modifications "doublées" sont dans la fusion : les renvoyer.
+    if(_lostRace&&!(opts&&opts.silent))scheduleSupa();
     return true;
   }
 
@@ -1103,6 +1158,10 @@
         var tab=t.dataset.tab;
         if(tab==='recap'){if(!window._tdbTab||window._tdbTab==='overview')renderOverview();else if(window._tdbTab==='avancement')renderAvancement();else{syncFichesToGantt();renderRecap();}}
         else if(tab==='dashboard')renderDashboard();
+        // Planning réunion : redessiner avec les données reçues (avant : l'écran
+        // restait sur l'ancienne version, et un clic dessus écrasait la saisie
+        // du collègue). Attend la fin d'une saisie en cours (_wpSafeRebuild).
+        if(document.getElementById('db-grid')&&typeof _wpSafeRebuild==='function')_wpSafeRebuild();
       }
       var n=document.createElement('div');
       n.style.cssText='position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:10px 16px;border-radius:10px;font-size:12px;font-weight:700;z-index:9999';
@@ -7770,6 +7829,28 @@ function weekHasCongesDays(person,wk){
 }
 
 
+// Redessine le Planning réunion sans couper une saisie : si quelqu'un est en
+// train d'écrire un commentaire, de choisir une tâche ou des jours à
+// dupliquer, on attend qu'il ait fini (sortie du champ / clic suivant).
+function _wpBusy(){
+  var g=document.getElementById('db-grid');if(!g)return false;
+  var a=document.activeElement;
+  if(a&&g.contains(a)&&(a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&a.type!=='checkbox')))return true;
+  if(g.querySelector('.wp-dup-picker'))return true;
+  var ps=g.querySelectorAll('.wpat-panel');
+  for(var i=0;i<ps.length;i++)if(ps[i].style.display==='block')return true;
+  return false;
+}
+function _wpSafeRebuild(){
+  if(!document.getElementById('db-grid'))return;
+  if(_wpBusy()){window._wpPendingRebuild=true;return;}
+  window._wpPendingRebuild=false;
+  var sc=document.getElementById('db-grid-main'),t=sc?sc.scrollTop:0,l=sc?sc.scrollLeft:0;
+  dbBuildPlanningGrid();
+  if(sc){sc.scrollTop=t;sc.scrollLeft=l;}
+}
+document.addEventListener('focusout',function(){if(window._wpPendingRebuild)setTimeout(_wpSafeRebuild,80);});
+document.addEventListener('click',function(){if(window._wpPendingRebuild)setTimeout(_wpSafeRebuild,80);},true);
 function renderPlanningReunionTab(){
   var container=document.getElementById('db-grid-main');
   if(!container)return;
@@ -7895,7 +7976,26 @@ function dbBuildPlanningGrid(){
   function getCellRows(nm,di){var saved=getSavedEntries(nm,di);var extraKey=nm+'::'+di;var extra=window._wpExtra[extraKey]||0;var rows=saved.slice();for(var i=0;i<extra;i++)rows.push({aff:'',actId:'',comment:''});if(!rows.length)rows.push({aff:'',actId:'',comment:''});return rows;}
   function saveCellEntry(nm,di,ei,field,val){if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved[ei][field]=val;}else{var newEntry={aff:'',actId:'',comment:''};newEntry[field]=val;saved.push(newEntry);if(extra>0)window._wpExtra[key]=extra-1;}var clean=saved.filter(function(e){return e.aff||e.actId||(e.comment&&e.comment.trim());});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}
   function removeEntry(nm,di,ei){var key=nm+'::'+di;var saved=getSavedEntries(nm,di);var extra=window._wpExtra[key]||0;if(ei<saved.length){saved.splice(ei,1);var clean=saved.filter(function(e){return e.aff||e.actId||(e.comment&&e.comment.trim());});if(clean.length){STORE.weekPlan[selWk][key]=clean;if(STORE._deletedWeekPlanKeys)delete STORE._deletedWeekPlanKeys[selWk+'::'+key];}else{delete STORE.weekPlan[selWk][key];if(!STORE._deletedWeekPlanKeys)STORE._deletedWeekPlanKeys={};STORE._deletedWeekPlanKeys[selWk+'::'+key]=Date.now();}localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();}else{if(extra>0)window._wpExtra[key]=extra-1;}dbBuildPlanningGrid();}
-  window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei=+sel.dataset.ei;saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];var _newTree=sel.value?buildActTree(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null):{label:'',panel:''};as.textContent=_newTree.label||'-- Choisir activite --';as.dataset.actid='';as.style.display=sel.value?'block':'none';var _panel=as.nextElementSibling;if(_panel&&_panel.classList.contains('wpat-panel')){_panel.innerHTML=_newTree.panel;_panel.style.display='none';}}
+  // L'écran peut avoir quelques secondes de retard sur les données (un
+  // collègue vient d'enregistrer) : avant d'écrire, on retrouve la VRAIE
+  // entrée correspondant à la ligne cliquée, d'après l'affaire qu'elle
+  // affichait (data-was), au lieu de se fier à son numéro de ligne (ei).
+  // Sans ça, un clic sur un écran périmé écrasait l'affaire d'un collègue
+  // ou supprimait la mauvaise ligne. Retourne l'index à utiliser, ou -1 si
+  // l'entrée affichée n'existe plus (newIfGone : créer une nouvelle entrée).
+  function _wpResolveEi(nm,di,ei,el,newIfGone){
+    var div=el&&el.closest?el.closest('.wp-entry'):null;
+    if(!div||!div.hasAttribute('data-was'))return ei;
+    var was=div.getAttribute('data-was')||'';
+    var saved=getSavedEntries(nm,di);
+    if(ei<saved.length?(saved[ei].aff||'')===was:was==='')return ei;
+    if(was==='')return saved.length; // ligne vide à l'écran : nouvelle entrée
+    for(var i=0;i<saved.length;i++)if((saved[i].aff||'')===was)return i;
+    return newIfGone?saved.length:-1;
+  }
+  window._wpAffChange=function(sel){var nm=sel.dataset.nm,di=+sel.dataset.di,ei0=+sel.dataset.ei;var ei=_wpResolveEi(nm,di,ei0,sel,true);
+    if(ei!==ei0){saveCellEntry(nm,di,ei,'aff',sel.value);var _sv=getSavedEntries(nm,di);if(_sv[ei])_sv[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();dbBuildPlanningGrid();return;}
+    saveCellEntry(nm,di,ei,'aff',sel.value);var saved=getSavedEntries(nm,di);if(saved[ei])saved[ei].actId='';localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();var _wd=sel.closest('.wp-entry');if(_wd)_wd.setAttribute('data-was',sel.value);var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var as=document.getElementById('wpa-'+nmKey+'-'+di+'-'+ei);if(as){var _wpNm2=sel.closest('tr')?sel.closest('tr').dataset.nm:'';var _wpGP2=_wpNm2&&STORE.globalPersons&&STORE.globalPersons[_wpNm2];var _newTree=sel.value?buildActTree(sel.value,'',_wpGP2?_getServicePhases(_wpGP2.service||''):null):{label:'',panel:''};as.textContent=_newTree.label||'-- Choisir activite --';as.dataset.actid='';as.style.display=sel.value?'block':'none';var _panel=as.nextElementSibling;if(_panel&&_panel.classList.contains('wpat-panel')){_panel.innerHTML=_newTree.panel;_panel.style.display='none';}}
     var _entryDiv=sel.closest('.wp-entry');
     if(_entryDiv){
       var _c=sel.value?affColor(sel.value):null;
@@ -7983,7 +8083,9 @@ function dbBuildPlanningGrid(){
     }
   }
 };
-  window._wpCommentChange=function(ta){var nm=ta.dataset.nm,di=+ta.dataset.di,ei=+ta.dataset.ei;saveCellEntry(nm,di,ei,'comment',ta.value);};
+  window._wpCommentChange=function(ta){var nm=ta.dataset.nm,di=+ta.dataset.di,ei0=+ta.dataset.ei;var ei=_wpResolveEi(nm,di,ei0,ta,true);
+    if(ei!==ei0){if(ta.value.trim())saveCellEntry(nm,di,ei,'comment',ta.value);_wpSafeRebuild();return;}
+    saveCellEntry(nm,di,ei,'comment',ta.value);};
   // Choisir une tâche dans l'arbre : ferme le panneau, met à jour
   // l'affichage, et déclenche la même sauvegarde qu'avant.
   window._wpActPick=function(item,ev){
@@ -7999,10 +8101,13 @@ function dbBuildPlanningGrid(){
     });
     if(trigger){trigger.textContent=lb||'-- Choisir activite --';trigger.dataset.actid=actId;}
     panel.style.display='none';
-    _wpSetActivity(panel.dataset.nm,+panel.dataset.di,+panel.dataset.ei,actId);
+    var _pnm=panel.dataset.nm,_pdi=+panel.dataset.di,_pei0=+panel.dataset.ei,_pei=_wpResolveEi(_pnm,_pdi,_pei0,panel,false);
+    if(_pei<0){dbBuildPlanningGrid();return;}
+    _wpSetActivity(_pnm,_pdi,_pei,actId);
+    if(_pei!==_pei0)dbBuildPlanningGrid();
   };
   window._wpAddEntry=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di;var key=nm+'::'+di;window._wpExtra[key]=(window._wpExtra[key]||0)+1;dbBuildPlanningGrid();};
-  window._wpRemove=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di,ei=+btn.dataset.ei;removeEntry(nm,di,ei);};
+  window._wpRemove=function(btn){var nm=btn.dataset.nm,di=+btn.dataset.di,ei=_wpResolveEi(nm,di,+btn.dataset.ei,btn,false);if(ei<0){dbBuildPlanningGrid();return;}removeEntry(nm,di,ei);};
   window._wpToggleDupPicker=function(btn){
     var wrap=btn.closest('.wp-entry');
     var existing=wrap.querySelector('.wp-dup-picker');
@@ -8064,7 +8169,8 @@ function dbBuildPlanningGrid(){
     var pk=btn.closest('.wp-dup-picker');if(!pk)return;
     var targets=Array.prototype.map.call(pk.querySelectorAll('.wp-dup-day[data-sel="1"]'),function(x){return +x.dataset.target;});
     if(!targets.length)return;
-    var nm=btn.dataset.nm,srcDi=+btn.dataset.di,srcEi=+btn.dataset.ei;
+    var nm=btn.dataset.nm,srcDi=+btn.dataset.di,srcEi=_wpResolveEi(nm,srcDi,+btn.dataset.ei,btn,false);
+    if(srcEi<0){dbBuildPlanningGrid();return;}
     var srcEntry=getSavedEntries(nm,srcDi)[srcEi];
     if(!srcEntry||!srcEntry.aff)return;
     if(!STORE.weekPlan[selWk])STORE.weekPlan[selWk]={};
@@ -8222,7 +8328,9 @@ function dbBuildPlanningGrid(){
       rows.forEach(function(entry,ei){
         var sAff=entry.aff||'',sAct=entry.actId||'',sComment=entry.comment||'';
         var _entryColor=sAff?affColor(sAff):null;
-        html+='<div class="wp-entry" style="margin-bottom:5px;background:'+(_entryColor?_entryColor.f:'var(--bg3)')+';border-left:4px solid '+(_entryColor?_entryColor.h:'var(--bd)')+';border-radius:10px;padding:6px 8px;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
+        // data-was = l'affaire affichée sur cette ligne au moment du dessin :
+        // sert à vérifier, au clic, qu'on modifie bien la même entrée (voir _wpResolveEi).
+        html+='<div class="wp-entry" data-was="'+escHtml(sAff)+'" style="margin-bottom:5px;background:'+(_entryColor?_entryColor.f:'var(--bg3)')+';border-left:4px solid '+(_entryColor?_entryColor.h:'var(--bd)')+';border-radius:10px;padding:6px 8px;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
         // Barre d'outils dédiée, en flux normal (pas en position absolue par-
         // dessus le contenu) : le contenu (menus déroulants, texte) démarre
         // TOUJOURS en dessous, donc plus jamais de chevauchement possible
