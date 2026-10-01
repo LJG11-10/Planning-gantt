@@ -10977,7 +10977,7 @@ function avBuildDownloadHtml(sel){
       :done?'<span class="st st-ok">✓ Terminée</span>'
       :r.inProgress?'<span class="st st-pr">⚡ En cours</span>'
       :'';
-    return '<div class="task"><div class="tl"><span class="tn">'+esc(r.lb)+'</span>'+badge+'<span class="dt">'+esc(_avDateLbl(r))+'</span></div>'
+    return '<div class="task"><div class="tl"><span class="tn">'+esc(r.lb)+'</span>'+badge+'</div>'
       +(excl?'':'<div class="tr">'+bar(pct,done?'#16A34A':'#F59E0B')+'<span class="pc">'+pct+'%</span></div>')+'</div>';
   }
   function nodeHtml(n,color){
