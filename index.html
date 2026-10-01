@@ -10736,9 +10736,7 @@ function _avcRowsHtml(ens,anim){
     if(k.type==='sb'){
       var p=calcHierProgress(D(),{filterSbId:k.row.id});
       h+=row('sb',k.row.id,k.row.lb,p,_avcSbCol(p),false);
-      k.kids.forEach(function(t){if(t.type==='act')h+=task(t.row);});
-    }else if(k.type==='act'){
-      h+=task(k.row,' <span style="color:#B45309;font-size:10px">(hors sous-phase)</span>');
+      // Détail du graphique : sous-phases seulement (pas les tâches).
     }
   });
   return h||'<div style="font-size:12px;color:var(--tx3)">Aucune sous-phase dans ce sous-ensemble.</div>';
@@ -11083,12 +11081,7 @@ function _avDlChartData(sel){
       if(k.type==='sb'){
         var sp=calcHierProgress(D(),{filterSbId:k.row.id});
         rows.push({k:'sb',lb:k.row.lb,p:sp,c:_avcSbCol(sp)});
-        k.kids.forEach(function(t){
-          if(t.type!=='act'||!sel[_avNodeKey(t)])return;
-          var tv=_avcTask(t.row);rows.push({k:'t',lb:t.row.lb,p:tv.pct,c:col(tv.col),x:tv.excl?1:0});
-        });
-      }else if(k.type==='act'){
-        var tv=_avcTask(k.row);rows.push({k:'t',lb:k.row.lb,p:tv.pct,c:col(tv.col),x:tv.excl?1:0,hs:1});
+        // Détail du graphique : sous-phases seulement (pas les tâches).
       }
     });
     var p=calcHierProgress(D(),{filterEnsId:e.row.id});
@@ -11307,17 +11300,17 @@ function calcHierProgress(pData,opts){
     var only=sbList.find(function(sb){return sb.sbId===opts.filterSbId;});
     if(!only)return 0;
     var p1=sbPercent(only);
-    return p1===null?0:Math.round(p1);
+    return p1===null?0:_pctFloor(p1);
   }
   // Demande directe du % propre d'UN ensemble précis
   if(opts.filterEnsId){
     var p2=ensPercent(opts.filterEnsId,opts.includeSb);
-    return p2===null?0:Math.round(p2);
+    return p2===null?0:_pctFloor(p2);
   }
   // Demande directe du % propre d'UNE phase précise
   if(opts.filterPk){
     var p3=phasePercent(opts.filterPk,opts.includeSb);
-    return p3===null?0:Math.round(p3);
+    return p3===null?0:_pctFloor(p3);
   }
 
   // Niveau affaire globale : combiner les phases qui comptent (Chantier et
@@ -11331,8 +11324,12 @@ function calcHierProgress(pData,opts){
     if(pw<=0)return;
     wSum4+=pp*pw;wTot4+=pw;
   });
-  return wTot4>0?Math.round(wSum4/wTot4):0;
+  return wTot4>0?_pctFloor(wSum4/wTot4):0;
 }
+// Pourcentage affiché : arrondi VERS LE BAS (99,6 % s'affiche 99 %), pour que
+// 100 % n'apparaisse que quand tout est vraiment terminé. Le petit 1e-9
+// évite qu'un 100 % exact calculé en 99,99999… tombe à 99.
+function _pctFloor(x){return Math.max(0,Math.min(100,Math.floor((+x||0)+1e-9)));}
 
 // ── Calcul % avancement pondéré par H Prévues ────────────────────────
 // Paramètre : tableau de rows de type 'act'
