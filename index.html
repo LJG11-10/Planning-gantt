@@ -20496,4 +20496,105 @@ window.DocsChantier = (function(){
 </script>
 <!-- ═══════════════════════════ /DOCS CHANTIER ═══════════════════════ -->
 
+<!-- ═══════════════════ NOUVELLE VERSION DU SITE — module isolé ═════════════
+     Plus besoin de demander à tout le monde de faire Ctrl+F5 après une mise
+     en ligne : le site relit de temps en temps sa propre page sur le serveur
+     et compare ses scripts avec ceux qu'il a chargés (empreinte calculée
+     automatiquement : rien à changer à la main à chaque mise en ligne).
+     - Nouvelle version trouvée → bandeau « Recharger ».
+     - En revenant sur l'onglet après une absence (tablette rallumée, onglet
+       oublié ouvert la veille) et si rien n'est en cours d'envoi → la page se
+       recharge toute seule.
+     Avant de recharger, on attend que les modifications soient envoyées
+     (drapeau plan26v5_dirty de la synchro, fiches Docs chantier). La connexion
+     Supabase est gardée par le navigateur : on revient connecté.
+     Jamais sur la page téléphone du QR code (?qr=), qui garde la session
+     du compagnon en mémoire seulement. ═══════════════════════════════════ -->
+<script>
+(function(){
+  if(window._QR_TOKEN) return;
+  var CHECK_MS=10*60*1000, AWAY_MS=5*60*1000, lastTag=null;
+  function hashScripts(doc){
+    var h=2166136261;
+    doc.querySelectorAll('script:not([src])').forEach(function(s){
+      var t=s.textContent||'';
+      for(var i=0;i<t.length;i++){ h^=t.charCodeAt(i); h=Math.imul(h,16777619)>>>0; }
+    });
+    return h.toString(16);
+  }
+  // Empreinte de la version chargée, prise maintenant : ce script est le
+  // dernier de la page, tous les autres sont déjà là.
+  var MINE=hashScripts(document);
+  var newFound=false, laterUntil=0, hiddenAt=0, busy=false;
+
+  async function check(){
+    if(busy||newFound) return newFound;
+    busy=true;
+    try{
+      var url=location.pathname+'?_v='+Date.now();
+      // D'abord juste l'étiquette de version (quelques octets) : la page entière
+      // n'est relue que si elle a changé depuis la dernière vérification.
+      var tag=null;
+      try{ var hd=await fetch(url,{method:'HEAD',cache:'no-store',credentials:'same-origin'}); if(hd.ok) tag=hd.headers.get('etag')||hd.headers.get('last-modified'); }catch(e){}
+      if(tag&&tag===lastTag){ busy=false; return false; }
+      var r=await fetch(url,{cache:'no-store',credentials:'same-origin'});
+      if(r.ok){
+        lastTag=tag;
+        var txt=await r.text();
+        if(txt.indexOf('NOUVELLE VERSION DU SITE')>0){   // c'est bien la page du site
+          var srv=hashScripts(new DOMParser().parseFromString(txt,'text/html'));
+          if(srv!==MINE) newFound=true;
+        }
+      }
+    }catch(e){}
+    busy=false;
+    if(newFound) banner();
+    return newFound;
+  }
+  function pendingWork(){
+    var p=false;
+    try{ p=localStorage.getItem('plan26v5_dirty')==='1'; }catch(e){}
+    try{ var dc=window.DocsChantier&&window.DocsChantier._state&&window.DocsChantier._state().S; if(dc&&dc.cur&&Object.keys(dc.dirty||{}).length) p=true; }catch(e){}
+    return p;
+  }
+  function typing(){
+    var a=document.activeElement;
+    return !!(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&a.type!=='button'&&a.type!=='checkbox');
+  }
+  function banner(){
+    if(Date.now()<laterUntil||document.getElementById('petro-newver')) return;
+    var b=document.createElement('div'); b.id='petro-newver';
+    b.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:10070;background:#1C1A33;color:#fff;border-radius:14px;padding:10px 12px 10px 16px;box-shadow:0 12px 36px rgba(0,0,0,.3);display:flex;gap:10px;align-items:center;font:600 13px/1.35 \'Plus Jakarta Sans\',system-ui,sans-serif;max-width:calc(100vw - 24px);flex-wrap:wrap';
+    b.innerHTML='<span>🔄 Une nouvelle version du site est disponible.</span>'
+      +'<button id="petro-newver-go" style="border:none;border-radius:9px;padding:7px 14px;background:#6457F4;color:#fff;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">Recharger</button>'
+      +'<button id="petro-newver-later" style="border:none;background:transparent;color:rgba(255,255,255,.7);font-weight:600;font-size:12px;font-family:inherit;cursor:pointer">Plus tard</button>';
+    document.body.appendChild(b);
+    document.getElementById('petro-newver-go').onclick=function(){ reloadWhenSaved(true); };
+    document.getElementById('petro-newver-later').onclick=function(){ laterUntil=Date.now()+30*60*1000; b.remove(); setTimeout(banner,30*60*1000+1000); };
+  }
+  // On n'efface jamais une saisie : on envoie ce qui reste, on attend que la
+  // synchro ait fini (20 s maxi — au pire, la copie locale est reprise à la
+  // connexion suivante, c'est prévu), puis on recharge.
+  function reloadWhenSaved(fromClick){
+    try{ if(window.DocsChantier&&window.DocsChantier._state&&window.DocsChantier._state().S.cur){ var dcs=window.DocsChantier._state().S; if(Object.keys(dcs.dirty||{}).length&&window.DocsChantier.leave) window.DocsChantier.leave(); } }catch(e){}
+    var go=document.getElementById('petro-newver-go'); if(go){ go.disabled=true; go.textContent='Enregistrement…'; }
+    var t0=Date.now();
+    (function wait(){
+      if(!pendingWork()||Date.now()-t0>20000){ location.reload(); return; }
+      setTimeout(wait,500);
+    })();
+  }
+  async function onBack(){
+    var away=hiddenAt&&Date.now()-hiddenAt>=AWAY_MS; hiddenAt=0;
+    var found=await check();
+    if(found&&away&&!pendingWork()&&!typing()) location.reload();
+  }
+  document.addEventListener('visibilitychange',function(){ if(document.hidden) hiddenAt=Date.now(); else onBack(); });
+  window.addEventListener('online',function(){ check(); });
+  setInterval(function(){ if(!document.hidden) check(); },CHECK_MS);
+  setTimeout(check,60*1000);
+  window._petroVersion={check:check,mine:function(){return MINE;},_banner:banner,_reload:reloadWhenSaved};
+})();
+</script>
+
 </body></html>
