@@ -1669,6 +1669,11 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
         <div style="font-size:16px;font-weight:800;color:#1C1A33">Plaque PE</div>
         <div style="font-size:12px;color:#9A96B3;margin-top:6px;line-height:1.5">Générateur de plaques PE (DXF)</div>
       </div>
+      <div id="petro-hub-tile-docs" onclick="petroHubEnterDocs()" style="display:none;cursor:pointer;background:#fff;border-radius:16px;padding:32px 28px;width:280px;box-shadow:0 8px 28px rgba(60,40,160,.08);border:2px solid #E4E1F0;transition:transform .15s,box-shadow .15s,border-color .15s;text-align:center" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 14px 36px rgba(60,40,160,.15)';this.style.borderColor='#6457F4'" onmouseout="this.style.transform='none';this.style.boxShadow='0 8px 28px rgba(60,40,160,.08)';this.style.borderColor='#E4E1F0'">
+        <div style="height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;font-size:44px">📋</div>
+        <div style="font-size:16px;font-weight:800;color:#1C1A33">Docs chantier</div>
+        <div style="font-size:12px;color:#9A96B3;margin-top:6px;line-height:1.5">Fiches de contrôle à remplir, signer, imprimer</div>
+      </div>
       <div id="petro-hub-tile-droits" onclick="petroHubEnterDroits()" style="cursor:pointer;background:#fff;border-radius:16px;padding:32px 28px;width:280px;box-shadow:0 8px 28px rgba(60,40,160,.08);border:2px solid #E4E1F0;transition:transform .15s,box-shadow .15s,border-color .15s;text-align:center" onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 14px 36px rgba(60,40,160,.15)';this.style.borderColor='#6457F4'" onmouseout="this.style.transform='none';this.style.boxShadow='0 8px 28px rgba(60,40,160,.08)';this.style.borderColor='#E4E1F0'">
         <div style="height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;font-size:44px">🔐</div>
         <div style="font-size:16px;font-weight:800;color:#1C1A33">Gestion des droits</div>
@@ -1750,6 +1755,8 @@ function showHub(){
   if(droits) droits.style.display='none';
   var backups = document.getElementById('petro-backups-shell');
   if(backups) backups.style.display='none';
+  var docs = document.getElementById('petro-docs-shell');
+  if(docs) docs.style.display='none';
   var qrs = document.getElementById('petro-qr-shell');
   if(qrs) qrs.style.display='none';
   petroHubShowLogoOnHub();
@@ -1761,6 +1768,15 @@ function petroHubEnterQR(){
   if(qrs) qrs.style.display='flex';
   if(window.QRFeuille && typeof window.QRFeuille.render==='function'){
     window.QRFeuille.render('petro-qr-content');
+  }
+}
+function petroHubEnterDocs(){
+  var hub = document.getElementById('petro-hub-screen');
+  if(hub) hub.style.display='none';
+  var docs = document.getElementById('petro-docs-shell');
+  if(docs) docs.style.display='flex';
+  if(window.DocsChantier && typeof window.DocsChantier.render==='function'){
+    window.DocsChantier.render('petro-docs-content');
   }
 }
 function petroHubEnterPlanning(){
@@ -1805,6 +1821,8 @@ function petroHubBackToHub(){
   if(droits) droits.style.display='none';
   var backups = document.getElementById('petro-backups-shell');
   if(backups) backups.style.display='none';
+  var docs = document.getElementById('petro-docs-shell');
+  if(docs && docs.style.display!=='none'){ docs.style.display='none'; if(window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave(); }
   var qrs = document.getElementById('petro-qr-shell');
   if(qrs) qrs.style.display='none';
   var hub = document.getElementById('petro-hub-screen');
@@ -2860,6 +2878,7 @@ window.DroitsAcces = (function () {
     {key:'rappels',   label:'Rappels & alertes'},
     {key:'plaque_pe', label:'Plaque PE'},
     {key:'qr_feuille', label:'QR Code feuille d\'heure (Voir = accès à l\'onglet ; Modifier = afficher le QR code, valider et débloquer les feuilles)'},
+    {key:'docs_chantier', label:'Docs chantier (Voir = consulter et imprimer les fiches ; Modifier = créer, remplir, faire signer, verrouiller). Rouvrir une fiche signée : admin et chef de chantier'},
     {key:'budget_toolbar', label:'H vendues (barre d\'outils)', group:'Budget Heures'},
     {key:'budget_gantt',   label:'Budget heures dans le Gantt (par phase/ensemble/sous-phase)', group:'Budget Heures'},
     {key:'budget_recap',   label:'Heures dans le récap & les rapports', group:'Budget Heures'}
@@ -3504,6 +3523,9 @@ function applyRoleRestrictions() {
   // QR Code feuille d'heure : admins, + ceux qui ont le droit "QR Code" (Voir)
   var qrTile = document.getElementById('petro-hub-tile-qr');
   if (qrTile) qrTile.style.display = (CURRENT_ROLE === 'admin' || hasView('qr_feuille')) ? '' : 'none';
+  // Docs chantier (fiches de contrôle) : admins, + ceux qui ont le droit "Docs chantier" (Voir)
+  var docsTile = document.getElementById('petro-hub-tile-docs');
+  if (docsTile) docsTile.style.display = (CURRENT_ROLE === 'admin' || hasView('docs_chantier')) ? '' : 'none';
   if (CURRENT_ROLE === 'chef_chantier') {
     // Masquer tous les onglets sauf GANTT, Planning réunion, Personnel, Absences et Tableau de bord
     // (le budget à l'intérieur du Tableau de bord est déjà géré finement par le
@@ -19450,5 +19472,860 @@ window.QRFeuille=(function(){
 })();
 if(window._QR_TOKEN){window.QRFeuille.startPublic();}
 </script>
+
+<!-- ═══════════════════════════ DOCS CHANTIER — module isolé ═══════════
+     Documents que le chef de chantier remplissait sur papier, refaits à
+     l'identique pour être remplis sur le site (tablette / ordinateur),
+     signés au doigt, puis imprimés ou enregistrés en PDF.
+     Les fiches ne sont PAS dans data.json (signatures = images, lourdes) :
+     table Supabase "docs_chantier" (script docs_chantier_supabase.sql),
+     une ligne par fiche, colonne "rev" pour fusionner sans rien écraser
+     quand deux personnes modifient la même fiche en même temps.
+     ══════════════════════════════════════════════════════════════════ -->
+<div id="petro-docs-shell" style="display:none;position:fixed;inset:0;z-index:8000;background:#F6F5FB;flex-direction:column;overflow:hidden;font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif">
+  <div style="padding:10px 16px;background:#fff;border-bottom:1px solid #E4E1F0;display:flex;align-items:center;gap:12px;flex-shrink:0">
+    <button onclick="petroHubBackToHub()" style="background:#F6F5FB;color:#1C1A33;border:1px solid #E4E1F0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">← Retour</button>
+    <span style="color:#1C1A33;font-size:13px;font-weight:700">Docs chantier</span>
+  </div>
+  <div id="petro-docs-content" style="flex:1;min-height:0;overflow:auto;padding:0"></div>
+</div>
+<div id="dcf-modal" style="display:none;position:fixed;inset:0;z-index:9600;background:rgba(20,16,50,.5);overflow:auto;padding:24px 12px"></div>
+<style>
+.dcu,.dcu *{box-sizing:border-box}
+.dcu{font-family:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#1C1A33}
+.dcu-wrap{max-width:1100px;margin:0 auto;padding:22px 16px 60px}
+.dcu-card{background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:16px 18px;margin-bottom:14px;box-shadow:0 2px 10px rgba(60,40,160,.05)}
+.dcu-btn{border:none;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:800;font-family:inherit;cursor:pointer;background:#6457F4;color:#fff;white-space:nowrap}
+.dcu-btn:disabled{opacity:.45;cursor:not-allowed}
+.dcu-btn2{border:1.5px solid #E4E1F0;background:#fff;color:#1C1A33;border-radius:10px;padding:8px 13px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap}
+.dcu-btn2:hover{border-color:#6457F4}
+.dcu-red{background:#fff;color:#B91C1C;border-color:#FCA5A5}
+.dcu-in{border:1.5px solid #E4E1F0;border-radius:10px;padding:8px 10px;font-size:13px;font-family:inherit;background:#fff;color:#1C1A33;outline:none}
+.dcu-in:focus{border-color:#6457F4}
+.dcu-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.dcu-tbl th{text-align:left;font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.3px;padding:8px 10px;border-bottom:1px solid #E4E1F0;background:#FBFAFF}
+.dcu-tbl td{padding:9px 10px;border-bottom:1px solid #F0EEF8;vertical-align:middle}
+.dcu-tbl tr.dcu-row{cursor:pointer}
+.dcu-tbl tr.dcu-row:hover td{background:#FBFAFF}
+.dcu-badge{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:10px;white-space:nowrap}
+.dcu-bar{position:sticky;top:0;z-index:5;background:rgba(255,255,255,.97);border-bottom:1px solid #E4E1F0;padding:8px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dcu-msg{border-radius:12px;padding:10px 14px;font-size:13px;line-height:1.5;margin:10px auto 0;max-width:820px}
+.dcu-sheets{padding:18px 0 80px;transform-origin:top center}
+@media(max-width:700px){.dcu-tbl .dcu-hide-sm{display:none}}
+
+/* ── La fiche (format A4, identique au document papier) ── */
+.dcf,.dcf *{box-sizing:border-box}
+.dcf-page{position:relative;width:210mm;height:297mm;margin:0 auto 18px;background:#fff;box-shadow:0 4px 24px rgba(30,20,90,.16);padding:11mm 13mm 0 13mm;font-family:Calibri,Carlito,'Segoe UI',Arial,sans-serif;font-size:10pt;color:#111;line-height:1.22;overflow:hidden}
+.dcf table{border-collapse:collapse;width:100%}
+.dcf td,.dcf th{border:1px solid #333;padding:0 4px;vertical-align:middle}
+.dcf .en{color:#4a4a4a;font-weight:300}
+.dcf-hd td{height:11mm}
+.dcf-hd .logo{width:19%;text-align:center}
+.dcf-hd .logo img{height:13mm;width:auto;display:inline-block}
+.dcf-hd .ttl{width:44%;text-align:center;font-size:12pt;line-height:1.75;white-space:nowrap}
+.dcf-hd .ttl b{font-weight:700}
+.dcf-hd .ttl .en{color:#333;font-weight:400;letter-spacing:.3px;font-size:11.5pt}
+.dcf-hd .aff{width:19%;text-align:center;vertical-align:top;font-family:Cambria,'Times New Roman',serif;font-size:9.5pt;padding-top:1mm}
+.dcf-hd .aff .en{font-family:Cambria,'Times New Roman',serif;color:#666}
+.dcf-hd .code{width:18%;text-align:center;font-size:7pt;vertical-align:top;padding-top:1mm}
+.dcf-hd .code b{display:block;font-family:Cambria,'Times New Roman',serif;font-size:10pt;margin-top:1mm}
+.dcf-hd .ver{font-size:6.5pt;text-align:center;height:7mm}
+.dcf-hd .affv{display:block;margin-top:1.5mm;font-size:12.5pt;color:#1D3FBF;font-family:"Segoe Print","Bradley Hand","Comic Sans MS",Calibri,sans-serif}
+.dcf-foot{position:absolute;left:13mm;right:13mm;bottom:9mm;border-top:1px solid #444;padding-top:1mm;font-family:Arial,sans-serif;font-size:7.5pt;display:flex;line-height:1.25}
+.dcf-foot .l{width:40%;margin-right:8%}
+.dcf-sec{font-size:8pt;font-weight:700;background:#F2F2F2;height:5.2mm;text-transform:none}
+.dcf-sec .en{font-weight:400;color:#555}
+.dcf-id td{height:7.6mm;font-size:11pt}
+.dcf-cbx{display:inline-block;width:3.2mm;height:3.2mm;border:1px solid #222;vertical-align:-.3mm;margin-right:1.5mm;position:relative;background:#fff}
+.dcf-cb{cursor:pointer;user-select:none;-webkit-user-select:none;white-space:nowrap}
+.dcf-cb.on .dcf-cbx::after{content:"✗";position:absolute;left:-.4mm;right:-.4mm;top:0;text-align:center;line-height:2.9mm;font-size:11.5pt;color:#1D3FBF;font-weight:700}
+.dcf-ro .dcf-cb,.dcf-ro .dcf-mk{cursor:default}
+.dcf-in{border:none;outline:none;background:transparent;font:inherit;color:#1D3FBF;padding:0 1mm;min-width:0;font-family:'Segoe Print','Bradley Hand','Comic Sans MS',Calibri,sans-serif;font-size:1.05em}
+.dcf-in:focus{background:#EEF2FF}
+.dcf-in:disabled{color:#1D3FBF;-webkit-text-fill-color:#1D3FBF;opacity:1}
+.dcf-dot{border-bottom:1px dotted #333}
+.dcf-ta{border:none;outline:none;background:transparent;resize:none;width:100%;font-family:'Segoe Print','Bradley Hand','Comic Sans MS',Calibri,sans-serif;color:#1D3FBF;font-size:10.5pt;line-height:1.3;padding:1mm}
+.dcf-ta:focus{background:#EEF2FF}
+.dcf-ta:disabled{color:#1D3FBF;-webkit-text-fill-color:#1D3FBF;opacity:1}
+.dcf-val{color:#1D3FBF;font-family:'Segoe Print','Bradley Hand','Comic Sans MS',Calibri,sans-serif;font-size:1.05em;padding:0 1mm;white-space:pre-wrap}
+.dcf-ty td{height:9mm;width:50%}
+.dcf-ty .two{line-height:1.7}
+.dcf-sp td{width:50%;vertical-align:top;padding-top:2.5mm;padding-bottom:1mm;line-height:1.6}
+.dcf-sp .g{display:grid;grid-template-columns:auto auto;justify-content:start;column-gap:16mm}
+.dcf-dr td{height:12.2mm;vertical-align:top;padding-top:1mm;line-height:1.45}
+.dcf-dr td:nth-child(1){width:34.5%}.dcf-dr td:nth-child(2){width:32.5%}
+.dcf-legend{font-size:8pt;font-style:italic;color:#9A9A9A;margin:4mm 0 2mm;line-height:1.35}
+.dcf-legend .lg{color:#C00000;font-weight:700;text-decoration:underline}
+.dcf-st{border:1.4px solid #222;text-align:center;font-size:12pt;font-weight:700;padding:.6mm 0;margin:0 0 6mm}
+.dcf-st .en{font-weight:400;color:#333}
+.dcf-ck{table-layout:fixed}
+.dcf-ck td{height:8.4mm;font-size:9.6pt;line-height:1.18;padding-top:.3mm;padding-bottom:.3mm}
+.dcf-ck .n{width:4.6%;text-align:center;font-size:9.5pt}
+.dcf-ck .mk{width:5.4%}
+.dcf-ck .cok{width:11.2%}
+.dcf-ck .h td{height:6.4mm;text-align:center;font-weight:700;font-size:9.5pt}
+.dcf-ck .h0 td{height:6.4mm}
+.dcf-ck .h0 td.blank{border:none}
+.dcf-mk{text-align:center;cursor:pointer;user-select:none;-webkit-user-select:none;color:#1D3FBF;font-size:15pt;font-weight:700;font-family:'Segoe Print','Comic Sans MS',sans-serif;padding:0!important}
+.dcf-mk:hover{background:#F3F4FF}
+.dcf-ro .dcf-mk:hover{background:transparent}
+.dcf-ck .cok .dcf-in{width:100%;text-align:center;font-size:7.5pt;padding:0}
+.dcf-ck .dsc .dcf-in{width:100%}
+.dcf-ck .n .dcf-in{width:100%;text-align:center;padding:0}
+.dcf-pl-t{text-align:center;font-weight:700;font-size:12.5pt;text-decoration:underline;margin:9mm 0 4mm}
+.dcf-pl-t .en{font-weight:400;color:#333}
+.dcf-pl td{border-top:none;border-bottom:none;height:8mm;padding:0}
+.dcf-pl tr.h td{border:1px solid #333;font-weight:700;height:6mm;padding:0 4px}
+.dcf-pl tr.last td{border-bottom:1px solid #333}
+.dcf-pl td.n{width:6.2%;text-align:center}
+.dcf-pl .dcf-in{width:100%;height:8mm;font-size:11pt}
+.dcf-pl td.n .dcf-in{text-align:center;padding:0}
+.dcf-sg td{vertical-align:top;width:50%;padding:1.2mm 2mm;font-size:9.5pt}
+.dcf-sg .sgh{font-weight:700;background:#F2F2F2;font-size:9pt;padding:.8mm 2mm}
+.dcf-sg .row{display:flex;align-items:baseline;gap:1mm;height:6.4mm}
+.dcf-sg .row .dcf-in{flex:1}
+.dcf-sg .row .dcf-val{flex:1}
+.dcf .dcf-sec{height:5.2mm!important;padding-top:0!important;padding-bottom:0!important;line-height:1.2!important;vertical-align:middle!important}
+.dcf-sigbox{height:24mm;border:1px dashed #9CA3AF;margin-top:1mm;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9CA3AF;font-size:9pt;font-family:'Plus Jakarta Sans',sans-serif;position:relative;background:#FCFCFF}
+.dcf-sigbox img{max-width:100%;max-height:100%;display:block}
+.dcf-sigbox.has{border-color:transparent;background:transparent}
+.dcf-ro .dcf-sigbox{cursor:default}
+.dcf-na-wrap{position:relative}
+.dcf-nab{position:absolute;right:1mm;top:.4mm;font-size:7pt;font-weight:800;border:1px solid #C7C3E6;background:#fff;color:#6457F4;border-radius:2mm;padding:0 1.6mm;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;line-height:4.2mm}
+.dcf-nab.on{background:#6457F4;color:#fff;border-color:#6457F4}
+.dcf-na{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:#1D3FBF;font-family:'Segoe Print','Bradley Hand','Comic Sans MS',sans-serif;font-size:30pt;font-weight:700;letter-spacing:3mm;opacity:.9}
+.dcf-na svg{position:absolute;inset:0;width:100%;height:100%}
+.dcf-noedit .dcf-nab{display:none}
+.dcf-stamp{position:absolute;right:13mm;top:3.5mm;font-family:'Plus Jakarta Sans',sans-serif;font-size:7pt;font-weight:800;color:#047857;border:1.5px solid #10B981;border-radius:2mm;padding:.4mm 2mm;background:#ECFDF5}
+@media print{.dcf-noprint{display:none!important}}
+</style>
+<script>
+window.DocsChantier = (function(){
+  // ────────────────────────────────────────────────────────────────
+  // 1) Contenu de la fiche — recopié du document papier (QU-ELS-DOC0xx,
+  //    version a – 01/04/2026). Ne pas reformuler : c'est le document officiel.
+  // ────────────────────────────────────────────────────────────────
+  var TYPE_FC='fc_petro';
+  var TYPES={fc_petro:{label:'Fiche de contrôle pétrochimie',pages:6}};
+  var A_ROWS=[
+    ['A1',"Contrôle visuel de l'état de l'armoire et/ou du coffret/","Visual check of the status of the cabinet and/or panel"],
+    ['A2',"Contrôle visuel de la pose de l'armoire et/ou du coffret/","Visual inspection of the installation of the cabinet and/or enclosure"],
+    ['A3',"Vérification de la présence et du sens des étiquettes et du repérage des câbles / ","Checking of the presence and orientation of labels and cable identification",1],
+    ['A4',"Vérification de la présence et du sens des étiquettes et du repérage des fils /","Checking of the presence and direction of the labels and wire labels"],
+    ['A5',"Contrôler le nettoyage armoire, coffret et/ou boite de jonction /","Checking that the cabinet, panel and/or junction-box has been cleaned"],
+    ['A6',"Contrôle visuel de la pose des chemins de câbles/","Visual inspection of cable tray installation"],
+    ['A7',"Présence des capots de protections pour tous les chemins de câbles (≤ 2m) /","Protective covers are present for all cable trays (≤ 2m)"],
+    ['A8',"Contrôle visuel de la présence du/des interrupteurs d’éclairage/","Visual check for the presence of the light switch(es)"],
+    ['A9',"Contrôle visuel de la présence du/des BAES/","Visual check for the presence of the emergency lighting unit(s)"],
+    ['A10',"Contrôle visuel de la présence du/des prises de courant/","Visual check for the presence of the power outlet(s)"],
+    ['A11',"Contrôle visuel de la présence du/des thermostats de température/","Visual check for the presence of the power outlet(s)"],
+    ['A12',"Contrôle visuel de la présence du/des éclairages intérieurs/","Visual check for the presence of the indoor light(s)"],
+    ['A13',"Contrôle visuel de la présence du/des éclairages extérieurs/","Visual check for the presence of the outdoor light(s)"],
+    ['A14',"Contrôle visuel de la présence du/des combinés flash sonore/","Visual check for the presence of the flash/beacons (s)"],
+    ['A15',"Contrôle visuel de la présence du/des Aérothermes/","Visual check for the presence of the air heater(s) (s)"],
+    ['A16',"Contrôler le nettoyage du skid /","Check the skid cleaning",1],
+    ['A17',"Vérifier la présence de l’antenne de l’Ewon accrochée dans l’armoire ou le coffret /","Check the presence of the Ewon antenna hooked up in the cabinet or box"],
+    ['A18',null,null]
+  ];
+  var B_ROWS=[
+    ['B1',"Contrôle de la fixation des câbles sur le rail TELEX /","Checking the cable fixings on the TELEX rail"],
+    ['B2',"Contrôle du serrage des presses étoupes /","Checking the tightness of the cable-glands",1],
+    ['B3',"Présence de la mise à la terre de l’armoire, coffret et/ou boite de jonction /","Grounding connections are present for the cabinet, panel and/or junction-box."],
+    ['B4',"Contrôle de la conformité avec le schéma/","Checking the compliance with the drawing :"],
+    ['B5',"Présence des mises à la terre pour tous les chemins de câbles /","Grounding connections are present for all cable trays."],
+    ['B6',"Contrôle de la présence des câbles de mise à la terre des skids /","Checking for the presence of grounding cables on skids."],
+    ['B7',"Vérifier que toutes les masses métalliques des appareils sont reliées à la terre/","Check that all equipment metallic parts are connected to the earth"],
+    ['B8',"Vérifier que tous les appareils sont raccordés/","Check that all equipments are connected"],
+    ['B9',"Vérification du serrage des circuits de puissances à 100% /","Checking the 100% tightening of power circuits"],
+    ['B10',"Vérification de la conformité des câbles avec la nomenclature/ ","Check the compliance of the equipment with the description",1],
+    ['B11',"Vérification du respect du rayon de courbure des câbles de puissance /","Verification of compliance with the bend radius of the power cables"],
+    ['B12',"Vérification du respect du rayon de courbure des câbles d’instrumentation /","Verification that the bend radius of the instrumentation cables is respected"],
+    ['B13',"Vérification du respect du rayon de courbure des câbles des réseaux /","Verification of compliance with the bend radius of network cables"],
+    ['B14',"Vérification de la présence et du sens des repérages de câble aux 2 extrémités /","Verification of the presence and orientation of cable markings at both ends"],
+    ['B15',"Vérification de la ségrégation des câbles /","Cable segregation verification"],
+    ['B16',"Contrôle du mode de pose des câbles dans les chemins de câbles /","Checking the cable installation method in cable trays"],
+    ['B17',"Contrôle fixation des câbles dans les chemins de câbles (1 collier tous les 30cm) /","Check cable fixing in cable trays (1 cable tie every 30cm)"],
+    ['B18',"Vérification de la CEM (raccordement blindage aux 2 extrémités) /","EMC verification (shielding connection at both ends)/"],
+    ['B19',"Contrôle du cheminement des câbles hors zone chaleur ou vibration/","Control of cable routing outside of heat or vibration zones"],
+    ['B20',"Absence de contrainte mécanique excessive pour les câbles/","No excessive mechanical stress on the cables"],
+    ['B21',null,null,0,1]   // ligne vierge, sans numéro (N° modifiable)
+  ];
+  var C_ROWS=[
+    ['C1',"Présence de la tension aux bornes du sectionneur général/","Presence of power at the main switch’s terminals"],
+    ['C2',"Présence de la tension en amont/aval des disjoncteurs des départs moteurs /","Presence of power upstream/downstream of the motor starters"],
+    ['C3',"Présence de la tension en amont/aval de tous les disjoncteurs modulaires / ","Presence of power upstream/downstream of all the modular circuit-breakers",1],
+    ['C4',"Test des dispositifs de protection différentiels / ","Differential protection device test",1],
+    ['C5',"Test des arrêts d’urgence et process / ","Emergency-stop and process-stop test",1],
+    ['C6',"Test du circuit puissance / ","Power circuit test",1],
+    ['C6b',"Test du sens de rotation des moteurs / ","direction of rotation of the motors test",1,0,1], // ligne sans numéro sur le papier
+    ['C7',"Test du circuit de commande / ","Control circuit test",1],
+    ['C8',"Test des entrées / sorties automate / ","PLC input/output test",1],
+    ['C9',null,null]
+  ];
+  var PL1_ROWS=27, PL2_ROWS=17;
+
+  // ────────────────────────────────────────────────────────────────
+  // 2) Environnement (site réel, ou page d'aperçu qui fournit le sien)
+  // ────────────────────────────────────────────────────────────────
+  var ENV={
+    canView:function(){ try{ return CURRENT_ROLE==='admin'||hasView('docs_chantier'); }catch(e){ return false; } },
+    canEdit:function(){ try{ return CURRENT_ROLE==='admin'||hasEdit('docs_chantier'); }catch(e){ return false; } },
+    canReopen:function(){ try{ return CURRENT_ROLE==='admin'||CURRENT_ROLE==='chef_chantier'; }catch(e){ return false; } },
+    isAdmin:function(){ try{ return CURRENT_ROLE==='admin'; }catch(e){ return false; } },
+    who:function(){ try{ return (CURRENT_USER&&CURRENT_USER.email)||''; }catch(e){ return ''; } },
+    affaires:function(){
+      try{ return Object.keys(STORE.projects||{}).sort().map(function(k){
+        return {id:k,label:(typeof getAffLabel==='function'?getAffLabel(k):k),closed:!!STORE.projects[k].closed}; }); }
+      catch(e){ return []; }
+    },
+    logo:function(){ try{ return LOGO_ELS_B64; }catch(e){ return ''; } }
+  };
+
+  // Accès aux fiches : table Supabase docs_chantier (une ligne par fiche).
+  var LIST_COLS='id,doc_type,aff,title,meta,status,rev,created_at,created_by,updated_at,updated_by,locked_at,locked_by';
+  var SUPA_STORE={
+    _c:function(){ if(!window.supa) throw new Error('Pas de connexion au serveur'); return window.supa.from('docs_chantier'); },
+    list:async function(){ var r=await this._c().select(LIST_COLS).order('updated_at',{ascending:false}).limit(1000); if(r.error) throw r.error; return r.data||[]; },
+    get:async function(id){ var r=await this._c().select('*').eq('id',id).maybeSingle(); if(r.error) throw r.error; return r.data; },
+    head:async function(id){ var r=await this._c().select('rev,status').eq('id',id).maybeSingle(); if(r.error) throw r.error; return r.data; },
+    create:async function(row){ var r=await this._c().insert(row).select('*').single(); if(r.error) throw r.error; return r.data; },
+    // Écrit seulement si personne n'a enregistré entre-temps (même "rev").
+    // Renvoie la ligne enregistrée, ou null si quelqu'un d'autre est passé avant.
+    update:async function(id,rev,patch){ var r=await this._c().update(patch).eq('id',id).eq('rev',rev).select('*'); if(r.error) throw r.error; return (r.data&&r.data[0])||null; },
+    remove:async function(id){ var r=await this._c().delete().eq('id',id); if(r.error) throw r.error; }
+  };
+  var DB=SUPA_STORE;
+
+  // ────────────────────────────────────────────────────────────────
+  // 3) Outils
+  // ────────────────────────────────────────────────────────────────
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function $(id){ return document.getElementById(id); }
+  function today(){ var d=new Date(); return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear(); }
+  function fmtDT(s){ if(!s) return ''; var d=new Date(s); if(isNaN(d)) return ''; return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear()+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+  function whoShort(e){ e=String(e||''); var i=e.indexOf('@'); return i>0?e.slice(0,i):e; }
+  function sameV(a,b){ return JSON.stringify(a==null?'':a)===JSON.stringify(b==null?'':b); }
+  function affLabel(id){ if(!id) return '—'; var a=ENV.affaires().filter(function(x){return x.id===id;})[0]; return a?a.label:id; }
+  function metaOf(data){ data=data||{}; return {skid:data.skid||'',date:data.date||'',affno:data.h_aff||''}; }
+  function titleOf(data){ var m=metaOf(data); return [m.skid,m.date].filter(Boolean).join(' — ')||'Sans titre'; }
+
+  // ────────────────────────────────────────────────────────────────
+  // 4) Construction de la fiche (mêmes pages, mêmes cases que le papier)
+  // ────────────────────────────────────────────────────────────────
+  var D={};          // valeurs de la fiche ouverte
+  function v(k){ return D[k]==null?'':D[k]; }
+  function inp(k,cls,ph){ return '<input class="dcf-in '+(cls||'')+'" data-k="'+k+'" value="'+esc(v(k))+'" autocomplete="off"'+(ph?' placeholder="'+esc(ph)+'"':'')+'>'; }
+  function cb(k,label){ return '<span class="dcf-cb'+(D[k]?' on':'')+'" data-cb="'+k+'"><span class="dcf-cbx"></span>'+label+'</span>'; }
+  function header(){
+    var logo=ENV.logo();
+    return '<table class="dcf-hd"><tr>'+
+      '<td class="logo" rowspan="2">'+(logo?'<img src="'+logo+'" alt="ELS">':'<b style="color:#d00;font-size:20pt">els</b>')+'</td>'+
+      '<td class="ttl" rowspan="2"><b>FICHE DE CONTROLE PETROCHIMIE/</b><br><span class="en">PETROCHEMICAL CHECKING SHEET</span></td>'+
+      '<td class="aff" rowspan="2">N° affaire ELS/ <span class="en">ELS project no.</span><span class="affv dcf-mirror" data-mirror="h_aff">'+esc(v('h_aff'))+'</span></td>'+
+      '<td class="code">Code document/<span class="en">Document code :</span><b>QU-ELS - DOC0xx</b></td></tr>'+
+      '<tr><td class="ver">VERSION a– 01/04/2026</td></tr></table>';
+  }
+  function header1(){ // page 1 : N° affaire modifiable
+    return header().replace('<span class="affv dcf-mirror" data-mirror="h_aff">'+esc(v('h_aff'))+'</span>','<span class="affv">'+inp('h_aff','','')+'</span>');
+  }
+  function footer(n){
+    return '<div class="dcf-foot"><div class="l">DOC0xx-QU-ELS-Fiche de contrôle petrochimie sous traitance chantier_RevA.docx</div><div>page : '+n+' / 6</div></div>';
+  }
+  function naBtn(k){ return '<span class="dcf-nab dcf-noprint'+(D[k]?' on':'')+'" data-na="'+k+'" title="Marquer toute la section « NA » (non applicable)">NA</span>'; }
+  function naMark(k){ return D[k]?'<div class="dcf-na"><svg viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="2" y1="18" x2="98" y2="2" stroke="#1D3FBF" stroke-width=".35"/></svg>NA</div>':''; }
+
+  function page1(){
+    var h='<div class="dcf-page">'+header1()+'<div style="height:5mm"></div>';
+    h+='<table class="dcf-id">'+
+      '<tr><td class="dcf-sec" colspan="2">IDENTIFICATION CHANTIER/<span class="en">SITE IDENTIFICATION</span></td></tr>'+
+      '<tr><td colspan="2"><div style="display:flex;align-items:center">Date du contrôle/<span class="en">Checking date :</span>'+inp('date','','').replace('class="dcf-in "','class="dcf-in" style="flex:1"')+'</div></td></tr>'+
+      '<tr><td colspan="2"><div style="display:flex;align-items:center">Numéro de skid/ <span class="en">&nbsp;Skid number&nbsp;</span>'+inp('skid','','').replace('class="dcf-in "','class="dcf-in" style="flex:1"')+'</div></td></tr>'+
+      '<tr><td colspan="2" style="height:33mm;vertical-align:top;padding-top:1.5mm;line-height:1.75">'+
+        '<div style="display:flex;align-items:baseline">Câbleur/<span class="en">Cable installer :&nbsp;</span>'+inp('cableur','dcf-dot','').replace('class="dcf-in dcf-dot"','class="dcf-in dcf-dot" style="width:62mm"')+'</div>'+
+        '<div style="display:flex;align-items:baseline">Contrôleur/ <span class="en">&nbsp;Controller :&nbsp;</span>'+inp('controleur','dcf-dot','').replace('class="dcf-in dcf-dot"','class="dcf-in dcf-dot" style="width:46mm"')+'</div>'+
+        '<textarea class="dcf-ta" data-k="id_notes" rows="2" style="height:13mm">'+esc(v('id_notes'))+'</textarea>'+
+      '</td></tr></table>';
+    h+='<table class="dcf-ty">'+
+      '<tr><td class="dcf-sec" colspan="2">TYPE D’ARMOIRE/<span class="en">TYPE OF CABINET</span></td></tr>'+
+      '<tr><td style="height:12mm">'+cb('ty_ap','Armoire Puissance/<span class="en">Power cabinet</span>')+'</td>'+
+          '<td class="two">'+cb('ty_cp','Coffret Puissance/<span class="en">Power panel</span>')+'<br>'+cb('ty_bjp','BJ Puissance /<span class="en">Power Junction-box</span>')+'</td></tr>'+
+      '<tr><td class="two">'+cb('ty_av','Armoire Variateur/<span class="en">Variable frequency drive cabinet</span>')+'<br>'+cb('ty_ai','Armoire Instrumentation/<span class="en">Instrumentation cabinet</span>')+'</td>'+
+          '<td class="two">'+cb('ty_ci','Coffret Instrumentation/<span class="en">Instrumentation panel</span>')+'<br>'+cb('ty_bji','BJ Instrumentation/<span class="en">Instrumentation Junction-box</span>')+'</td></tr>'+
+      '</table>';
+    h+='<table class="dcf-sp">'+
+      '<tr><td class="dcf-sec" colspan="2" style="padding-top:0;padding-bottom:0;line-height:1.2">SPECIFICATIONS</td></tr>'+
+      '<tr><td class="dcf-na-wrap" style="height:38mm">'+naBtn('na_tri')+'<br>Tension triphasée utilisée pour le test/<br><span class="en">Three phase power supply used for the test:</span><br>'+
+          cb('tri_400','400 Volt')+'<br>'+cb('tri_230','230 Volt')+'<br>'+
+          '<span style="display:flex;align-items:baseline">'+cb('tri_aut','Autres/<span class="en">Others</span> :')+inp('tri_aut_t','dcf-dot','').replace('class="dcf-in dcf-dot"','class="dcf-in dcf-dot" style="width:30mm"')+'</span>'+naMark('na_tri')+'</td>'+
+        '<td class="dcf-na-wrap">'+naBtn('na_mono')+'Tension monophasée utilisée pour le test/<br><span class="en">Single phase power supply used for the test:</span>'+
+          '<div class="g">'+cb('mo_12','12 V')+cb('mo_110','110 V')+cb('mo_24','24 V')+cb('mo_230','230 V')+cb('mo_48','48 V')+cb('mo_400','400 V')+'</div>'+
+          '<span style="display:flex;align-items:baseline">'+cb('mo_aut','Autres/<span class="en">Others</span> :')+inp('mo_aut_t','dcf-dot','').replace('class="dcf-in dcf-dot"','class="dcf-in dcf-dot" style="width:46mm"')+'</span>'+naMark('na_mono')+'</td></tr>'+
+      '</table>';
+    function rev(k){ return inp(k,'dcf-dot','').replace('class="dcf-in dcf-dot"','class="dcf-in dcf-dot" style="width:20mm"'); }
+    h+='<div class="dcf-na-wrap"><table class="dcf-dr">'+
+      '<tr><td class="dcf-sec" colspan="3" style="padding-top:0;height:5.2mm;vertical-align:middle;line-height:1.2">DOCUMENTS DE REFERENCES à fournir impérativement/REFERENCE DOCUMENTS <span class="en">must be provided</span>'+naBtn('na_docs')+'</td></tr>'+
+      '<tr><td>'+cb('dr_spp','Spécifications du projet/')+'<br><span class="en">Project specifications</span></td>'+
+          '<td>'+cb('dr_sch','Schéma câblage : Indice / <span class="en">Wiring</span>')+'<br><span class="en">Diagram</span> : Revision :'+rev('dr_sch_r')+'</td>'+
+          '<td>'+cb('dr_nbfa','Nb Fiche d’anomalies : / <span class="en">Nb. of</span>')+'<br><span class="en">Punch-list</span> :'+rev('dr_nbfa_n')+'</td></tr>'+
+      '<tr><td>'+cb('dr_spg','Spécifications générales/')+'<br><span class="en">General specifications</span></td>'+
+          '<td>'+cb('dr_nom','Nomenclature : Indice/')+'<br><span class="en">Description</span> : Revision :'+rev('dr_nom_r')+'</td>'+
+          '<td>'+inp('dr_x2','','').replace('class="dcf-in "','class="dcf-in" style="width:100%"')+'</td></tr>'+
+      '<tr><td>'+cb('dr_pwr','Liste de câbles PWR: Indice /')+'<br>&nbsp;<span class="en">PWR Cable List</span>: Revision'+rev('dr_pwr_r')+'</td>'+
+          '<td>'+cb('dr_bor','Plan bornier:&nbsp; Indice / <span class="en">Terminal-</span>')+'<br><span class="en">block drawing</span>: Revision'+rev('dr_bor_r')+'</td>'+
+          '<td>'+inp('dr_x3','','').replace('class="dcf-in "','class="dcf-in" style="width:100%"')+'</td></tr>'+
+      '<tr><td>'+cb('dr_ins','Liste de câbles INS: Indice /')+'<br>&nbsp;<span class="en">INS Cable List</span>: Revision'+rev('dr_ins_r')+'</td>'+
+          '<td><span style="display:flex;align-items:baseline">'+cb('dr_x','')+inp('dr_x_t','','').replace('class="dcf-in "','class="dcf-in" style="flex:1"')+'</span></td>'+
+          '<td>'+inp('dr_x4','','').replace('class="dcf-in "','class="dcf-in" style="width:100%"')+'</td></tr>'+
+      '</table>'+(D.na_docs?'<div class="dcf-na" style="top:5.2mm">'+'<svg viewBox="0 0 100 20" preserveAspectRatio="none"><line x1="3" y1="19" x2="97" y2="1" stroke="#1D3FBF" stroke-width=".3"/></svg>NA</div>':'')+'</div>';
+    h+=footer(1)+'</div>';
+    return h;
+  }
+  function ckTable(rows,naKey){
+    var h='<table class="dcf-ck">'+
+      '<colgroup><col class="n"><col><col class="mk"><col class="mk"><col class="mk"><col class="cok"></colgroup>'+
+      '<tr class="h0"><td class="blank"></td><td class="blank"></td><td colspan="4" style="text-align:center;font-weight:700;font-size:10pt">ELS</td></tr>'+
+      '<tr class="h"><td>N°</td><td style="border-top:1px solid #333"></td><td>OK</td><td>NOK</td><td>SO</td><td>COK</td></tr>';
+    rows.forEach(function(r){
+      var k=r[0], fr=r[1], en=r[2], inline=r[3], editNo=r[4], noNo=r[5];
+      var num = noNo ? '' : (editNo ? inp(k+'_n','','') : k);
+      var dsc = fr==null ? inp(k+'_t','','') : (fr+(inline?'':'<br>')+'<span class="en">'+en+'</span>');
+      h+='<tr><td class="n">'+num+'</td><td class="dsc">'+dsc+'</td>';
+      ['OK','NOK','SO'].forEach(function(m){ h+='<td class="dcf-mk" data-mk="'+k+'" data-v="'+m+'">'+(D[k]===m?'✗':'')+'</td>'; });
+      h+='<td class="cok">'+inp(k+'_cok','dcf-cok','')+'</td></tr>';
+    });
+    return h+'</table>';
+  }
+  function page2(){
+    return '<div class="dcf-page">'+header()+
+      '<div class="dcf-legend"><span class="lg">Légende/ Legend</span> : OK = Conforme/Compliant ; NOK = Non conforme/Not compliant ; SO = Sans objet/Not applicable ; COK = Correction OK avec date / Correction OK with date</div>'+
+      '<div class="dcf-st">A- ASPECT GENERAL/<span class="en">GENERAL ASPECT</span></div>'+ckTable(A_ROWS)+footer(2)+'</div>';
+  }
+  function page3(){
+    return '<div class="dcf-page">'+header()+'<div style="height:5mm"></div>'+
+      '<div class="dcf-st">B - VERIFICATION HORS TENSION / <span class="en">CHECKING POWER OFF</span></div>'+ckTable(B_ROWS)+footer(3)+'</div>';
+  }
+  function page4(){
+    return '<div class="dcf-page">'+header()+'<div style="height:9mm"></div>'+
+      '<div class="dcf-st">C- VERIFICATION SOUS TENSION / <span class="en">CHECKING UNDER VOLTAGE</span></div>'+ckTable(C_ROWS)+footer(4)+'</div>';
+  }
+  function plTable(p,n){
+    var h='<table class="dcf-pl"><tr class="h"><td class="n">N°</td><td>Description</td></tr>';
+    for(var i=0;i<n;i++){
+      h+='<tr'+(i===n-1?' class="last"':'')+'><td class="n">'+inp('pl'+p+'_n'+i,'','')+'</td><td>'+inp('pl'+p+'_d'+i,'','')+'</td></tr>';
+    }
+    return h+'</table>';
+  }
+  function sigCell(who){
+    var k='sig_'+who, img=v(k);
+    return '<div class="dcf-sigbox'+(img?' has':'')+'" data-sig="'+who+'">'+(img?'<img src="'+esc(img)+'" alt="signature">':'<span class="dcf-noprint">✍️ Toucher ici pour signer</span>')+'</div>';
+  }
+  function page5(){
+    return '<div class="dcf-page">'+header()+'<div class="dcf-pl-t">FICHE D’ANOMALIES A CORRIGER N°1/ <span class="en">PUNCH-LIST No. 1</span></div>'+plTable(1,PL1_ROWS)+footer(5)+'</div>';
+  }
+  function page6(){
+    return '<div class="dcf-page">'+header()+'<div class="dcf-pl-t">FICHE D’ANOMALIES A CORRIGER N°2/ <span class="en">PUNCH-LIST No. 2</span></div>'+plTable(2,PL2_ROWS)+
+      '<table class="dcf-sg" style="margin-top:5mm"><tr><td class="sgh">Signature ELS</td><td class="sgh">Signature Sous-traitant/ <span class="en">Subcontractor</span></td></tr>'+
+      '<tr><td><div class="row">Nom/<span class="en">Name</span> :'+inp('sg_els_nom','dcf-dot','')+'</div><div class="row">Date :'+inp('sg_els_date','dcf-dot','')+'</div>'+sigCell('els')+'</td>'+
+      '<td><div class="row">Société/<span class="en">Company</span> :'+inp('sg_st_soc','dcf-dot','')+'</div><div class="row">Nom/<span class="en">Name</span> :'+inp('sg_st_nom','dcf-dot','')+'</div><div class="row">Date :'+inp('sg_st_date','dcf-dot','')+'</div>'+sigCell('st')+'</td></tr></table>'+
+      footer(6)+'</div>';
+  }
+  function buildDoc(){ return page1()+page2()+page3()+page4()+page5()+page6(); }
+
+  // ────────────────────────────────────────────────────────────────
+  // 5) Écran : liste des fiches
+  // ────────────────────────────────────────────────────────────────
+  var S={host:null,list:[],filterAff:'',filterSt:'',q:'',cur:null,base:{},dirty:{},saving:false,saveT:null,pollT:null,err:'',offline:false};
+
+  function stBadge(st){
+    return st==='locked'
+      ? '<span class="dcu-badge" style="background:#ECFDF5;color:#047857">🔒 Signée · verrouillée</span>'
+      : '<span class="dcu-badge" style="background:#FEF3C7;color:#92400E">✏️ En cours</span>';
+  }
+  async function loadList(){
+    try{ S.list=await DB.list(); S.err=''; }catch(e){ S.err=String(e&&e.message||e); }
+  }
+  function listHtml(){
+    var canEdit=ENV.canEdit();
+    var affs=ENV.affaires();
+    var rows=S.list.filter(function(r){
+      if(S.filterAff && (r.aff||'')!==S.filterAff) return false;
+      if(S.filterSt && r.status!==S.filterSt) return false;
+      if(S.q){ var t=(r.title+' '+affLabel(r.aff)+' '+((r.meta||{}).affno||'')).toLowerCase(); if(t.indexOf(S.q.toLowerCase())<0) return false; }
+      return true;
+    });
+    var h='<div class="dcu"><div class="dcu-wrap">';
+    h+='<div class="dcu-card" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'+
+       '<div style="flex:1;min-width:220px"><div style="font-size:18px;font-weight:900">Docs chantier</div>'+
+       '<div style="font-size:12.5px;color:#6B6790;margin-top:3px">Documents à remplir sur place, signer, puis imprimer ou enregistrer en PDF.</div></div>'+
+       (canEdit?'<button class="dcu-btn" onclick="DocsChantier.newDoc()">＋ Nouvelle fiche de contrôle pétrochimie</button>':'')+'</div>';
+    if(S.err) h+='<div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Impossible de lire les fiches : '+esc(S.err)+(/docs_chantier/.test(S.err)||/relation|does not exist|schema cache/i.test(S.err)?'<br>➜ Le script <b>docs_chantier_supabase.sql</b> n’a sans doute pas encore été lancé dans Supabase.':'')+'</div>';
+    h+='<div class="dcu-card">'+
+       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
+       '<select class="dcu-in" onchange="DocsChantier._f(\'filterAff\',this.value)"><option value="">Toutes les affaires</option>'+
+         affs.map(function(a){ return '<option value="'+esc(a.id)+'"'+(S.filterAff===a.id?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>'+
+       '<select class="dcu-in" onchange="DocsChantier._f(\'filterSt\',this.value)"><option value="">Tous les statuts</option>'+
+         '<option value="draft"'+(S.filterSt==='draft'?' selected':'')+'>En cours</option><option value="locked"'+(S.filterSt==='locked'?' selected':'')+'>Signées</option></select>'+
+       '<input class="dcu-in" style="flex:1;min-width:160px" placeholder="Rechercher (skid, date, affaire…)" value="'+esc(S.q)+'" oninput="DocsChantier._q(this.value)">'+
+       '<button class="dcu-btn2" onclick="DocsChantier.refresh()">⟳ Actualiser</button></div>';
+    if(!rows.length){
+      h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?'Aucune fiche ne correspond au filtre.':'Aucune fiche pour l’instant.')+'</div>';
+    }else{
+      h+='<div style="overflow:auto"><table class="dcu-tbl"><tr><th>Document</th><th>Affaire</th><th>Skid / date du contrôle</th><th>Statut</th><th class="dcu-hide-sm">Dernière modification</th><th></th></tr>';
+      rows.forEach(function(r){
+        var m=r.meta||{};
+        var canDel=canEdit && (r.status!=='locked' || ENV.isAdmin());
+        h+='<tr class="dcu-row" onclick="DocsChantier.open(\''+r.id+'\')">'+
+          '<td><b>'+esc((TYPES[r.doc_type]||{}).label||r.doc_type)+'</b></td>'+
+          '<td>'+esc(affLabel(r.aff))+(m.affno?'<div style="font-size:11px;color:#6B6790">N° '+esc(m.affno)+'</div>':'')+'</td>'+
+          '<td>'+esc(m.skid||'—')+'<div style="font-size:11px;color:#6B6790">'+esc(m.date||'')+'</div></td>'+
+          '<td>'+stBadge(r.status)+'</td>'+
+          '<td class="dcu-hide-sm" style="font-size:12px;color:#6B6790">'+fmtDT(r.updated_at)+'<br>'+esc(whoShort(r.updated_by))+'</td>'+
+          '<td style="text-align:right;white-space:nowrap">'+(canDel?'<button class="dcu-btn2 dcu-red" title="Supprimer" onclick="event.stopPropagation();DocsChantier.del(\''+r.id+'\')">🗑</button>':'')+'</td></tr>';
+      });
+      h+='</table></div>';
+    }
+    h+='</div></div></div>';
+    return h;
+  }
+  function drawList(){ if(S.host) S.host.innerHTML=listHtml(); }
+
+  async function render(hostId){
+    S.host=$(hostId)||S.host;
+    stopPoll();
+    S.cur=null;
+    if(!ENV.canView()){ S.host.innerHTML='<div class="dcu"><div class="dcu-wrap"><div class="dcu-card">Vous n’avez pas accès aux Docs chantier.</div></div></div>'; return; }
+    S.host.innerHTML='<div class="dcu"><div class="dcu-wrap"><div class="dcu-card" style="color:#6B6790">Chargement…</div></div></div>';
+    await loadList();
+    drawList();
+  }
+
+  function modal(html){ var m=$('dcf-modal'); m.innerHTML=html; m.style.display='block'; }
+  function closeModal(){ var m=$('dcf-modal'); m.style.display='none'; m.innerHTML=''; }
+
+  function newDoc(){
+    if(!ENV.canEdit()) return;
+    var affs=ENV.affaires().filter(function(a){return !a.closed;});
+    modal('<div class="dcu" style="max-width:460px;margin:8vh auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)">'+
+      '<div style="font-size:16px;font-weight:900;margin-bottom:4px">Nouvelle fiche de contrôle pétrochimie</div>'+
+      '<div style="font-size:12.5px;color:#6B6790;margin-bottom:14px">Choisis l’affaire dans laquelle ranger la fiche (elle ne remplit rien automatiquement).</div>'+
+      '<select id="dcf-new-aff" class="dcu-in" style="width:100%;margin-bottom:16px"><option value="">— Sans affaire —</option>'+
+        affs.map(function(a){ return '<option value="'+esc(a.id)+'"'+(S.filterAff===a.id?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>'+
+      '<div style="display:flex;gap:8px;justify-content:flex-end"><button class="dcu-btn2" onclick="DocsChantier._closeModal()">Annuler</button>'+
+      '<button class="dcu-btn" id="dcf-new-go" onclick="DocsChantier._create()">Créer la fiche</button></div></div>');
+  }
+  async function _create(){
+    var b=$('dcf-new-go'); if(b){ b.disabled=true; b.textContent='Création…'; }
+    var aff=($('dcf-new-aff')||{}).value||'';
+    var me=ENV.who();
+    try{
+      var row=await DB.create({doc_type:TYPE_FC,aff:aff||null,title:'Sans titre',meta:{},data:{},status:'draft',rev:1,created_by:me,updated_by:me,history:[{at:new Date().toISOString(),by:me,what:'created'}]});
+      closeModal();
+      S.list.unshift(row);
+      openRow(row);
+    }catch(e){
+      if(b){ b.disabled=false; b.textContent='Créer la fiche'; }
+      alert('Impossible de créer la fiche : '+(e&&e.message||e));
+    }
+  }
+  async function del(id){
+    var r=S.list.filter(function(x){return x.id===id;})[0]; if(!r) return;
+    if(!confirm('Supprimer définitivement cette fiche ('+(r.title||'')+') ?\nCette action ne peut pas être annulée.')) return;
+    try{ await DB.remove(id); S.list=S.list.filter(function(x){return x.id!==id;}); drawList(); }
+    catch(e){ alert('Suppression impossible : '+(e&&e.message||e)); }
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // 6) Écran : une fiche ouverte (remplissage, enregistrement automatique)
+  // ────────────────────────────────────────────────────────────────
+  function locked(){ return S.cur && S.cur.status==='locked'; }
+  function editable(){ return ENV.canEdit() && !locked(); }
+
+  async function open(id){
+    stopPoll();
+    S.host.innerHTML='<div class="dcu"><div class="dcu-wrap"><div class="dcu-card" style="color:#6B6790">Ouverture de la fiche…</div></div></div>';
+    try{ var row=await DB.get(id); if(!row) throw new Error('fiche introuvable (supprimée ?)'); openRow(row); }
+    catch(e){ alert('Impossible d’ouvrir la fiche : '+(e&&e.message||e)); render(); }
+  }
+  function openRow(row){
+    S.cur=row; S.base=JSON.parse(JSON.stringify(row.data||{})); S.dirty={}; S.err='';
+    // une copie locale plus récente (enregistrement interrompu : réseau, fermeture…)
+    D=JSON.parse(JSON.stringify(row.data||{}));
+    try{
+      var loc=JSON.parse(localStorage.getItem('dcf_unsaved_'+row.id)||'null');
+      if(loc && loc.dirty && row.status!=='locked'){   // nos cases non envoyées gagnent (fusion à l'enregistrement)
+        Object.keys(loc.dirty).forEach(function(k){ D[k]=loc.data[k]; S.dirty[k]=1; });
+      }
+    }catch(e){}
+    drawDoc();
+    if(Object.keys(S.dirty).length) scheduleSave(200);
+    startPoll();
+  }
+  function barHtml(){
+    var c=S.cur, lk=locked();
+    var h='<div class="dcu-bar dcu">'+
+      '<button class="dcu-btn2" onclick="DocsChantier.back()">← Liste</button>'+
+      '<div style="flex:1;min-width:160px;font-size:12.5px;line-height:1.35"><b>'+esc((TYPES[c.doc_type]||{}).label||'')+'</b> · '+esc(affLabel(c.aff))+'<br><span id="dcf-savest" style="color:#6B6790"></span></div>'+
+      stBadge(c.status)+
+      '<button class="dcu-btn2" onclick="DocsChantier.print()">🖨 Imprimer</button>'+
+      '<button class="dcu-btn2" onclick="DocsChantier.pdf()">📄 Enregistrer en PDF</button>';
+    if(lk){
+      if(ENV.canReopen()) h+='<button class="dcu-btn2" onclick="DocsChantier.reopen()">🔓 Rouvrir</button>';
+    }else if(ENV.canEdit()){
+      h+='<button class="dcu-btn" onclick="DocsChantier.lock()">🔒 Terminer et verrouiller</button>';
+    }
+    h+='</div>';
+    if(lk) h+='<div class="dcu dcu-msg" style="background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46">🔒 Fiche signée et verrouillée le '+fmtDT(c.locked_at)+(c.locked_by?' par '+esc(whoShort(c.locked_by)):'')+'. Elle ne peut plus être modifiée'+(ENV.canReopen()?' (bouton « Rouvrir » pour la corriger).':'.')+'</div>';
+    else if(!ENV.canEdit()) h+='<div class="dcu dcu-msg" style="background:#F3F4F6;border:1px solid #E5E7EB;color:#374151">Lecture seule : vous n’avez pas le droit de modifier les Docs chantier.</div>';
+    return h;
+  }
+  function drawDoc(){
+    var ed=editable();
+    S.host.innerHTML=barHtml()+'<div class="dcu-sheets" id="dcf-sheets"><div class="dcf'+(ed?'':' dcf-ro dcf-noedit')+'" id="dcf-doc">'+buildDoc()+'</div></div>';
+    var doc=$('dcf-doc');
+    if(!ed) doc.querySelectorAll('input,textarea').forEach(function(el){ el.disabled=true; });
+    fitZoom();
+    updSaveSt();
+  }
+  function fitZoom(){
+    var sh=$('dcf-sheets'); if(!sh||!S.host) return;
+    var avail=S.host.clientWidth-16, pageW=794;
+    var z=Math.max(.4,Math.min(1.2,avail/pageW));
+    sh.style.zoom=z;
+  }
+  window.addEventListener('resize',function(){ if(S.cur) fitZoom(); });
+
+  function setVal(k,val){
+    if(!editable()) return;
+    if(sameV(D[k],val)) return;
+    if(val===''||val===false||val==null) delete D[k]; else D[k]=val;
+    S.dirty[k]=1;
+    keepLocal();
+    scheduleSave();
+  }
+  function keepLocal(){
+    try{
+      var dd={}; Object.keys(S.dirty).forEach(function(k){ dd[k]=1; });
+      localStorage.setItem('dcf_unsaved_'+S.cur.id,JSON.stringify({rev:S.cur.rev,dirty:dd,data:D}));
+    }catch(e){}
+  }
+  function clearLocal(){ try{ localStorage.removeItem('dcf_unsaved_'+S.cur.id); }catch(e){} }
+  function scheduleSave(ms){ clearTimeout(S.saveT); S.saveT=setTimeout(saveNow,ms==null?900:ms); updSaveSt(); }
+  function updSaveSt(){
+    var el=$('dcf-savest'); if(!el||!S.cur) return;
+    var n=Object.keys(S.dirty).length;
+    if(S.offline&&n) el.innerHTML='<span style="color:#B45309;font-weight:700">⚠ '+(S.lastErr?'Pas enregistré ('+esc(S.lastErr)+')':'Pas de connexion')+' — gardé sur cet appareil, nouvel essai automatique…</span>';
+    else if(n||S.saving) el.textContent='Enregistrement…';
+    else el.textContent='✓ Enregistré · '+fmtDT(S.cur.updated_at)+(S.cur.updated_by?' · '+whoShort(S.cur.updated_by):'');
+  }
+  // Fusion à trois : on garde nos cases modifiées, on prend celles des autres.
+  function mergeRemote(remote){
+    var rd=remote.data||{}, keys={};
+    Object.keys(rd).forEach(function(k){keys[k]=1;}); Object.keys(S.base).forEach(function(k){keys[k]=1;}); Object.keys(D).forEach(function(k){keys[k]=1;});
+    var changed=[];
+    Object.keys(keys).forEach(function(k){
+      if(S.dirty[k]) return;                       // notre modif gagne
+      if(!sameV(D[k],rd[k])){ if(rd[k]==null) delete D[k]; else D[k]=rd[k]; changed.push(k); }
+    });
+    S.base=JSON.parse(JSON.stringify(rd));
+    return changed;
+  }
+  async function saveNow(){
+    if(!S.cur||S.saving) return;
+    if(!Object.keys(S.dirty).length){ updSaveSt(); return; }
+    if(locked()) return;
+    S.saving=true; updSaveSt();
+    var cur=S.cur, me=ENV.who();
+    try{
+      for(var attempt=0;attempt<4;attempt++){
+        var sent=JSON.parse(JSON.stringify(D)), sentDirty=Object.assign({},S.dirty);
+        var saved=await DB.update(cur.id,cur.rev,{data:sent,meta:metaOf(sent),title:titleOf(sent),rev:cur.rev+1,updated_by:me});
+        if(saved){
+          S.offline=false; S.lastErr='';
+          S.cur=saved; S.base=JSON.parse(JSON.stringify(saved.data||{}));
+          Object.keys(sentDirty).forEach(function(k){ if(sameV(D[k],sent[k])) delete S.dirty[k]; });
+          if(Object.keys(S.dirty).length) keepLocal(); else clearLocal();
+          syncListRow(saved);
+          break;
+        }
+        // quelqu'un a enregistré entre-temps : on récupère, on fusionne, on recommence
+        var remote=await DB.get(cur.id);
+        if(!remote){ alert('Cette fiche a été supprimée par quelqu’un d’autre.'); S.saving=false; back(); return; }
+        if(remote.status==='locked'){ S.cur=remote; mergeRemote(remote); S.dirty={}; clearLocal(); S.saving=false; drawDoc(); alert('Cette fiche vient d’être signée et verrouillée par '+(whoShort(remote.locked_by)||'un collègue')+'. Vos dernières modifications n’ont pas pu être ajoutées.'); return; }
+        var ch=mergeRemote(remote); S.cur=remote; cur=remote; applyKeys(ch);
+      }
+    }catch(e){
+      var em=String(e&&e.message||e);
+      S.lastErr=(/fetch|network|Load failed|timeout/i.test(em))?'':em;
+      S.offline=true; keepLocal();
+      clearTimeout(S.saveT); S.saveT=setTimeout(saveNow,6000);
+    }
+    S.saving=false;
+    updSaveSt();
+    if(Object.keys(S.dirty).length && !S.offline) scheduleSave(400);
+  }
+  function syncListRow(row){
+    var lite={}; LIST_COLS.split(',').forEach(function(c){ lite[c]=row[c]; });
+    var i=S.list.findIndex(function(x){return x.id===row.id;});
+    if(i>=0) S.list[i]=lite; else S.list.unshift(lite);
+  }
+  // Affiche les cases changées par un collègue sans tout redessiner
+  // (on ne touche pas au champ en cours de saisie).
+  function applyKeys(keys){
+    var doc=$('dcf-doc'); if(!doc||!keys.length) return;
+    var redraw=false;
+    keys.forEach(function(k){
+      if(/^sig_|^na_/.test(k)) redraw=true;
+      doc.querySelectorAll('[data-k="'+k+'"]').forEach(function(el){ if(el!==document.activeElement) el.value=v(k); });
+      doc.querySelectorAll('[data-mirror="'+k+'"]').forEach(function(el){ el.textContent=v(k); });
+      doc.querySelectorAll('[data-cb="'+k+'"]').forEach(function(el){ el.classList.toggle('on',!!D[k]); });
+      doc.querySelectorAll('[data-mk="'+k+'"]').forEach(function(el){ el.textContent=D[k]===el.getAttribute('data-v')?'✗':''; });
+    });
+    if(redraw){ var sc=S.host.scrollTop; drawDoc(); S.host.scrollTop=sc; }
+  }
+  function startPoll(){
+    stopPoll();
+    S.pollT=setInterval(pollOnce,4000);
+  }
+  async function pollOnce(){
+      if(!S.cur||S.saving||document.hidden||S._polling) return;
+      S._polling=true;
+      try{
+        var h=await DB.head(S.cur.id);
+        if(!h){ stopPoll(); alert('Cette fiche a été supprimée.'); back(); return; }
+        if(h.rev!==S.cur.rev||h.status!==S.cur.status){
+          var remote=await DB.get(S.cur.id); if(!remote) return;
+          var stCh=remote.status!==S.cur.status;
+          var ch=mergeRemote(remote); S.cur=Object.assign({},remote,{data:D});
+          // si on a des modifs en attente, la fusion se fera à l'enregistrement
+          if(stCh){ if(remote.status==='locked'){ S.dirty={}; clearLocal(); } var sc=S.host.scrollTop; drawDoc(); S.host.scrollTop=sc; }
+          else applyKeys(ch);
+          S.cur.rev=remote.rev;
+          syncListRow(remote);
+          updSaveSt();
+        }
+      }catch(e){}
+      finally{ S._polling=false; }
+  }
+  // retour sur l'onglet / la tablette se rallume : on regarde tout de suite
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden&&S.cur&&S.pollT){ pollOnce(); if(Object.keys(S.dirty).length) scheduleSave(100); } });
+  function stopPoll(){ if(S.pollT){ clearInterval(S.pollT); S.pollT=null; } }
+
+  async function back(){
+    if(S.cur && Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); }
+    stopPoll(); S.cur=null; D={};
+    drawList();
+    loadList().then(function(){ if(!S.cur) drawList(); });
+  }
+
+  // Interactions dans la fiche (délégation d'événements)
+  document.addEventListener('click',function(ev){
+    var doc=ev.target.closest&&ev.target.closest('#dcf-doc'); if(!doc) return;
+    var t;
+    if((t=ev.target.closest('[data-cb]'))){ if(!editable()) return; var k=t.getAttribute('data-cb'); setVal(k,!D[k]); t.classList.toggle('on',!!D[k]); return; }
+    if((t=ev.target.closest('[data-mk]'))){ if(!editable()) return;
+      var k2=t.getAttribute('data-mk'), m=t.getAttribute('data-v'); setVal(k2,D[k2]===m?'':m);
+      doc.querySelectorAll('[data-mk="'+k2+'"]').forEach(function(el){ el.textContent=D[k2]===el.getAttribute('data-v')?'✗':''; });
+      return; }
+    if((t=ev.target.closest('[data-na]'))){ if(!editable()) return; var k3=t.getAttribute('data-na'); setVal(k3,!D[k3]); var sc=S.host.scrollTop; drawDoc(); S.host.scrollTop=sc; return; }
+    if((t=ev.target.closest('[data-sig]'))){ if(!editable()) return; sigPad(t.getAttribute('data-sig')); return; }
+  });
+  document.addEventListener('input',function(ev){
+    var el=ev.target; if(!el.closest||!el.closest('#dcf-doc')) return;
+    var k=el.getAttribute('data-k'); if(!k) return;
+    setVal(k,el.value);
+    var doc=$('dcf-doc'); doc.querySelectorAll('[data-mirror="'+k+'"]').forEach(function(m){ m.textContent=el.value; });
+  });
+  // Date du jour proposée en touchant une case vide "COK" ou une date de signature
+  document.addEventListener('focusin',function(ev){
+    var el=ev.target; if(!el.closest||!el.closest('#dcf-doc')||!editable()) return;
+    var k=el.getAttribute('data-k')||'';
+    if(!el.value && (/_cok$/.test(k)||k==='sg_els_date'||k==='sg_st_date'||k==='date')){ el.value=today(); setVal(k,el.value); try{ el.select(); }catch(e){} }
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // 7) Signature au doigt / à la souris
+  // ────────────────────────────────────────────────────────────────
+  function sigPad(who){
+    var lbl=who==='els'?'Signature ELS':'Signature Sous-traitant';
+    var nomK=who==='els'?'sg_els_nom':'sg_st_nom';
+    modal('<div class="dcu" style="max-width:640px;margin:6vh auto;background:#fff;border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)">'+
+      '<div style="font-size:16px;font-weight:900">'+lbl+'</div>'+
+      '<div style="font-size:12.5px;color:#6B6790;margin:3px 0 10px">Signez dans le cadre avec le doigt, le stylet ou la souris.</div>'+
+      '<input id="dcf-sig-nom" class="dcu-in" style="width:100%;margin-bottom:10px" placeholder="Nom du signataire" value="'+esc(v(nomK))+'">'+
+      '<canvas id="dcf-sig-cv" style="width:100%;height:220px;border:2px dashed #C7C3E6;border-radius:12px;touch-action:none;background:#fff;display:block"></canvas>'+
+      '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'+
+        (v('sig_'+who)?'<button class="dcu-btn2 dcu-red" onclick="DocsChantier._sigClear(\''+who+'\')">Retirer la signature</button>':'')+
+        '<button class="dcu-btn2" onclick="DocsChantier._sigReset()">Effacer</button><div style="flex:1"></div>'+
+        '<button class="dcu-btn2" onclick="DocsChantier._closeModal()">Annuler</button>'+
+        '<button class="dcu-btn" onclick="DocsChantier._sigOk(\''+who+'\')">Valider la signature</button></div></div>');
+    var cv=$('dcf-sig-cv'), r=cv.getBoundingClientRect(), dpr=Math.max(1,window.devicePixelRatio||1);
+    cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
+    var ctx=cv.getContext('2d'); ctx.scale(dpr,dpr); ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#1D3FBF';
+    var drawing=false, last=null; cv._ink=false;
+    function pt(e){ var b=cv.getBoundingClientRect(); return {x:e.clientX-b.left,y:e.clientY-b.top}; }
+    cv.addEventListener('pointerdown',function(e){ drawing=true; last=pt(e); try{cv.setPointerCapture(e.pointerId);}catch(_){} ctx.beginPath(); ctx.arc(last.x,last.y,1.1,0,7); ctx.fillStyle='#1D3FBF'; ctx.fill(); cv._ink=true; e.preventDefault(); });
+    cv.addEventListener('pointermove',function(e){ if(!drawing) return; var p=pt(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; cv._ink=true; e.preventDefault(); });
+    ['pointerup','pointercancel','pointerleave'].forEach(function(n){ cv.addEventListener(n,function(){ drawing=false; }); });
+  }
+  function _sigReset(){ var cv=$('dcf-sig-cv'); if(!cv) return; cv.getContext('2d').clearRect(0,0,cv.width,cv.height); cv._ink=false; }
+  function trimCanvas(cv){
+    var ctx=cv.getContext('2d'), w=cv.width, h=cv.height, d=ctx.getImageData(0,0,w,h).data;
+    var x0=w,y0=h,x1=0,y1=0;
+    for(var y=0;y<h;y+=2) for(var x=0;x<w;x+=2){ if(d[(y*w+x)*4+3]>10){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; } }
+    if(x1<=x0||y1<=y0) return null;
+    var pad=8; x0=Math.max(0,x0-pad); y0=Math.max(0,y0-pad); x1=Math.min(w,x1+pad); y1=Math.min(h,y1+pad);
+    var sc=Math.min(1,600/(x1-x0));
+    var o=document.createElement('canvas'); o.width=Math.round((x1-x0)*sc); o.height=Math.round((y1-y0)*sc);
+    o.getContext('2d').drawImage(cv,x0,y0,x1-x0,y1-y0,0,0,o.width,o.height);
+    return o.toDataURL('image/png');
+  }
+  function _sigOk(who){
+    var cv=$('dcf-sig-cv'); if(!cv) return;
+    if(!cv._ink){ alert('Signez dans le cadre avant de valider.'); return; }
+    var url=trimCanvas(cv); if(!url){ alert('Signature vide.'); return; }
+    var nom=($('dcf-sig-nom')||{}).value||'';
+    var nomK=who==='els'?'sg_els_nom':'sg_st_nom', dateK=who==='els'?'sg_els_date':'sg_st_date';
+    setVal('sig_'+who,url);
+    if(nom) setVal(nomK,nom);
+    if(!v(dateK)) setVal(dateK,today());
+    closeModal();
+    var sc=S.host.scrollTop; drawDoc(); S.host.scrollTop=sc;
+    if(v('sig_els')&&v('sig_st')){
+      setTimeout(function(){ if(confirm('Les 2 signatures sont posées.\nTerminer et verrouiller la fiche maintenant ?\n(Plus personne ne pourra la modifier, sauf en la rouvrant.)')) lock(true); },150);
+    }
+  }
+  function _sigClear(who){ setVal('sig_'+who,''); closeModal(); var sc=S.host.scrollTop; drawDoc(); S.host.scrollTop=sc; }
+
+  // ────────────────────────────────────────────────────────────────
+  // 8) Verrouiller / rouvrir
+  // ────────────────────────────────────────────────────────────────
+  async function setStatus(st){
+    clearTimeout(S.saveT);
+    if(Object.keys(S.dirty).length) await saveNow();
+    if(Object.keys(S.dirty).length){ alert('La fiche n’a pas pu être enregistrée (connexion ?). Réessayez dans un instant.'); return false; }
+    var me=ENV.who(), now=new Date().toISOString(), cur=S.cur;
+    for(var i=0;i<3;i++){
+      var hist=(cur.history||[]).concat([{at:now,by:me,what:st==='locked'?'locked':'reopened'}]);
+      var patch={status:st,rev:cur.rev+1,updated_by:me,history:hist};
+      if(st==='locked'){ patch.locked_at=now; patch.locked_by=me; }
+      try{
+        var saved=await DB.update(cur.id,cur.rev,patch);
+        if(saved){ S.cur=saved; D=JSON.parse(JSON.stringify(saved.data||{})); S.base=JSON.parse(JSON.stringify(D)); syncListRow(saved); drawDoc(); return true; }
+        cur=await DB.get(cur.id); if(!cur){ alert('Fiche supprimée.'); back(); return false; }
+        S.cur=cur; mergeRemote(cur); D=JSON.parse(JSON.stringify(cur.data||{}));
+        if(cur.status===st){ drawDoc(); return true; }
+      }catch(e){ alert('Action impossible : '+(e&&e.message||e)); return false; }
+    }
+    return false;
+  }
+  async function lock(fromSig){
+    if(!editable()) return;
+    if(!fromSig){
+      var miss=[]; if(!v('sig_els')) miss.push('ELS'); if(!v('sig_st')) miss.push('sous-traitant');
+      if(miss.length){ alert('Il manque la signature '+miss.join(' et la signature ')+'.\nFaites signer en bas de la dernière page (page 6) avant de verrouiller.'); return; }
+      if(!confirm('Terminer et verrouiller la fiche ?\nPlus personne ne pourra la modifier, sauf en la rouvrant (admin / chef de chantier).')) return;
+    }
+    await setStatus('locked');
+  }
+  async function reopen(){
+    if(!locked()||!ENV.canReopen()) return;
+    if(!confirm('Rouvrir cette fiche signée pour la corriger ?\nLes signatures restent en place. Pensez à la reverrouiller après correction.')) return;
+    await setStatus('draft');
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // 9) Imprimer / PDF — la fiche telle quelle, sans les boutons
+  // ────────────────────────────────────────────────────────────────
+  function cssText(){
+    var out='';
+    document.querySelectorAll('style').forEach(function(s){ if(s.textContent.indexOf('.dcf-page')>=0) out+=s.textContent; });
+    return out;
+  }
+  function staticHtml(){
+    var doc=$('dcf-doc'); if(!doc) return '';
+    var cl=doc.cloneNode(true);
+    cl.querySelectorAll('.dcf-noprint').forEach(function(el){ el.remove(); });
+    cl.querySelectorAll('input,textarea').forEach(function(el){
+      var src=doc.querySelector('[data-k="'+el.getAttribute('data-k')+'"]');
+      var sp=document.createElement('span'); sp.className='dcf-val'+(el.classList.contains('dcf-dot')?' dcf-dot':'');
+      sp.textContent=src?src.value:el.value;
+      sp.style.cssText=el.getAttribute('style')||'';
+      if(el.tagName==='TEXTAREA'){ sp.style.display='block'; sp.style.height=el.style.height||''; sp.style.fontSize='10.5pt'; }
+      else { sp.style.display='inline-block'; if(!sp.style.width&&!sp.style.flex) sp.style.minWidth='6mm'; if(el.closest('.cok')||el.closest('td.n')){ sp.style.width='100%'; sp.style.textAlign='center'; } if(el.closest('.cok')) sp.style.fontSize='7.5pt'; if(el.closest('.dcf-pl')){ sp.style.width='100%'; sp.style.lineHeight='8mm'; sp.style.fontSize='11pt'; } if(el.closest('.dsc')) sp.style.width='100%'; }
+      el.replaceWith(sp);
+    });
+    cl.querySelectorAll('.dcf-sigbox').forEach(function(b){ b.style.border='none'; b.style.background='transparent'; });
+    cl.classList.add('dcf-ro');
+    return cl.outerHTML;
+  }
+  function fileBase(){
+    var m=metaOf(D);
+    return ('Fiche controle petrochimie'+(m.affno?' '+m.affno:'')+(m.skid?' '+m.skid:'')+(m.date?' '+m.date.replace(/\//g,'-'):'')).replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();
+  }
+  function print(){
+    if(!S.cur) return;
+    var html='<!doctype html><html><head><meta charset="utf-8"><title>'+esc(fileBase())+'</title><style>'+cssText()+
+      '@page{size:A4;margin:0}html,body{margin:0;padding:0;background:#fff}.dcf-page{margin:0!important;box-shadow:none!important;page-break-after:always;break-after:page}.dcf-page:last-child{page-break-after:auto;break-after:auto}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}</style></head><body>'+staticHtml()+'</body></html>';
+    var old=$('dcf-print-frame'); if(old) old.remove();
+    var f=document.createElement('iframe'); f.id='dcf-print-frame';
+    f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    document.body.appendChild(f);
+    var d=f.contentWindow.document; d.open(); d.write(html); d.close();
+    setTimeout(function(){ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){ alert('Impression impossible : '+e.message); } },400);
+  }
+  function loadScript(src){
+    return new Promise(function(res,rej){
+      if(document.querySelector('script[src="'+src+'"]')){ var t=setInterval(function(){ if((src.indexOf('html2canvas')>=0&&window.html2canvas)||(src.indexOf('jspdf')>=0&&window.jspdf)){ clearInterval(t); res(); } },100); setTimeout(function(){clearInterval(t);res();},8000); return; }
+      var s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=function(){ rej(new Error('chargement impossible : '+src)); }; document.head.appendChild(s);
+    });
+  }
+  async function pdf(){
+    if(!S.cur) return;
+    var bar=$('dcf-savest'); var prev=bar?bar.innerHTML:'';
+    if(bar) bar.innerHTML='<b style="color:#6457F4">Création du PDF…</b>';
+    var box=null;
+    try{
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+      box=document.createElement('div');
+      box.style.cssText='position:fixed;left:-30000px;top:0;width:210mm;background:#fff;z-index:-1';
+      box.innerHTML=staticHtml();
+      document.body.appendChild(box);
+      box.querySelectorAll('.dcf-page').forEach(function(p){ p.style.boxShadow='none'; p.style.margin='0'; });
+      var pages=box.querySelectorAll('.dcf-page');
+      var J=window.jspdf.jsPDF, out=new J({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+      for(var i=0;i<pages.length;i++){
+        if(bar) bar.innerHTML='<b style="color:#6457F4">Création du PDF… page '+(i+1)+' / '+pages.length+'</b>';
+        var c=await window.html2canvas(pages[i],{scale:2,backgroundColor:'#ffffff',useCORS:true,logging:false});
+        if(i>0) out.addPage('a4','portrait');
+        out.addImage(c.toDataURL('image/jpeg',0.85),'JPEG',0,0,210,297,undefined,'FAST');
+      }
+      var name=fileBase()+'.pdf';
+      var blob=out.output('blob');
+      var file=null; try{ file=new File([blob],name,{type:'application/pdf'}); }catch(e){}
+      // Tablette : proposer directement "Partager" (mail, Teams…) si l'appareil le permet
+      if(file && navigator.canShare && navigator.canShare({files:[file]}) && /Android|iPad|iPhone|Mobile/i.test(navigator.userAgent)){
+        try{ await navigator.share({files:[file],title:name}); }catch(e){ if(e&&e.name!=='AbortError') out.save(name); }
+      }else out.save(name);
+    }catch(e){
+      alert('Le PDF n’a pas pu être créé ('+(e&&e.message||e)+').\nUtilisez « Imprimer » puis choisissez « Enregistrer au format PDF ».');
+    }
+    if(box) box.remove();
+    if(bar) bar.innerHTML=prev; updSaveSt();
+  }
+
+  return {
+    render:render, refresh:function(){ render(); },
+    // on quitte l'onglet (retour à l'accueil) : on envoie ce qui reste et on arrête le suivi
+    leave:function(){ if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); saveNow(); } stopPoll(); }, open:open, newDoc:newDoc, del:del, back:back,
+    lock:function(){ lock(false); }, reopen:reopen, print:print, pdf:pdf,
+    _create:_create, _closeModal:closeModal, _sigReset:_sigReset, _sigOk:_sigOk, _sigClear:_sigClear,
+    _f:function(k,val){ S[k]=val; drawList(); },
+    _q:function(val){ S.q=val; clearTimeout(S._qT); S._qT=setTimeout(function(){ var a=document.activeElement, pos=a&&a.selectionStart; drawList(); var i=S.host.querySelector('input[placeholder^="Rechercher"]'); if(i){ i.focus(); try{i.setSelectionRange(pos,pos);}catch(e){} } },250); },
+    _static:function(){ return staticHtml(); }, _setEnv:function(e){ Object.assign(ENV,e); }, _setStore:function(s){ DB=s; }, _state:function(){ return {S:S,D:D}; }
+  };
+})();
+</script>
+<!-- ═══════════════════════════ /DOCS CHANTIER ═══════════════════════ -->
 
 </body></html>
