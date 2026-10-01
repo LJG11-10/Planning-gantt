@@ -11012,7 +11012,7 @@ function avBuildDownloadHtml(sel){
   var dateStr=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
   var css='*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
     +'body{font-family:Arial,sans-serif;color:#1A1917;padding:28px;max-width:960px;margin:0 auto}'
-    +'h1{font-size:22px;font-weight:900;color:#1F4E79;padding-right:130px;line-height:1.25}.sub{font-size:13px;font-weight:700;color:#6B7280;margin:4px 0 20px;padding-right:130px}'
+    +'h1{font-size:28px;font-weight:900;color:#1F4E79;padding-right:130px;line-height:1.2}.aff{font-size:20px;font-weight:800;color:#1F4E79;margin-top:4px;padding-right:130px;line-height:1.25}.sub{font-size:12.5px;font-weight:800;color:#D7262E;margin:6px 0 18px;text-align:right}'
     +'.kpis{display:flex;gap:12px;margin-bottom:22px}.kpi{flex:1;border:1px solid #E5E7EB;border-radius:10px;padding:12px 16px}'
     +'.kpi .l{font-size:11px;color:#6B7280;font-weight:700}.kpi .v{font-size:26px;font-weight:900;color:#1F4E79}'
     +'.grp{margin-bottom:10px}.g-ph{border:1px solid #E5E7EB;border-left:5px solid #1F4E79;border-radius:10px;padding:10px 14px;page-break-inside:avoid}'
@@ -11039,8 +11039,9 @@ function avBuildDownloadHtml(sel){
     +'window.addEventListener("afterprint",function(){if(!_pst)return;document.querySelectorAll("details.grp").forEach(function(d,i){d.open=_pst[i];});_pst=null;});';
   return '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport d&rsquo;avancement — '+esc(getAffLabel(aff))+'</title><style>'+css+'</style></head><body>'
     +(typeof LOGO_ELS_B64!=='undefined'?'<img class="logo" src="'+LOGO_ELS_B64+'">':'')
-    +'<h1>'+esc(getAffLabel(aff))+'</h1>'
-    +'<div class="sub">Rapport d&rsquo;avancement &nbsp;·&nbsp; Édité le '+dateStr+'</div>'
+    +'<h1>Rapport d&rsquo;avancement</h1>'
+    +'<div class="aff">'+esc(getAffLabel(aff))+'</div>'
+    +'<div class="sub">Édité le '+dateStr+'</div>'
     +'<div class="kpis"><div class="kpi"><div class="l">Avancement de l’affaire</div><div class="v">'+glob+'%</div></div>'
     +'<div class="kpi"><div class="l">Tâches en cours</div><div class="v">'+c.p+'</div></div>'
     +'<div class="kpi"><div class="l">Tâches terminées</div><div class="v">'+c.d+'</div></div></div>'
