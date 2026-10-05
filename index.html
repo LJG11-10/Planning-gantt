@@ -9431,18 +9431,20 @@ window._fhSbPick=function(item,ev){
   fhLineSet(panel.dataset.aff,panel.dataset.nm,+panel.dataset.w,+panel.dataset.di,+panel.dataset.li,'actId',sbId);
 };
 
+// Visuel de la maquette (05/10/2026) : SEULE l'apparence change (classes .fhx-* plus bas dans la page).
+// Mêmes champs, mêmes fonctions appelées (fhMetaSet / fhMetaSetDebounced / fhLineSetAff / fhLineSet /
+// fhLineDel / fhLineAdd / fhToggleDupPicker / _wpActPickerToggle), mêmes identifiants (fhdt-…, fhsb-…, fhwt-…).
 function fhBuildDayCell(nm,aff,w,di,isTD){
   var nmEsc=nm.replace(/'/g,"\\'");
   // Identifiant DOM stable (personne/semaine/jour) permettant de mettre à
   // jour le total du jour affiché en bas de la case sans devoir reconstruire
-  // toute la case — voir fhLiveUpdateTotals, appelé après chaque saisie
+  // toute la case — voir fhTotals, appelé après chaque saisie
   // d'heures ou de trajet pour que l'affichage soit à jour immédiatement,
   // sans devoir changer d'onglet puis revenir.
   var _dtId='fhdt-'+nm.replace(/[^a-z0-9]/gi,'_')+'-'+w+'-'+di;
   // Congé / formation / absence / école ce jour-là : on l'affiche
   // directement à la place de la case de saisie habituelle, pour que ce
-  // soit visible tout de suite sur la feuille d'heure (et donc aussi à
-  // l'impression/téléchargement, qui réutilise cette même fonction).
+  // soit visible tout de suite sur la feuille d'heure.
   var _fhDDate=weekDayToDate(w,di);
   var _fhDKey=_fhDDate?(_fhDDate.getFullYear()+'-'+String(_fhDDate.getMonth()+1).padStart(2,'0')+'-'+String(_fhDDate.getDate()).padStart(2,'0')):null;
   var _fhStatus=_personDayStatus(nm,_fhDKey,w);
@@ -9451,13 +9453,14 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
   // remplacer la case comme pour congé/absence/école (des jours non
   // travaillés, où rien d'autre n'a de sens à saisir).
   if(_fhStatus&&_fhStatus.type!=='formation'){
-    return '<div style="vertical-align:top;padding:6px;background:'+(isTD?'#FFFBEB':'inherit')+';border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:80px;text-align:center;background-image:linear-gradient(135deg,'+_fhStatus.bg+','+_fhStatus.bg2+')">'
-      +'<div style="font-size:22px">'+_fhStatus.icon+'</div>'
-      +'<div style="font-size:11px;font-weight:800;color:'+_fhStatus.color+'">'+_fhStatus.label+'</div>'
+    return '<div style="min-height:160px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;background-image:linear-gradient(135deg,'+_fhStatus.bg+','+_fhStatus.bg2+')">'
+      +'<div style="font-size:26px">'+_fhStatus.icon+'</div>'
+      +'<div style="font-size:13px;font-weight:800;color:'+_fhStatus.color+'">'+_fhStatus.label+'</div>'
+      +'<div style="font-size:10.5px;color:#6B6790">repris d’Absences</div>'
       +'</div>';
   }
   var _fhFormationTag=(_fhStatus&&_fhStatus.type==='formation')
-    ?'<div style="text-align:center;font-size:10px;font-weight:800;color:'+_fhStatus.color+';background:'+_fhStatus.bg+';border-radius:6px;padding:3px 4px;margin-bottom:5px">'+_fhStatus.icon+' '+_fhStatus.label+'</div>'
+    ?'<div style="text-align:center;font-size:11px;font-weight:800;color:'+_fhStatus.color+';background:'+_fhStatus.bg+';border-radius:8px;padding:4px;margin-bottom:6px">'+_fhStatus.icon+' '+_fhStatus.label+'</div>'
     :'';
   // Toutes les heures de cette personne ce jour-là, peu importe sous quelle
   // affaire le chef de chantier les a saisies — sinon des heures bien
@@ -9472,18 +9475,18 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
   dayT=Math.round((dayT+(+meta.trajetH||0))*10)/10;
   var zoneOpts='<option value="">Zone —</option>';
   for(var _zi=1;_zi<=7;_zi++){zoneOpts+='<option value="Zone '+_zi+'"'+(meta.zone==='Zone '+_zi?' selected':'')+'>Zone '+_zi+'</option>';}
-  var vehOpts='<option value="">V\u00e9hicule —</option>'
-    +'<option value="V\u00e9hicule perso"'+(meta.vehicule==='V\u00e9hicule perso'?' selected':'')+'>V\u00e9hicule perso</option>'
-    +'<option value="V\u00e9hicule pro"'+(meta.vehicule==='V\u00e9hicule pro'?' selected':'')+'>V\u00e9hicule pro</option>';
-  var metaHtml='<div style="display:flex;flex-direction:column;gap:3px;margin-bottom:6px;padding:6px 8px;background:var(--bg4);border-radius:8px">'
-    +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer"><input type="checkbox" '+(meta.panier?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'panier\',this.checked)" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F37D} Panier</label>'
-    +'<div style="display:flex;align-items:center;gap:5px">'
-    +'<label style="display:flex;align-items:center;gap:4px;font-size:9px;font-weight:700;cursor:pointer;flex-shrink:0"><input type="checkbox" '+(meta.gd?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'gd\',this.checked)" style="cursor:pointer;width:12px;height:12px;accent-color:var(--ac)">\u{1F697} Gd d\u00e9pl.</label>'
-    +'<input type="number" min="0" step="0.5" value="'+(meta.trajetH||'')+'" placeholder="H trajet" oninput="fhMetaSetDebounced('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" title="Heures de trajet" style="width:56px;border:none;border-radius:6px;padding:2px 4px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
+  var vehOpts='<option value="">Véhicule —</option>'
+    +'<option value="Véhicule perso"'+(meta.vehicule==='Véhicule perso'?' selected':'')+'>Véhicule perso</option>'
+    +'<option value="Véhicule pro"'+(meta.vehicule==='Véhicule pro'?' selected':'')+'>Véhicule pro</option>';
+  var metaHtml='<div class="fhx-meta">'
+    +'<label class="fhx-ck"><input type="checkbox" '+(meta.panier?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'panier\',this.checked)">\u{1F37D} Panier</label>'
+    +'<div style="display:flex;align-items:center;gap:6px">'
+    +'<label class="fhx-ck" style="flex-shrink:0"><input type="checkbox" '+(meta.gd?'checked':'')+' onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'gd\',this.checked)">\u{1F697} Gd dépl.</label>'
+    +'<input type="number" min="0" step="0.5" class="fhx-fld" value="'+(meta.trajetH||'')+'" placeholder="H trajet" aria-label="Heures de trajet" oninput="fhMetaSetDebounced('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'trajetH\',this.value)" title="Heures de trajet" style="width:72px;flex:0 1 72px">'
     +'</div>'
-    +'<select onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'zone\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'+zoneOpts+'</select>'
-    +'<select onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'vehicule\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'+vehOpts+'</select>'
-    +'<input type="text" value="'+meta.lieu.replace(/"/g,'&quot;')+'" placeholder="\u{1F4CD} Lieu" oninput="fhMetaSetDebounced('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" style="border:none;border-radius:6px;padding:3px 6px;font-size:9px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none;width:100%">'
+    +'<select class="fhx-fld" aria-label="Zone" onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'zone\',this.value)">'+zoneOpts+'</select>'
+    +'<select class="fhx-fld" aria-label="Véhicule" onchange="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'vehicule\',this.value)">'+vehOpts+'</select>'
+    +'<input type="text" class="fhx-fld" value="'+meta.lieu.replace(/"/g,'&quot;')+'" placeholder="\u{1F4CD} Lieu" aria-label="Lieu" oninput="fhMetaSetDebounced('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)" onblur="fhMetaSet('+w+',\''+nmEsc+'\','+di+',\'lieu\',this.value)">'
     +'</div>';
   var linesHtml='';
   for(var li=0;li<lines.length;li++){
@@ -9505,37 +9508,34 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
     // Réunion (affColor), pour que le même chantier ait toujours la même
     // couleur peu importe où il apparaît sur le site.
     var _c=selAff2?affColor(selAff2):null;
-    linesHtml+='<div style="background:'+(_c?_c.f:'var(--bg3)')+';border-left:4px solid '+(_c?_c.h:'var(--bd)')+';border-radius:10px;padding:7px 9px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.08)">'
-      +'<div style="font-size:8px;font-weight:800;color:'+(_c?_c.h:'var(--tx3)')+';letter-spacing:.3px;margin-bottom:3px">AFFAIRE</div>'
-      +'<select onchange="fhLineSetAff(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+',this.value)" '
-      +'style="width:100%;border:none;border-radius:6px;padding:4px 6px;font-size:10px;font-weight:700;font-family:inherit;background:var(--bg2);color:'+(_c?_c.xd:'var(--tx)')+';outline:none;margin-bottom:6px">'
+    var _cH=_c?_c.h:'#9A96B3';
+    linesHtml+='<div class="fhx-line" style="background:'+(_c?_c.f:'#F6F5FB')+';border-left:4px solid '+_cH+'">'
+      +'<div class="fhx-lbl" style="color:'+_cH+'">AFFAIRE</div>'
+      +'<select class="fhx-fld fhx-sel" aria-label="Affaire" onchange="fhLineSetAff(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+',this.value)" style="color:'+(_c?_c.xd:'#1C1A33')+'">'
       +affOpts+'</select>'
       +(selAff2
-        ?'<div style="font-size:8px;font-weight:800;color:'+(_c?_c.h:'var(--ac)')+';letter-spacing:.3px;margin-bottom:3px">SOUS-PHASE (rempli automatiquement)</div>'
-         +'<div id="'+_fhWidId+'" class="wpat-trigger" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" onclick="window._wpActPickerToggle(this)" style="width:100%;border-radius:6px;padding:4px 6px;font-size:10px;font-family:inherit;background:var(--bg2);color:'+(_c?_c.xd:'var(--tx)')+';cursor:pointer;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||(ln.hours?'Heures générales (pas de sous-phase)':'— Choisir une sous-phase —'))+'</div>'
-         +'<div class="wpat-panel" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" style="display:none;max-height:200px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;padding:4px;background:var(--bg2);box-shadow:0 4px 12px rgba(0,0,0,.14);position:relative;z-index:20;margin-bottom:6px">'+_sbTree.panel+'</div>'
+        ?'<div class="fhx-lbl" style="color:'+_cH+';margin-top:6px">SOUS-PHASE (rempli automatiquement)</div>'
+         +'<div id="'+_fhWidId+'" class="wpat-trigger fhx-sb" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" onclick="window._wpActPickerToggle(this)" style="width:100%;font-family:inherit;color:'+(_sbTree.label?(_c?_c.xd:'#1C1A33'):'#6B6790')+';'+(_sbTree.label?'':'font-style:italic;')+'cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||(ln.hours?'Heures générales (pas de sous-phase)':'— Choisir une sous-phase —'))+'</div>'
+         +'<div class="wpat-panel" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" style="display:none;max-height:220px;overflow-y:auto;border:1px solid #E4E1F0;border-radius:10px;padding:4px;background:#fff;box-shadow:0 8px 20px rgba(30,20,90,.16);position:relative;z-index:20;margin-top:4px">'+_sbTree.panel+'</div>'
         :'')
-      +'<div style="display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px dashed '+(_c?_c.xl:'var(--bd)')+'">'
-      +'<span style="font-size:8px;color:'+(_c?_c.xd:'var(--tx3)')+';font-weight:700">HEURES</span>'
-      +'<input type="number" min="0" max="24" step="0.5" value="'+(ln.hours===''?'':ln.hours)+'" placeholder="0" '
-      +'style="flex:1;border:none;border-radius:6px;padding:4px;font-size:12px;font-weight:800;font-family:\'Courier New\',monospace;color:'+(_c?_c.h:'var(--ac)')+';background:'+(isTD?'#FEF9C3':'var(--bg2)')+';outline:none;text-align:center;min-width:0" '
+      +'<div style="display:flex;align-items:center;gap:6px;margin-top:7px;padding-top:6px;border-top:1px dashed '+(_c?_c.xl:'#CBC7DE')+'">'
+      +'<span style="font-size:9.5px;font-weight:800;color:#4A4766">HEURES</span>'
+      +'<input type="number" min="0" max="24" step="0.5" class="fhx-fld fhx-h" aria-label="Heures" value="'+(ln.hours===''?'':ln.hours)+'" placeholder="0" '
+      +'style="color:'+_cH+'" '
       +'oninput="fhLineSet(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+',\'hours\',this.value)" '
       +'onblur="fhLineSet(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+',\'hours\',this.value)">'
-      +'<span style="font-size:9px;color:'+(_c?_c.xd:'var(--tx3)')+'">H</span>'
-      +'<button onmousedown="event.preventDefault();fhLineDel(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+')" '
-      +'style="background:rgba(0,0,0,.06);border:none;border-radius:6px;cursor:pointer;color:var(--rd);font-size:10px;font-weight:700;padding:2px 6px">\u2715</button>'
+      +'<span style="font-size:11px;font-weight:700;color:#1C1A33">h</span>'
+      +'<button type="button" class="fhx-del" title="Supprimer la ligne" aria-label="Supprimer la ligne" onmousedown="event.preventDefault();fhLineDel(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+')">✕</button>'
       +'</div></div>';
   }
   var hasContent=lines.some(function(l){return l&&(l.affId||l.actId||l.hours);})||meta.panier||meta.gd||(meta.lieu&&meta.lieu.trim())||(meta.zone&&meta.zone.trim())||(meta.trajetH&&+meta.trajetH>0)||(meta.vehicule&&meta.vehicule.trim());
-  return '<div style="vertical-align:top;padding:6px;background:'+(isTD?'#FFFBEB':'inherit')+';border-radius:10px">'
+  return '<div>'
     +_fhFormationTag
     +metaHtml
     +linesHtml
-    +'<button onclick="fhLineAdd(\''+aff+'\',\''+nmEsc+'\','+w+','+di+')" '
-    +'style="width:100%;background:var(--ac2);border:1.5px dashed var(--ac3);border-radius:20px;color:var(--ac);font-size:10px;font-weight:700;cursor:pointer;padding:5px;font-family:inherit;margin-top:3px">+ Sous-phase</button>'
-    +(hasContent?'<button onclick="fhToggleDupPicker(this,\''+aff+'\',\''+nmEsc+'\','+w+','+di+')" '
-      +'style="width:100%;background:var(--bg3);border:1.5px dashed var(--tx3);border-radius:20px;color:var(--tx2);font-size:9px;font-weight:700;cursor:pointer;padding:4px;font-family:inherit;margin-top:3px">\u29C9 Dupliquer ce jour</button>':'')
-    +'<div id="'+_dtId+'" style="text-align:center;font-family:\'Courier New\';font-size:12px;font-weight:800;color:'+(dayT?'var(--ac)':'var(--tx3)')+';margin-top:5px;padding-top:4px;border-top:1px solid var(--bd)">'+(dayT?dayT+'H':'—')+'</div>'
+    +'<button type="button" class="fhx-add" onclick="fhLineAdd(\''+aff+'\',\''+nmEsc+'\','+w+','+di+')">+ Sous-phase</button>'
+    +(hasContent?'<button type="button" class="fhx-dup" onclick="fhToggleDupPicker(this,\''+aff+'\',\''+nmEsc+'\','+w+','+di+')">⧉ Dupliquer ce jour</button>':'')
+    +'<div id="'+_dtId+'" class="fhx-tot" style="color:'+(dayT?'#4B3FC7':'#CBC7DE')+'">'+(dayT?String(dayT).replace('.',',')+' h':'—')+'</div>'
     +'</div>';
 }
 function fhToggleDupPicker(btn,aff,nm,w,srcDi){
@@ -9545,20 +9545,23 @@ function fhToggleDupPicker(btn,aff,nm,w,srcDi){
   var DAY_LBL=['Lun','Mar','Mer','Jeu','Ven'];
   var picker=document.createElement('div');
   picker.className='fh-dup-picker';
-  picker.style.cssText='display:flex;gap:3px;margin-top:3px;flex-wrap:wrap';
+  picker.style.cssText='display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;align-items:center';
   var lbl=document.createElement('span');
-  lbl.style.cssText='font-size:8px;color:var(--tx3);width:100%';
+  lbl.style.cssText='font-size:10.5px;color:#6B6790;width:100%';
   lbl.textContent='Dupliquer vers :';
   picker.appendChild(lbl);
   for(var d=0;d<5;d++){
     if(d===srcDi)continue;
     var b=document.createElement('button');
+    b.type='button';
     b.textContent=DAY_LBL[d];
-    b.style.cssText='font-size:9px;padding:2px 7px;border:1px solid var(--tx3);border-radius:10px;background:var(--bg2);color:var(--tx2);cursor:pointer;font-weight:700';
+    b.style.cssText='height:24px;padding:0 9px;border:1px solid #CBC7DE;border-radius:12px;background:#fff;color:#1C1A33;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit';
     (function(targetDi){b.onclick=function(){fhDupDayToDay(aff,nm,w,srcDi,targetDi);};})(d);
     picker.appendChild(b);
   }
-  wrap.appendChild(picker);
+  // le total du jour reste en dernier
+  var tot=wrap.querySelector('.fhx-tot');
+  if(tot)wrap.insertBefore(picker,tot);else wrap.appendChild(picker);
 }
 function fhDupDayToDay(aff,nm,w,srcDi,targetDi){
   var srcLines=fhGet(aff,nm,w,srcDi);
@@ -9587,29 +9590,36 @@ function fhBuildPersonWeekBlock(nm,w){
   var fhAff=window._fhAff||STORE.current;
   var isTW=TODAY&&TODAY.w===w;
   var total=fhWeekTotalAllAff(nm,w);
+  // En-tête de la personne comme la maquette : initiales, nom, type de contrat (annuaire)
+  var _gp=(STORE.globalPersons||{})[nm]||{};
+  var _TYC={ELS:['#E3DFFB','#5447D6'],Interim:['#FDF0D6','#9A6410'],'S-T':['#FBDFE6','#C03060'],Alternant:['#DCFCE7','#15803D'],Stagiaire:['#E0F2FE','#0369A1']};
+  var _tc=_TYC[_gp.type]||['#F1EFF8','#4B3FC7'];
+  var _w0=String(nm).trim().split(/\s+/),_ini=((_w0[0]||'').charAt(0)+(_w0.length>1?_w0[_w0.length-1].charAt(0):(_w0[0]||'').charAt(1))).toUpperCase();
+  var _hc=isTW?'#92400E':'#3A2EAE';
 
   var dayThs='';
   var dayCells='';
   for(var di=0;di<5;di++){
     var isTD=isTW&&TODAY&&TODAY.di===di;
-    dayThs+='<th style="text-align:center;padding:6px 5px;border-left:1px solid var(--bd);border-bottom:2px solid var(--bd2);min-width:150px;background:'+(isTD?'#FEF3C7':'var(--bg3)')+'">'
-      +'<div style="font-size:11px;font-weight:700;color:'+(isTD?'#D97706':'var(--ac)')+'">'+DN[di]+'</div>'
-      +'<div style="font-size:10px;color:'+(isTD?'#B45309':'var(--tx2)')+'">'+fmt(ddD(w,di))+'</div>'
-      +(isTD?'<div style="font-size:7px;color:#D97706">● auj.</div>':'')
+    dayThs+='<th style="text-align:center;padding:8px 6px;border-bottom:1px solid #E4E1F0;'+(di?'border-left:1px solid #EFEDF7;':'')+'background:'+(isTD?'#FEF3C7':'#FBFAFF')+'">'
+      +'<div style="font-size:12.5px;font-weight:800;color:'+(isTD?'#B45309':'#3A2EAE')+'">'+DN[di]+'</div>'
+      +'<div style="font-size:11px;font-weight:600;color:'+(isTD?'#B45309':'#6B6790')+'">'+fmt(ddD(w,di))+'</div>'
+      +(isTD?'<div style="font-size:9.5px;font-weight:800;color:#D97706">● aujourd’hui</div>':'')
       +'</th>';
-    dayCells+='<td style="border-left:1px solid var(--bd)">'+fhBuildDayCell(nm,fhAff,w,di,isTD)+'</td>';
+    dayCells+='<td style="vertical-align:top;padding:8px;'+(di?'border-left:1px solid #EFEDF7;':'')+'background:'+(isTD?'#FFFBEB':'#fff')+'">'+fhBuildDayCell(nm,fhAff,w,di,isTD)+'</td>';
   }
 
-  return '<div style="margin-bottom:16px;border:1px solid '+(isTW?'#F59E0B':'var(--bd)')+';border-radius:var(--r2);overflow:hidden">'
-    +'<div style="padding:8px 14px;background:'+(isTW?'#FEF3C7':'var(--ac2)')+';color:'+(isTW?'#92400E':'var(--ac)')+';display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
-    +'<span style="font-size:13px;font-weight:800">'+escHtml(nm)+'</span>'
-    +'<div style="display:flex;align-items:center;gap:10px">'
-    +'<span id="fhwt-'+nm.replace(/[^a-z0-9]/gi,'_')+'-'+w+'" style="font-family:\'Courier New\';font-weight:700;font-size:14px">'+(total?total+' H':'—')+'</span>'
-    +'<button onclick="fhRemovePersonFromWeek('+w+',\''+nm.replace(/'/g,"\\'")+'\')" title="Retirer cette personne de la feuille d\u2019heure de cette semaine" style="background:rgba(0,0,0,.08);border:none;border-radius:6px;cursor:pointer;color:inherit;font-size:11px;font-weight:700;padding:3px 9px">\u2715 Retirer</button>'
+  return '<div style="margin-bottom:14px;border:1.5px solid '+(isTW?'#FCD34D':'#E4E1F0')+';border-radius:16px;overflow:hidden;background:#fff">'
+    +'<div style="padding:10px 16px;background:'+(isTW?'#FEF3C7':'#F5F3FF')+';display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+    +'<span style="width:30px;height:30px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:'+_tc[1]+';color:#fff;font-size:11px;font-weight:800">'+escHtml(_ini)+'</span>'
+    +'<b style="font-size:14.5px;color:'+_hc+'">'+escHtml(nm)+'</b>'
+    +(_gp.type?'<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:8px;white-space:nowrap;background:'+_tc[0]+';color:'+_tc[1]+'">'+escHtml(_gp.type)+'</span>':'')
+    +'<span style="flex-grow:1"></span>'
+    +'<span id="fhwt-'+nm.replace(/[^a-z0-9]/gi,'_')+'-'+w+'" style="font-size:17px;font-weight:800;color:'+_hc+'">'+(total?String(total).replace('.',',')+' h':'—')+'</span>'
+    +'<button type="button" onclick="fhRemovePersonFromWeek('+w+',\''+nm.replace(/'/g,"\\'")+'\')" title="Retirer cette personne de la feuille d\u2019heure de cette semaine" style="height:30px;padding:0 10px;border-radius:8px;border:none;background:rgba(0,0,0,.07);color:#4A4766;cursor:pointer;font-size:12px;font-weight:800;font-family:inherit">\u2715 Retirer</button>'
     +'</div>'
-    +'</div>'
-    +'<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">'
-    +'<thead><tr style="background:var(--bg3)">'+dayThs+'</tr></thead>'
+    +'<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;min-width:1000px;table-layout:fixed">'
+    +'<thead><tr>'+dayThs+'</tr></thead>'
     +'<tbody><tr>'+dayCells+'</tr></tbody>'
     +'</table></div></div>';
 }
@@ -10086,16 +10096,17 @@ function renderFiche(){
   var availWks=Object.keys(wkSet).map(Number).sort(function(a,b){return a-b;});
 
   // Controls bar
-  var ctrl='<div class="fc">'
-    +(selNm?'<button class="btn btn-g" onclick="fhBackToWeekView()">\u2190 Vue semaine</button>':'')
-    +'<span class="lbl">PERSONNE</span>'
-    +'<select id="fc-nm" onchange="renderFiche()">'
+  // Visuel de la maquette : une carte avec PERSONNE + boutons, puis SEMAINE AFFICHÉE (mêmes champs, mêmes fonctions)
+  var ctrl='<div class="fc fhx-ctrl">'
+    +(selNm?'<button type="button" class="fhx-btn" onclick="fhBackToWeekView()">← Vue semaine</button>':'')
+    +'<span class="fhx-cl">PERSONNE</span>'
+    +'<select id="fc-nm" class="fhx-big" onchange="renderFiche()">'
     +'<option value="">— Sélectionner —</option>'
     +persons.map(function(pp){return '<option value="'+pp+'"'+(pp===selNm?' selected':'')+'>'+pp+'</option>';}).join('')
     +'</select>'
-    +'<button class="btn btn-g" onclick="fhImprimer()">🖨 Imprimer</button>'
-    +'<button class="btn btn-a" onclick="fhTelecharger()" style="margin-left:6px">⬇ Télécharger</button>'
-    +'<button class="btn" onclick="syncFichesToGantt()" style="background:#7C3AED;color:#fff;border:none" title="Reporter les heures des fiches sur le GANTT">⚡ Sync → GANTT</button>'
+    +'<button type="button" class="fhx-btn" onclick="fhImprimer()">🖨 Imprimer</button>'
+    +'<button type="button" class="fhx-btn" onclick="fhTelecharger()">⬇ Télécharger</button>'
+    +'<button type="button" class="fhx-btn" onclick="syncFichesToGantt()" style="background:#7C3AED;color:#fff;border-color:#7C3AED;font-weight:800" title="Reporter les heures des fiches sur le GANTT">⚡ Sync → GANTT</button>'
     +'</div>';
 
   var fw=document.getElementById('fw');
@@ -10110,24 +10121,24 @@ function renderFiche(){
     window._fhAff=STORE.current;
     var wvPersons=selNm?[selNm]:fhWeekPersons(weekView);
     var wvBlocks=wvPersons.map(function(nm2){return fhBuildPersonWeekBlock(nm2,weekView);}).join('');
-    if(!wvBlocks)wvBlocks='<div style="padding:16px;text-align:center;color:var(--tx3);border:1px dashed var(--bd);border-radius:var(--r2)">Personne \u00e0 afficher pour cette semaine \u2014 ajoutez-en une ci-dessous, ou elles appara\u00eetront automatiquement d\u00e8s qu\'elles seront plac\u00e9es dans Planning r\u00e9union.</div>';
+    if(!wvBlocks)wvBlocks='<div style="padding:18px;text-align:center;color:#6B6790;border:1.5px dashed #E4E1F0;border-radius:14px;background:#fff;margin-bottom:14px">Personne à afficher pour cette semaine — ajoutez-en une ci-dessous, ou elles apparaîtront automatiquement dès qu\'elles seront placées dans Planning réunion.</div>';
     // Dropdown pour ajouter une personne pas encore dans la liste
     // (uniquement pertinent quand on regarde tout le monde, pas une
     // personne déjà filtrée)
     var _wvShown={};wvPersons.forEach(function(n){_wvShown[n]=true;});
     var addOpts='<option value="">— Ajouter une personne —</option>'
       +persons.filter(function(pp){return !_wvShown[pp];}).map(function(pp){return '<option value="'+pp+'">'+pp+'</option>';}).join('');
-    fw.innerHTML=ctrl
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
-      +'<span class="lbl">SEMAINE AFFICH\u00c9E</span>'
-      +'<select onchange="window._fhWeekView=+this.value;renderFiche()" style="border:1px solid var(--bd);border-radius:var(--r);padding:4px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'
+    fw.innerHTML='<section class="fhx-card">'+ctrl
+      +'<div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">'
+      +'<span class="fhx-cl">SEMAINE AFFICHÉE</span>'
+      +'<select class="fhx-big" aria-label="Semaine affichée" onchange="window._fhWeekView=+this.value;renderFiche()">'
       +Array.from({length:52},function(_,i){return i+1;}).map(function(w){return '<option value="'+w+'"'+(w===weekView?' selected':'')+'>S'+isoWeekOf(w)+' — '+fmt(wkD(w))+(TODAY&&TODAY.w===w?' (en cours)':'')+'</option>';}).join('')
       +'</select>'
-      +'</div>'
+      +'</div></section>'
       +wvBlocks
-      +(selNm?'':('<div style="display:flex;align-items:center;gap:8px;margin-top:8px">'
-        +'<select id="fc-addperson" style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:11px;font-family:inherit;background:var(--bg2);color:var(--tx);outline:none">'+addOpts+'</select>'
-        +'<button class="btn btn-a" onclick="fhAddPersonToWeek('+weekView+')">+ Ajouter une personne</button>'
+      +(selNm?'':('<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        +'<select id="fc-addperson" class="fhx-big" aria-label="Personne à ajouter">'+addOpts+'</select>'
+        +'<button type="button" class="fhx-btn" onclick="fhAddPersonToWeek('+weekView+')" style="height:36px;background:#4B3FC7;color:#fff;border-color:#4B3FC7;font-weight:800">+ Ajouter une personne</button>'
         +'</div>'));
     return;
   }
@@ -13173,7 +13184,7 @@ function gcGroupRowHtml(e,DW,NC,acts){
     bar='<div style="position:absolute;left:12px;top:0;line-height:'+h+'px;font-size:11px;color:#9A96B3;font-style:italic">vide</div>';
   }
   var ta=gcTodayAbs();
-  var line=ta>=0?'<div style="position:absolute;top:0;bottom:0;left:'+gcX(ta,DW)+'px;width:2px;background:#DC2626;pointer-events:none"></div>':'';
+  var line=''; // la ligne rouge d'aujourd'hui est un seul trait sur toute la hauteur (gcPlaceToday)
   return '<tr class="gc-row" data-gid="'+r.id+'">'+lbl+'<td colspan="'+NC+'" style="position:relative;height:'+h+'px;padding:0;background:'+(isPh?'#FAF9FF':'#fff')+';border-bottom:1px solid #EFEDF7">'+bar+line+'</td></tr>';
 }
 
@@ -13230,7 +13241,7 @@ function renderGantt(){
       var ab=(w-1)*7+di,isTD=ab===todayAbs;
       if(di>=5&&!window._gcShowWE){dH+='<th class="gwh"></th>';continue;}
       var dt=weekDayToDate(w,di),fc=di<5&&isFerie(dt);
-      dH+='<th title="'+fmt(dt)+(fc?' — férié':'')+'" style="padding:2px 0;text-align:center;font-size:9px;font-weight:'+(isTD?900:700)+';color:'+(isTD?'#fff':fc?'#DC2626':'#8C88A8')+';background:'+(isTD?'#DC2626':di>=5?'#F1EFF8':'#FBFAFF')+';border-bottom:1px solid #E4E1F0;'+(di===0?'border-left:1px solid #E4E1F0;':'')+(isTD?'position:relative;overflow:visible;':'')+'">'+DS[di]+(isTD?'<span style="position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#fff;background:#DC2626;border-radius:6px;padding:1px 6px;white-space:nowrap;z-index:2">Aujourd’hui</span>':'')+'</th>';
+      dH+='<th'+(isTD?' id="gc-tdth"':'')+' title="'+fmt(dt)+(fc?' — férié':'')+'" style="padding:2px 0;text-align:center;font-size:9px;font-weight:'+(isTD?900:700)+';color:'+(isTD?'#fff':fc?'#DC2626':'#8C88A8')+';background:'+(isTD?'#DC2626':di>=5?'#F1EFF8':'#FBFAFF')+';border-bottom:1px solid #E4E1F0;'+(di===0?'border-left:1px solid #E4E1F0;':'')+(isTD?'overflow:visible;':'')+'">'+DS[di]+(isTD?'<span style="position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#fff;background:#DC2626;border-radius:6px;padding:1px 6px;white-space:nowrap;z-index:2">Aujourd’hui</span>':'')+'</th>';
     }
   }
   var cols='';for(var c=0;c<NC;c++){cols+='<col style="width:'+(c%7>=5?gcWEW(DW):DW)+'px">';}
@@ -13287,6 +13298,7 @@ function renderGantt(){
   gcRenderToolbar();
   gcRenderPanel();
   gcPlaceSelBox();
+  gcPlaceToday();
 }
 
 // ── Barre d'outils du GANTT (au-dessus du planning) ──
@@ -13376,6 +13388,19 @@ function gcPlaceSelBox(){
   var gr=gw.getBoundingClientRect(),rr=tr.getBoundingClientRect();
   var w=Math.max(0,gw.clientWidth-GC_LW-4);
   box.style.cssText='display:block;position:absolute;z-index:4;pointer-events:none;border-radius:6px;box-shadow:inset 0 0 0 2px #4B3FC7;left:'+(gw.scrollLeft+GC_LW+1)+'px;top:'+(rr.top-gr.top+gw.scrollTop+2)+'px;width:'+w+'px;height:'+Math.max(0,rr.height-4)+'px';
+}
+// Ligne rouge d'aujourd'hui : UN seul trait vertical sous l'en-tête, calé sur la case du jour de l'en-tête
+// (avant : un morceau par ligne, décalé d'un pixel selon les bordures des lignes de phase / de tâche).
+function gcPlaceToday(){
+  var gw=document.getElementById('gw');if(!gw)return;
+  var tbl=gw.querySelector('table.gc2'),ta=gcTodayAbs();
+  var ln=document.getElementById('gc-today');
+  if(!tbl||ta<0){if(ln)ln.remove();return;}
+  if(!ln||ln.parentNode!==gw){if(ln)ln.remove();ln=document.createElement('div');ln.id='gc-today';gw.appendChild(ln);}
+  var gr=gw.getBoundingClientRect(),th=document.getElementById('gc-tdth'),thead=tbl.tHead;
+  var x=th?(th.getBoundingClientRect().left-gr.left+gw.scrollLeft):(GC_LW+gcX(ta,ZOOM_DW));
+  var top=thead?thead.offsetHeight:0;
+  ln.style.cssText='position:absolute;z-index:4;pointer-events:none;width:2px;background:#DC2626;left:'+x+'px;top:'+(tbl.offsetTop+top)+'px;height:'+Math.max(0,tbl.offsetHeight-top)+'px';
 }
 (function(){var gw=document.getElementById('gw');if(gw)gw.addEventListener('scroll',function(){if(window._gcSel)gcPlaceSelBox();},{passive:true});window.addEventListener('resize',function(){if(window._gcSel)gcPlaceSelBox();});})();
 function gcNum(n){return String(Math.round(n*10)/10).replace('.',',');}
@@ -16475,7 +16500,7 @@ function fhTotals(nm,w){
     var meta=fhMetaGet(w,nm,d);
     var dt=Math.round((fhGetAllAff(nm,w,d).reduce(function(s,l){return s+(l.hours===''?0:+l.hours||0);},0)+(+meta.trajetH||0))*10)/10;
     var de=document.getElementById('fhdt-'+safeNm+'-'+w+'-'+d);
-    if(de)de.textContent=dt?dt+'H':'—';
+    if(de){de.textContent=dt?String(dt).replace('.',',')+' h':'—';de.style.color=dt?'#4B3FC7':'#CBC7DE';}
   }
   // Même calcul que fhBuildDayCell/impression/téléchargement : toutes
   // affaires confondues + heures de trajet.
@@ -16483,7 +16508,7 @@ function fhTotals(nm,w){
   var we=document.getElementById('ftw-'+w);
   if(we)we.textContent=wkT?wkT+' H':'—';
   var wpe=document.getElementById('fhwt-'+safeNm+'-'+w);
-  if(wpe)wpe.textContent=wkT?wkT+' H':'—';
+  if(wpe)wpe.textContent=wkT?String(wkT).replace('.',',')+' h':'—';
   // Grand total ("SAISI") : respecte le filtre de semaine de la vue "une
   // personne" s'il est actif (semaine précise plutôt que "toutes"), sinon
   // additionne fhWeekTotalAllAff sur toutes les semaines connues de cette
@@ -21539,6 +21564,29 @@ body[data-sec="affaire"].gc-pan #sec-affbar{margin-right:400px}
 /* GANTT — nouveau visuel */
 #gantt-view-btns,#gantt-view-sep{display:none!important}
 #gw{position:relative}
+/* Feuille d'heure — visuel de la maquette (fhBuildDayCell / fhBuildPersonWeekBlock / renderFiche) */
+.fhx-card{background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:14px 18px;margin-bottom:14px}
+.fhx-card .fhx-ctrl{margin-bottom:0}
+.fhx-cl{font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px}
+.fc select.fhx-big,select.fhx-big{height:36px;border:1.5px solid #E4E1F0;border-radius:9px;padding:0 10px;font-size:13px;font-family:inherit;background:#fff;color:#1C1A33;outline:none;cursor:pointer;min-width:0}
+select.fhx-big:focus{border-color:#6457F4}
+.fhx-btn{height:34px;padding:0 12px;border-radius:9px;border:1px solid #E4E1F0;background:#fff;color:#1C1A33;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.fhx-btn:hover{filter:brightness(.97)}
+.fhx-meta{display:flex;flex-direction:column;gap:5px;padding:8px;background:#F1EFF8;border-radius:10px;margin-bottom:8px}
+.fhx-ck{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;color:#1C1A33}
+.fhx-ck input{width:16px;height:16px;accent-color:#4B3FC7;cursor:pointer;margin:0;flex-shrink:0}
+.fhx-fld{height:28px;border:1.5px solid #fff;border-radius:9px;padding:0 8px;font-size:12px;font-family:inherit;background:#fff;color:#1C1A33;outline:none;width:100%;box-sizing:border-box;min-width:0}
+.fhx-fld:focus{border-color:#6457F4}
+.fhx-line{border-radius:10px;padding:8px 9px;margin-bottom:7px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.fhx-lbl{font-size:9.5px;font-weight:800;letter-spacing:.4px;margin-bottom:3px}
+.fhx-sel{height:30px;font-size:12px;font-weight:700}
+.fhx-sb{position:relative;height:30px;line-height:27px;padding:0 24px 0 10px;border:1.5px solid #fff;border-radius:9px;background:#fff;font-size:11.5px;box-sizing:border-box}
+.fhx-sb::after{content:'▾';position:absolute;right:9px;top:0;color:#6B6790;font-size:12px;font-style:normal}
+.fhx-h{flex:1;min-width:0;height:30px;text-align:center;font-weight:800;font-size:14px}
+.fhx-del{width:28px;height:28px;flex-shrink:0;border-radius:7px;border:none;background:rgba(0,0,0,.06);color:#B91C1C;cursor:pointer;font-size:12px;font-weight:800;padding:0;font-family:inherit}
+.fhx-add{width:100%;height:30px;border-radius:15px;border:1.5px dashed #C7C1F5;background:#F5F3FF;color:#4B3FC7;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
+.fhx-dup{width:100%;height:28px;margin-top:5px;border-radius:14px;border:1.5px dashed #CBC7DE;background:#FBFAFF;color:#4A4766;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.fhx-tot{text-align:center;font-size:15px;font-weight:800;margin-top:8px;padding-top:6px;border-top:1px solid #EFEDF7}
 #gc-toolbar{flex-shrink:0}
 .gt.gc2 thead th{position:sticky;z-index:22}
 .gt.gc2 thead tr:nth-child(1) th{top:0}
@@ -21557,7 +21605,7 @@ body[data-sec="affaire"].gc-pan #sec-affbar{margin-right:400px}
 body.gc-paint .gt.gc2 td.gcell,body.gc-paint .gt.gc2 td.gwe{cursor:crosshair}
 .gt.gc2 td.tw{background:rgba(75,63,199,.045)}
 .gt.gc2 td.w0{border-left:1px solid #EFEDF7}
-.gt.gc2 td.tdy{box-shadow:inset 2px 0 0 #DC2626}
+/* .tdy : la ligne rouge d'aujourd'hui est maintenant un seul trait (#gc-today, gcPlaceToday) */
 .gt.gc2 td.gwh,.gt.gc2 th.gwh{padding:0;border:none;width:0}
 .gt.gc2 td.gwe{padding:0;vertical-align:top;cursor:pointer;background:repeating-linear-gradient(135deg,#F1EFF8,#F1EFF8 3px,#FBFAFF 3px,#FBFAFF 9px);border-bottom:1px solid #F1EFF8}
 .gt.gc2 td.ghc{height:36px;border-left:1px solid #F1EFF8;border-bottom:1px solid #EFEDF7;text-align:center;padding:0;background:#fff}
