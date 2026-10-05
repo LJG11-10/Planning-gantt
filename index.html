@@ -1856,8 +1856,8 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
       <div id="petro-hub-tile-docs" class="petro-tile" onclick="petroHubEnterDocs()" style="display:none">
         <div class="petro-tile-ico" style="background:#B45309">⛑️</div>
         <div class="petro-tile-t">Chantier</div>
-        <div class="petro-tile-s">Documents du chantier</div>
-        <div class="petro-tile-chips"><span>Docs chantier</span></div>
+        <div class="petro-tile-s">Documents du chantier et commandes</div>
+        <div class="petro-tile-chips"><span>Docs chantier</span><span>Commandes</span></div>
       </div>
     </div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:22px">
@@ -1959,7 +1959,9 @@ function petroHubEnterDocs(){
   if(hub) hub.style.display='none';
   var docs = document.getElementById('petro-docs-shell');
   if(docs) docs.style.display='flex';
-  if(window.DocsChantier && typeof window.DocsChantier.render==='function'){
+  // Onglets Docs chantier / Commandes (selon les droits) — voir ChantierNav (bloc COMMANDES)
+  if(window.ChantierNav){ window.ChantierNav.enter(); }
+  else if(window.DocsChantier && typeof window.DocsChantier.render==='function'){
     window.DocsChantier.render('petro-docs-content');
   }
 }
@@ -2006,7 +2008,7 @@ function petroHubBackToHub(){
   var backups = document.getElementById('petro-backups-shell');
   if(backups) backups.style.display='none';
   var docs = document.getElementById('petro-docs-shell');
-  if(docs && docs.style.display!=='none'){ docs.style.display='none'; if(window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave(); }
+  if(docs && docs.style.display!=='none'){ docs.style.display='none'; if(window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave(); if(window.Commandes&&window.Commandes.leave) window.Commandes.leave(); }
   var qrs = document.getElementById('petro-qr-shell');
   if(qrs) qrs.style.display='none';
   var hub = document.getElementById('petro-hub-screen');
@@ -3063,6 +3065,8 @@ window.DroitsAcces = (function () {
     {key:'plaque_pe', label:'Plaque PE'},
     {key:'qr_feuille', label:'QR Code feuille d\'heure (Voir = accès à l\'onglet ; Modifier = afficher le QR code, valider et débloquer les feuilles)'},
     {key:'docs_chantier', label:'Docs chantier (Voir = consulter et imprimer les fiches ; Modifier = créer, remplir, faire signer, verrouiller). Rouvrir une fiche signée : admin et chef de chantier'},
+    {key:'commandes', label:'Commandes (Voir = consulter les commandes et les bons de livraison ; Modifier = saisir les quantités reçues et joindre les bons de livraison)'},
+    {key:'commandes_gestion', label:'Commandes — gestion (Modifier = créer, modifier et supprimer les commandes et leurs lignes, changer les délais, importer)'},
     {key:'budget_toolbar', label:'H vendues (barre d\'outils)', group:'Budget Heures'},
     {key:'budget_gantt',   label:'Budget heures dans le Gantt (par phase/ensemble/sous-phase)', group:'Budget Heures'},
     {key:'budget_recap',   label:'Heures dans le récap & les rapports', group:'Budget Heures'}
@@ -3709,7 +3713,8 @@ function applyRoleRestrictions() {
   if (qrTile) qrTile.style.display = (CURRENT_ROLE === 'admin' || hasView('qr_feuille')) ? '' : 'none';
   // Docs chantier (fiches de contrôle) : admins, + ceux qui ont le droit "Docs chantier" (Voir)
   var docsTile = document.getElementById('petro-hub-tile-docs');
-  if (docsTile) docsTile.style.display = (CURRENT_ROLE === 'admin' || hasView('docs_chantier')) ? '' : 'none';
+  // Chantier = Docs chantier + Commandes : visible si l'un des deux est accessible
+  if (docsTile) docsTile.style.display = (CURRENT_ROLE === 'admin' || hasView('docs_chantier') || hasView('commandes')) ? '' : 'none';
   if (CURRENT_ROLE === 'chef_chantier') {
     // Masquer tous les onglets sauf GANTT, Planning réunion, Personnel, Absences et Tableau de bord
     // (le budget à l'intérieur du Tableau de bord est déjà géré finement par le
@@ -20617,11 +20622,15 @@ if(window._QR_TOKEN){window.QRFeuille.startPublic();}
      quand deux personnes modifient la même fiche en même temps.
      ══════════════════════════════════════════════════════════════════ -->
 <div id="petro-docs-shell" style="display:none;position:fixed;inset:0;z-index:8000;background:#F6F5FB;flex-direction:column;overflow:hidden;font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif">
-  <div style="padding:10px 16px;background:#fff;border-bottom:1px solid #E4E1F0;display:flex;align-items:center;gap:12px;flex-shrink:0">
-    <button onclick="petroHubBackToHub()" style="background:#F6F5FB;color:#1C1A33;border:1px solid #E4E1F0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">← Retour</button>
-    <span style="color:#1C1A33;font-size:13px;font-weight:700">Chantier · Docs chantier</span>
+  <!-- En-tête comme les autres sections (maquette) ; onglets Docs chantier / Commandes : ChantierNav -->
+  <div style="min-height:60px;padding:8px 20px;background:#fff;border-bottom:1px solid #E4E1F0;display:flex;align-items:center;gap:14px;flex-shrink:0;box-sizing:border-box">
+    <button onclick="petroHubBackToHub()" style="height:38px;padding:0 14px;border-radius:10px;border:1px solid #E4E1F0;background:#F6F5FB;color:#1C1A33;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">← Accueil</button>
+    <span style="font-size:18px;font-weight:800;color:#C81E1E;white-space:nowrap">PétroSphère</span>
+    <span style="font-size:16px;font-weight:800;color:#1C1A33;padding-left:14px;border-left:1px solid #E4E1F0;line-height:26px">Chantier</span>
   </div>
+  <div id="petro-ch-tabs" style="padding:14px 22px 0;flex-shrink:0"></div>
   <div id="petro-docs-content" style="flex:1;min-height:0;overflow:auto;padding:0"></div>
+  <div id="petro-cmd-content" style="display:none;flex:1;min-height:0;overflow:auto;padding:0"></div>
 </div>
 <div id="dcf-modal" style="display:none;position:fixed;inset:0;z-index:9600;background:rgba(20,16,50,.5);overflow:auto;padding:24px 12px"></div>
 <style>
@@ -21483,6 +21492,967 @@ window.DocsChantier = (function(){
 })();
 </script>
 <!-- ═══════════════════════════ /DOCS CHANTIER ═══════════════════════ -->
+<!-- ═══════════════════════════ COMMANDES — module isolé ═══════════
+     Section Chantier › Commandes (maquette validée le 05/10/2026).
+     Une commande = un numéro ELxxxxxxx, rangée dans une affaire, avec ses lignes
+     (référence, désignation, quantité commandée, délai) et, pour chaque ligne,
+     la quantité REÇUE (réception partielle possible : 20 sur 40…).
+     PAS dans data.json : table Supabase "commandes" (script commandes_supabase.sql),
+     une ligne par commande, même principe que Docs chantier :
+       - colonne "rev" : on n'écrit que si personne n'a enregistré entre-temps,
+         sinon on relit, on fusionne case par case (fusion à trois) et on recommence ;
+       - copie locale "cmd_unsaved_<id>" si pas de réseau, renvoyée ensuite ;
+       - suivi des collègues : 4 s dans une commande ouverte, 5 s sur la liste.
+     Données d'une commande (objet plat, clé → valeur, pour fusionner finement) :
+       _num, _aff, note, order (ordre des lignes),
+       'l:<k>' = {ref, des, unit, qc, del (aaaa-mm-jj), old (ancien délai)},
+       'q:<k>' = quantité reçue, 'b:<id>' = un bon de livraison joint.
+     Bons de livraison : fichiers dans le stockage Supabase "commandes_bl"
+     (photos compressées sur l'appareil, ou PDF), lus seulement quand on les ouvre.
+     Aucun prix n'est jamais lu ni enregistré.
+     L'import du fichier (commandes + mise à jour des délais) sera branché ici
+     quand le format du fichier sera connu (fonction importer à ajouter, le reste ne bouge pas).
+     ══════════════════════════════════════════════════════════════════ -->
+<div id="cmd-modal" style="display:none;position:fixed;inset:0;z-index:9600;background:rgba(20,16,50,.5);overflow:auto;padding:24px 12px"></div>
+<style>
+.cmu-wrap{max-width:1300px;margin:0 auto;padding:16px 22px 60px}
+.cmu-qty{width:76px;height:32px;border:1.5px solid #E4E1F0;border-radius:9px;padding:0 6px;font-size:14px;font-weight:800;text-align:center;font-family:inherit;color:#1C1A33;background:#fff;outline:none}
+.cmu-qty:focus{border-color:#6457F4}
+.cmu-qty:disabled{background:#F6F5FB;color:#6B6790}
+.cmu-mini{height:32px;padding:0 9px;border-radius:8px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}
+.cmu-ok{border:1.5px solid #BBF7D0;background:#F0FDF4;color:#15803D}
+.cmu-zero{border:1.5px solid #E4E1F0;background:#fff;color:#4A4766}
+.cmu-ico{width:30px;height:30px;border-radius:8px;border:1px solid #E4E1F0;background:#fff;cursor:pointer;font-size:13px;padding:0;color:#4A4766}
+.cmu-ico.red{border-color:#FECACA;color:#B91C1C}
+.cmu-lbl{font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px}
+.cmu-tbl td{vertical-align:middle}
+.cmu-tbl code{font-family:inherit;font-weight:800;font-size:12.5px;background:#F1EFF8;border-radius:6px;padding:2px 6px;white-space:nowrap}
+.cmu-bl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#F5F3FF;border:1px solid #E4E1F0;border-radius:12px;padding:8px 12px;margin-bottom:8px;font-size:13px}
+.cmu-fld{display:block;width:100%;margin-top:4px;margin-bottom:12px}
+</style>
+<script>
+window.Commandes=(function(){
+  'use strict';
+  // ── Environnement (droits, utilisateur, affaires) ──
+  var ENV={
+    canView:function(){ try{ return CURRENT_ROLE==='admin'||hasView('commandes'); }catch(e){ return false; } },
+    canEdit:function(){ try{ return CURRENT_ROLE==='admin'||hasEdit('commandes'); }catch(e){ return false; } },          // réception + bons de livraison
+    canManage:function(){ try{ return CURRENT_ROLE==='admin'||hasEdit('commandes_gestion'); }catch(e){ return false; } }, // créer / modifier / supprimer
+    who:function(){ try{ return (CURRENT_USER&&CURRENT_USER.email)||''; }catch(e){ return ''; } },
+    affaires:function(){
+      try{ return Object.keys(STORE.projects||{}).sort().map(function(k){
+        return {id:k,label:(typeof getAffLabel==='function'?getAffLabel(k):k),closed:!!STORE.projects[k].closed}; }); }
+      catch(e){ return []; }
+    }
+  };
+  // ── Serveur : table "commandes" + stockage "commandes_bl" ──
+  var LIST_COLS='id,num,aff,meta,rev,created_at,created_by,updated_at,updated_by';
+  var DB={
+    _c:function(){ if(!window.supa) throw new Error('Pas de connexion au serveur'); return window.supa.from('commandes'); },
+    list:async function(){ var r=await this._c().select(LIST_COLS).order('updated_at',{ascending:false}).limit(3000); if(r.error) throw r.error; return r.data||[]; },
+    get:async function(id){ var r=await this._c().select('*').eq('id',id).maybeSingle(); if(r.error) throw r.error; return r.data; },
+    head:async function(id){ var r=await this._c().select('rev').eq('id',id).maybeSingle(); if(r.error) throw r.error; return r.data; },
+    create:async function(row){ var r=await this._c().insert(row).select('*').single(); if(r.error) throw r.error; return r.data; },
+    // Écrit seulement si personne n'a enregistré entre-temps (même "rev") ; null sinon.
+    update:async function(id,rev,patch){ var r=await this._c().update(patch).eq('id',id).eq('rev',rev).select('*'); if(r.error) throw r.error; return (r.data&&r.data[0])||null; },
+    remove:async function(id){ var r=await this._c().delete().eq('id',id); if(r.error) throw r.error; }
+  };
+  var FILES={
+    _b:function(){ if(!window.supa) throw new Error('Pas de connexion au serveur'); return window.supa.storage.from('commandes_bl'); },
+    upload:async function(path,blob,type){ var r=await this._b().upload(path,blob,{contentType:type,upsert:false}); if(r.error) throw r.error; },
+    download:async function(path){ var r=await this._b().download(path); if(r.error) throw r.error; return r.data; },
+    remove:async function(paths){ var r=await this._b().remove(paths); if(r.error) throw r.error; }
+  };
+
+  // ── Outils ──
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function js(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+  function $(id){ return document.getElementById(id); }
+  function todayIso(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  function fr(iso){ var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+'/'+m[2]+'/'+m[1]:(iso||''); }
+  function fmtDT(s){ if(!s) return ''; var d=new Date(s); if(isNaN(d)) return ''; return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear()+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+  function whoShort(e){ e=String(e||''); var i=e.indexOf('@'); return i>0?e.slice(0,i):e; }
+  function sameV(a,b){ return JSON.stringify(a==null?'':a)===JSON.stringify(b==null?'':b); }
+  function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  function nb(v){ var n=parseFloat(String(v==null?'':v).replace(',','.')); return isNaN(n)?0:n; }
+  function fq(n){ return String(Math.round(n*1000)/1000).replace('.',','); }
+  function kb(n){ return n>1048576?(Math.round(n/104857.6)/10).toString().replace('.',',')+' Mo':Math.max(1,Math.round(n/1024))+' Ko'; }
+  function affLabel(id){ if(!id) return '—'; var a=ENV.affaires().filter(function(x){return x.id===id;})[0]; return a?a.label:id; }
+  function badge(t,bg,c){ return '<span class="dcu-badge" style="background:'+bg+';color:'+c+'">'+t+'</span>'; }
+
+  // ── Lignes et état d'une commande ──
+  function lineKeys(d){
+    var seen={},out=[];
+    (d.order||[]).forEach(function(k){ if(d['l:'+k]&&!seen[k]){ seen[k]=1; out.push(k); } });
+    // lignes ajoutées en même temps par un collègue (fusion) : jamais perdues, mises à la fin
+    Object.keys(d).filter(function(x){ return x.indexOf('l:')===0&&!seen[x.slice(2)]; }).sort().forEach(function(x){ out.push(x.slice(2)); });
+    return out;
+  }
+  function lines(d){
+    return lineKeys(d).map(function(k){ var l=d['l:'+k]||{};
+      return {k:k,ref:l.ref||'',des:l.des||'',unit:l.unit||'',qc:nb(l.qc),del:l.del||'',old:l.old||'',qr:nb(d['q:'+k]),
+        src:l.src||'',liv:nb(l.liv),gone:l.gone||'',chg:l.chg||''}; });
+  }
+  function bls(d){ return Object.keys(d).filter(function(k){ return k.indexOf('b:')===0&&d[k]&&d[k].path; }).map(function(k){ return Object.assign({id:k.slice(2)},d[k]); }).sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); }); }
+  function stats(d){
+    var L=lines(d),rest=L.filter(function(l){ return l.qr<l.qc; }),got=L.some(function(l){ return l.qr>0; });
+    var next=rest.map(function(l){ return l.del; }).filter(Boolean).sort()[0]||'';
+    return {n:L.length,rest:rest.length,state:!L.length?'vide':(!rest.length?'complete':(got?'partiel':'attente')),
+      next:next,late:!!(next&&next<todayIso()),changed:rest.some(function(l){ return !!l.old; }),nbl:bls(d).length,
+      ngone:rest.filter(function(l){ return !!l.gone; }).length,absent:!!d._gone,imp:d._imp||'',date:d._date||'',chantier:d._chantier||''};
+  }
+  function stateBadge(st,rest){
+    if(st==='complete') return badge('✓ Livrée complète','#DCFCE7','#15803D');
+    if(st==='partiel') return badge('◐ Livrée partiellement · '+rest+' réf. en reliquat','#FEF3C7','#92400E');
+    if(st==='vide') return badge('Aucune ligne','#F1EFF8','#6B6790');
+    return badge('⏳ En attente','#F1EFF8','#4A4766');
+  }
+  function lineBadge(l){
+    var gone=l.gone?' <span title="Cette ligne n’apparaît plus dans le reliquat importé le '+esc(fr(l.gone))+' : elle est soldée (livrée) dans ESABORA.'+(l.qr<l.qc?' Quantité reçue modifiée à la main depuis.':' Passée en reçu automatiquement.')+'" style="display:inline-block;margin-top:3px">'+badge('Soldée dans ESABORA','#ECFDF5','#047857')+'</span>':'';
+    if(l.qr>=l.qc) return badge('✓ Reçu','#DCFCE7','#15803D')+gone;
+    if(l.qr>0) return badge('◐ Partiel '+fq(l.qr)+' / '+fq(l.qc),'#FEF3C7','#92400E')+gone;
+    return badge('⏳ En attente','#F1EFF8','#4A4766')+gone;
+  }
+  function delCell(l){
+    var late=l.del&&l.qr<l.qc&&l.del<todayIso();
+    return (l.old?'<span style="text-decoration:line-through;color:#9A96B3;font-size:12px;margin-right:6px">'+esc(fr(l.old))+'</span>':'')
+      +'<b style="'+(late?'color:#B91C1C':'')+'">'+(l.del?esc(fr(l.del)):'—')+'</b>'
+      +(l.old&&l.qr<l.qc?' <span title="'+(l.chg?'Délai changé par l’import du '+esc(fr(l.chg)):'Délai changé')+'">'+badge('Délai mis à jour'+(l.chg?' le '+esc(fr(l.chg).slice(0,5)):''),'#FEE2E2','#B91C1C')+'</span>':'')+(late?' '+badge('En retard','#FEE2E2','#B91C1C'):'');
+  }
+
+  // ── État de l'écran ──
+  var S={host:null,list:[],filterAff:(function(){ try{ return localStorage.getItem('cmd_filterAff')||''; }catch(e){ return ''; } })(),filterSt:'',q:'',cur:null,base:{},dirty:{},saving:false,saveT:null,pollT:null,listT:null,err:'',offline:false,needDraw:false};
+  var D={}; // données de la commande ouverte
+
+  // ═════════ LISTE ═════════
+  async function loadList(){ try{ S.list=await DB.list(); S.err=''; }catch(e){ S.err=String(e&&e.message||e); } }
+  // Chantier affiché : le n° du fichier (ELS2605019…), et le libellé de l'affaire du site s'il est connu
+  function chantierOf(r){ var m=r.meta||{}; return m.chantier||r.aff||''; }
+  function listHtml(){
+    var man=ENV.canManage();
+    // Filtre par affaire : construit à partir des commandes (aussi les chantiers pas encore créés sur le site)
+    var affCount={}; S.list.forEach(function(r){ var a=r.aff||''; affCount[a]=(affCount[a]||0)+1; });
+    var affOpts=Object.keys(affCount).sort().map(function(a){ var lb=affLabel(a); return {id:a,label:(a?(lb!==a?lb:a):'(sans affaire)')+' — '+affCount[a]+' cde'+(affCount[a]>1?'s':'')}; });
+    if(S.filterAff&&!affCount[S.filterAff]) affOpts.unshift({id:S.filterAff,label:affLabel(S.filterAff)+' — 0 cde'});
+    var inAff=S.list.filter(function(r){ return !S.filterAff||(r.aff||'')===S.filterAff; });
+    var rows=inAff.filter(function(r){
+      var m=r.meta||{};
+      if(S.filterSt==='retard'){ if(!m.late) return false; }
+      else if(S.filterSt==='encours'){ if(m.state==='complete') return false; }
+      else if(S.filterSt==='changed'){ if(!m.changed) return false; }
+      else if(S.filterSt==='absent'){ if(!m.absent) return false; }
+      else if(S.filterSt&&m.state!==S.filterSt) return false;
+      if(S.q){ var s=(r.num+' '+chantierOf(r)+' '+affLabel(r.aff)).toLowerCase(); if(s.indexOf(S.q.toLowerCase())<0) return false; }
+      return true;
+    });
+    // les plus urgentes en haut : en retard, puis par prochaine livraison ; les complètes à la fin
+    var rk=function(r){ var m=r.meta||{}; return (m.state==='complete'?'2':m.late?'0':'1')+(m.next||'9999')+String(r.num||''); };
+    rows.sort(function(a,b){ return rk(a).localeCompare(rk(b)); });
+    var lastImp=S.list.reduce(function(a,r){ var i=(r.meta||{}).imp||''; return i>a?i:a; },'');
+    var cnt=function(f){ return inAff.filter(function(r){ return f(r.meta||{}); }).length; };
+    var c={all:inAff.length,enc:cnt(function(m){ return m.state!=='complete'; }),late:cnt(function(m){ return m.late; }),chg:cnt(function(m){ return m.changed; }),done:cnt(function(m){ return m.state==='complete'; })};
+    var h='<div class="dcu"><div class="cmu-wrap">';
+    h+='<div class="dcu-card"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'
+      +'<div style="flex:1;min-width:240px"><div style="font-size:18px;font-weight:900">📦 Commandes</div>'
+      +'<div style="font-size:12.5px;color:#6B6790;margin-top:3px">Pour tout mettre à jour (nouvelles commandes, délais, livraisons), importez le dernier PDF « Reliquats de commandes » d’ESABORA : sans doublon, et ce qui est livré passe en reçu.'
+      +(lastImp?' · Dernier import : <b>'+esc(fr(lastImp))+'</b>':'')+'</div></div>'
+      +(man?'<button class="dcu-btn" onclick="Commandes.importer()" title="Choisir le PDF « Reliquats de commandes » exporté d’ESABORA. Un aperçu s’affiche avant de valider.">⬆ Importer le reliquat (PDF)</button>'
+        +'<button class="dcu-btn2" onclick="Commandes.newCmd()">＋ Nouvelle commande</button>':'')
+      +'</div></div>';
+    if(S.err) h+='<div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Impossible de lire les commandes : '+esc(S.err)+(/commandes|relation|does not exist|schema cache/i.test(S.err)?'<br>➜ Le script <b>commandes_supabase.sql</b> n’a sans doute pas encore été lancé dans Supabase.':'')+'</div>';
+    h+='<div class="dcu-card"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+      +'<select class="dcu-in" aria-label="Affaire" style="min-width:260px;font-weight:700" onchange="Commandes._f(\'filterAff\',this.value)"><option value="">Toutes les affaires — '+S.list.length+' cdes</option>'
+      +affOpts.map(function(a){ return '<option value="'+esc(a.id)+'"'+(S.filterAff===a.id?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>'
+      +'<select class="dcu-in" aria-label="État" onchange="Commandes._f(\'filterSt\',this.value)">'
+      +[['','Tous les états'],['encours','Pas encore complètes'],['attente','En attente'],['partiel','Livrées partiellement'],['retard','En retard'],['changed','Délais mis à jour'],['absent','Soldées dans ESABORA'],['complete','Livrées complètes']].map(function(o){ return '<option value="'+o[0]+'"'+(S.filterSt===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select>'
+      +'<input class="dcu-in" style="flex:1;min-width:160px" placeholder="Rechercher un n° EL, un chantier…" aria-label="Rechercher" value="'+esc(S.q)+'" oninput="Commandes._q(this.value)">'
+      +'<button class="dcu-btn2" onclick="Commandes.refresh()">⟳ Actualiser</button></div>';
+    // Compteurs cliquables (sur l'affaire choisie)
+    var chip=function(k,n,l,bg,col){ var on=S.filterSt===k; return '<button type="button" onclick="Commandes._f(\'filterSt\',\''+(on?'':k)+'\')" style="border:1.5px solid '+(on?col:'#E4E1F0')+';background:'+(on?bg:'#fff')+';color:'+col+';border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">'+n+' '+l+'</button>'; };
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
+      +chip('encours',c.enc,'à recevoir','#F5F3FF','#3A2EAE')+chip('retard',c.late,'en retard','#FEF2F2','#B91C1C')
+      +chip('changed',c.chg,'délais mis à jour','#FEF2F2','#B91C1C')+chip('complete',c.done,'livrées complètes','#F0FDF4','#15803D')+'</div>';
+    if(!rows.length){
+      h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?'Aucune commande ne correspond au filtre.':'Aucune commande pour l’instant.'+(man?' Importez le reliquat ESABORA, ou cliquez sur « ＋ Nouvelle commande ».':''))+'</div>';
+    }else{
+      h+='<div style="overflow:auto"><table class="dcu-tbl cmu-tbl"><tr><th>N° commande</th><th>Chantier</th><th>Commande du</th><th>Prochaine livraison</th><th>Lignes</th><th>Reliquat</th><th>État</th><th>BL</th><th></th></tr>';
+      rows.forEach(function(r){
+        var m=r.meta||{},isNew=r.created_at&&(Date.now()-new Date(r.created_at).getTime())<7*864e5;
+        var code=chantierOf(r),lb=affLabel(r.aff),known=r.aff&&lb!==r.aff;
+        h+='<tr class="dcu-row" onclick="Commandes.open(\''+js(r.id)+'\')">'
+          +'<td style="white-space:nowrap"><b>'+esc(r.num)+'</b>'+(isNew?' '+badge('Nouvelle','#E0F2FE','#0369A1'):'')+'</td>'
+          +'<td><b>'+esc(code||'—')+'</b>'+(known?'<div style="font-size:11px;color:#6B6790">'+esc(lb)+'</div>':'')+'</td>'
+          +'<td style="white-space:nowrap">'+(m.date?esc(fr(m.date)):'—')+'</td>'
+          +'<td><b style="'+(m.late?'color:#B91C1C':'')+'">'+(m.next?esc(fr(m.next)):'—')+'</b>'+(m.late?' '+badge('En retard','#FEE2E2','#B91C1C'):'')+(m.changed?' '+badge('Délai mis à jour','#FEE2E2','#B91C1C'):'')+'</td>'
+          +'<td>'+(m.n||0)+'</td><td>'+(m.rest?m.rest+' réf.':'—')+'</td>'
+          +'<td>'+stateBadge(m.state||'vide',m.rest||0)+(m.absent?'<div style="margin-top:3px">'+badge('Soldée dans ESABORA','#ECFDF5','#047857')+'</div>':'')+'</td>'
+          +'<td>'+(m.nbl?'📎 '+m.nbl:'—')+'</td>'
+          +'<td style="text-align:right;white-space:nowrap">'+(man?'<button class="cmu-ico red" title="Supprimer la commande" aria-label="Supprimer la commande '+esc(r.num)+'" onclick="event.stopPropagation();Commandes.del(\''+js(r.id)+'\')">🗑</button>':'')+'</td></tr>';
+      });
+      h+='</table></div>';
+    }
+    h+='</div></div></div>';
+    return h;
+  }
+  function drawList(){ if(S.host&&!S.cur) S.host.innerHTML=listHtml(); }
+  function listSig(){ return S.list.map(function(r){ return r.id+':'+r.rev; }).join('|'); }
+  async function listTick(){
+    if(S.cur||!S.host||S._listBusy||document.hidden||!visible()) return;
+    S._listBusy=true;
+    try{
+      var before=listSig(),hadErr=!!S.err;
+      await loadList();
+      if(S.cur) return;
+      var a=document.activeElement,typing=a&&S.host.contains(a)&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
+      if((listSig()!==before||hadErr!==!!S.err)&&!typing) drawList();
+    }catch(e){}
+    finally{ S._listBusy=false; }
+  }
+  function visible(){ var h=S.host; return !!(h&&h.offsetParent!==null); }
+  function startListPoll(){ stopListPoll(); S.listT=setInterval(listTick,5000); }
+  function stopListPoll(){ if(S.listT){ clearInterval(S.listT); S.listT=null; } }
+  async function render(hostId){
+    S.host=$(hostId)||S.host;
+    if(S.cur){ drawDetail(); startPoll(); return; } // on revient sur l'onglet : la commande ouverte reste ouverte
+    stopPoll();
+    if(!ENV.canView()){ S.host.innerHTML='<div class="dcu"><div class="cmu-wrap"><div class="dcu-card">Vous n’avez pas accès aux commandes.</div></div></div>'; return; }
+    startListPoll();
+    S.host.innerHTML='<div class="dcu"><div class="cmu-wrap"><div class="dcu-card" style="color:#6B6790">Chargement…</div></div></div>';
+    await loadList();
+    drawList();
+  }
+
+  // ═════════ FENÊTRES ═════════
+  function modal(html){ var m=$('cmd-modal'); m.innerHTML='<div class="dcu" style="max-width:520px;margin:7vh auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)">'+html+'</div>'; m.style.display='block'; var f=m.querySelector('input,select'); if(f) setTimeout(function(){ try{ f.focus(); }catch(e){} },30); }
+  function closeModal(){ var m=$('cmd-modal'); m.style.display='none'; m.innerHTML=''; }
+  function affSelect(id,sel){
+    return '<select id="'+id+'" class="dcu-in cmu-fld"><option value="">— Choisir l’affaire —</option>'
+      +ENV.affaires().filter(function(a){ return !a.closed||a.id===sel; }).map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===sel?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>';
+  }
+  function numExists(num,exceptId){ var n=cmdBase(num); return S.list.some(function(r){ return r.id!==exceptId&&cmdBase(r.num)===n; }); }
+
+  function newCmd(){
+    if(!ENV.canManage()) return;
+    modal('<div style="font-size:16px;font-weight:900;margin-bottom:12px">Nouvelle commande</div>'
+      +'<label class="cmu-lbl">N° DE COMMANDE *</label><input id="cmd-n-num" class="dcu-in cmu-fld" placeholder="EL2604512" autocomplete="off">'
+      +'<label class="cmu-lbl">AFFAIRE *</label>'+affSelect('cmd-n-aff',S.filterAff)
+      +'<label class="cmu-lbl">REMARQUE</label><input id="cmd-n-note" class="dcu-in cmu-fld" placeholder="Facultatif" autocomplete="off">'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end"><button class="dcu-btn2" onclick="Commandes._closeModal()">Annuler</button><button class="dcu-btn" id="cmd-n-go" onclick="Commandes._create()">Créer la commande</button></div>');
+  }
+  async function _create(){
+    var num=cmdBase((($('cmd-n-num')||{}).value||'').trim()),aff=($('cmd-n-aff')||{}).value||'',note=(($('cmd-n-note')||{}).value||'').trim();
+    if(!num){ alert('Indiquez le n° de commande.'); return; }
+    if(!aff){ alert('Choisissez l’affaire.'); return; }
+    if(numExists(num)){ alert('La commande '+num+' existe déjà.'); return; }
+    var b=$('cmd-n-go'); if(b){ b.disabled=true; b.textContent='Création…'; }
+    var me=ENV.who(),data={_num:num,_aff:aff,order:[]};if(note) data.note=note;
+    try{
+      var row=await DB.create({num:num,aff:aff,meta:stats(data),data:data,rev:1,created_by:me,updated_by:me,history:[{at:new Date().toISOString(),by:me,what:'created'}]});
+      closeModal(); S.list.unshift(liteOf(row)); openRow(row);
+    }catch(e){
+      if(b){ b.disabled=false; b.textContent='Créer la commande'; }
+      var em=String(e&&e.message||e); alert(/duplicate|unique/i.test(em)?'La commande '+num+' existe déjà.':'Impossible de créer la commande : '+em);
+    }
+  }
+  async function del(id){
+    if(!ENV.canManage()) return;
+    var r=S.list.filter(function(x){ return x.id===id; })[0]; if(!r) return;
+    if(!confirm('Supprimer définitivement la commande '+r.num+' (et ses bons de livraison) ?\nCette action ne peut pas être annulée.')) return;
+    try{
+      var full=await DB.get(id);
+      var paths=full?bls(full.data||{}).map(function(x){ return x.path; }):[];
+      if(paths.length){ try{ await FILES.remove(paths); }catch(e){ console.warn('Commandes : bons de livraison non effacés',e); } }
+      await DB.remove(id);
+      S.list=S.list.filter(function(x){ return x.id!==id; });
+      if(S.cur&&S.cur.id===id){ stopPoll(); S.cur=null; D={}; S.dirty={}; clearLocal(id); startListPoll(); }
+      drawList();
+    }catch(e){ alert('Suppression impossible : '+(e&&e.message||e)); }
+  }
+
+  // ═════════ UNE COMMANDE OUVERTE ═════════
+  async function open(id){
+    stopPoll(); stopListPoll();
+    S.host.innerHTML='<div class="dcu"><div class="cmu-wrap"><div class="dcu-card" style="color:#6B6790">Ouverture de la commande…</div></div></div>';
+    try{ var row=await DB.get(id); if(!row) throw new Error('commande introuvable (supprimée ?)'); openRow(row); }
+    catch(e){ alert('Impossible d’ouvrir la commande : '+(e&&e.message||e)); S.cur=null; render(); }
+  }
+  function openRow(row){
+    stopListPoll();
+    S.cur=row; S.base=JSON.parse(JSON.stringify(row.data||{})); S.dirty={}; S.err=''; S.needDraw=false;
+    D=JSON.parse(JSON.stringify(row.data||{}));
+    if(D._num==null) D._num=row.num; if(D._aff==null&&row.aff) D._aff=row.aff;
+    // une copie locale plus récente (enregistrement interrompu : réseau, fermeture…) : nos cases gagnent
+    try{
+      var loc=JSON.parse(localStorage.getItem('cmd_unsaved_'+row.id)||'null');
+      if(loc&&loc.dirty) Object.keys(loc.dirty).forEach(function(k){ if(loc.data[k]==null) delete D[k]; else D[k]=loc.data[k]; S.dirty[k]=1; });
+    }catch(e){}
+    drawDetail();
+    if(Object.keys(S.dirty).length) scheduleSave(200);
+    startPoll();
+  }
+  function detailHtml(){
+    var c=S.cur,ed=ENV.canEdit(),man=ENV.canManage(),st=stats(D),L=lines(D),B=bls(D);
+    var h='<div class="dcu"><div class="cmu-wrap">';
+    h+='<div class="dcu-card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+      +'<button class="dcu-btn2" onclick="Commandes.back()">← Commandes</button>'
+      +'<b style="font-size:18px">Commande '+esc(D._num||c.num)+'</b><span id="cmd-state">'+stateBadge(st.state,st.rest)+'</span>'
+      +'<span style="font-size:12.5px;color:#6B6790">'+(D._chantier&&affLabel(D._aff||c.aff)!==D._chantier?'chantier <b style="color:#1C1A33">'+esc(D._chantier)+'</b> · ':'')+esc(affLabel(D._aff||c.aff))+' · prochaine livraison : <b id="cmd-next" style="color:'+(st.late?'#B91C1C':'#1C1A33')+'">'+(st.next?esc(fr(st.next)):'—')+'</b></span>'
+      +(D._date||D._esa?'<span style="font-size:12.5px;color:#6B6790">'+(D._date?'commande du '+esc(fr(D._date)):'')+(D._esa?' · ESABORA : '+esc(D._esa):'')+'</span>':'')
+      +(D._gone&&st.state!=='complete'?'<span title="Cette commande n’apparaît plus dans le reliquat importé le '+esc(fr(D._gone))+' : sans doute livrée en totalité.">'+badge('Plus dans le reliquat ESABORA','#ECFDF5','#047857')+'</span>':'')
+      +'<span style="flex:1"></span><span id="cmd-savest" style="font-size:12px;color:#6B6790"></span>'
+      +(man?'<button class="dcu-btn2" onclick="Commandes._editCmd()">✏️ Modifier</button><button class="dcu-btn2 dcu-red" onclick="Commandes.del(\''+js(c.id)+'\')">🗑 Supprimer</button>':'')
+      +'</div>'
+      +(!ed?'<div class="dcu-msg" style="background:#F3F4F6;border:1px solid #E5E7EB;color:#374151;max-width:none;margin:12px 0 0">Lecture seule : vous n’avez pas le droit de saisir les réceptions.</div>':'')
+      +'</div>';
+    // Lignes
+    h+='<div class="dcu-card">';
+    if(!L.length){
+      h+='<div style="padding:20px;text-align:center;color:#9A96B3;font-size:13px">Aucune ligne dans cette commande.'+(man?'':' Elle sera remplie par l’import ou par une personne qui gère les commandes.')+'</div>';
+    }else{
+      h+='<div style="overflow:auto"><table class="dcu-tbl cmu-tbl"><tr><th>Référence</th><th>Désignation</th><th>Commandé</th><th>Reçu</th><th>Reste</th><th>Délai</th><th>État</th>'+(man?'<th></th>':'')+'</tr>';
+      L.forEach(function(l){
+        var reste=Math.max(0,l.qc-l.qr);
+        h+='<tr data-k="'+esc(l.k)+'" style="'+(l.qr>0&&l.qr<l.qc?'background:#FFFBEB':'')+'">'
+          +'<td><code>'+esc(l.ref||'—')+'</code></td><td>'+esc(l.des)+'</td>'
+          +'<td><b>'+fq(l.qc)+'</b>'+(l.unit?' <span style="color:#6B6790;font-size:12px">'+esc(l.unit)+'</span>':'')+'</td>'
+          +'<td><span style="display:flex;align-items:center;gap:6px"><input type="number" min="0" step="any" class="cmu-qty" data-q="'+esc(l.k)+'" value="'+(l.qr?fq(l.qr).replace(',','.'):'')+'" placeholder="0" aria-label="Quantité reçue '+esc(l.ref)+'"'+(ed?' oninput="Commandes._qty(\''+js(l.k)+'\',this)" onblur="Commandes._qtyBlur(this)"':' disabled')+'>'
+          +(ed?'<button type="button" class="cmu-mini cmu-ok" title="Tout reçu" onclick="Commandes._all(\''+js(l.k)+'\',1)">Tout</button><button type="button" class="cmu-mini cmu-zero" title="Rien reçu" onclick="Commandes._all(\''+js(l.k)+'\',0)">0</button>':'')+'</span>'
+          +(l.liv>0?'<div style="font-size:11px;color:#6B6790;margin-top:3px">ESABORA : '+fq(l.liv)+' livré'+(l.liv>1?'s':'')+'</div>':'')+'</td>'
+          +'<td class="cmd-reste">'+(reste?'<b style="color:#B45309">'+fq(reste)+'</b>':'<span style="color:#15803D">0</span>')+'</td>'
+          +'<td class="cmd-del">'+delCell(l)+'</td><td class="cmd-st">'+lineBadge(l)+'</td>'
+          +(man?'<td style="white-space:nowrap;text-align:right"><button class="cmu-ico" title="Modifier la ligne" aria-label="Modifier la ligne '+esc(l.ref)+'" onclick="Commandes._editLine(\''+js(l.k)+'\')">✎</button> <button class="cmu-ico red" title="Supprimer la ligne" aria-label="Supprimer la ligne '+esc(l.ref)+'" onclick="Commandes._delLine(\''+js(l.k)+'\')">✕</button></td>':'')
+          +'</tr>';
+      });
+      h+='</table></div>';
+      h+='<div style="font-size:12px;color:#6B6790;margin-top:8px">Exemple : 40 presse-étoupes commandés, 20 reçus → la ligne passe en « Partiel 20 / 40 », il en reste 20, et la commande en « Livrée partiellement ».</div>';
+    }
+    if(man) h+='<button class="dcu-btn2" style="margin-top:12px" onclick="Commandes._editLine(\'\')">＋ Ajouter une ligne</button>';
+    h+='</div>';
+    // Remarque + bons de livraison
+    h+='<div class="dcu-card"><div class="cmu-lbl" style="margin-bottom:6px">REMARQUE</div>'
+      +'<textarea class="dcu-in" data-note="1" rows="2" style="width:100%;resize:vertical" placeholder="'+(ed?'Ex : 2 tourets manquants, fournisseur relancé…':'')+'"'+(ed?' oninput="Commandes._note(this)"':' disabled')+'>'+esc(D.note||'')+'</textarea></div>';
+    h+='<div class="dcu-card"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div class="cmu-lbl" style="flex:1">BONS DE LIVRAISON</div>'
+      +(ed?'<label class="dcu-btn" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">📷 Scanner / joindre un bon de livraison<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="Commandes._addBL(this)"></label>':'')+'</div>'
+      +'<div id="cmd-blmsg"></div>';
+    if(!B.length) h+='<div style="font-size:12.5px;color:#9A96B3">Aucun bon de livraison joint.</div>';
+    B.forEach(function(b){
+      var canDel=ed&&(man||b.by===ENV.who());
+      h+='<div class="cmu-bl"><span style="font-size:18px">'+(/pdf/i.test(b.type)?'📄':'🖼')+'</span><span style="flex:1;min-width:160px"><b>'+esc(b.name)+'</b><br><span style="font-size:11.5px;color:#6B6790">'+kb(b.size||0)+' · '+esc(fmtDT(b.at))+(b.by?' · '+esc(whoShort(b.by)):'')+'</span></span>'
+        +'<button class="dcu-btn2" onclick="Commandes._blOpen(\''+js(b.id)+'\',0)">👁 Voir</button>'
+        +'<button class="dcu-btn" onclick="Commandes._blOpen(\''+js(b.id)+'\',1)">⬇ Télécharger pour le magasinier</button>'
+        +(canDel?'<button class="cmu-ico red" title="Retirer ce bon de livraison" aria-label="Retirer ce bon de livraison" onclick="Commandes._blDel(\''+js(b.id)+'\')">🗑</button>':'')+'</div>';
+    });
+    h+='</div></div></div>';
+    return h;
+  }
+  function drawDetail(){
+    if(!S.host||!S.cur) return;
+    var sc=S.host.scrollTop;
+    S.host.innerHTML=detailHtml();
+    S.host.scrollTop=sc; S.needDraw=false;
+    updSaveSt();
+  }
+  // Après une saisie de quantité : on ne met à jour que la ligne et l'en-tête (le champ garde la main)
+  function updRow(k){
+    var tr=S.host&&S.host.querySelector('tr[data-k="'+k+'"]'); var l=lines(D).filter(function(x){ return x.k===k; })[0];
+    if(tr&&l){
+      var reste=Math.max(0,l.qc-l.qr);
+      tr.style.background=l.qr>0&&l.qr<l.qc?'#FFFBEB':'';
+      tr.querySelector('.cmd-reste').innerHTML=reste?'<b style="color:#B45309">'+fq(reste)+'</b>':'<span style="color:#15803D">0</span>';
+      tr.querySelector('.cmd-st').innerHTML=lineBadge(l);
+      tr.querySelector('.cmd-del').innerHTML=delCell(l);
+    }
+    var st=stats(D),se=$('cmd-state'),ne=$('cmd-next');
+    if(se) se.innerHTML=stateBadge(st.state,st.rest);
+    if(ne){ ne.textContent=st.next?fr(st.next):'—'; ne.style.color=st.late?'#B91C1C':'#1C1A33'; }
+  }
+
+  // ── Saisie ──
+  function setVal(k,val){
+    if(sameV(D[k],val)) return;
+    if(val===''||val==null) delete D[k]; else D[k]=val;
+    S.dirty[k]=1; keepLocal(); scheduleSave();
+  }
+  function _qty(k,el){
+    if(!ENV.canEdit()||!S.cur) return;
+    var l=D['l:'+k]; if(!l) return;
+    var v=nb(el.value),max=nb(l.qc);
+    if(v<0){ v=0; el.value=''; }
+    if(v>max){ v=max; el.value=String(max); }
+    setVal('q:'+k,v?v:'');
+    updRow(k);
+  }
+  function _qtyBlur(){ if(S.needDraw) setTimeout(function(){ if(!typing()) drawDetail(); },0); }
+  function _all(k,all){
+    if(!ENV.canEdit()||!S.cur) return; var l=D['l:'+k]; if(!l) return;
+    setVal('q:'+k,all?nb(l.qc):'');
+    var el=S.host.querySelector('input[data-q="'+k+'"]'); if(el) el.value=all?String(nb(l.qc)):'';
+    updRow(k);
+  }
+  function _note(el){ if(!ENV.canEdit()) return; setVal('note',el.value.trim()?el.value:''); }
+  function typing(){ var a=document.activeElement; return !!(a&&S.host&&S.host.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); }
+
+  // ── Gestion : modifier la commande / ajouter, modifier, supprimer une ligne ──
+  function _editCmd(){
+    if(!ENV.canManage()||!S.cur) return;
+    modal('<div style="font-size:16px;font-weight:900;margin-bottom:12px">Modifier la commande</div>'
+      +'<label class="cmu-lbl">N° DE COMMANDE *</label><input id="cmd-e-num" class="dcu-in cmu-fld" value="'+esc(D._num||'')+'" autocomplete="off">'
+      +'<label class="cmu-lbl">AFFAIRE *</label>'+affSelect('cmd-e-aff',D._aff||'')
+      +'<div style="display:flex;gap:8px;justify-content:flex-end"><button class="dcu-btn2" onclick="Commandes._closeModal()">Annuler</button><button class="dcu-btn" onclick="Commandes._saveCmd()">Enregistrer</button></div>');
+  }
+  function _saveCmd(){
+    var num=cmdBase((($('cmd-e-num')||{}).value||'').trim()),aff=($('cmd-e-aff')||{}).value||'';
+    if(!num||!aff){ alert('Le n° de commande et l’affaire sont obligatoires.'); return; }
+    if(numExists(num,S.cur.id)){ alert('La commande '+num+' existe déjà.'); return; }
+    setVal('_num',num); setVal('_aff',aff); closeModal(); drawDetail();
+  }
+  function _editLine(k){
+    if(!ENV.canManage()||!S.cur) return;
+    var l=k?(D['l:'+k]||{}):{};
+    modal('<div style="font-size:16px;font-weight:900;margin-bottom:12px">'+(k?'Modifier la ligne':'Ajouter une ligne')+'</div>'
+      +'<label class="cmu-lbl">RÉFÉRENCE</label><input id="cmd-l-ref" class="dcu-in cmu-fld" value="'+esc(l.ref||'')+'" autocomplete="off">'
+      +'<label class="cmu-lbl">DÉSIGNATION</label><input id="cmd-l-des" class="dcu-in cmu-fld" value="'+esc(l.des||'')+'" autocomplete="off">'
+      +'<div style="display:flex;gap:10px"><div style="flex:1"><label class="cmu-lbl">QUANTITÉ COMMANDÉE *</label><input id="cmd-l-qc" type="number" min="0" step="any" class="dcu-in cmu-fld" value="'+(l.qc!=null&&l.qc!==''?esc(l.qc):'')+'"></div>'
+      +'<div style="flex:1"><label class="cmu-lbl">UNITÉ</label><input id="cmd-l-unit" class="dcu-in cmu-fld" placeholder="m, pièce, touret…" value="'+esc(l.unit||'')+'" autocomplete="off"></div></div>'
+      +'<label class="cmu-lbl">DÉLAI (DATE DE LIVRAISON PRÉVUE)</label><input id="cmd-l-del" type="date" class="dcu-in cmu-fld" value="'+esc(l.del||'')+'">'
+      +(k&&l.del?'<div style="font-size:12px;color:#6B6790;margin:-6px 0 12px">Si vous changez le délai, l’ancien reste affiché barré avec « Délai mis à jour ».</div>':'')
+      +'<div style="display:flex;gap:8px;justify-content:flex-end"><button class="dcu-btn2" onclick="Commandes._closeModal()">Annuler</button><button class="dcu-btn" onclick="Commandes._saveLine(\''+js(k)+'\')">'+(k?'Enregistrer':'Ajouter')+'</button></div>');
+  }
+  function _saveLine(k){
+    var ref=(($('cmd-l-ref')||{}).value||'').trim(),des=(($('cmd-l-des')||{}).value||'').trim(),qcS=(($('cmd-l-qc')||{}).value||'').trim();
+    var unit=(($('cmd-l-unit')||{}).value||'').trim(),del=(($('cmd-l-del')||{}).value||'').trim();
+    if(!ref&&!des){ alert('Indiquez au moins la référence ou la désignation.'); return; }
+    if(qcS===''||nb(qcS)<=0){ alert('Indiquez la quantité commandée.'); return; }
+    // on garde les infos venues de l'import (src, liv, gone…) ; seuls les champs du formulaire changent
+    var prev=k?(D['l:'+k]||{}):null,nl=Object.assign({},prev||{},{ref:ref,des:des,qc:nb(qcS),unit:unit,del:del});
+    if(prev&&prev.del&&prev.del!==del){ nl.old=prev.del; nl.chg=todayIso(); }   // délai changé : l'ancien reste affiché barré
+    if(!nl.old) delete nl.old;
+    if(!nl.unit) delete nl.unit;
+    if(!k){ k=uid(); setVal('order',lineKeys(D).concat([k])); }
+    setVal('l:'+k,nl);
+    var q=nb(D['q:'+k]); if(q>nl.qc) setVal('q:'+k,nl.qc);
+    closeModal(); drawDetail();
+  }
+  function _delLine(k){
+    if(!ENV.canManage()||!S.cur) return;
+    var l=D['l:'+k]||{};
+    if(!confirm('Supprimer la ligne '+(l.ref||l.des||'')+' ?')) return;
+    setVal('order',lineKeys(D).filter(function(x){ return x!==k; }));
+    setVal('l:'+k,''); setVal('q:'+k,'');
+    drawDetail();
+  }
+
+  // ── Bons de livraison ──
+  function blMsg(t,err){ var m=$('cmd-blmsg'); if(m) m.innerHTML=t?'<div class="dcu-msg" style="max-width:none;margin:0 0 10px;'+(err?'background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C':'background:#F5F3FF;border:1px solid #E4E1F0;color:#3A2EAE')+'">'+t+'</div>':''; }
+  // Photo réduite sur l'appareil (1600 px max, JPEG) : ~200 à 400 Ko au lieu de plusieurs Mo
+  function compress(file){
+    return new Promise(function(res,rej){
+      var url=URL.createObjectURL(file),img=new Image();
+      img.onload=function(){
+        var max=1600,w=img.naturalWidth,h=img.naturalHeight,s=Math.min(1,max/Math.max(w,h));
+        var cv=document.createElement('canvas'); cv.width=Math.round(w*s); cv.height=Math.round(h*s);
+        var cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(img,0,0,cv.width,cv.height);
+        URL.revokeObjectURL(url);
+        cv.toBlob(function(b){ b?res(b):rej(new Error('compression impossible')); },'image/jpeg',0.72);
+      };
+      img.onerror=function(){ URL.revokeObjectURL(url); rej(new Error('image illisible (format non pris en charge)')); };
+      img.src=url;
+    });
+  }
+  function safeName(n){ return String(n||'fichier').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_').slice(-60); }
+  async function _addBL(input){
+    if(!ENV.canEdit()||!S.cur) return;
+    var files=[].slice.call(input.files||[]); input.value='';
+    if(!files.length) return;
+    var cmdId=S.cur.id,ok=0;
+    for(var i=0;i<files.length;i++){
+      var f=files[i],isPdf=/pdf$/i.test(f.type)||/\.pdf$/i.test(f.name),isImg=/^image\//i.test(f.type);
+      if(!isPdf&&!isImg){ blMsg('« '+esc(f.name)+' » : seuls les photos et les PDF sont acceptés.',1); continue; }
+      blMsg('Envoi de « '+esc(f.name)+' »…');
+      try{
+        var blob=f,type=f.type||'application/pdf',name=f.name||'bon_de_livraison';
+        if(isImg){ blob=await compress(f); type='image/jpeg'; name=name.replace(/\.[^.]+$/,'')+'.jpg'; }
+        if(blob.size>10*1048576){ blMsg('« '+esc(f.name)+' » est trop lourd ('+kb(blob.size)+', maximum 10 Mo). Scannez-le en qualité plus basse.',1); continue; }
+        var path=cmdId+'/'+Date.now()+'_'+safeName(name);
+        await FILES.upload(path,blob,type);
+        if(!S.cur||S.cur.id!==cmdId){ continue; }
+        setVal('b:'+uid(),{path:path,name:name,size:blob.size,type:type,at:new Date().toISOString(),by:ENV.who()});
+        ok++;
+      }catch(e){ blMsg('Envoi impossible de « '+esc(f.name)+' » : '+esc(e&&e.message||e),1); return; }
+    }
+    if(ok){ scheduleSave(50); drawDetail(); blMsg(ok>1?ok+' bons de livraison joints.':'Bon de livraison joint.'); }
+  }
+  async function _blOpen(id,dl){
+    var b=D['b:'+id]; if(!b) return;
+    var w=dl?null:window.open('','_blank'); // ouvert tout de suite (sinon bloqué par le navigateur)
+    try{
+      var blob=await FILES.download(b.path);
+      var url=URL.createObjectURL(blob.type?blob:new Blob([blob],{type:b.type}));
+      if(dl){ var a=document.createElement('a'); a.href=url; a.download=b.name||'bon_de_livraison'; document.body.appendChild(a); a.click(); a.remove(); }
+      else if(w) w.location.href=url; else window.open(url,'_blank');
+      setTimeout(function(){ URL.revokeObjectURL(url); },60000);
+    }catch(e){ if(w) w.close(); alert('Impossible d’ouvrir le bon de livraison : '+(e&&e.message||e)); }
+  }
+  async function _blDel(id){
+    var b=D['b:'+id]; if(!b) return;
+    if(!confirm('Retirer le bon de livraison « '+(b.name||'')+' » ?')) return;
+    try{ await FILES.remove([b.path]); }catch(e){ console.warn('Commandes : fichier non effacé',e); }
+    setVal('b:'+id,''); scheduleSave(50); drawDetail();
+  }
+
+  // ── Enregistrement (même principe que Docs chantier) ──
+  function keepLocal(){
+    if(!S.cur) return;
+    try{ var dd={}; Object.keys(S.dirty).forEach(function(k){ dd[k]=1; }); localStorage.setItem('cmd_unsaved_'+S.cur.id,JSON.stringify({rev:S.cur.rev,dirty:dd,data:D})); }catch(e){}
+  }
+  function clearLocal(id){ try{ localStorage.removeItem('cmd_unsaved_'+(id||(S.cur&&S.cur.id))); }catch(e){} }
+  function scheduleSave(ms){ clearTimeout(S.saveT); S.saveT=setTimeout(saveNow,ms==null?900:ms); updSaveSt(); }
+  function updSaveSt(){
+    var el=$('cmd-savest'); if(!el||!S.cur) return;
+    var n=Object.keys(S.dirty).length;
+    if(S.offline&&n) el.innerHTML='<span style="color:#B45309;font-weight:700">⚠ '+(S.lastErr?'Pas enregistré ('+esc(S.lastErr)+')':'Pas de connexion')+' — gardé sur cet appareil, nouvel essai automatique…</span>';
+    else if(n||S.saving) el.textContent='Enregistrement…';
+    else el.textContent=['✓ Enregistré',fmtDT(S.cur.updated_at),whoShort(S.cur.updated_by)].filter(Boolean).join(' · ');
+  }
+  // Fusion à trois : nos cases modifiées gagnent, on prend celles des autres.
+  function mergeRemote(remote){
+    var rd=remote.data||{},keys={};
+    Object.keys(rd).forEach(function(k){ keys[k]=1; }); Object.keys(S.base).forEach(function(k){ keys[k]=1; }); Object.keys(D).forEach(function(k){ keys[k]=1; });
+    var changed=[];
+    Object.keys(keys).forEach(function(k){
+      if(S.dirty[k]) return;
+      if(!sameV(D[k],rd[k])){ if(rd[k]==null) delete D[k]; else D[k]=rd[k]; changed.push(k); }
+    });
+    S.base=JSON.parse(JSON.stringify(rd));
+    return changed;
+  }
+  function liteOf(row){ var o={}; LIST_COLS.split(',').forEach(function(c){ o[c]=row[c]; }); return o; }
+  function syncListRow(row){ var lite=liteOf(row),i=S.list.findIndex(function(x){ return x.id===row.id; }); if(i>=0) S.list[i]=lite; else S.list.unshift(lite); }
+  async function saveNow(){
+    if(!S.cur||S.saving) return;
+    if(!Object.keys(S.dirty).length){ updSaveSt(); return; }
+    S.saving=true; updSaveSt();
+    var cur=S.cur,me=ENV.who();
+    try{
+      for(var attempt=0;attempt<4;attempt++){
+        var sent=JSON.parse(JSON.stringify(D)),sentDirty=Object.assign({},S.dirty);
+        var saved=await DB.update(cur.id,cur.rev,{data:sent,meta:stats(sent),num:sent._num||cur.num,aff:sent._aff||cur.aff||null,rev:cur.rev+1,updated_by:me});
+        if(saved){
+          S.offline=false; S.lastErr='';
+          if(S.cur&&S.cur.id===saved.id){
+            S.cur=saved; S.base=JSON.parse(JSON.stringify(saved.data||{}));
+            Object.keys(sentDirty).forEach(function(k){ if(sameV(D[k],sent[k])) delete S.dirty[k]; });
+            if(Object.keys(S.dirty).length) keepLocal(); else clearLocal(saved.id);
+          }
+          syncListRow(saved);
+          break;
+        }
+        // quelqu'un a enregistré entre-temps : on relit, on fusionne, on recommence
+        var remote=await DB.get(cur.id);
+        if(!remote){ alert('Cette commande a été supprimée par quelqu’un d’autre.'); S.saving=false; S.dirty={}; clearLocal(cur.id); back(); return; }
+        var ch=mergeRemote(remote); S.cur=remote; cur=remote; applyKeys(ch);
+      }
+    }catch(e){
+      var em=String(e&&e.message||e);
+      // n° de commande déjà pris par une autre commande : on garde l'ancien n°, sans réessayer en boucle
+      if(/duplicate|unique/i.test(em)&&S.dirty._num&&S.cur){ alert('Le n° '+D._num+' est déjà utilisé par une autre commande : n° remis à '+S.cur.num+'.'); D._num=S.cur.num; delete S.dirty._num; S.saving=false; drawDetail(); if(Object.keys(S.dirty).length) scheduleSave(200); return; }
+      S.lastErr=(/fetch|network|Load failed|timeout/i.test(em))?'':em;
+      S.offline=true; keepLocal();
+      clearTimeout(S.saveT); S.saveT=setTimeout(saveNow,6000);
+    }
+    S.saving=false;
+    updSaveSt();
+    if(Object.keys(S.dirty).length&&!S.offline) scheduleSave(400);
+  }
+  // Changements d'un collègue : on redessine, sauf pendant une saisie (fait en quittant le champ)
+  function applyKeys(keys){
+    if(!keys.length||!S.cur) return;
+    if(typing()){
+      S.needDraw=true;
+      keys.forEach(function(k){ if(k.indexOf('q:')===0){ var kk=k.slice(2),el=S.host.querySelector('input[data-q="'+kk+'"]'); if(el&&el!==document.activeElement) el.value=D[k]?String(D[k]):''; updRow(kk); } });
+    }else drawDetail();
+  }
+  function startPoll(){ stopPoll(); S.pollT=setInterval(pollOnce,4000); }
+  function stopPoll(){ if(S.pollT){ clearInterval(S.pollT); S.pollT=null; } }
+  async function pollOnce(){
+    if(!S.cur||S.saving||document.hidden||S._polling||!visible()) return;
+    S._polling=true;
+    try{
+      var h=await DB.head(S.cur.id);
+      if(!h){ stopPoll(); alert('Cette commande a été supprimée.'); S.dirty={}; clearLocal(); back(); return; }
+      if(h.rev!==S.cur.rev){
+        var remote=await DB.get(S.cur.id); if(!remote) return;
+        var ch=mergeRemote(remote); S.cur=Object.assign({},remote,{data:D});
+        S.cur.rev=remote.rev; syncListRow(remote);
+        applyKeys(ch); updSaveSt();
+      }
+    }catch(e){}
+    finally{ S._polling=false; }
+  }
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden) return;
+    if(S.cur&&S.pollT){ pollOnce(); if(Object.keys(S.dirty).length) scheduleSave(100); }
+    else if(S.listT) listTick();
+  });
+  document.addEventListener('focusout',function(ev){ if(S.needDraw&&S.host&&S.host.contains(ev.target)) setTimeout(function(){ if(S.needDraw&&!typing()) drawDetail(); },0); });
+  async function back(){
+    if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); }
+    stopPoll(); S.cur=null; D={}; S.dirty={};
+    startListPoll(); drawList();
+    loadList().then(function(){ if(!S.cur) drawList(); });
+  }
+  function leave(){ if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); saveNow(); } stopPoll(); stopListPoll(); }
+  window.addEventListener('pagehide',function(){ if(S.cur&&Object.keys(S.dirty).length) keepLocal(); });
+
+  // ═════════ LECTEUR DU PDF « RELIQUATS DE COMMANDES » (ESABORA) ═════════
+  // Lecteur À PART du reste : si le format change (DIVALTO en 2027), seule cette partie change.
+  // Lit le texte du PDF dans le navigateur (pdf.js) — le fichier n'est jamais envoyé ni gardé.
+  // Mise en page lue (en points PDF, page paysage) :
+  //   en-tête de commande : « Cmde N° EL136651-M2S. (chantier : ELS2605019) du Mercredi 24 Juin 2026 - Part. livrée - Délai : 30/12/2026 »
+  //   colonnes : Référence (x < 130) · Désignation (130–330) · Commandée (330–380) · Livrée (380–430) · Restant (430–475) · Délai (≥ 475)
+  //   une désignation sur 2 lignes : la 2e ligne est 9 pt SOUS la ligne de quantités à laquelle elle appartient.
+  //   une commande sur 2 pages : son en-tête est répété → mêmes lignes réunies sous le même n°.
+  var PDFJS='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  function loadPdfJs(){
+    if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    return new Promise(function(res,rej){
+      var s=document.createElement('script'); s.src=PDFJS+'pdf.min.js';
+      s.onload=function(){ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+'pdf.worker.min.js'; res(window.pdfjsLib); }catch(e){ rej(e); } };
+      s.onerror=function(){ rej(new Error('lecteur PDF indisponible (connexion internet ?)')); };
+      document.head.appendChild(s);
+    });
+  }
+  var MOIS={janvier:1,fevrier:2,mars:3,avril:4,mai:5,juin:6,juillet:7,aout:8,septembre:9,octobre:10,novembre:11,decembre:12};
+  function noAcc(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,''); }
+  function isoFromFr(s){ var m=String(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m?m[3]+'-'+m[2]+'-'+m[1]:''; }
+  function numFr(s){ var t=String(s||'').replace(/\s/g,'').replace(',','.'); var n=parseFloat(t); return isNaN(n)?null:n; }
+  // « EL136651-M2S » → « EL136651 » (n° de commande seul, sans le code fournisseur)
+  function cmdBase(n){ var s=String(n||'').trim().toUpperCase(),m=s.match(/^(EL\s*\d+)/); return m?m[1].replace(/\s+/g,''):s; }
+  var RE_HDR=/^Cmde\s*N°\s*(.+?)\s*\(\s*chantier\s*:\s*(.*?)\s*\)\s*du\s+(?:\S+\s+)?(\d{1,2})\s+(\S+)\s+(\d{4})\s*-\s*(.+?)\s*-\s*D[ée]lai\s*:\s*(\d{2}\/\d{2}\/\d{4})/i;
+  async function readReliquatPdf(file,onProgress){
+    var lib=await loadPdfJs();
+    var buf=await file.arrayBuffer();
+    var doc=await lib.getDocument({data:buf}).promise;
+    var orders={},seq=[],cur=null,title='',nRows=0,warn=[];
+    for(var pn=1;pn<=doc.numPages;pn++){
+      if(onProgress) onProgress(pn,doc.numPages);
+      var page=await doc.getPage(pn),tc=await page.getTextContent();
+      var items=tc.items.filter(function(i){ return i.str&&i.str.trim(); }).map(function(i){ return {x:i.transform[4],y:i.transform[5],s:i.str.replace(/\s+/g,' ').trim()}; });
+      // 1) lignes « logiques » : en-têtes de commande et lignes de quantités (repères)
+      var anchors=[],used={};
+      items.forEach(function(it,ix){
+        if(/^Cmde\s*N°/i.test(it.s)){ anchors.push({y:it.y,hdr:true,ix:[ix]}); used[ix]=1; }
+      });
+      items.forEach(function(it,ix){
+        if(used[ix]||it.x<330||it.x>=475) return;
+        if(numFr(it.s.split(' ')[0])==null) return;           // colonne de quantité
+        var a=anchors.filter(function(a){ return !a.hdr&&Math.abs(a.y-it.y)<=1.5; })[0];
+        if(!a){ a={y:it.y,ix:[]}; anchors.push(a); }
+        a.ix.push(ix); used[ix]=1;
+      });
+      anchors.sort(function(a,b){ return b.y-a.y; });
+      // 2) le reste rattaché : même hauteur que la ligne, ou 2e ligne de désignation juste dessous
+      items.forEach(function(it,ix){
+        if(used[ix]) return;
+        if(/^(Référence|Designation|Désignation|Commandée|Livrée|Restant|Délai|RELIQUATS DE COMMANDES|AVANT LE|Site de stock|Page\s*:)/i.test(it.s)||it.x>=700||(it.x<5&&/^\d{2}\/\d{2}\/\d{4}$/.test(it.s))){ if(/^AVANT LE/i.test(it.s)) title=it.s; return; }
+        var same=anchors.filter(function(a){ return Math.abs(a.y-it.y)<=1.5; })[0];
+        if(same){ same.ix.push(ix); used[ix]=1; return; }
+        // en-tête de commande écrit en plusieurs morceaux sur la même hauteur : déjà couvert ; 2e ligne de désignation :
+        var up=anchors.filter(function(a){ return !a.hdr&&a.y>it.y&&a.y-it.y<=10.5&&it.x>=130&&it.x<330; }).sort(function(a,b){ return a.y-b.y; })[0];
+        if(up){ (up.sub=up.sub||[]).push(it.s); used[ix]=1; return; }
+        warn.push('p.'+pn+' : « '+it.s+' » non rattaché');
+      });
+      // 3) lecture des lignes, dans l'ordre de la page
+      anchors.forEach(function(a){
+        var cells=a.ix.map(function(i){ return items[i]; }).sort(function(p,q){ return p.x-q.x; });
+        if(a.hdr){
+          var txt=cells.map(function(c){ return c.s; }).join(' '),m=txt.match(RE_HDR);
+          if(!m){ warn.push('p.'+pn+' : en-tête de commande non compris : '+txt); cur=null; return; }
+          // n° gardé : seulement « EL136651 » (le suffixe -M2S, -REXE, -HELU… = fournisseur, pas affiché)
+          var full=m[1].replace(/\.+$/,'').replace(/\s+/g,' ').trim().toUpperCase(),num=cmdBase(full);
+          var mo=MOIS[noAcc(m[4]).toLowerCase()];
+          var date=mo?m[5]+'-'+('0'+mo).slice(-2)+'-'+('0'+m[3]).slice(-2):'';
+          cur=orders[num];
+          if(!cur){ cur=orders[num]={num:num,four:[],chantier:m[2].trim(),date:date,esa:m[6].trim(),del:isoFromFr(m[7]),lines:[]}; seq.push(num); }
+          var sfx=full.slice(num.length).replace(/^[-\s]+/,''); if(sfx&&cur.four.indexOf(sfx)<0) cur.four.push(sfx);
+          return;
+        }
+        if(!cur){ warn.push('p.'+pn+' : ligne sans commande au-dessus'); return; }
+        var ref=[],des=[],q={c:null,l:null,r:null},del='';
+        cells.forEach(function(c){
+          if(c.x<130){ ref.push(c.s); return; }
+          if(c.x<330){ des.push(c.s); return; }
+          var parts=c.s.split(' ');
+          parts.forEach(function(p){
+            if(/^\d{2}\/\d{2}\/\d{4}$/.test(p)){ del=isoFromFr(p); return; }
+            var n=numFr(p); if(n==null) return;
+            if(c.x<380&&q.c==null) q.c=n; else if(c.x<430&&q.l==null) q.l=n; else if(q.r==null) q.r=n;
+          });
+        });
+        if(q.c==null){ warn.push('p.'+pn+' : ligne sans quantité commandée'); return; }
+        var d=des.concat(a.sub||[]).join(' ').replace(/\s+/g,' ').trim();
+        cur.lines.push({ref:ref.join(' ').trim(),des:d,qc:q.c,liv:q.l||0,rest:q.r==null?Math.max(0,q.c-(q.l||0)):q.r,del:del||cur.del,dcmd:!del});
+        nRows++;
+      });
+    }
+    return {orders:seq.map(function(n){ return orders[n]; }),pages:doc.numPages,rows:nRows,title:title,warn:warn};
+  }
+
+  // ═════════ IMPORT : appliquer un reliquat aux commandes du site ═════════
+  // Règles (simples, toujours les mêmes) :
+  //  - commande absente du site → créée avec ses lignes (« Livrée » ESABORA = déjà reçu) ;
+  //  - commande déjà sur le site → délais mis à jour (l'ancien reste affiché barré), nouvelles lignes ajoutées,
+  //    quantités commandées corrigées ; les quantités REÇUES saisies sur le site ne baissent jamais
+  //    (elles montent seulement si ESABORA a enregistré plus de livré) ;
+  //  - ligne importée qui n'est plus dans le reliquat → « Plus en reliquat ESABORA » (sans doute livrée) ;
+  //  - commande importée qui n'est plus dans le reliquat (et de la même période que le fichier) → idem pour toute la commande ;
+  //  - les lignes ajoutées à la main sur le site ne sont jamais touchées.
+  function normK(s){ return noAcc(s).toUpperCase().replace(/\s+/g,' ').trim(); }
+  function dayN(iso){ var t=Date.parse(String(iso||'')+'T12:00:00Z'); return isNaN(t)?null:Math.round(t/864e5); }
+  // Rapproche les lignes déjà importées et celles du fichier : même référence + désignation,
+  // puis même quantité commandée et délai le plus proche (une même référence peut avoir plusieurs délais).
+  function matchLines(exist,inc){
+    var pairs=[];
+    exist.forEach(function(e){
+      inc.forEach(function(n,ni){
+        if(normK(e.l.ref)!==normK(n.ref)||normK(e.l.des)!==normK(n.des)) return;
+        var de=dayN(e.l.del),dn=dayN(n.del);
+        pairs.push({k:e.k,ni:ni,s:(Math.abs(nb(e.l.qc)-n.qc)<1e-9?0:100000)+(de==null||dn==null?5000:Math.abs(de-dn))+(e.l.gone?0.5:0)});
+      });
+    });
+    pairs.sort(function(a,b){ return a.s-b.s; });
+    var uk={},un={},out=[];
+    pairs.forEach(function(p){ if(uk[p.k]||un[p.ni]) return; uk[p.k]=1; un[p.ni]=1; out.push(p); });
+    return {pairs:out,fresh:inc.filter(function(n,ni){ return !un[ni]; }),lost:exist.filter(function(e){ return !uk[e.k]; }).map(function(e){ return e.k; })};
+  }
+  // Applique UNE commande du fichier à ses données (D2 = copie, modifiée sur place). Renvoie le détail des changements.
+  // Une ligne qui n'est plus dans le reliquat est SOLDÉE dans ESABORA (livrée) : elle passe en reçu
+  // automatiquement (marque « auto », ancienne quantité gardée dans « qprev »), pour qu'une commande
+  // terminée ne reste jamais « en attente ». Si elle revient dans un reliquat suivant, on remet l'ancienne quantité.
+  function solde(D2,k,o,today){
+    var nl=Object.assign({},o,{gone:today}),q=nb(D2['q:'+k]),qc=nb(o.qc);
+    if(q<qc){ nl.auto=1; nl.qprev=q; D2['q:'+k]=qc; }
+    D2['l:'+k]=nl;
+  }
+  function applyOrder(D2,ord,aff,today,affKnown){
+    var ch={fresh:0,del:[],qty:0,gone:0,back:0,isNew:!D2.order};
+    if(ch.isNew){ D2._aff=aff; D2.order=[]; D2._src='esa'; }
+    var set=function(k,v){ if(!sameV(D2[k],v)){ if(v===''||v==null) delete D2[k]; else D2[k]=v; return true; } return false; };
+    var any=false;
+    any=set('_num',ord.num)||any;   // n° « EL136651 » seul (corrige aussi une commande enregistrée avec son suffixe)
+    any=set('_four',(ord.four||[]).join(', '))||any;
+    // le chantier du fichier ESABORA fait foi (s'il existe sur le site, ou si la commande n'a pas encore d'affaire)
+    if(!ch.isNew&&aff&&(affKnown||!D2._aff)) any=set('_aff',aff)||any;
+    any=set('_chantier',ord.chantier)||any; any=set('_date',ord.date)||any; any=set('_esa',ord.esa)||any;
+    if(D2._gone){ delete D2._gone; any=true; }
+    // toutes les lignes servent au rapprochement (une ligne tapée à la main avant l'import n'est pas doublée),
+    // mais seules les lignes venues d'un import peuvent être soldées
+    var exist=lineKeys(D2).filter(function(k){ return D2['l:'+k]; }).map(function(k){ return {k:k,l:D2['l:'+k]}; });
+    var m=matchLines(exist,ord.lines);
+    m.lost=m.lost.filter(function(k){ return D2['l:'+k].src==='esa'; });
+    m.pairs.forEach(function(p){
+      var n=ord.lines[p.ni],o=D2['l:'+p.k],nl=Object.assign({},o,{src:'esa'});
+      if(o.gone){
+        delete nl.gone; ch.back++;
+        if(o.auto){ D2['q:'+p.k]=Math.max(nb(o.qprev),n.liv||0)||''; if(!D2['q:'+p.k]) delete D2['q:'+p.k]; }
+        delete nl.auto; delete nl.qprev;
+      }
+      if(n.del&&n.del!==o.del){ ch.del.push({ref:o.ref,des:o.des,from:o.del,to:n.del}); nl.old=o.del||''; nl.del=n.del; nl.chg=today; if(!nl.old) delete nl.old; }
+      if(Math.abs(nb(o.qc)-n.qc)>1e-9) nl.qc=n.qc;
+      nl.dcmd=!!n.dcmd; if(!nl.dcmd) delete nl.dcmd;
+      var prevLiv=nb(o.liv);
+      if(n.liv>prevLiv+1e-9){ nl.liv=n.liv; if(n.liv>nb(D2['q:'+p.k])){ D2['q:'+p.k]=Math.min(n.liv,nb(nl.qc)); ch.qty++; any=true; } }
+      if(!sameV(o,nl)){ D2['l:'+p.k]=nl; any=true; }
+    });
+    m.fresh.forEach(function(n){
+      var k=uid()+Math.random().toString(36).slice(2,4),l={ref:n.ref,des:n.des,qc:n.qc,del:n.del,src:'esa'};
+      if(n.dcmd) l.dcmd=true; if(n.liv>0){ l.liv=n.liv; D2['q:'+k]=Math.min(n.liv,n.qc); }
+      D2['l:'+k]=l; D2.order=lineKeys(D2).filter(function(x){ return x!==k; }).concat([k]); ch.fresh++; any=true;
+    });
+    m.lost.forEach(function(k){ var o=D2['l:'+k]; if(o.gone) return; solde(D2,k,o,today); ch.gone++; any=true; });
+    if(any||ch.isNew) D2._imp=today;
+    ch.any=any||ch.isNew;
+    return ch;
+  }
+  // Commande importée absente du nouveau fichier (même période) : soldée dans ESABORA → livrée complète
+  function applyAbsent(D2,today){
+    if(D2._gone) return {any:false,gone:0};
+    var n=0;
+    lineKeys(D2).forEach(function(k){ var o=D2['l:'+k]; if(o&&o.src==='esa'&&!o.gone){ solde(D2,k,o,today); n++; } });
+    D2._gone=today; return {any:true,gone:n};
+  }
+  // Chantier du fichier (ELS2605019, ELS2106036/09…) → affaire du site
+  function affOfChantier(code){
+    var c=normK(code),A=ENV.affaires();
+    var hit=A.filter(function(a){ return normK(a.id)===c; })[0];
+    if(!hit) hit=A.filter(function(a){ try{ return normK(((STORE.projects[a.id]||{}).infos||{}).numero)===c; }catch(e){ return false; } })[0];
+    if(!hit) hit=A.filter(function(a){ return normK(a.id).indexOf(c+' ')===0; })[0];
+    return hit?{id:hit.id,known:true}:{id:code,known:false};
+  }
+  DB.all=async function(){ var r=await this._c().select('id,num,aff,data,rev').limit(5000); if(r.error) throw r.error; return r.data||[]; };
+
+  var IMP=null; // import en cours (aperçu)
+  function impBox(inner){ modal('<div style="max-height:80vh;overflow:auto">'+inner+'</div>'); var b=$('cmd-modal').firstChild; if(b) b.style.maxWidth='860px'; }
+  function impPick(){
+    if(!ENV.canManage()) return;
+    var i=document.createElement('input'); i.type='file'; i.accept='application/pdf,.pdf';
+    i.onchange=function(){ if(i.files&&i.files[0]) impRead(i.files[0]); };
+    i.click();
+  }
+  async function impRead(file){
+    impBox('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Import du reliquat</div><div id="cmd-imp-st" style="font-size:13px;color:#4A4766">Lecture de « '+esc(file.name)+' »…</div>');
+    var st=function(t){ var e=$('cmd-imp-st'); if(e) e.innerHTML=t; };
+    try{
+      var res=file.__parsed||await readReliquatPdf(file,function(p,n){ st('Lecture du fichier : page '+p+' / '+n+'…'); }); // __parsed : banc de test uniquement
+      if(!res.orders.length){ impBox('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Import du reliquat</div><div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Ce fichier ne ressemble pas à un reliquat de commandes ESABORA (aucune commande « Cmde N° EL… » trouvée).</div><div style="text-align:right"><button class="dcu-btn2" onclick="Commandes._closeModal()">Fermer</button></div>'); return; }
+      st('Comparaison avec les commandes du site…');
+      var all=await DB.all(),today=todayIso();
+      // rapprochement par n° EL seul (« EL136651 » = « EL136651-M2S » d'un ancien import)
+      var byNum={}; all.forEach(function(r){ var b=cmdBase(r.num); if(!byNum[b]) byNum[b]=r; });
+      var dates=res.orders.map(function(o){ return o.date; }).filter(Boolean).sort(),dMin=dates[0]||'',dMax=dates[dates.length-1]||'';
+      var tEnd=isoFromFr(res.title); if(tEnd&&tEnd>dMax) dMax=tEnd; // « AVANT LE 05/10/2026 » : fin de la période du fichier
+      var plan=[],sum={create:0,createLines:0,upd:0,del:0,fresh:0,gone:0,absent:0,qty:0,back:0,unknown:{}},delList=[],newList=[];
+      res.orders.forEach(function(o){
+        var a=affOfChantier(o.chantier); if(!a.known) sum.unknown[o.chantier]=1;
+        var row=byNum[o.num],D2=JSON.parse(JSON.stringify(row?row.data||{}:{}));
+        var ch=applyOrder(D2,o,a.id,today,a.known);
+        if(!ch.any) return;
+        plan.push({type:row?'upd':'new',ord:o,aff:a.id,known:a.known,row:row,data:D2});
+        if(!row){ sum.create++; sum.createLines+=o.lines.length; newList.push({num:o.num,ch:o.chantier,n:o.lines.length,next:stats(D2).next}); }
+        else{ sum.upd++; sum.fresh+=ch.fresh; sum.gone+=ch.gone; sum.qty+=ch.qty; sum.back+=ch.back; sum.del+=ch.del.length; ch.del.forEach(function(d){ delList.push(Object.assign({num:o.num},d)); }); }
+      });
+      var inFile={}; res.orders.forEach(function(o){ inFile[o.num]=1; });
+      all.forEach(function(r){
+        var d=r.data||{},n=cmdBase(r.num);
+        if(inFile[n]||d._src!=='esa'||d._gone) return;
+        if(!(d._date&&dMin&&d._date>=dMin&&d._date<=dMax)) return; // commande d'une autre période : on n'en conclut rien
+        var D2=JSON.parse(JSON.stringify(d)),ch=applyAbsent(D2,today);
+        if(ch.any){ plan.push({type:'absent',row:r,data:D2}); sum.absent++; }
+      });
+      IMP={plan:plan,file:file.name,res:res};
+      impPreview(sum,delList,newList,res,dMin,dMax);
+    }catch(e){
+      impBox('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Import du reliquat</div><div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Lecture impossible : '+esc(e&&e.message||e)+'</div><div style="text-align:right"><button class="dcu-btn2" onclick="Commandes._closeModal()">Fermer</button></div>');
+    }
+  }
+  function impPreview(sum,delList,newList,res,dMin,dMax){
+    var tile=function(n,l,c){ return '<div style="flex:1 1 150px;background:#FBFAFF;border:1px solid #EFEDF7;border-radius:12px;padding:10px 12px"><div style="font-size:22px;font-weight:900;color:'+(n?c:'#9A96B3')+'">'+n+'</div><div style="font-size:12px;color:#4A4766;font-weight:700">'+l+'</div></div>'; };
+    var unk=Object.keys(sum.unknown);
+    var h='<div style="font-size:16px;font-weight:900">Import du reliquat — aperçu</div>'
+      +'<div style="font-size:12.5px;color:#6B6790;margin:3px 0 12px">'+esc(IMP.file)+' · '+res.pages+' pages · '+res.orders.length+' commandes · '+res.rows+' lignes'+(dMin?' · commandes du '+fr(dMin)+' au '+fr(dMax):'')+'. Rien n’est enregistré tant que vous n’avez pas validé.</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+      +tile(sum.create,'commande'+(sum.create>1?'s':'')+' à créer ('+sum.createLines+' ligne'+(sum.createLines>1?'s':'')+')','#0369A1')
+      +tile(sum.del,'délai'+(sum.del>1?'s':'')+' modifié'+(sum.del>1?'s':''),'#B91C1C')
+      +tile(sum.fresh,'nouvelle'+(sum.fresh>1?'s':'')+' ligne'+(sum.fresh>1?'s':'')+' dans des commandes existantes','#3A2EAE')
+      +tile(sum.gone,'ligne'+(sum.gone>1?'s':'')+' soldée'+(sum.gone>1?'s':'')+' dans ESABORA → passe'+(sum.gone>1?'nt':'')+' en reçu','#15803D')
+      +'</div>';
+    if(sum.absent) h+='<div style="font-size:12.5px;color:#4A4766;margin-bottom:8px">'+sum.absent+' commande'+(sum.absent>1?'s':'')+' qui n’apparai'+(sum.absent>1?'ssent':'t')+' plus dans le reliquat : soldée'+(sum.absent>1?'s':'')+' dans ESABORA, elle'+(sum.absent>1?'s':'')+' passe'+(sum.absent>1?'nt':'')+' en « Livrée complète ».</div>';
+    if(sum.qty) h+='<div style="font-size:12.5px;color:#4A4766;margin-bottom:8px">'+sum.qty+' quantité'+(sum.qty>1?'s':'')+' reçue'+(sum.qty>1?'s':'')+' remontée'+(sum.qty>1?'s':'')+' : ESABORA indique plus de livré que ce qui était saisi sur le site.</div>';
+    if(unk.length) h+='<div class="dcu-msg" style="background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;max-width:none;margin:0 0 10px">Chantier'+(unk.length>1?'s':'')+' pas encore sur le site : <b>'+unk.map(esc).join(', ')+'</b>. Les commandes sont quand même importées, rangées sous ce numéro.</div>';
+    var cap=function(arr,fn){ return arr.slice(0,150).map(fn).join('')+(arr.length>150?'<tr><td colspan="5" style="color:#6B6790">… et '+(arr.length-150)+' autres</td></tr>':''); };
+    if(delList.length) h+='<details open style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:800;font-size:13px;margin-bottom:6px">Délais modifiés ('+delList.length+')</summary><div style="overflow:auto;max-height:240px"><table class="dcu-tbl cmu-tbl"><tr><th>Commande</th><th>Référence</th><th>Désignation</th><th>Ancien délai</th><th>Nouveau délai</th></tr>'
+      +cap(delList,function(d){ return '<tr><td><b>'+esc(d.num)+'</b></td><td><code>'+esc(d.ref||'—')+'</code></td><td>'+esc(d.des)+'</td><td style="text-decoration:line-through;color:#9A96B3">'+esc(fr(d.from))+'</td><td><b>'+esc(fr(d.to))+'</b></td></tr>'; })+'</table></div></details>';
+    if(newList.length) h+='<details'+(delList.length?'':' open')+' style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:800;font-size:13px;margin-bottom:6px">Commandes à créer ('+newList.length+')</summary><div style="overflow:auto;max-height:240px"><table class="dcu-tbl cmu-tbl"><tr><th>Commande</th><th>Chantier</th><th>Lignes</th><th>Prochaine livraison</th></tr>'
+      +cap(newList,function(n){ return '<tr><td><b>'+esc(n.num)+'</b></td><td>'+esc(n.ch)+'</td><td>'+n.n+'</td><td>'+esc(fr(n.next)||'—')+'</td></tr>'; })+'</table></div></details>';
+    if(res.warn.length) h+='<details style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:800;font-size:13px;color:#B45309">'+res.warn.length+' passage(s) du fichier non compris</summary><div style="font-size:12px;color:#6B6790">'+res.warn.slice(0,50).map(esc).join('<br>')+'</div></details>';
+    var n=IMP.plan.length;
+    h+='<div id="cmd-imp-st" style="font-size:13px;color:#4A4766;margin:6px 0"></div><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      +'<button class="dcu-btn2" onclick="Commandes._closeModal()">'+(n?'Annuler':'Fermer')+'</button>'
+      +(n?'<button class="dcu-btn" id="cmd-imp-go" onclick="Commandes._impApply()">✓ Valider l’import ('+n+' commande'+(n>1?'s':'')+')</button>':'<span style="font-size:13px;font-weight:700;color:#15803D;align-self:center">✓ Tout est déjà à jour, rien à changer.</span>')+'</div>';
+    impBox(h);
+  }
+  async function impApply(){
+    if(!IMP||!ENV.canManage()) return;
+    var b=$('cmd-imp-go'); if(b){ b.disabled=true; b.textContent='Enregistrement…'; }
+    var st=function(t){ var e=$('cmd-imp-st'); if(e) e.innerHTML=t; };
+    var me=ENV.who(),today=todayIso(),plan=IMP.plan,done=0,errs=[],total=plan.length;
+    var tick=function(){ done++; st('Enregistrement : '+done+' / '+total+'…'); };
+    // 1) créations, par paquets
+    var news=plan.filter(function(p){ return p.type==='new'; });
+    for(var i=0;i<news.length;i+=25){
+      var chunk=news.slice(i,i+25),rows=chunk.map(function(p){ return {num:p.ord.num,aff:p.aff||null,meta:stats(p.data),data:p.data,rev:1,created_by:me,updated_by:me,history:[{at:new Date().toISOString(),by:me,what:'import'}]}; });
+      try{ var r=await DB._c().insert(rows); if(r.error) throw r.error; chunk.forEach(tick); }
+      catch(e){ // une commande créée entre-temps par quelqu'un d'autre : on les passe une par une
+        for(var j=0;j<chunk.length;j++){ try{ await DB.create(rows[j]); }catch(e2){ errs.push(chunk[j].ord.num+' : '+(e2&&e2.message||e2)); } tick(); }
+      }
+    }
+    // 2) mises à jour : on repart TOUJOURS de la version du serveur (un collègue a pu saisir entre-temps)
+    var ups=plan.filter(function(p){ return p.type!=='new'; }),q=ups.slice();
+    async function worker(){
+      while(q.length){
+        var p=q.shift();
+        try{
+          for(var a=0;a<5;a++){
+            var fresh=await DB.get(p.row.id); if(!fresh) break;
+            var D2=JSON.parse(JSON.stringify(fresh.data||{})),ch=p.type==='absent'?applyAbsent(D2,today):applyOrder(D2,p.ord,p.aff,today,p.known);
+            if(!ch.any) break;
+            var saved=await DB.update(fresh.id,fresh.rev,{data:D2,meta:stats(D2),num:D2._num||fresh.num,aff:D2._aff||fresh.aff||null,rev:fresh.rev+1,updated_by:me});
+            if(saved){ if(S.cur&&S.cur.id===saved.id){ var c2=mergeRemote(saved); S.cur=Object.assign({},saved,{data:D}); applyKeys(c2); } break; }
+          }
+        }catch(e){ errs.push((p.ord?p.ord.num:p.row.num)+' : '+(e&&e.message||e)); }
+        tick();
+      }
+    }
+    await Promise.all([worker(),worker(),worker(),worker()]);
+    IMP=null;
+    await loadList();
+    modal('<div style="font-size:16px;font-weight:900;margin-bottom:8px">'+(errs.length?'Import terminé avec des erreurs':'✓ Import terminé')+'</div>'
+      +'<div style="font-size:13px;color:#4A4766;margin-bottom:10px">'+(total-errs.length)+' commande'+(total-errs.length>1?'s':'')+' créée'+(total-errs.length>1?'s':'')+' ou mise'+(total-errs.length>1?'s':'')+' à jour.</div>'
+      +(errs.length?'<div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 12px">'+errs.slice(0,20).map(esc).join('<br>')+'<br>Vous pouvez relancer l’import du même fichier : ce qui est déjà fait ne sera pas refait.</div>':'')
+      +'<div style="text-align:right"><button class="dcu-btn" onclick="Commandes._closeModal()">Fermer</button></div>');
+    if(!S.cur) drawList();
+  }
+
+  return {
+    render:render, refresh:function(){ S.cur=null; render(); }, open:open, newCmd:newCmd, del:del, back:back, leave:leave,
+    canView:function(){ return ENV.canView(); },
+    pending:function(){ return !!(S.cur&&Object.keys(S.dirty).length); },
+    _f:function(k,v){ S[k]=v; if(k==='filterAff'){ try{ localStorage.setItem('cmd_filterAff',v); }catch(e){} } drawList(); }, _q:function(v){ S.q=v; var pos=null,a=document.activeElement; if(a&&a.selectionStart!=null) pos=a.selectionStart; drawList(); var i=S.host&&S.host.querySelector('input[aria-label="Rechercher"]'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
+    _closeModal:closeModal, _create:_create, _qty:_qty, _qtyBlur:_qtyBlur, _all:_all, _note:_note,
+    _editCmd:_editCmd, _saveCmd:_saveCmd, _editLine:_editLine, _saveLine:_saveLine, _delLine:_delLine,
+    _addBL:_addBL, _blOpen:_blOpen, _blDel:_blDel,
+    importer:impPick, _impRead:impRead, _impApply:impApply, _read:readReliquatPdf,
+    _state:function(){ return {S:S,D:D}; }, _stats:stats
+  };
+})();
+
+// ── Section Chantier : onglets « Docs chantier » / « Commandes » (comme la maquette) ──
+window.ChantierNav=(function(){
+  var cur=null;
+  function tabs(){
+    var adm=typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin';
+    return [
+      {k:'docs',lbl:'📋 Docs chantier',vis:function(){ try{ return adm||hasView('docs_chantier'); }catch(e){ return adm; } }},
+      {k:'cmd',lbl:'📦 Commandes',vis:function(){ return !!(window.Commandes&&window.Commandes.canView()); }}
+    ].filter(function(t){ return t.vis(); });
+  }
+  function draw(){
+    var h=document.getElementById('petro-ch-tabs'); if(!h) return;
+    var T=tabs();
+    h.innerHTML=T.length>1?'<nav class="sec-pills">'+T.map(function(t){ return '<button type="button" class="sec-pill'+(t.k===cur?' on':'')+'" onclick="ChantierNav.show(\''+t.k+'\')">'+t.lbl+'</button>'; }).join('')+'</nav>':'';
+    h.style.display=T.length>1?'':'none';
+  }
+  function show(k){
+    var T=tabs(); if(!T.length) return;
+    if(!T.some(function(t){ return t.k===k; })) k=T[0].k;
+    if(cur&&cur!==k){
+      if(cur==='docs'&&window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave();
+      if(cur==='cmd'&&window.Commandes) window.Commandes.leave();
+    }
+    cur=k;
+    var dc=document.getElementById('petro-docs-content'),cc=document.getElementById('petro-cmd-content');
+    if(dc) dc.style.display=k==='docs'?'':'none';
+    if(cc) cc.style.display=k==='cmd'?'':'none';
+    draw();
+    if(k==='docs'&&window.DocsChantier) window.DocsChantier.render('petro-docs-content');
+    if(k==='cmd'&&window.Commandes) window.Commandes.render('petro-cmd-content');
+  }
+  function enter(){ show(cur||'docs'); }
+  function leave(){ if(cur==='cmd'&&window.Commandes) window.Commandes.leave(); }
+  return {enter:enter,show:show,leave:leave,current:function(){ return cur; }};
+})();
+</script>
+<!-- ═══════════════════════════ /COMMANDES ═══════════════════════ -->
 
 <!-- ═══════════════ NAVIGATION PAR SECTIONS (Affaires / Équipe / Chantier) — module isolé ═══════════════
      Nouvelle disposition (validée sur la maquette du 05/10/2026). Ce module ne fait QUE ranger
@@ -22027,6 +22997,7 @@ function petroHubEnterEquipe(){PetroNav.enter('equipe');}
     var p=false;
     try{ p=localStorage.getItem('plan26v5_dirty')==='1'; }catch(e){}
     try{ var dc=window.DocsChantier&&window.DocsChantier._state&&window.DocsChantier._state().S; if(dc&&dc.cur&&Object.keys(dc.dirty||{}).length) p=true; }catch(e){}
+    try{ if(window.Commandes&&window.Commandes.pending&&window.Commandes.pending()) p=true; }catch(e){}
     return p;
   }
   function typing(){
@@ -22049,6 +23020,7 @@ function petroHubEnterEquipe(){PetroNav.enter('equipe');}
   // connexion suivante, c'est prévu), puis on recharge.
   function reloadWhenSaved(fromClick){
     try{ if(window.DocsChantier&&window.DocsChantier._state&&window.DocsChantier._state().S.cur){ var dcs=window.DocsChantier._state().S; if(Object.keys(dcs.dirty||{}).length&&window.DocsChantier.leave) window.DocsChantier.leave(); } }catch(e){}
+    try{ if(window.Commandes&&window.Commandes.pending&&window.Commandes.pending()) window.Commandes.leave(); }catch(e){}
     var go=document.getElementById('petro-newver-go'); if(go){ go.disabled=true; go.textContent='Enregistrement…'; }
     var t0=Date.now();
     (function wait(){
