@@ -4791,20 +4791,17 @@ function renderPersonnelSearch(){
   });
   allPersons.sort(function(a,b){return a.name.localeCompare(b.name);});
 
-  var html='<div style="padding:16px">';
+  // Visuel de la maquette (05/10/2026) : une carte, recherche et « + Ajouter » en haut à droite, personnes en grille
+  var html='<div><section style="background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:18px 20px">';
 
-  // ─── Header ──────────────────────────────────────────────────────
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
-  html+='<div><div style="font-size:16px;font-weight:900;color:var(--tx)">📋 Annuaire du personnel</div>';
-  html+='<div style="font-size:11px;color:var(--tx3);margin-top:1px">'+Object.keys(gp).length+' personne'+(Object.keys(gp).length!==1?'s':'')+' · Base inter-affaires</div></div>';
-  html+=(hasEdit('annuaire')?'<button onclick="_annEdit(null)" style="padding:6px 14px;border-radius:var(--r);background:var(--ac);border:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Ajouter</button>':'');
-  html+='</div>';
-
-  // ─── Recherche ───────────────────────────────────────────────────
-  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;background:var(--bg3);border-radius:var(--r2);padding:6px 10px">';
-  html+='<span style="color:var(--tx3)">⌕</span>';
-  html+='<input id="si-ann" type="text" value="'+escHtml(_q)+'" placeholder="Rechercher..." oninput="renderPersonnelFilter()" style="flex:1;border:none;background:transparent;font-size:12px;font-family:inherit;color:var(--tx);outline:none">';
-  html+='</div>';
+  // ─── Header + recherche ──────────────────────────────────────────
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">';
+  html+='<div><div style="font-size:16px;font-weight:800;color:#1C1A33">📋 Annuaire du personnel</div>';
+  html+='<div style="font-size:12.5px;color:#6B6790;margin-top:2px">'+Object.keys(gp).length+' personne'+(Object.keys(gp).length!==1?'s':'')+' · base commune à toutes les affaires · cliquez sur une personne pour voir sa fiche</div></div>';
+  html+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  html+='<input id="si-ann" type="search" value="'+escHtml(_q)+'" placeholder="Rechercher : nom, service, habilitation…" aria-label="Rechercher une personne" oninput="renderPersonnelFilter()" style="width:260px;max-width:100%;height:36px;border:1.5px solid #E4E1F0;border-radius:9px;padding:0 10px;font-size:13px;font-family:inherit;color:#1C1A33;background:#fff;outline:none;box-sizing:border-box">';
+  html+=(hasEdit('annuaire')?'<button onclick="_annEdit(null)" style="height:36px;padding:0 14px;border-radius:10px;background:#4B3FC7;border:none;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">+ Ajouter</button>':'');
+  html+='</div></div>';
 
   // ─── Formulaire ajout/édition ─────────────────────────────────────
   if(editingNm!==undefined){
@@ -4860,11 +4857,15 @@ function renderPersonnelSearch(){
       var grp=bySvc[svcK];
       if(!grp||!grp.length)return;
       var svc=SERVICES.find(function(s){return s.k===svcK;})||{l:'Autre',color:'#6B7280',bg:'#F9FAFB'};
-      html+='<div style="margin-bottom:16px">';
-      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:6px 12px;background:'+svc.bg+';border-radius:8px;border-left:4px solid '+svc.color+'">';
-      html+='<span style="font-size:11px;font-weight:800;color:'+svc.color+';letter-spacing:.5px">'+escHtml(svc.l).toUpperCase()+'</span>';
-      html+='<span style="font-size:10px;color:'+svc.color+';opacity:.7">'+grp.length+' personne'+(grp.length>1?'s':'')+'</span>';
+      // Couleurs par type de contrat (comme la maquette) ; le service garde sa couleur sur le titre du groupe
+      var _TYC={ELS:['#E3DFFB','#5447D6'],Interim:['#FDF0D6','#9A6410'],'S-T':['#FBDFE6','#C03060'],Alternant:['#DCFCE7','#15803D'],Stagiaire:['#E0F2FE','#0369A1']};
+      html+='<div style="margin-bottom:18px">';
+      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+      html+='<span style="width:9px;height:9px;border-radius:3px;background:'+svc.color+'"></span>';
+      html+='<span style="font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px">'+escHtml(svc.l).toUpperCase()+'</span>';
+      html+='<span style="font-size:11px;color:#9A96B3">'+grp.length+' personne'+(grp.length>1?'s':'')+'</span>';
       html+='</div>';
+      html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">';
       // Sous-groupement par type de contrat (ELS, Interim, S-T, Alternant, Stagiaire...)
       var byType={};
       grp.forEach(function(p){
@@ -4879,18 +4880,24 @@ function renderPersonnelSearch(){
       if(!subGrp||!subGrp.length)return;
       if(_typesPresents.length>1){
         var tLabel=tk==='__autre__'?'Non renseigné':tk;
-        html+='<div style="font-size:9px;font-weight:800;color:'+svc.color+';opacity:.8;letter-spacing:.5px;margin:8px 0 4px 4px">▸ '+escHtml(tLabel).toUpperCase()+' <span style="opacity:.7">('+subGrp.length+')</span></div>';
+        html+='<div style="grid-column:1/-1;font-size:10.5px;font-weight:800;color:#8C88A8;letter-spacing:.5px;margin:2px 0 -2px 2px">▸ '+escHtml(tLabel).toUpperCase()+' <span style="opacity:.8">('+subGrp.length+')</span></div>';
       }
       subGrp.forEach(function(p2){
-        var ini=p2.name.trim().charAt(0).toUpperCase();
+        var _w=p2.name.trim().split(/\s+/);
+        var ini=((_w[0]||'').charAt(0)+(_w.length>1?_w[_w.length-1].charAt(0):'')).toUpperCase();
         var safeName=p2.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         var habs=p2.habilitations||[];
-        html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg2);border-radius:8px;border:1px solid var(--bd);cursor:pointer;margin-bottom:4px" onclick="openPersonProfile(\''+safeName+'\')">';
-        html+='<div style="width:36px;height:36px;border-radius:50%;background:'+svc.color+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0">'+ini+'</div>';
-        html+='<div style="flex:1;min-width:0">';
-        html+='<div style="font-weight:700;font-size:12px;color:var(--tx)">'+escHtml(p2.name)+'</div>';
-        if(p2.email)html+='<div style="font-size:10px;color:var(--tx3)">'+escHtml(p2.email)+'</div>';
-        if(habs.length)html+='<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:2px">'+habs.map(function(h){return '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;background:'+svc.bg+';color:'+svc.color+'">'+escHtml(h)+'</span>';}).join('')+'</div>';
+        var tc=_TYC[p2.type]||['#F1EFF8',svc.color];
+        html+='<div class="ann-card" style="position:relative;display:flex;align-items:flex-start;gap:10px;text-align:left;border:1px solid #E4E1F0;border-radius:12px;padding:10px 12px;background:#fff;cursor:pointer;min-width:0" onclick="openPersonProfile(\''+safeName+'\')" onmouseenter="this.style.background=\'#FAF9FF\'" onmouseleave="this.style.background=\'#fff\'">';
+        html+='<div style="width:36px;height:36px;border-radius:50%;background:'+tc[1]+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0">'+escHtml(ini)+'</div>';
+        html+='<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">';
+        html+='<div style="font-weight:800;font-size:13.5px;color:#1C1A33;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:'+(hasEdit('annuaire')?'52':'0')+'px">'+escHtml(p2.name)+'</div>';
+        if(p2.email)html+='<div style="font-size:11px;color:#6B6790;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(p2.email)+'</div>';
+        html+='<div style="display:flex;flex-wrap:wrap;gap:4px">'
+          +(p2.type?'<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:8px;white-space:nowrap;background:'+tc[0]+';color:'+tc[1]+'">'+escHtml(p2.type)+'</span>':'')
+          +habs.slice(0,4).map(function(h){return '<span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;background:#F1EFF8;color:#4A4766">'+escHtml(h)+'</span>';}).join('')
+          +(habs.length>4?'<span title="'+escHtml(habs.slice(4).join(', '))+'" style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;background:#F1EFF8;color:#6B6790">+'+(habs.length-4)+'</span>':'')
+          +'</div>';
         if(_ql){
           var tByA={};
           Object.keys(STORE.projects).sort().forEach(function(aff){
@@ -4902,22 +4909,23 @@ function renderPersonnelSearch(){
           Object.keys(tByA).forEach(function(aff){
             var _inf=(STORE.projects[aff].infos)||{};
             var _al=(_inf.numeroClient?_inf.numeroClient+' · ':'')+aff;
-            html+='<div style="font-size:8px;color:var(--ac);margin-top:2px">● '+escHtml(_al)+': '+tByA[aff].map(function(a){return escHtml(a.lb);}).join(', ')+'</div>';
+            html+='<div style="font-size:11px;color:#4B3FC7;margin-top:2px">● '+escHtml(_al)+' : '+tByA[aff].map(function(a){return escHtml(a.lb);}).join(', ')+'</div>';
           });
         }
         html+='</div>';
-        html+='<div style="display:flex;gap:4px;flex-shrink:0">';
         if(hasEdit('annuaire')){
-          html+='<button onclick="event.stopPropagation();_annEdit(\''+safeName+'\')" style="background:none;border:1px solid var(--bd);border-radius:var(--r);padding:3px 8px;font-size:10px;cursor:pointer;color:var(--tx2)">✎</button>';
-          html+='<button onclick="event.stopPropagation();deleteGlobalPerson(\''+safeName+'\')" style="background:none;border:1px solid #FCA5A5;border-radius:var(--r);padding:3px 8px;font-size:10px;cursor:pointer;color:var(--rd)">✕</button>';
+          html+='<div style="position:absolute;top:8px;right:8px;display:flex;gap:4px">';
+          html+='<button onclick="event.stopPropagation();_annEdit(\''+safeName+'\')" title="Modifier" aria-label="Modifier '+escHtml(p2.name)+'" style="width:24px;height:24px;border:1px solid #E4E1F0;border-radius:7px;background:#fff;font-size:11px;cursor:pointer;color:#4A4766;padding:0">✎</button>';
+          html+='<button onclick="event.stopPropagation();deleteGlobalPerson(\''+safeName+'\')" title="Supprimer" aria-label="Supprimer '+escHtml(p2.name)+'" style="width:24px;height:24px;border:1px solid #FECACA;border-radius:7px;background:#fff;font-size:11px;cursor:pointer;color:#B91C1C;padding:0">✕</button>';
+          html+='</div>';
         }
-        html+='</div></div>';
+        html+='</div>';
       });
       });
-      html+='</div>';
+      html+='</div></div>';
     });
   }
-  html+='</div>';
+  html+='</section></div>';
   el.innerHTML=html;
   // Debug: vérifier que les personnes sont bien dans le DOM après rendu
   var _cards=el.querySelectorAll('[onclick*="openPersonProfile"]');
@@ -13053,7 +13061,9 @@ function _gcActRowHtml(row,DW,NC,_MG,winStart,winEnd,lvl,path){
   if(!row.p||!Array.isArray(row.p))row.p=[]; // garde-fou : jamais planter le GANTT sur une ligne corrompue
   if(lvl==null){var _m=(window._gcMeta||{})[row.id];lvl=_m?_m.lvl:2;}
   var col=ph.xd||'#4B3FC7',fill=ph.xl||'#E4E1F0';
-  var prevSet=getTaskDays5(row,'prev'),reelSet=getTaskDays5(row,'reel');
+  // Pendant qu'on peint : aperçu des barres (gcHighlight), jamais enregistré tant qu'on n'a pas relâché
+  var _pv=window._gcPreview&&window._gcPreview.rid===row.id?window._gcPreview:null;
+  var prevSet=_pv?_pv.prev:getTaskDays5(row,'prev'),reelSet=_pv?_pv.reel:getTaskDays5(row,'reel');
   var pS={},rS={};prevSet.forEach(function(x){pS[x]=1;});reelSet.forEach(function(x){rS[x]=1;});
   var st=gcActState(row),C=GC_ST[st.st],sel=window._gcSel===row.id,paint=!!window._gcPaint;
   var todayAbs=gcTodayAbs(),tw=(typeof TODAY!=='undefined'&&TODAY)?TODAY.w:-1;
@@ -13103,6 +13113,9 @@ function _gcActRowHtml(row,DW,NC,_MG,winStart,winEnd,lvl,path){
   if(!_isProgressExcludedPhase(row.pk)){
     if(row.excludeProgress)pill=gcPill('Ø Hors avancement','#F1EFF8','#6B6790','border:1px dashed #CBC7DE');
     else pill='<span title="Avancement : se modifie dans l’onglet Avancement" style="flex-shrink:0;font-size:11px;font-weight:800;padding:2px 8px;border-radius:10px;white-space:nowrap;background:'+C.bg+';color:'+C.c+'">'+(st.late?'En retard · ':'')+st.pct+' %</span>';
+  }else if(st.st==='done'){
+    // Études / Tableauterie : pas de %, seulement « Terminé » (la pastille de couleur donne l'état)
+    pill='<span title="Études et Tableauterie ne comptent pas dans l’avancement de l’affaire" style="flex-shrink:0;font-size:11px;font-weight:800;padding:2px 8px;border-radius:10px;white-space:nowrap;background:'+C.bg+';color:'+C.c+'">✓ Terminé</span>';
   }
   var unplanned=!prevSet.length&&!reelSet.length&&!row.s;
   var st0=gsOn();
@@ -13273,10 +13286,11 @@ function renderGantt(){
   try{document.body.classList.toggle('gs-on',gsOn());document.body.classList.toggle('gc-paint',!!window._gcPaint);}catch(e){}
   gcRenderToolbar();
   gcRenderPanel();
+  gcPlaceSelBox();
 }
 
 // ── Barre d'outils du GANTT (au-dessus du planning) ──
-function gcRenderToolbar(){
+function gcRenderToolbar(compact){
   var tab=document.getElementById('tab-gantt');if(!tab)return;
   var tb=document.getElementById('gc-toolbar');
   if(!tb){tb=document.createElement('div');tb.id='gc-toolbar';tab.insertBefore(tb,tab.firstChild);}
@@ -13306,20 +13320,39 @@ function gcRenderToolbar(){
       +'<span style="font-size:12.5px;color:#4A4766;flex:1 1 400px">Cliquez-glissez sur une ligne : <b>moitié haute = Prévu</b>, <b>moitié basse = Réel</b> · pour poser <b>les deux d’un coup</b>, commencez dans une moitié et relâchez dans l’autre · recliquez sur un jour peint pour l’effacer · <b>clic droit sur une barre</b> : commentaire, décaler, effacer</span>'
       +leg+'<button type="button" onclick="gcSetPaint(false)" style="height:34px;padding:0 14px;border-radius:9px;border:none;background:#B45309;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">Terminer</button></div>';
   }else{
-    var seg=function(v,l){var on=view===v;return '<button type="button" onclick="setGanttView(\''+v+'\')" style="height:32px;padding:0 13px;border-radius:8px;border:none;cursor:pointer;font-size:12.5px;font-weight:800;font-family:inherit;'+(on?'background:#4B3FC7;color:#fff':'background:transparent;color:#4A4766')+'">'+l+'</button>';};
+    var scale=view==='day'?'day':(ZOOM_DW<=8?'month':'week');
+    var seg=function(v,l,t){var on=scale===v;return '<button type="button" onclick="gcSetScale(\''+v+'\')" title="'+gcEsc(t)+'" style="height:32px;padding:0 13px;border-radius:8px;border:none;cursor:pointer;font-size:12.5px;font-weight:800;font-family:inherit;'+(on?'background:#4B3FC7;color:#fff':'background:transparent;color:#4A4766')+'">'+l+'</button>';};
     var fl=[['all','Tout','#4B3FC7'],['prog','En cours','#F59E0B'],['late','En retard','#EF4444'],['todo','À venir','#94A3B8'],['done','Terminé','#15803D']].map(function(x){var on=(window._gcFilter||'all')===x[0];return '<button type="button" onclick="gcSetFilter(\''+x[0]+'\')" style="height:32px;padding:0 11px;border-radius:16px;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;font-family:inherit;'+(on?'background:#1C1A33;color:#fff;border:1.5px solid #1C1A33':'background:#fff;color:#4A4766;border:1.5px solid #E4E1F0')+'"><span style="width:8px;height:8px;border-radius:50%;background:'+x[2]+'"></span>'+x[1]+'</button>';}).join('');
     var zb='height:32px;width:32px;border-radius:8px;border:1px solid #E4E1F0;background:#fff;color:#4A4766;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit';
     h='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:#fff;border-bottom:1px solid #EFEDF7">'
       +(canPaint&&view==='week'?'<button type="button" onclick="gcSetPaint(true)" title="Peindre les barres Prévu / Réel jour par jour" style="height:34px;padding:0 13px;border-radius:10px;border:1.5px solid #FCD34D;background:#FFFBEB;color:#92400E;font-size:13px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit">🖌 Peindre les barres</button>':'')
-      +'<div style="display:flex;background:#F1EFFC;border-radius:10px;padding:3px">'+seg('day','Jours')+seg('week','Semaines')+'</div>'
-      +'<div style="display:flex;gap:4px;align-items:center" title="Zoom"><button type="button" onclick="setZoom(\'out\')" style="'+zb+'" title="Zoom arrière">−</button><button type="button" onclick="setZoom(\'in\')" style="'+zb+'" title="Zoom avant">+</button><button type="button" onclick="setZoom(\'fit\')" style="'+zb+';width:auto;padding:0 9px;font-size:11.5px" title="Tout voir">Tout voir</button></div>'
+      +'<div style="display:flex;background:#F1EFFC;border-radius:10px;padding:3px">'+seg('day','Jours','Vue jour par jour')+seg('week','Semaines','Vue par semaine (Ctrl + molette pour zoomer)')+seg('month','Mois','Vue large : toute l’année sur l’écran (Ctrl + molette pour zoomer)')+'</div>'
       +(view==='week'?'<div style="display:flex;gap:6px;flex-wrap:wrap">'+fl+'</div>':'')
-      +'<div style="flex-grow:1"></div>'+leg
-      +(view==='week'?tg('gcToggleCmt()',window._gcShowCmt!==false,'Commentaires','Texte des commentaires à côté des barres')+tg('gcToggleWE()',!!window._gcShowWE,'Week-ends','Afficher les samedis et dimanches (pour marquer un week-end travaillé)')
-        +((typeof hasView==='function'&&hasView('budget_gantt'))?tg('gcToggleH()',!!window._gcShowH,'Heures','Heures des feuilles d’heure / budget, sur chaque sous-phase'):''):'')
-      +'</div>';
+      +'<div style="flex-grow:1"></div>'+leg;
+    var tgs=view==='week'?tg('gcToggleCmt()',window._gcShowCmt!==false,'Commentaires','Texte des commentaires à côté des barres')+tg('gcToggleWE()',!!window._gcShowWE,'Week-ends','Afficher les samedis et dimanches (pour marquer un week-end travaillé)')
+        +((typeof hasView==='function'&&hasView('budget_gantt'))?tg('gcToggleH()',!!window._gcShowH,'Heures','Heures des feuilles d’heure / budget, sur chaque sous-phase'):''):'';
+    // Pas la place sur une ligne (détail de tâche ouvert, petit écran) : les interrupteurs passent dans « Affichage ▾ »
+    if(compact&&tgs){
+      var nOn=(window._gcShowCmt!==false?1:0)+(window._gcShowWE?1:0)+(window._gcShowH&&typeof hasView==='function'&&hasView('budget_gantt')?1:0);
+      h+='<div style="position:relative"><button type="button" onclick="event.stopPropagation();gcDispMenu()" style="height:32px;padding:0 12px;border-radius:9px;border:1px solid #E4E1F0;background:'+(window._gcDispOpen?'#F1EFFC':'#fff')+';color:#4A4766;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">Affichage'+(nOn?' ('+nOn+')':'')+' ▾</button>'
+        +(window._gcDispOpen?'<div id="gc-dispmenu" onclick="event.stopPropagation()" style="position:absolute;right:0;top:38px;z-index:60;background:#fff;border:1px solid #E4E1F0;border-radius:12px;box-shadow:0 12px 32px rgba(30,20,90,.18);padding:8px 12px;display:flex;flex-direction:column;gap:4px;min-width:190px">'+tgs+'</div>':'')+'</div>';
+    }else h+=tgs;
+    h+='</div>';
   }
   tb.innerHTML=h;
+  // Trop large pour une ligne ? On redessine en version compacte (comme la maquette : une seule ligne d'outils)
+  if(!compact&&tb.firstChild&&!gsOn()&&!window._gcPaint&&tb.firstChild.offsetHeight>62)gcRenderToolbar(true);
+}
+function gcDispMenu(){window._gcDispOpen=!window._gcDispOpen;gcRenderToolbar();}
+document.addEventListener('click',function(e){if(window._gcDispOpen&&!e.target.closest('#gc-dispmenu')){window._gcDispOpen=false;gcRenderToolbar();}});
+window.addEventListener('resize',function(){var b=document.querySelector('.nb.on');if(b&&b.dataset.tab==='gantt')gcRenderToolbar();});
+// Jours / Semaines / Mois (Mois = la vue Semaines resserrée pour voir toute l'année, l'ancien « Tout voir »)
+function gcSetScale(v){
+  var view=(typeof GANTT_VIEW!=='undefined')?GANTT_VIEW:'week';
+  if(v==='day'){if(view!=='day')setGanttView('day');return;}
+  if(view!=='week')setGanttView('week');
+  if(v==='month')setZoom('fit');
+  else if(ZOOM_DW<=8||view!=='week')setZoom('auto');
 }
 function gcSetPaint(on){window._gcPaint=!!on;if(on){window._gcSel=null;}_reRenderGanttKeepScroll();gcRenderToolbar();gcRenderPanel();}
 function gcSetFilter(f){window._gcFilter=f;_reRenderGanttKeepScroll();}
@@ -13332,6 +13365,19 @@ function gcStartStructure(){if(typeof gcSetStructure==='function')gcSetStructure
 // ── Panneau de détail d'une tâche (à droite) ──
 function gcOpenPanel(id){if(window._gcStruct||window._gcPaint||window._gcMoveState||Date.now()-(window._gcLastMoveClick||0)<600)return;window._gcSel=window._gcSel===id?null:id;_reRenderGanttKeepScroll();}
 function gcClosePanel(){window._gcSel=null;_reRenderGanttKeepScroll();}
+// Cadre violet autour de la tâche sélectionnée, sur toute la largeur visible du planning (comme la maquette).
+// C'est un simple calque posé dans #gw (aucun clic ne le traverse), recalé au défilement et après chaque dessin.
+function gcPlaceSelBox(){
+  var gw=document.getElementById('gw');if(!gw)return;
+  var box=document.getElementById('gc-selbox');
+  var tr=window._gcSel&&!window._gcPaint?gw.querySelector('tr.ra[data-rid="'+window._gcSel+'"]'):null;
+  if(!tr||!gw.offsetWidth){if(box)box.style.display='none';return;}
+  if(!box||box.parentNode!==gw){if(box)box.remove();box=document.createElement('div');box.id='gc-selbox';gw.appendChild(box);}
+  var gr=gw.getBoundingClientRect(),rr=tr.getBoundingClientRect();
+  var w=Math.max(0,gw.clientWidth-GC_LW-4);
+  box.style.cssText='display:block;position:absolute;z-index:4;pointer-events:none;border-radius:6px;box-shadow:inset 0 0 0 2px #4B3FC7;left:'+(gw.scrollLeft+GC_LW+1)+'px;top:'+(rr.top-gr.top+gw.scrollTop+2)+'px;width:'+w+'px;height:'+Math.max(0,rr.height-4)+'px';
+}
+(function(){var gw=document.getElementById('gw');if(gw)gw.addEventListener('scroll',function(){if(window._gcSel)gcPlaceSelBox();},{passive:true});window.addEventListener('resize',function(){if(window._gcSel)gcPlaceSelBox();});})();
 function gcNum(n){return String(Math.round(n*10)/10).replace('.',',');}
 function gcRenderPanel(force){
   var p=document.getElementById('gc-panel');
@@ -13342,14 +13388,18 @@ function gcRenderPanel(force){
     if(!onGantt||!row)window._gcSel=row&&onGantt?window._gcSel:null;
     if(p)p.style.display='none';
     if(tab)tab.style.marginRight='';
+    if(document.body.classList.contains('gc-pan')){document.body.classList.remove('gc-pan');gcPlaceSelBox();if(onGantt)gcRenderToolbar();}
     return;
   }
   if(!p){p=document.createElement('aside');p.id='gc-panel';document.body.appendChild(p);}
   // Ne pas reconstruire pendant qu'on écrit dans le panneau (rappel…)
   if(!force&&p.style.display!=='none'&&p.contains(document.activeElement)&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))return;
-  var top=Math.round((tab||document.body).getBoundingClientRect().top);
-  p.style.cssText='display:flex;flex-direction:column;gap:14px;position:fixed;right:0;top:'+top+'px;bottom:0;width:380px;z-index:140;background:#fff;border-left:1px solid #E4E1F0;box-shadow:-8px 0 24px rgba(30,20,90,.06);padding:16px 18px 24px;overflow-y:auto;box-sizing:border-box;font-family:inherit';
-  if(tab)tab.style.marginRight='380px';
+  // Nouvelle disposition : le panneau prend toute la hauteur sous la barre du haut, à côté de l'en-tête de l'affaire (comme la maquette)
+  var _sec=document.body.getAttribute('data-sec')==='affaire',_nav=document.getElementById('nav');
+  var top=Math.round(_sec&&_nav?_nav.getBoundingClientRect().bottom:(tab||document.body).getBoundingClientRect().top);
+  p.style.cssText='display:flex;flex-direction:column;gap:16px;position:fixed;right:0;top:'+top+'px;bottom:0;width:380px;z-index:140;background:#fff;border-left:1px solid #E4E1F0;box-shadow:-8px 0 24px rgba(30,20,90,.06);padding:18px 20px 24px;overflow-y:auto;box-sizing:border-box;font-family:inherit';
+  if(tab)tab.style.marginRight=_sec?'400px':'380px';
+  if(!document.body.classList.contains('gc-pan')){document.body.classList.add('gc-pan');gcRenderToolbar();setTimeout(gcPlaceSelBox,0);}
   var ph=PH_get(row.pk),col=ph.xd||'#4B3FC7',st=gcActState(row),C=GC_ST[st.st];
   var m=(window._gcMeta||{})[row.id],path=[];
   if(m)m.par.forEach(function(pid){var pr=D().find(function(x){return x.id===pid;});path.push(pr?(pr.lb||pr.pk):String(pid).replace('__orph_',''));});
@@ -13367,6 +13417,10 @@ function gcRenderPanel(force){
     h+='<div style="'+box+'"><div style="display:flex;justify-content:space-between;align-items:center"><div style="'+lbl+'">AVANCEMENT</div>'+(row.excludeProgress?gcPill('Ø Hors avancement','#F1EFF8','#6B6790'):gcPill(C.lbl,C.bg,C.c))+'</div>'
       +'<div style="display:flex;align-items:center;gap:10px;margin-top:8px"><div style="flex-grow:1;height:10px;border-radius:5px;background:#EFEDF7;overflow:hidden"><div style="height:100%;width:'+st.pct+'%;background:'+(st.pct>=100?'#15803D':'#F59E0B')+'"></div></div><div style="font-size:18px;font-weight:800">'+st.pct+' %</div></div>'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px"><span style="font-size:12px;color:#6B6790">Lecture seule ici</span>'+avBtn+'</div></div>';
+  }else{
+    // Études / Tableauterie : pas de % (elles ne comptent pas dans l'avancement de l'affaire), seulement l'état
+    h+='<div style="'+box+'"><div style="display:flex;justify-content:space-between;align-items:center"><div style="'+lbl+'">AVANCEMENT</div>'+gcPill(C.lbl,C.bg,C.c)+'</div>'
+      +'<div style="font-size:12px;color:#6B6790;margin-top:8px;line-height:1.45">Les phases Études et Tableauterie ne comptent pas dans l’avancement de l’affaire : pas de pourcentage, seulement les barres Prévu / Réel.</div></div>';
   }
   if(row.avComment)h+='<div><div style="'+lbl+';margin-bottom:6px">COMMENTAIRE DU CHEF (AVANCEMENT)</div><div style="font-size:13px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:8px 10px">'+gcEsc(row.avComment)+(row.avCommentBy?'<div style="font-size:10.5px;color:#92400E;margin-top:4px">'+gcEsc(row.avCommentBy)+'</div>':'')+'</div></div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
@@ -13378,8 +13432,42 @@ function gcRenderPanel(force){
     +'<div style="display:flex;gap:6px"><select id="rappel-wb-'+row.id+'" aria-label="Rappel" style="border:1px solid #E4E1F0;border-radius:9px;padding:6px;font-size:12px;font-family:inherit;background:#fff"><option value="1">1 sem. avant</option><option value="2">2 sem. avant</option><option value="3">3 sem. avant</option><option value="4">4 sem. avant</option></select>'
     +'<input id="rappel-inp-'+row.id+'" type="text" placeholder="Commentaire de rappel…" aria-label="Commentaire de rappel" onkeydown="if(event.key===\'Enter\'){addRappel(\''+row.id+'\')}" style="flex:1;min-width:0;border:1px solid #E4E1F0;border-radius:9px;padding:6px 8px;font-size:12px;font-family:inherit">'
     +'<button type="button" onclick="addRappel(\''+row.id+'\')" style="padding:0 12px;border-radius:9px;border:none;background:#4B3FC7;color:#fff;font-size:13px;font-weight:800;cursor:pointer">+</button></div></div>';
+  // Modifications liées à la tâche (champ row.modifications, et celles d'autres tâches qui la citent)
+  var mods=gcTaskMods(row);
+  h+='<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="'+lbl+'">MODIFICATIONS LIÉES</div>'+(canEdit?'<button type="button" onclick="gcNewModif(\''+row.id+'\')" style="border:none;background:none;color:#4B3FC7;font-size:12.5px;font-weight:800;cursor:pointer;padding:0;font-family:inherit">+ Nouvelle</button>':'')+'</div>'
+    +(mods.length?mods.map(function(m){
+      var dest=(m.dest||[]).map(function(d){return {els:'ELS',client:'Client',auto:'Automatisme',be:'BE',chantier:'Chantier',tableauterie:'Tableauterie'}[d]||d;}).join(', ');
+      return '<div style="border:1px solid #EFEDF7;border-radius:10px;padding:8px 10px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><span style="font-size:11px;font-weight:800;color:#6B6790">'+gcEsc(m.date||'')+(dest?' · à '+gcEsc(dest):'')+'</span>'
+        +(m.envoye?gcPill('✓ Envoyé','#DCFCE7','#15803D'):gcPill('⏳ Non envoyé','#FEF3C7','#92400E'))+'</div><div style="font-size:13px;margin-top:3px;word-break:break-word">'+gcEsc(m.texte||m.text||'')+'</div>'
+        +(m._fromTask?'<div style="font-size:11px;color:#4B3FC7;margin-top:2px;font-style:italic">↪ Via : '+gcEsc(m._fromTask)+'</div>':'')+'</div>';
+    }).join(''):'<div style="font-size:12.5px;color:#9A96B3">Aucune.</div>')+'</div>';
   p.innerHTML=h;
 }
+function gcTaskMods(row){
+  var mods=(row.modifications||[]).slice();
+  D().forEach(function(r2){
+    if(r2.id===row.id)return;
+    (r2.modifications||[]).forEach(function(m){
+      if(m.affTasks&&m.affTasks.indexOf(row.id)>=0&&!mods.some(function(ex){return ex.date===m.date&&ex.texte===m.texte;}))mods.push(Object.assign({},m,{_fromTask:r2.lb}));
+    });
+  });
+  // les plus récentes d'abord (dates jj/mm/aaaa)
+  var key=function(m){var x=String(m.date||'').split('/');return x.length===3?x[2]+x[1]+x[0]:'';};
+  return mods.sort(function(a,b){return key(b).localeCompare(key(a));});
+}
+// « + Nouvelle » : la fenêtre de modification existante du site (buildModifPanel / sendModif / delModif)
+function gcNewModif(id){
+  var r=D().find(function(x){return x.id===id;});if(!r||!hasEdit('planning'))return;
+  gcCloseModif();
+  var ov=document.createElement('div');ov.id='gc-modif-modal';
+  ov.style.cssText='position:fixed;inset:0;z-index:99980;background:rgba(28,26,51,.45);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;width:min(520px,100%);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(30,20,90,.3)">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px 0"><div style="font-size:15px;font-weight:800;color:#1C1A33">Modification — '+gcEsc(r.lb)+'</div><button type="button" onclick="gcCloseModif()" aria-label="Fermer" style="width:32px;height:32px;border-radius:9px;border:1px solid #E4E1F0;background:#fff;cursor:pointer;font-size:17px">×</button></div>'
+    +'<div id="modif-panel-'+gcEsc(id)+'" style="flex:1;min-height:0;overflow:auto">'+buildModifPanel(r)+'</div></div>';
+  ov.addEventListener('mousedown',function(e){if(e.target===ov)gcCloseModif();});
+  document.body.appendChild(ov);
+}
+function gcCloseModif(){var m=document.getElementById('gc-modif-modal');if(m){m.remove();gcRenderPanel(true);}}
 // → Réel = Prévu / ← Prévu = Réel : recopie les jours de barre (et leurs week-ends travaillés)
 function gcAlign(id,target){
   if(!hasEdit('planning'))return;
@@ -13912,6 +14000,7 @@ function _gcUpdateRowInPlace(rid){
     var newTr=tmp.querySelector('tr');
     if(!newTr){renderGantt();return;}
     trEl.replaceWith(newTr);
+    if(window._gcSel===rid)gcPlaceSelBox();
   }catch(e){renderGantt();} // en cas de moindre souci : repli sûr sur le rendu complet, jamais d'écran cassé
 }
 
@@ -17552,6 +17641,7 @@ function gcDown(rid, w, d, ev){
   // l'autre côté juste avant de relâcher.
   _gc.startZone=window._ganttBarMode;
   _gc.curZone=window._ganttBarMode;
+  _gc._sig=null;
   gcHighlight();
 }
 
@@ -17592,16 +17682,39 @@ function gcHighlight(){
   var startD5=(w1b-1)*5+d1b;
   var endD5=(w2b-1)*5+d2b;
   var _bothZones=_gc.curZone&&_gc.startZone&&(_gc.curZone!==_gc.startZone);
-  document.querySelectorAll('.gcell[data-rid="'+_gc.rid+'"]').forEach(function(td){
-    var tw=+td.dataset.w, td_d=+td.dataset.d;
-    if(td_d>=5){td.style.outline='';return;}
-    var td5=(tw-1)*5+td_d;
-    var _hlColor=_gc.removeMode
-      ?'rgba(220,38,38,.7)'  // rouge = suppression
-      :_bothZones?'rgba(217,119,6,.75)'  // orange = les deux (prévu ET réel) seront posés
-      :(window._ganttBarMode==='reel')?'rgba(22,163,74,.7)':'rgba(124,58,237,.6)';
-    td.style.outline=(td5>=startD5&&td5<=endD5)?'2px inset '+_hlColor:'';
-  });
+  // Nouveau visuel (comme la maquette) : les barres se dessinent EN DIRECT pendant le glissement, avec un cadre
+  // pointillé sur la période (violet = Prévu, vert = Réel, orange = les deux, rouge = effacer).
+  // L'aperçu ne touche pas aux données : il calcule la même chose que gcCommit, qui seul enregistre au relâchement.
+  var sig=[_gc.rid,startD5,endD5,_bothZones?1:0,window._ganttBarMode,_gc.removeMode?1:0].join('|');
+  if(sig===_gc._sig)return; // rien de changé : ne pas redessiner la ligne à chaque mouvement de souris
+  _gc._sig=sig;
+  var r=D().find(function(x){return x.id===_gc.rid;});
+  if(r){
+    var isSingle=startD5===endD5,pv={rid:r.id,prev:getTaskDays5(r,'prev').slice(),reel:getTaskDays5(r,'reel').slice()};
+    var apply=function(arr){
+      if(isSingle){var ix=arr.indexOf(startD5);if(ix>=0)arr.splice(ix,1);else arr.push(startD5);return arr;}
+      if(_gc.removeMode)return arr.filter(function(x){return x<startD5||x>endD5;});
+      for(var i=startD5;i<=endD5;i++)if(arr.indexOf(i)<0)arr.push(i);return arr;
+    };
+    if(_bothZones&&!isSingle){pv.prev=apply(pv.prev);pv.reel=apply(pv.reel);}
+    else if(window._ganttBarMode==='reel')pv.reel=apply(pv.reel);else pv.prev=apply(pv.prev);
+    window._gcPreview=pv;
+    _gcUpdateRowInPlace(r.id);
+  }
+  var col=_gc.removeMode?'#DC2626':(_bothZones&&startD5!==endD5)?'#D97706':(window._ganttBarMode==='reel'?'#16A34A':'#7C3AED');
+  gcPaintBox(_gc.rid,startD5,endD5,(_bothZones&&startD5!==endD5)?'both':window._ganttBarMode,col);
+}
+function gcPaintBox(rid,s5,e5,zone,col){
+  var gw=document.getElementById('gw');if(!gw)return;
+  var b=document.getElementById('gc-paintbox');
+  var tr=rid?gw.querySelector('tr.ra[data-rid="'+rid+'"]'):null;
+  if(!tr){if(b)b.remove();return;}
+  if(!b||b.parentNode!==gw){if(b)b.remove();b=document.createElement('div');b.id='gc-paintbox';gw.appendChild(b);}
+  var DW=ZOOM_DW,x1=GC_LW+gcX(gcAbsOfD5(s5),DW),x2=GC_LW+gcX(gcAbsOfD5(e5),DW)+DW;
+  var gr=gw.getBoundingClientRect(),rr=tr.getBoundingClientRect(),top=rr.top-gr.top+gw.scrollTop;
+  var both=zone==='both',t=both||zone==='prev'?3:21,h=both?38:20;
+  b.style.cssText='position:absolute;z-index:6;pointer-events:none;left:'+x1+'px;top:'+(top+t)+'px;width:'+Math.max(4,x2-x1)+'px;height:'+h+'px;border:2px dashed '+col+';border-radius:6px;background:'+col+'14;box-sizing:border-box';
+  b.innerHTML=both?'<span style="position:absolute;top:-17px;left:-2px;font-size:10px;font-weight:800;color:#fff;background:#D97706;border-radius:5px;padding:1px 6px;white-space:nowrap">Prévu + Réel</span>':'';
 }
 
 function gcCommit(){
@@ -17650,6 +17763,9 @@ function gcCommit(){
 document.addEventListener('mouseup', function(){
   if(!_gc.active)return;
   document.querySelectorAll('.gcell').forEach(function(td){td.style.outline='';});
+  // fin de l'aperçu : la ligne est redessinée avec les vraies données par gcCommit
+  window._gcPreview=null;_gc._sig=null;
+  var _pb=document.getElementById('gc-paintbox');if(_pb)_pb.remove();
   gcCommit();
   _gc.active=false; _gc.rid=null; _gc.removeMode=false; _gc.startZone=null; _gc.curZone=null;
 });
@@ -18938,52 +19054,77 @@ function renderRecap(){
 // HEURES
 // ═══════════════════════════════
 function renderHeures(){
-  const bud=currP().budget||0,used=totalUsed(),rem=bud-used,pct=bud?Math.min(100,used/bud*100):0;
+  // Heures = lignes des feuilles d'heure de CETTE affaire, comptées exactement comme le Récap (_rcFhHours).
+  // Avant (05/10/2026) : total = totalUsed(), qui comptait aussi des lignes d'autres affaires rangées
+  // dans celle-ci, et détail = champ p.heures des tâches, que les feuilles d'heure (par sous-phase) ne remplissent pas.
+  const aff=STORE.current,bud=currP().budget||0;
+  const pm={},rows={};(currP().data||[]).forEach(r=>{rows[r.id]=r;});
+  let used=0;
+  Object.keys(STORE.projects).forEach(bk=>{
+    const p=STORE.projects[bk];if(!p||!p.fh)return;
+    Object.keys(p.fh).forEach(nm=>{
+      const nd=p.fh[nm]||{};
+      Object.keys(nd).forEach(wk=>{
+        const wd=nd[wk]||{};
+        Object.keys(wd).forEach(di=>{
+          const lines=wd[di];if(!Array.isArray(lines))return;
+          lines.forEach(l=>{
+            if(!l||(l.affId||bk)!==aff)return;
+            const h=+(l.hours||l.h)||0;if(!h)return;
+            used+=h;
+            const n=String(nm).trim();
+            if(!pm[n])pm[n]={name:n,total:0,by:{},ents:new Set()};
+            pm[n].total+=h;
+            const k=l.actId||'';pm[n].by[k]=(pm[n].by[k]||0)+h;
+          });
+        });
+      });
+    });
+  });
+  used=Math.round(used*10)/10;
+  Object.values(pm).forEach(ps=>{
+    const g=(STORE.globalPersons||{})[ps.name];if(g&&g.type)ps.ents.add(g.type);
+    ps.total=Math.round(ps.total*10)/10;
+    ps.acts=Object.keys(ps.by).map(k=>{const r=rows[k];return {lb:r?(r.lb||r.pk):(k?'(ligne supprimée du planning)':'(sous-phase non précisée)'),h:Math.round(ps.by[k]*10)/10,ph:r?r.pk:''};}).sort((a,b)=>b.h-a.h);
+  });
+  const rem=Math.round((bud-used)*10)/10,pct=bud?Math.min(100,used/bud*100):0;
   const bc=pct>90?'var(--rd)':pct>70?'var(--or)':'var(--gn)';
-  const pm={};
-  acts().forEach(a=>a.p.forEach(p=>{
-    if(!p.name.trim())return;
-    const nm=p.name.trim();
-    // Filtrer les personnes supprimées de l'annuaire
-    if(STORE.globalPersons&&Object.keys(STORE.globalPersons).length&&!STORE.globalPersons[nm])return;
-    if(!pm[nm])pm[nm]={name:nm,total:0,acts:[],ents:new Set()};
-    pm[nm].total+=(+p.heures||0);
-    if(+p.heures>0)pm[nm].acts.push({lb:a.lb,h:+p.heures,ph:a.pk});
-    if(p.ent)pm[nm].ents.add(p.ent);
-  }));
   const sorted=Object.values(pm).sort((a,b)=>b.total-a.total);
-  const clrs=['var(--E2)','var(--T2)','var(--A2)','var(--C2)'];
-  let cards=sorted.map((ps,i)=>{
-    const clr=clrs[i%4];const pct2=bud?Math.min(100,ps.total/bud*100):0;
-    const ents=[...ps.ents].map(e=>{const es=ES[e];return `<span class="pill" style="background:${es.bg};color:${es.tc};margin-right:3px">${e}</span>`;}).join('');
-    return `<div class="p-card" style="--pc:${clr}">
-      <div class="p-nm">${ps.name}</div>
-      <div class="p-sub">${ents}${ps.acts.length} activité(s)</div>
-      <div class="p-bar"><div class="p-fill" style="width:${pct2}%;background:${clr}"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:11px">
-        <span style="font-weight:700;font-size:13px">${ps.total} H</span>
-        <span style="color:var(--tx3)">${bud?(ps.total/bud*100).toFixed(1)+'%':''}</span>
+  // Visuel de la maquette (05/10/2026) : mêmes chiffres qu'avant, présentés en cartes par personne
+  const r1=v=>String(Math.round((+v||0)*10)/10).replace('.',',');
+  const gp=STORE.globalPersons||{};
+  const TYC={ELS:['#E3DFFB','#5447D6'],Interim:['#FDF0D6','#9A6410'],'S-T':['#FBDFE6','#C03060'],Alternant:['#DCFCE7','#15803D'],Stagiaire:['#E0F2FE','#0369A1']};
+  const ini=n=>{const w=String(n).trim().split(/\s+/);return ((w[0]||'').charAt(0)+(w.length>1?w[w.length-1].charAt(0):(w[0]||'').charAt(1))).toUpperCase();};
+  const tyPill=t=>{const c=TYC[t]||['#F1EFF8','#4A4766'];return `<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:8px;white-space:nowrap;background:${c[0]};color:${c[1]}">${escHtml(t)}</span>`;};
+  let cards=sorted.map(ps=>{
+    const ents=[...ps.ents];
+    const ty=ents[0]||((gp[ps.name]||{}).type)||'';
+    const col=(TYC[ty]||['','#4B3FC7'])[1];
+    const share=used?Math.round(ps.total*100/used):0;
+    return `<div style="flex:1 1 260px;max-width:420px;background:#fff;border:1px solid #E4E1F0;border-radius:14px;padding:14px 16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="width:34px;height:34px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:${col};color:#fff;font-size:13px;font-weight:800">${escHtml(ini(ps.name))}</span>
+        <div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#1C1A33;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(ps.name)}</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">${(ents.length?ents:(ty?[ty]:[])).map(tyPill).join('')}</div></div>
+        <div style="text-align:right;flex-shrink:0"><div style="font-size:18px;font-weight:800;color:#1C1A33">${r1(ps.total)} h</div><div style="font-size:11px;color:#6B6790">${share} % de l’affaire</div></div>
       </div>
-      <div class="p-acts">${ps.acts.map(a=>`<div class="p-act"><span style="color:${PH_get(a.ph).h}">${a.lb}</span><span style="font-weight:700">${a.h}H</span></div>`).join('')}
-        ${!ps.acts.length?'<div style="font-size:10px;color:var(--tx3)">Aucune heure</div>':''}</div>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:4px">${ps.acts.map(a=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:#4A4766"><span style="display:flex;align-items:center;gap:6px;min-width:0"><span style="width:7px;height:7px;border-radius:2px;flex-shrink:0;background:${a.ph?PH_get(a.ph).h:'#CBC7DE'}"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.lb)}</span></span><b style="flex-shrink:0;color:#1C1A33">${r1(a.h)} h</b></div>`).join('')}
+        ${!ps.acts.length?'<div style="font-size:12px;color:#9A96B3">Aucune heure</div>':''}</div>
     </div>`;
   }).join('');
-  if(!sorted.length)cards='<div style="color:var(--tx3);padding:16px 0">Aucune personne affectée.</div>';
+  if(!sorted.length)cards='<div style="color:#9A96B3;font-size:13px">Aucune heure saisie.</div>';
+  const kpi=(l,v,c,sub,extra)=>`<div style="flex:1 1 220px;background:#FBFAFF;border:1px solid #EFEDF7;border-radius:14px;padding:12px 14px"><div style="font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px">${l}</div><div style="font-size:22px;font-weight:800;margin-top:4px;color:${c}">${v}</div><div style="font-size:11.5px;color:#6B6790;margin-top:2px">${sub}</div>${extra||''}</div>`;
+  const _inf=(currP().infos)||{};
   document.getElementById('hw').innerHTML=`
-    <div class="pg-ttl">HEURES — <span style="color:var(--ac)">${STORE.current}</span></div>
-    <div class="card">
-      <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
-        <div style="text-align:center"><div style="font-size:22px;font-weight:700;color:var(--ac)">${used} H</div><div style="font-size:8px;color:var(--tx3);font-weight:700">UTILISÉES</div></div>
-        <div style="flex:1;min-width:150px">
-          <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;margin-bottom:4px"><div style="height:100%;border-radius:4px;background:${bc};width:${pct}%"></div></div>
-          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--tx3)"><span>${pct.toFixed(1)}%</span><span>Budget : ${bud}H</span></div>
-        </div>
-        <div style="text-align:center"><div style="font-size:22px;font-weight:700;color:${rem<0?'var(--rd)':rem<bud*.1?'var(--or)':'var(--gn)'}">${Math.max(0,rem)} H</div><div style="font-size:8px;color:var(--tx3);font-weight:700">RESTANTES</div></div>
-        ${rem<0?`<div style="padding:6px 12px;background:var(--rd2);color:var(--rd);border-radius:var(--r);font-size:11px;font-weight:700">⚠ +${Math.abs(rem)}H</div>`:''}
-      </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      ${kpi('HEURES UTILISÉES',r1(used)+' h','#1C1A33','Saisies dans les feuilles d’heure',`<div style="height:8px;background:#EFEDF7;border-radius:4px;overflow:hidden;margin-top:8px"><div style="height:100%;border-radius:4px;background:${bc};width:${pct}%"></div></div><div style="font-size:11px;color:#6B6790;margin-top:4px">${bud?(used/bud*100).toFixed(1).replace('.',',')+' % des '+r1(bud)+' h vendues':'Aucune heure vendue saisie'}</div>`)}
+      ${kpi('HEURES RESTANTES',r1(Math.max(0,rem))+' h',rem<0?'#B91C1C':rem<bud*.1?'#B45309':'#15803D','Sur '+r1(bud)+' h vendues',rem<0?`<div style="display:inline-block;margin-top:8px;padding:4px 10px;background:#FEF2F2;color:#B91C1C;border:1px solid #FECACA;border-radius:9px;font-size:12px;font-weight:800">⚠ Dépassement : +${r1(Math.abs(rem))} h</div>`:'')}
     </div>
-    <div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:10px">${sorted.length} personne(s)</div>
-    <div class="p-grid">${cards}</div>`;
+    <section style="background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:18px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px"><div><div style="font-size:16px;font-weight:800;color:#1C1A33">⏱ Heures par personne — ${escHtml(_inf.numero||STORE.current)}</div><div style="font-size:12.5px;color:#6B6790;margin-top:2px">${sorted.length} personne${sorted.length>1?'s':''} · heures reprises des feuilles d’heure</div></div></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">${cards}</div>
+    </section>
+    </div>`;
 }
 
 // ═══════════════════════════════
@@ -21340,17 +21481,50 @@ body[data-sec="affaire"] #sbar .sec-move{display:none!important}
 .sec-tab.on{background:#EEEAFE;color:#3A2EAE}
 #sec-side{display:none;position:fixed;left:0;bottom:0;z-index:150;background:#fff;border-right:1px solid var(--bd);flex-direction:column;font-family:inherit}
 body[data-sec="affaire"] #sec-side{display:flex}
-body[data-sec="affaire"] #app-shell > #sbar,body[data-sec="affaire"] #app-shell > .tab,body[data-sec="affaire"] #app-shell > #leg,body[data-sec="affaire"] #sec-affbar{margin-left:var(--secw,280px)}
-#sec-affbar{display:none;background:#fff;border-bottom:1px solid var(--bd);padding:10px 18px;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0}
-body[data-sec="affaire"] #sec-affbar{display:flex}
-.sec-ttl-lbl{font-size:10.5px;font-weight:800;color:#6B6790;letter-spacing:.6px}
-.sec-ttl{font-size:18px;font-weight:800;color:#1C1A33;line-height:1.25}
-.sec-btn{height:34px;padding:0 13px;border-radius:10px;border:1px solid var(--bd);background:#fff;color:#1C1A33;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+/* Barre du haut (comme la maquette) : ‹ Accueil · PétroSphère | Affaires … ✓ Sauvegardé · ↩ Annuler · utilisateur */
+body[data-sec] #nav{height:60px;background:#fff;border-bottom:1px solid #E4E1F0;box-shadow:none;padding:8px 20px;gap:14px}
+body[data-sec] #nav > button:first-child{height:38px!important;padding:0 14px!important;border-radius:10px!important;border:1px solid #E4E1F0!important;background:#F6F5FB!important;color:#1C1A33!important;font-size:13px!important;font-weight:800!important;margin-right:0!important}
+body[data-sec] #nav .brand{display:none!important}
+#sec-brand{display:none;font-size:18px;font-weight:800;color:#C81E1E;white-space:nowrap}
+body[data-sec] #sec-brand{display:block}
+body[data-sec] #nav .nav-r{gap:10px}
+body[data-sec] #sv{font-size:12px;font-weight:800;padding:5px 11px;border-radius:14px;background:#E6F8F2;color:#0E7C63;border:none}
+body[data-sec] #btn-undo{height:34px;padding:0 12px!important;border-radius:9px!important;border:1px solid #E4E1F0!important;background:#fff!important;color:#4A4766!important;font-size:13px!important;font-weight:700!important}
+body[data-sec] [data-user-badge]{padding:4px 6px 4px 12px!important;border-radius:20px!important;border:1px solid #E4E1F0!important;background:#fff!important;font-size:12.5px!important;font-weight:700!important;color:#1C1A33!important;gap:8px!important}
+body[data-sec] [data-user-badge] > span:nth-child(2){display:none}
+body[data-sec] [data-user-badge] > span:nth-child(3){color:#6B6790}
+body[data-sec] [data-user-badge] button{height:26px;padding:0 10px!important;border-radius:13px!important;border:none!important;background:#FEE2E2!important;color:#B91C1C!important;font-size:12px!important;font-weight:800!important}
+/* Affaires : l'ancienne barre (H vendues / dates) est remplacée par l'en-tête de l'affaire ; la légende du bas n'existe pas sur la maquette */
+body[data-sec="affaire"] #sbar,body[data-sec] #leg{display:none!important}
+body[data-sec="affaire"] #app-shell > .tab{margin:14px 22px 18px calc(var(--secw,280px) + 22px);background:#fff;border:1px solid #E4E1F0;border-radius:16px;min-height:0}
+#sec-affbar{display:none;flex-shrink:0}
+body[data-sec="affaire"] #sec-affbar{display:block;margin:16px 22px 0 calc(var(--secw,280px) + 22px);background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:16px 18px 0 18px}
+body[data-sec="equipe"] #sec-affbar{display:block;margin:14px 22px 0 22px}
+body[data-sec="affaire"].gc-pan #sec-affbar{margin-right:400px}
+.sec-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.sec-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.sec-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#6B6790;background:#FBFAFF;border:1px solid #EFEDF7;border-radius:9px;padding:5px 10px;white-space:nowrap}
+.sec-chip b{color:#1C1A33;font-size:12.5px;font-weight:800}
+.sec-chip.in{padding:2px 8px 2px 10px}
+.sec-lbl{font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px}
+#sec-affbar #inp-bud{width:80px!important;height:28px!important;border:1.5px solid #E4E1F0!important;border-radius:9px!important;background:#fff!important;color:#1C1A33!important;font-size:13px!important;font-weight:700!important;text-align:left!important;padding:0 8px!important;box-sizing:border-box}
+#sec-affbar #inp-bud:focus{border-color:#6457F4!important}
+.sec-sub{display:flex;gap:4px;margin-top:10px;flex-wrap:wrap}
+.sec-subt{height:42px;padding:0 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:14px;font-weight:800;color:#6B6790;font-family:inherit;white-space:nowrap}
+.sec-subt:hover{color:#3A2EAE}
+.sec-subt.on{border-bottom-color:#4B3FC7;color:#3A2EAE}
+.sec-pills{display:flex;gap:4px;background:#fff;border:1px solid #E4E1F0;border-radius:12px;padding:4px;flex-wrap:wrap;width:fit-content;max-width:100%}
+.sec-pill{height:34px;padding:0 14px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:800;background:transparent;color:#4A4766;font-family:inherit;white-space:nowrap}
+.sec-pill:hover{background:#F1EFFC}
+.sec-pill.on{background:#4B3FC7;color:#fff}
+.sec-ttl-lbl{font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px}
+.sec-ttl{font-size:22px;font-weight:800;color:#1C1A33;line-height:1.25;margin-top:2px}
+.sec-btn{height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--bd);background:#fff;color:#1C1A33;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .sec-btn:hover{background:#FAF9FF}
 .sec-btn.pri{border:none;background:#4B3FC7;color:#fff}
 .sec-btn.pri:hover{background:#3A2EAE}
 .sec-btn.soft{border:1.5px solid #C7C1F5;background:#F5F3FF;color:#3A2EAE}
-.sec-menu{position:absolute;top:40px;right:0;z-index:190;min-width:270px;background:#fff;border:1px solid var(--bd);border-radius:12px;box-shadow:0 12px 32px rgba(30,20,90,.18);padding:6px}
+.sec-menu{position:absolute;top:44px;right:0;z-index:190;min-width:270px;background:#fff;border:1px solid var(--bd);border-radius:12px;box-shadow:0 12px 32px rgba(30,20,90,.18);padding:6px}
 .sec-mi{display:block;width:100%;text-align:left;border:none;background:none;padding:9px 12px;font-size:13px;font-weight:600;color:#1C1A33;cursor:pointer;border-radius:8px;font-family:inherit}
 .sec-mi:hover{background:#F1EFFC}
 .sec-mi small{display:block;font-size:11.5px;font-weight:500;color:#6B6790;margin-top:1px}
@@ -21364,6 +21538,7 @@ body[data-sec="affaire"] #sec-affbar{display:flex}
 #sec-qr-bar{display:none}
 /* GANTT — nouveau visuel */
 #gantt-view-btns,#gantt-view-sep{display:none!important}
+#gw{position:relative}
 #gc-toolbar{flex-shrink:0}
 .gt.gc2 thead th{position:sticky;z-index:22}
 .gt.gc2 thead tr:nth-child(1) th{top:0}
@@ -21473,6 +21648,13 @@ window.PetroNav=(function(){
     document.querySelectorAll('#sbar .btn-np,#sbar .btn-da').forEach(function(b){b.classList.add('sec-move');});
     // Titre + onglets de section, insérés dans la barre du haut juste après le logo
     var brand=nav.querySelector('.brand');
+    // Nom « PétroSphère » en rouge (comme la maquette) à la place du logo image, seulement dans les sections
+    var bt=document.createElement('div');bt.id='sec-brand';bt.textContent='PétroSphère';
+    if(brand&&brand.parentNode)brand.parentNode.insertBefore(bt,brand);
+    // Case « H vendues » : le VRAI champ (#inp-bud, avec son oninput et ses droits) est déplacé dans l'en-tête de
+    // l'affaire ; cette marque garde sa place d'origine pour l'y remettre quand l'en-tête n'est pas affiché
+    // (il ne doit jamais sortir de la page : d'autres fonctions l'utilisent par son id)
+    var bi=$('inp-bud');if(bi&&bi.parentNode){var home=document.createElement('span');home.id='sec-bud-home';home.style.display='none';bi.parentNode.insertBefore(home,bi);}
     var t=document.createElement('div');t.id='sec-title';
     var tabs=document.createElement('div');tabs.id='sec-tabs';
     if(brand&&brand.nextSibling){nav.insertBefore(t,brand.nextSibling);nav.insertBefore(tabs,t.nextSibling);}else{nav.appendChild(t);nav.appendChild(tabs);}
@@ -21490,9 +21672,13 @@ window.PetroNav=(function(){
     if(!S.sec){t.style.display='none';box.innerHTML='';return;}
     t.style.display='';
     t.textContent=S.sec==='equipe'?'Équipe':'Affaires';
-    box.innerHTML=tabList().filter(function(x){return x.vis();}).map(function(x){return '<button type="button" class="sec-tab'+(x.on()?' on':'')+'" data-sectab="'+x.k+'">'+esc(x.lbl)+'</button>';}).join('');
-    box.querySelectorAll('[data-sectab]').forEach(function(b){b.onclick=function(){go(b.getAttribute('data-sectab'));};});
+    // Les onglets sont maintenant SOUS l'affaire (Affaires) ou en haut du contenu (Équipe), comme sur la maquette
+    box.innerHTML='';
   }
+  function tabsHtml(cls){
+    return tabList().filter(function(x){return x.vis();}).map(function(x){return '<button type="button" class="'+cls+(x.on()?' on':'')+'" data-sectab="'+x.k+'">'+esc(x.lbl)+'</button>';}).join('');
+  }
+  function bindTabs(el){el.querySelectorAll('[data-sectab]').forEach(function(b){b.onclick=function(){go(b.getAttribute('data-sectab'));};});}
   function go(k){
     var x=tabList().filter(function(y){return y.k===k;})[0];if(!x)return;
     if(k!=='qr')closeQR();
@@ -21502,15 +21688,54 @@ window.PetroNav=(function(){
 
   /* ── En-tête de l'affaire : titre, Modifier la structure, ℹ️, Télécharger, ⋯ ── */
   function curAff(){return (typeof STORE!=='undefined'&&STORE.current&&STORE.projects&&STORE.projects[STORE.current])?STORE.current:null;}
+  // Remet le champ « H vendues » à sa place d'origine (cachée) avant de reconstruire l'en-tête
+  function budHome(){var bi=$('inp-bud'),home=$('sec-bud-home');if(bi&&home&&bi.previousSibling!==home)home.parentNode.insertBefore(bi,home.nextSibling);}
+  function frDate(v){if(!v)return '';var m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+'/'+m[2]+'/'+m[1]:String(v);}
+  // Cases d'infos sous le titre : H vendues (le vrai champ), Consommé, Début, Fin, Échéance, Durée, Créée le
+  function chipsHtml(k){
+    var p=STORE.projects[k]||{},inf=p.infos||{},h='';
+    var ch=function(l,v,st){return '<span class="sec-chip"'+(st?' style="'+st+'"':'')+'><span class="sec-lbl">'+l+'</span><b>'+v+'</b></span>';};
+    var budOk=secVis('#inp-bud');
+    if(budOk)h+='<span class="sec-chip in"><span class="sec-lbl">H VENDUES</span><span id="sec-bud-slot"></span><b>h</b></span>';
+    if(budOk&&(typeof hasView!=='function'||hasView('budget_toolbar'))){
+      // même calcul que le Récap (H consommées) : seulement les lignes de CETTE affaire
+      var used=0;try{used=typeof _rcFhHours==='function'?_rcFhHours(k).total:0;}catch(e){}
+      var b=+p.budget||0;
+      h+=ch('CONSOMMÉ',String(used).replace('.',',')+' h'+(b?' ('+Math.round(used*100/b)+' %)':''),b&&used>b?'background:#FEF2F2;border-color:#FECACA':'');
+    }
+    if(secVis('#inp-dstart')){
+      var ds=($('inp-dstart')||{}).value||p.dstart||'',de=($('inp-dend')||{}).value||p.dend||'';
+      if(ds)h+=ch('DÉBUT',frDate(ds));
+      if(de)h+=ch('FIN',frDate(de));
+      if(de&&!p.closed){
+        var d2=new Date(de+'T12:00:00'),now=new Date();now.setHours(12,0,0,0);
+        var nd=Math.round((d2-now)/864e5);
+        if(!isNaN(nd))h+=ch('ÉCHÉANCE',nd<0?'dépassée de '+(-nd)+' j':nd===0?'aujourd’hui':nd<14?'dans '+nd+' jour'+(nd>1?'s':''):'dans '+Math.round(nd/7)+' semaines',nd<0?'background:#FEF2F2;border-color:#FECACA':'');
+      }
+      if(ds&&de){
+        var a=new Date(ds+'T12:00:00'),z=new Date(de+'T12:00:00'),n=0;
+        if(z>=a){for(var c=new Date(a);c<=z&&n<5000;c.setDate(c.getDate()+1)){var wd=c.getDay();if(wd>=1&&wd<=5&&!(typeof isFerie==='function'&&isFerie(c)))n++;}
+          h+=ch('DURÉE',n+' j ouvrés · '+(n*8)+' h max');}
+      }
+    }
+    if(inf.dateCreation)h+=ch('CRÉÉE LE',frDate(inf.dateCreation));
+    return h;
+  }
+  function placeBud(bar){var slot=bar.querySelector('#sec-bud-slot'),bi=$('inp-bud');if(slot&&bi)slot.appendChild(bi);}
   function renderBar(){
     var bar=$('sec-affbar');if(!bar)return;
+    budHome();
+    if(S.sec==='equipe'){
+      bar.innerHTML=qrOpen()?'':'<nav class="sec-pills">'+tabsHtml('sec-pill')+'</nav>';
+      bindTabs(bar);return;
+    }
     if(S.sec!=='affaire'){bar.innerHTML='';return;}
     if(S.over){
-      bar.innerHTML='<div><div class="sec-ttl-lbl">VUE D’ENSEMBLE</div><div class="sec-ttl">Toutes les affaires</div></div>';
-      return;
+      bar.innerHTML='<div class="sec-hd"><div><div class="sec-ttl-lbl">VUE D’ENSEMBLE</div><div class="sec-ttl">Toutes les affaires</div></div></div><nav class="sec-sub">'+tabsHtml('sec-subt')+'</nav>';
+      bindTabs(bar);return;
     }
     var k=curAff();
-    if(!k){bar.innerHTML='<div class="sec-ttl" style="color:#6B6790">Choisissez une affaire dans le menu de gauche</div>';return;}
+    if(!k){bar.innerHTML='<div class="sec-ttl" style="color:#6B6790;padding-bottom:16px">Choisissez une affaire dans le menu de gauche</div>';return;}
     var p=STORE.projects[k],closed=!!p.closed;
     var dl=[];
     if(secVis('#nav [onclick*="downloadPlanning"]'))dl.push(['downloadPlanning(\'interne\')','📥 Planning interne','Planning complet, avec heures et budget']);
@@ -21524,14 +21749,18 @@ window.PetroNav=(function(){
       more.push(['openModal(\'del\')','🗑 Supprimer l’affaire',1]);
     }
     var canEdit=secVis('#nav [onclick="openPlanEditor()"]');
-    var h='<div style="min-width:0;flex:1 1 320px"><div class="sec-ttl-lbl">AFFAIRE'+(closed?' · ✓ ARCHIVÉE':'')+'</div><div class="sec-ttl">'+esc(typeof getAffLabel==='function'?getAffLabel(k):k)+'</div></div>'
+    var h=(closed?'<div style="display:flex;align-items:center;gap:10px;justify-content:space-between;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:13px;font-weight:700;color:#334155"><span>🗄 Affaire archivée : elle n’apparaît plus dans les listes de choix (feuilles d’heure, planning réunion).</span>'+(secVis('#sbar .btn-da[onclick*="openModal("]')?'<button type="button" class="sec-btn" style="height:30px" data-secact="PetroNav.unarchive()">✓ Désarchiver</button>':'')+'</div>':'')
+      +'<div class="sec-hd"><div style="min-width:0;flex:1 1 320px"><div class="sec-ttl-lbl">AFFAIRE</div><div class="sec-ttl">'+esc(typeof getAffLabel==='function'?getAffLabel(k):k)+'</div></div>'
       +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
     if(canEdit&&nbOn()==='gantt'){var _st=!!window._gcStruct;h+='<button type="button" class="sec-btn '+(_st?'pri':'soft')+'" data-secact="openPlanEditor()" title="Ajouter, renommer, déplacer ou supprimer phases, ensembles, sous-phases et tâches">✏️ '+(_st?'Terminer la modification':'Modifier la structure')+'</button>';}
     if(secVis('#sbar .btn-da[onclick*="openAffaireInfos"]'))h+='<button type="button" class="sec-btn" data-secact="openAffaireInfos()" title="Infos affaire" aria-label="Infos affaire">ℹ️</button>';
     if(dl.length)h+='<div style="position:relative"><button type="button" class="sec-btn pri" data-secmenu="dl">📥 Télécharger ▾</button>'+(S.menu==='dl'?'<div class="sec-menu">'+dl.map(function(x){return '<button type="button" class="sec-mi" data-secact="'+esc(x[0])+'">'+x[1]+'<small>'+x[2]+'</small></button>';}).join('')+'</div>':'')+'</div>';
     if(more.length)h+='<div style="position:relative"><button type="button" class="sec-btn" data-secmenu="more" aria-label="Plus d’actions" title="Plus d’actions">⋯</button>'+(S.menu==='more'?'<div class="sec-menu" style="min-width:300px">'+more.map(function(x){return '<button type="button" class="sec-mi" data-secact="'+esc(x[0])+'"'+(x[2]?' style="color:#B91C1C"':'')+'>'+x[1]+'</button>';}).join('')+'</div>':'')+'</div>';
-    h+='</div>';
+    h+='</div></div>';
+    h+='<div class="sec-chips">'+chipsHtml(k)+'</div>';
+    h+='<nav class="sec-sub">'+tabsHtml('sec-subt')+'</nav>';
     bar.innerHTML=h;
+    placeBud(bar);bindTabs(bar);
     bar.querySelectorAll('[data-secmenu]').forEach(function(b){b.onclick=function(e){e.stopPropagation();var m=b.getAttribute('data-secmenu');S.menu=S.menu===m?null:m;renderBar();};});
     bar.querySelectorAll('[data-secact]').forEach(function(b){b.onclick=function(){var code=b.getAttribute('data-secact');S.menu=null;renderBar();callAct(code);};});
   }
@@ -21575,7 +21804,7 @@ window.PetroNav=(function(){
     var all=affList().filter(function(a){return !q||(a.lbl+' '+a.k).toLowerCase().indexOf(q)>=0;});
     var act=all.filter(function(a){return !a.closed;}),arc=all.filter(function(a){return a.closed;});
     function item(a){
-      var short=String(a.num).replace(/\D/g,'').slice(-3)||'?';
+      var short=String(a.num).replace(/\D/g,'').slice(-3)||String(a.lib||a.num||a.k).replace(/[^A-Za-z0-9À-ÿ]/g,'').slice(0,3).toUpperCase()||'?';
       return '<button type="button" class="sec-aff'+(a.k===cur?' on':'')+'" data-secaff="'+esc(a.k)+'" title="'+esc(a.lbl)+'"><span class="sec-aff-ico" style="background:'+(a.closed?'#94A3B8':colorOf(a.k))+'">'+esc(short)+'</span>'
         +(o?'<span class="sec-aff-txt"><b>'+esc(a.num+(a.lib?' · '+a.lib:''))+'</b><span>'+(a.cli?'Client '+esc(a.cli):'&nbsp;')+(a.closed?' · ✓ archivée':'')+'</span></span>':'')+'</button>';
     }
@@ -21660,8 +21889,11 @@ window.PetroNav=(function(){
   // Un collègue a créé / renommé / archivé une affaire, ou l'onglet a changé ailleurs : on se remet à jour
   function tick(){
     if(!S.sec)return;
-    if(document.activeElement&&document.activeElement.id==='sec-side-q')return;
-    var sig=JSON.stringify([affList().map(function(a){return [a.k,a.lbl,a.closed];}),typeof STORE!=='undefined'?STORE.current:'',nbOn(),window._tdbTab,window._personnelTab,typeof GANTT_VIEW!=='undefined'?GANTT_VIEW:'',qrOpen()]);
+    var ae=document.activeElement;
+    if(ae&&(ae.id==='sec-side-q'||ae.id==='inp-bud'))return; // jamais reconstruire pendant une saisie
+    var k=curAff(),p=k?STORE.projects[k]:null,hd=[];
+    if(p&&S.sec==='affaire'){var u=0;try{u=typeof _rcFhHours==='function'?_rcFhHours(k).total:0;}catch(e){}hd=[p.budget,u,p.dstart,p.dend,(p.infos||{}).dateCreation,($('inp-dstart')||{}).value,($('inp-dend')||{}).value,secVis('#inp-bud'),!!window._gcStruct];}
+    var sig=JSON.stringify([affList().map(function(a){return [a.k,a.lbl,a.closed];}),typeof STORE!=='undefined'?STORE.current:'',nbOn(),window._tdbTab,window._personnelTab,typeof GANTT_VIEW!=='undefined'?GANTT_VIEW:'',qrOpen(),hd]);
     if(sig!==S.sig){S.sig=sig;renderAll();}
   }
   return {enter:enter,leave:leave,render:renderAll,archive:archive,unarchive:unarchive,go:go};
