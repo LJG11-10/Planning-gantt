@@ -19088,7 +19088,13 @@ function renderHeures(){
   // Avant (05/10/2026) : total = totalUsed(), qui comptait aussi des lignes d'autres affaires rangées
   // dans celle-ci, et détail = champ p.heures des tâches, que les feuilles d'heure (par sous-phase) ne remplissent pas.
   const aff=STORE.current,bud=currP().budget||0;
-  const pm={},rows={};(currP().data||[]).forEach(r=>{rows[r.id]=r;});
+  const pm={},rows={},where={};
+  // Où est rangée chaque ligne du planning : ensemble (PAE 4…) et sous-phase, pour afficher « PAE 5 › Skid 6 »
+  (function(){var ens=null,sb=null;(currP().data||[]).forEach(r=>{rows[r.id]=r;
+    if(r.t==='ph'){ens=null;sb=null;return;} if(r.t==='ensend'){ens=null;sb=null;return;}
+    if(r.t==='ens'){ens=r;sb=null;where[r.id]={ens:r.lb||'',sb:'',pk:r.pk};return;}
+    if(r.t==='sb'){sb=r;where[r.id]={ens:ens?ens.lb||'':'',sb:r.lb||'',pk:r.pk};return;}
+    if(r.t==='act')where[r.id]={ens:ens?ens.lb||'':'',sb:sb?sb.lb||'':'',task:r.lb||'',pk:r.pk};});})();
   let used=0;
   Object.keys(STORE.projects).forEach(bk=>{
     const p=STORE.projects[bk];if(!p||!p.fh)return;
@@ -19103,9 +19109,10 @@ function renderHeures(){
             const h=+(l.hours||l.h)||0;if(!h)return;
             used+=h;
             const n=String(nm).trim();
-            if(!pm[n])pm[n]={name:n,total:0,by:{},ents:new Set()};
+            if(!pm[n])pm[n]={name:n,total:0,by:{},wk:{},ents:new Set()};
             pm[n].total+=h;
             const k=l.actId||'';pm[n].by[k]=(pm[n].by[k]||0)+h;
+            pm[n].wk[wk]=(pm[n].wk[wk]||0)+h;
           });
         });
       });
@@ -19115,46 +19122,92 @@ function renderHeures(){
   Object.values(pm).forEach(ps=>{
     const g=(STORE.globalPersons||{})[ps.name];if(g&&g.type)ps.ents.add(g.type);
     ps.total=Math.round(ps.total*10)/10;
-    ps.acts=Object.keys(ps.by).map(k=>{const r=rows[k];return {lb:r?(r.lb||r.pk):(k?'(ligne supprimée du planning)':'(sous-phase non précisée)'),h:Math.round(ps.by[k]*10)/10,ph:r?r.pk:''};}).sort((a,b)=>b.h-a.h);
+    ps.acts=Object.keys(ps.by).map(k=>{const r=rows[k],w=where[k]||{};
+      return {lb:r?(w.sb||r.lb||r.pk):(k?'(ligne supprimée du planning)':'Heures générales (sans sous-phase)'),task:r&&r.t==='act'?w.task:'',ens:w.ens||'',h:Math.round(ps.by[k]*10)/10,ph:r?r.pk:''};}).sort((a,b)=>b.h-a.h);
   });
   const rem=Math.round((bud-used)*10)/10,pct=bud?Math.min(100,used/bud*100):0;
   const bc=pct>90?'var(--rd)':pct>70?'var(--or)':'var(--gn)';
   const sorted=Object.values(pm).sort((a,b)=>b.total-a.total);
-  // Visuel de la maquette (05/10/2026) : mêmes chiffres qu'avant, présentés en cartes par personne
+  const open=window._hrOpen&&pm[window._hrOpen]?window._hrOpen:null;
+  if(!open)window._hrOpen=null;
+  // la personne ouverte passe en premier (en haut à gauche), sur toute la largeur
+  const list=open?[pm[open]].concat(sorted.filter(p=>p.name!==open)):sorted;
   const r1=v=>String(Math.round((+v||0)*10)/10).replace('.',',');
   const gp=STORE.globalPersons||{};
   const TYC={ELS:['#E3DFFB','#5447D6'],Interim:['#FDF0D6','#9A6410'],'S-T':['#FBDFE6','#C03060'],Alternant:['#DCFCE7','#15803D'],Stagiaire:['#E0F2FE','#0369A1']};
   const ini=n=>{const w=String(n).trim().split(/\s+/);return ((w[0]||'').charAt(0)+(w.length>1?w[w.length-1].charAt(0):(w[0]||'').charAt(1))).toUpperCase();};
   const tyPill=t=>{const c=TYC[t]||['#F1EFF8','#4A4766'];return `<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:8px;white-space:nowrap;background:${c[0]};color:${c[1]}">${escHtml(t)}</span>`;};
-  let cards=sorted.map(ps=>{
+  const dot=ph=>`<span style="width:7px;height:7px;border-radius:2px;flex-shrink:0;background:${ph?PH_get(ph).h:'#CBC7DE'}"></span>`;
+  const ensTag=e=>e?`<span style="flex-shrink:0;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:7px;background:#F1EFF8;color:#4A4766">${escHtml(e)}</span>`:'';
+  const js=s=>String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+  let cards=list.map(ps=>{
     const ents=[...ps.ents];
     const ty=ents[0]||((gp[ps.name]||{}).type)||'';
     const col=(TYC[ty]||['','#4B3FC7'])[1];
     const share=used?Math.round(ps.total*100/used):0;
-    return `<div style="flex:1 1 260px;max-width:420px;background:#fff;border:1px solid #E4E1F0;border-radius:14px;padding:14px 16px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="width:34px;height:34px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:${col};color:#fff;font-size:13px;font-weight:800">${escHtml(ini(ps.name))}</span>
-        <div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#1C1A33;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(ps.name)}</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">${(ents.length?ents:(ty?[ty]:[])).map(tyPill).join('')}</div></div>
-        <div style="text-align:right;flex-shrink:0"><div style="font-size:18px;font-weight:800;color:#1C1A33">${r1(ps.total)} h</div><div style="font-size:11px;color:#6B6790">${share} % de l’affaire</div></div>
-      </div>
-      <div style="margin-top:10px;display:flex;flex-direction:column;gap:4px">${ps.acts.map(a=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:#4A4766"><span style="display:flex;align-items:center;gap:6px;min-width:0"><span style="width:7px;height:7px;border-radius:2px;flex-shrink:0;background:${a.ph?PH_get(a.ph).h:'#CBC7DE'}"></span><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.lb)}</span></span><b style="flex-shrink:0;color:#1C1A33">${r1(a.h)} h</b></div>`).join('')}
-        ${!ps.acts.length?'<div style="font-size:12px;color:#9A96B3">Aucune heure</div>':''}</div>
-    </div>`;
+    const isOpen=ps.name===open;
+    const head=`<button type="button" class="hr-head" onclick="hrToggle('${js(ps.name)}')" aria-expanded="${isOpen}" title="${isOpen?'Refermer':'Voir le détail des heures'}">
+        <span style="width:${isOpen?44:34}px;height:${isOpen?44:34}px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:${col};color:#fff;font-size:${isOpen?16:13}px;font-weight:800;transition:all .25s">${escHtml(ini(ps.name))}</span>
+        <span style="flex-grow:1;min-width:0;text-align:left"><span style="display:block;font-size:${isOpen?17:14}px;font-weight:800;color:#1C1A33;line-height:1.25;word-break:break-word">${escHtml(ps.name)}</span><span style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${(ents.length?ents:(ty?[ty]:[])).map(tyPill).join('')}</span></span>
+        <span style="text-align:right;flex-shrink:0"><span style="display:block;font-size:${isOpen?22:18}px;font-weight:800;color:#1C1A33">${r1(ps.total)} h</span><span style="font-size:11px;color:#6B6790">${share} % de l’affaire</span></span>
+        <span class="hr-chev" aria-hidden="true" style="transform:rotate(${isOpen?180:0}deg)">▾</span></button>`;
+    if(!isOpen){
+      const top=ps.acts.slice(0,4);
+      return `<div class="hr-card" data-hr="${escHtml(ps.name)}">${head}
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">${top.map(a=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:#4A4766"><span style="display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap">${dot(a.ph)}${ensTag(a.ens)}<span>${escHtml(a.lb)}</span></span><b style="flex-shrink:0;color:#1C1A33">${r1(a.h)} h</b></div>`).join('')}
+        ${ps.acts.length>4?`<div style="font-size:12px;color:#4B3FC7;font-weight:700;margin-top:2px">+ ${ps.acts.length-4} autre${ps.acts.length-4>1?'s':''} · cliquez pour le détail</div>`:''}
+        ${!ps.acts.length?'<div style="font-size:12px;color:#9A96B3">Aucune heure</div>':''}</div></div>`;
+    }
+    // ── Détail : par sous-ensemble (PAE 4, PAE 5…) puis sous-phase, et par semaine ──
+    const groups={};ps.acts.forEach(a=>{const g=a.ens||'Hors sous-ensemble';(groups[g]=groups[g]||{name:g,h:0,items:[]}).h+=a.h;groups[g].items.push(a);});
+    const gl=Object.values(groups).sort((a,b)=>{if(a.name==='Hors sous-ensemble')return 1;if(b.name==='Hors sous-ensemble')return -1;return a.name.localeCompare(b.name,'fr',{numeric:true});});
+    const maxG=Math.max.apply(null,gl.map(g=>g.h).concat([1]));
+    const ens=gl.map(g=>`<div class="hr-grp"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><b style="font-size:13.5px;color:#1C1A33;flex-shrink:0">${escHtml(g.name)}</b><span style="flex:1;height:6px;border-radius:3px;background:#EFEDF7;overflow:hidden"><span style="display:block;height:100%;width:${Math.round(g.h*100/maxG)}%;background:${col}"></span></span><b style="font-size:13.5px;flex-shrink:0">${r1(g.h)} h</b></div>
+        ${g.items.map(a=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:#4A4766;padding:3px 0 3px 12px;border-left:2px solid #EFEDF7"><span style="display:flex;align-items:center;gap:6px;min-width:0">${dot(a.ph)}<span>${escHtml(a.lb)}${a.task?` <span style="color:#9A96B3">› ${escHtml(a.task)}</span>`:''}</span></span><b style="flex-shrink:0;color:#1C1A33">${r1(a.h)} h</b></div>`).join('')}</div>`).join('');
+    const wks=Object.keys(ps.wk).map(Number).sort((a,b)=>a-b),maxW=Math.max.apply(null,wks.map(w=>ps.wk[w]).concat([1]));
+    const wkHtml=wks.map(w=>{const d=wkD(w);return `<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#4A4766"><span style="width:92px;flex-shrink:0"><b style="color:#1C1A33">S${isoWeekOf(w)}</b> <span style="color:#9A96B3">${d?fmt(d):''}</span></span><span style="flex:1;height:8px;border-radius:4px;background:#EFEDF7;overflow:hidden"><span style="display:block;height:100%;width:${Math.round(ps.wk[w]*100/maxW)}%;background:${col};opacity:.75"></span></span><b style="width:52px;text-align:right;color:#1C1A33">${r1(ps.wk[w])} h</b></div>`;}).join('');
+    return `<div class="hr-card hr-open" data-hr="${escHtml(ps.name)}">${head}
+      <div class="hr-detail">
+        <div><div class="hr-sub">PAR SOUS-ENSEMBLE ET SOUS-PHASE</div>${ens||'<div style="font-size:12px;color:#9A96B3">Aucune heure</div>'}</div>
+        <div><div class="hr-sub">PAR SEMAINE (${wks.length})</div><div style="display:flex;flex-direction:column;gap:5px">${wkHtml}</div></div>
+      </div></div>`;
   }).join('');
   if(!sorted.length)cards='<div style="color:#9A96B3;font-size:13px">Aucune heure saisie.</div>';
   const kpi=(l,v,c,sub,extra)=>`<div style="flex:1 1 220px;background:#FBFAFF;border:1px solid #EFEDF7;border-radius:14px;padding:12px 14px"><div style="font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px">${l}</div><div style="font-size:22px;font-weight:800;margin-top:4px;color:${c}">${v}</div><div style="font-size:11.5px;color:#6B6790;margin-top:2px">${sub}</div>${extra||''}</div>`;
   const _inf=(currP().infos)||{};
-  document.getElementById('hw').innerHTML=`
+  const hw=document.getElementById('hw');
+  // Animation : on note où était chaque carte avant de redessiner, puis on la fait glisser vers sa nouvelle place
+  const before={};if(window._hrAnim&&hw)hw.querySelectorAll('.hr-card').forEach(c=>{before[c.getAttribute('data-hr')]=c.getBoundingClientRect();});
+  hw.innerHTML=`
     <div style="display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       ${kpi('HEURES UTILISÉES',r1(used)+' h','#1C1A33','Saisies dans les feuilles d’heure',`<div style="height:8px;background:#EFEDF7;border-radius:4px;overflow:hidden;margin-top:8px"><div style="height:100%;border-radius:4px;background:${bc};width:${pct}%"></div></div><div style="font-size:11px;color:#6B6790;margin-top:4px">${bud?(used/bud*100).toFixed(1).replace('.',',')+' % des '+r1(bud)+' h vendues':'Aucune heure vendue saisie'}</div>`)}
       ${kpi('HEURES RESTANTES',r1(Math.max(0,rem))+' h',rem<0?'#B91C1C':rem<bud*.1?'#B45309':'#15803D','Sur '+r1(bud)+' h vendues',rem<0?`<div style="display:inline-block;margin-top:8px;padding:4px 10px;background:#FEF2F2;color:#B91C1C;border:1px solid #FECACA;border-radius:9px;font-size:12px;font-weight:800">⚠ Dépassement : +${r1(Math.abs(rem))} h</div>`:'')}
     </div>
     <section style="background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:18px 20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px"><div><div style="font-size:16px;font-weight:800;color:#1C1A33">⏱ Heures par personne — ${escHtml(_inf.numero||STORE.current)}</div><div style="font-size:12.5px;color:#6B6790;margin-top:2px">${sorted.length} personne${sorted.length>1?'s':''} · heures reprises des feuilles d’heure</div></div></div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap">${cards}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px"><div><div style="font-size:16px;font-weight:800;color:#1C1A33">⏱ Heures par personne — ${escHtml(_inf.numero||STORE.current)}</div><div style="font-size:12.5px;color:#6B6790;margin-top:2px">${sorted.length} personne${sorted.length>1?'s':''} · heures reprises des feuilles d’heure · cliquez sur une personne pour le détail</div></div></div>
+      <div class="hr-grid">${cards}</div>
     </section>
     </div>`;
+  if(window._hrAnim){
+    window._hrAnim=false;
+    hw.querySelectorAll('.hr-card').forEach(c=>{
+      const b=before[c.getAttribute('data-hr')];if(!b)return;
+      const a=c.getBoundingClientRect(),dx=b.left-a.left,dy=b.top-a.top;
+      if(!dx&&!dy)return;
+      c.style.transition='none';c.style.transform='translate('+dx+'px,'+dy+'px)';
+      requestAnimationFrame(()=>{requestAnimationFrame(()=>{c.style.transition='transform .35s cubic-bezier(.2,.8,.2,1)';c.style.transform='';});});
+    });
+    const oc=hw.querySelector('.hr-open');
+    const sc=document.getElementById('pers-heures');
+    if(oc&&sc){const top=oc.getBoundingClientRect().top-sc.getBoundingClientRect().top+sc.scrollTop-12;try{sc.scrollTo({top:Math.max(0,top),behavior:'smooth'});}catch(e){sc.scrollTop=Math.max(0,top);}}
+  }
+}
+// Clic sur une personne : son détail s'ouvre en haut à gauche (avec une petite transition) ; re-clic = refermer
+function hrToggle(nm){
+  window._hrOpen=window._hrOpen===nm?null:nm;
+  window._hrAnim=true;
+  renderHeures();
 }
 
 // ═══════════════════════════════
@@ -22477,8 +22530,8 @@ body[data-sec="affaire"] #sbar .sec-move{display:none!important}
 #sec-side{display:none;position:fixed;left:0;bottom:0;z-index:150;background:#fff;border-right:1px solid var(--bd);flex-direction:column;font-family:inherit}
 body[data-sec="affaire"] #sec-side{display:flex}
 /* Barre du haut (comme la maquette) : ‹ Accueil · PétroSphère | Affaires … ✓ Sauvegardé · ↩ Annuler · utilisateur */
-body[data-sec] #nav{height:60px;background:#fff;border-bottom:1px solid #E4E1F0;box-shadow:none;padding:8px 20px;gap:14px}
-body[data-sec] #nav > button:first-child{height:38px!important;padding:0 14px!important;border-radius:10px!important;border:1px solid #E4E1F0!important;background:#F6F5FB!important;color:#1C1A33!important;font-size:13px!important;font-weight:800!important;margin-right:0!important}
+body[data-sec] #nav{height:52px;background:#fff;border-bottom:1px solid #E4E1F0;box-shadow:none;padding:6px 20px;gap:14px}
+body[data-sec] #nav > button:first-child{height:34px!important;padding:0 14px!important;border-radius:10px!important;border:1px solid #E4E1F0!important;background:#F6F5FB!important;color:#1C1A33!important;font-size:13px!important;font-weight:800!important;margin-right:0!important}
 body[data-sec] #nav .brand{display:none!important}
 #sec-brand{display:none;font-size:18px;font-weight:800;color:#C81E1E;white-space:nowrap}
 body[data-sec] #sec-brand{display:block}
@@ -22534,6 +22587,31 @@ body[data-sec="affaire"].gc-pan #sec-affbar{margin-right:400px}
 /* GANTT — nouveau visuel */
 #gantt-view-btns,#gantt-view-sep{display:none!important}
 #gw{position:relative}
+/* Onglet Heures : cartes par personne, détail qui s'ouvre en haut à gauche (renderHeures / hrToggle) */
+.hr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
+.hr-card{background:#fff;border:1px solid #E4E1F0;border-radius:14px;padding:14px 16px;min-width:0;transition:border-color .15s,box-shadow .2s}
+.hr-card:hover{border-color:#C7C1F5}
+.hr-card.hr-open{grid-column:1/-1;border-color:#C7C1F5;box-shadow:0 10px 30px rgba(60,40,160,.10);position:relative;z-index:2}
+.hr-head{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:left;color:inherit}
+.hr-chev{flex-shrink:0;color:#6B6790;font-size:14px;transition:transform .25s;width:20px;text-align:center}
+.hr-detail{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:28px;margin-top:16px;padding-top:14px;border-top:1px solid #EFEDF7;animation:hrIn .35s ease both}
+@media(max-width:900px){.hr-detail{grid-template-columns:1fr}}
+.hr-grp{margin-bottom:14px}
+.hr-sub{font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px;margin-bottom:10px}
+@keyframes hrIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+/* En-tête de l'affaire resserré : titre + boutons sur une ligne, sous-onglets + cases d'infos sur la ligne suivante */
+body[data-sec="affaire"] #sec-affbar{margin-top:10px;padding:10px 16px 0 16px}
+body[data-sec="affaire"] #app-shell > .tab{margin-top:10px;margin-bottom:12px}
+#sec-affbar .sec-ttl{font-size:19px;margin-top:0}
+#sec-affbar .sec-btn{height:34px}
+.sec-row2{display:flex;align-items:flex-end;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin-top:6px}
+.sec-row2 .sec-sub{margin-top:0}
+.sec-row2 .sec-subt{height:38px;padding:0 13px;font-size:13.5px}
+.sec-row2 .sec-chips{margin-top:0;padding-bottom:6px;gap:6px}
+.sec-row2 .sec-chip{padding:3px 8px;font-size:11.5px}
+.sec-row2 .sec-chip.in{padding:1px 6px 1px 8px}
+.sec-row2 .sec-lbl{font-size:10px}
+#sec-affbar .sec-row2 #inp-bud{height:24px!important;width:72px!important;font-size:12px!important}
 /* Feuille d'heure — visuel de la maquette (fhBuildDayCell / fhBuildPersonWeekBlock / renderFiche) */
 .fhx-card{background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:14px 18px;margin-bottom:14px}
 .fhx-card .fhx-ctrl{margin-bottom:0}
@@ -22768,15 +22846,15 @@ window.PetroNav=(function(){
     }
     var canEdit=secVis('#nav [onclick="openPlanEditor()"]');
     var h=(closed?'<div style="display:flex;align-items:center;gap:10px;justify-content:space-between;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:13px;font-weight:700;color:#334155"><span>🗄 Affaire archivée : elle n’apparaît plus dans les listes de choix (feuilles d’heure, planning réunion).</span>'+(secVis('#sbar .btn-da[onclick*="openModal("]')?'<button type="button" class="sec-btn" style="height:30px" data-secact="PetroNav.unarchive()">✓ Désarchiver</button>':'')+'</div>':'')
-      +'<div class="sec-hd"><div style="min-width:0;flex:1 1 320px"><div class="sec-ttl-lbl">AFFAIRE</div><div class="sec-ttl">'+esc(typeof getAffLabel==='function'?getAffLabel(k):k)+'</div></div>'
+      +'<div class="sec-hd" style="align-items:center"><div style="min-width:0;flex:1 1 320px"><div class="sec-ttl" title="Affaire">'+esc(typeof getAffLabel==='function'?getAffLabel(k):k)+'</div></div>'
       +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
     if(canEdit&&nbOn()==='gantt'){var _st=!!window._gcStruct;h+='<button type="button" class="sec-btn '+(_st?'pri':'soft')+'" data-secact="openPlanEditor()" title="Ajouter, renommer, déplacer ou supprimer phases, ensembles, sous-phases et tâches">✏️ '+(_st?'Terminer la modification':'Modifier la structure')+'</button>';}
     if(secVis('#sbar .btn-da[onclick*="openAffaireInfos"]'))h+='<button type="button" class="sec-btn" data-secact="openAffaireInfos()" title="Infos affaire" aria-label="Infos affaire">ℹ️</button>';
     if(dl.length)h+='<div style="position:relative"><button type="button" class="sec-btn pri" data-secmenu="dl">📥 Télécharger ▾</button>'+(S.menu==='dl'?'<div class="sec-menu">'+dl.map(function(x){return '<button type="button" class="sec-mi" data-secact="'+esc(x[0])+'">'+x[1]+'<small>'+x[2]+'</small></button>';}).join('')+'</div>':'')+'</div>';
     if(more.length)h+='<div style="position:relative"><button type="button" class="sec-btn" data-secmenu="more" aria-label="Plus d’actions" title="Plus d’actions">⋯</button>'+(S.menu==='more'?'<div class="sec-menu" style="min-width:300px">'+more.map(function(x){return '<button type="button" class="sec-mi" data-secact="'+esc(x[0])+'"'+(x[2]?' style="color:#B91C1C"':'')+'>'+x[1]+'</button>';}).join('')+'</div>':'')+'</div>';
     h+='</div></div>';
-    h+='<div class="sec-chips">'+chipsHtml(k)+'</div>';
-    h+='<nav class="sec-sub">'+tabsHtml('sec-subt')+'</nav>';
+    // sous-onglets et cases d'infos sur la même ligne (en-tête plus court = planning plus grand)
+    h+='<div class="sec-row2"><nav class="sec-sub">'+tabsHtml('sec-subt')+'</nav><div class="sec-chips">'+chipsHtml(k)+'</div></div>';
     bar.innerHTML=h;
     placeBud(bar);bindTabs(bar);
     bar.querySelectorAll('[data-secmenu]').forEach(function(b){b.onclick=function(e){e.stopPropagation();var m=b.getAttribute('data-secmenu');S.menu=S.menu===m?null:m;renderBar();};});
