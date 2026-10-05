@@ -6522,7 +6522,7 @@ function deleteFortuit(aff,idx){
 function isPersonAbsent(personName,wk){
   if(!STORE.absences||!STORE.absences[personName])return false;
   var d=STORE.absences[personName];
-  return d.school&&d.school.indexOf(wk)>=0;
+  return altWeekHasSchool(personName,wk);
 }
 
 
@@ -6573,7 +6573,8 @@ function absToggle(person,wk){
 
 
 function absReset(person){
-  if(STORE.absences)STORE.absences[person]={school:[],company:[]};
+  // n'efface QUE l'école / l'entreprise (avant : effaçait aussi les congés, formations et absences de la personne)
+  if(STORE.absences&&STORE.absences[person]){var _a=STORE.absences[person];_a.school=[];_a.company=[];delete _a.altDays;}
   saveNow();renderAbsences();
 }
 
@@ -8482,7 +8483,7 @@ function dbBuildPlanningGrid(){
       var _isAbsenceDay=_absenceDays.indexOf(_dayKey)>=0;
       // Vérifier alternant à l'école pour CETTE semaine
       var _absData=STORE.absences&&STORE.absences[nm];
-      var _isEcole=_absData&&(_absData.school||[]).indexOf(selWk)>=0;
+      var _isEcole=_absData&&altDayStatus(nm,_dayKey,selWk)==='S'; // jour par jour (alternants)
       if(_isConge){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#FEE2E2,#FECACA);border-bottom:1px solid var(--bd);vertical-align:middle"><div style="font-size:20px">🏖</div><div style="font-size:11px;font-weight:800;color:#DC2626;margin-top:2px">Congé</div></td>';return;}
       if(_isFormation){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#EDE9FE,#DDD6FE);border-bottom:1px solid var(--bd);vertical-align:middle"><div style="font-size:20px">📚</div><div style="font-size:11px;font-weight:800;color:#6D28D9;margin-top:2px">Formation</div></td>';return;}
       if(_isAbsenceDay){html+='<td style="padding:8px 4px;text-align:center;background:linear-gradient(135deg,#F3F4F6,#E5E7EB);border-bottom:1px solid var(--bd);vertical-align:middle"><div style="font-size:20px">🚫</div><div style="font-size:11px;font-weight:800;color:#374151;margin-top:2px">Absence</div></td>';return;}
@@ -8952,8 +8953,94 @@ function _personDayStatus(nm,dateISO,wk){
   if(dateISO&&(ad.congesDays||[]).indexOf(dateISO)>=0)return {type:'conge',icon:'🏖',label:'Congé',color:'#DC2626',bg:'#FEE2E2',bg2:'#FECACA'};
   if(dateISO&&(ad.formationDays||[]).indexOf(dateISO)>=0)return {type:'formation',icon:'📚',label:'Formation',color:'#6D28D9',bg:'#EDE9FE',bg2:'#DDD6FE'};
   if(dateISO&&(ad.absenceDays||[]).indexOf(dateISO)>=0)return {type:'absence',icon:'🚫',label:'Absence',color:'#374151',bg:'#F3F4F6',bg2:'#E5E7EB'};
-  if(wk!=null&&(ad.school||[]).indexOf(wk)>=0)return {type:'ecole',icon:'🏫',label:'École',color:'#6457F4',bg:'#EFEDFE',bg2:'#DCD8FB'};
+  if(altDayStatus(nm,dateISO,wk)==='S')return {type:'ecole',icon:'🏫',label:'École',color:'#6457F4',bg:'#EFEDFE',bg2:'#DCD8FB'};
   return null;
+}
+// ── Alternants : école / entreprise JOUR PAR JOUR (05/10/2026) ──
+// ad.altDays = {'AAAA-MM-JJ':'S' (école) | 'C' (entreprise) | '-' (rien)} : le jour précis gagne.
+// Sinon on reprend l'ancienne saisie par semaine (ad.school / ad.company), toujours valable.
+function altDayStatus(nm,dateISO,wk){
+  var ad=STORE.absences&&STORE.absences[nm];
+  if(!ad)return '';
+  if(dateISO&&ad.altDays&&ad.altDays[dateISO]!=null){var v=ad.altDays[dateISO];return v==='S'||v==='C'?v:'';}
+  if(wk==null&&dateISO){var _d=new Date(dateISO+'T12:00:00');if(!isNaN(_d))wk=_weekOfDate(_d);}
+  if(wk!=null){
+    if((ad.school||[]).indexOf(wk)>=0)return 'S';
+    if((ad.company||[]).indexOf(wk)>=0)return 'C';
+  }
+  return '';
+}
+function _altDKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// Au moins un jour d'école dans la semaine (alertes « est à l'école »)
+function altWeekHasSchool(nm,wk){
+  for(var di=0;di<5;di++){var d=weekDayToDate(wk,di);if(d&&altDayStatus(nm,_altDKey(d),wk)==='S')return true;}
+  return false;
+}
+function altSetDay(nm,dateISO,v){
+  if(!STORE.absences)STORE.absences={};
+  if(!STORE.absences[nm])STORE.absences[nm]={school:[],company:[]};
+  var ad=STORE.absences[nm];if(!ad.altDays)ad.altDays={};
+  // valeur venue de la semaine (ancienne saisie) : pas besoin de la recopier jour par jour
+  var _d=new Date(dateISO+'T12:00:00'),wk=_weekOfDate(_d);
+  var wkV=(ad.school||[]).indexOf(wk)>=0?'S':(ad.company||[]).indexOf(wk)>=0?'C':'';
+  if((v||'')===wkV)delete ad.altDays[dateISO];else ad.altDays[dateISO]=v||'-';
+}
+// Clic sur un jour : rien → École → Entreprise → rien
+function altToggleDay(nm,dateISO){
+  var cur=altDayStatus(nm,dateISO,null);
+  altSetDay(nm,dateISO,cur===''?'S':cur==='S'?'C':'');
+  saveNow();renderAbsences();
+}
+// Période : du … au …, seulement les jours cochés (L M M J V), en École / Entreprise / effacer
+function altApplyPeriod(nm,v){
+  var s=document.getElementById('alt-p-start'),e=document.getElementById('alt-p-end');
+  if(!s||!e||!s.value||!e.value){alert('Choisissez la date de début et la date de fin.');return;}
+  var dows=[].slice.call(document.querySelectorAll('.alt-p-dow')).filter(function(c){return c.checked;}).map(function(c){return +c.value;});
+  if(!dows.length){alert('Cochez au moins un jour de la semaine.');return;}
+  var d=new Date(s.value+'T12:00:00'),end=new Date(e.value+'T12:00:00');
+  if(d>end){var t=d;d=end;end=t;}
+  var n=0;
+  for(var c=new Date(d);c<=end&&n<800;c.setDate(c.getDate()+1)){
+    var dow=c.getDay();if(dow===0||dow===6||dows.indexOf(dow)<0)continue;
+    altSetDay(nm,_altDKey(c),v);n++;
+  }
+  saveNow();renderAbsences();
+}
+// Calendrier d'une année scolaire (septembre → août), même présentation que les Congés
+function buildAltCalendar(name){
+  var now=new Date(),y0=window._altYear!=null?window._altYear:(now.getMonth()>=8?now.getFullYear():now.getFullYear()-1);
+  window._altYear=y0;
+  var moisFr=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var todayK=_altDKey(now),html='';
+  for(var i=0;i<12;i++){
+    var m=(8+i)%12,year=y0+(8+i>=12?1:0);
+    var firstDay=new Date(year,m,1),lastDay=new Date(year,m+1,0);
+    var nS=0,nC=0,cells='';
+    var offset=(firstDay.getDay()+6)%7;
+    for(var o=0;o<offset;o++)cells+='<div></div>';
+    for(var day=1;day<=lastDay.getDate();day++){
+      var d2=new Date(year,m,day),dow=d2.getDay(),k=_altDKey(d2),isWE=dow===0||dow===6;
+      var st=isWE?'':altDayStatus(name,k,null);if(st==='S')nS++;else if(st==='C')nC++;
+      var isToday=k===todayK;
+      var bg=st==='S'?'#3B82F6':st==='C'?'#22C55E':isWE?'var(--bg3)':isToday?'#FEF08A':'var(--bg2)';
+      var color=st?'#fff':isWE?'var(--tx3)':'var(--tx)';
+      var border=isToday?'1px solid #EAB308':st==='S'?'1px solid #2563EB':st==='C'?'1px solid #16A34A':'1px solid var(--bd)';
+      var tip=isWE?'':(st==='S'?'École':st==='C'?'Entreprise':'Non défini')+' — cliquer pour changer';
+      cells+='<div'+(isWE?'':' onclick="altToggleDay(this.dataset.nm,this.dataset.k)" data-nm="'+name.replace(/"/g,'&quot;')+'" data-k="'+k+'"')+' title="'+tip+'" style="text-align:center;font-size:10px;font-weight:'+(st?'700':'500')+';padding:3px 1px;border-radius:3px;background:'+bg+';color:'+color+';border:'+border+';cursor:'+(isWE?'default':'pointer')+';user-select:none">'+day+'</div>';
+    }
+    html+='<div style="display:inline-block;vertical-align:top;margin:0 8px 16px 0;width:210px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span style="font-size:11px;font-weight:800;color:var(--tx2);text-transform:uppercase;letter-spacing:.8px">'+moisFr[m]+' '+year+'</span><span style="font-size:9.5px;font-weight:700"><span style="color:#2563EB">'+(nS?nS+'É':'')+'</span> <span style="color:#16A34A">'+(nC?nC+'E':'')+'</span></span></div>'
+      +'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">'
+      +['L','M','M','J','V','S','D'].map(function(dd){return '<div style="text-align:center;font-size:9px;font-weight:700;color:var(--tx3);padding:2px 0">'+dd+'</div>';}).join('')
+      +cells+'</div></div>';
+  }
+  return html;
+}
+// Nombre de jours d'école / d'entreprise sur l'année scolaire affichée
+function altYearCounts(name){
+  var y0=window._altYear,s=0,c=0,d=new Date(y0,8,1),end=new Date(y0+1,7,31);
+  for(;d<=end;d.setDate(d.getDate()+1)){var dow=d.getDay();if(dow===0||dow===6)continue;var st=altDayStatus(name,_altDKey(d),null);if(st==='S')s++;else if(st==='C')c++;}
+  return {s:s,c:c};
 }
 function getCongesDays(name){
   if(!STORE.absences||!STORE.absences[name]||!STORE.absences[name].congesDays)return [];
@@ -9265,68 +9352,56 @@ function renderAbsences(){
   } else if(absTab==='formation'||absTab==='absence'){
     bodyHtml=_renderAbsDayTabBody(absTab,allNames,_gp,selP);
   } else {
-    // ── Alternants/Stagiaires (code existant)
-    var selAlt=window._absPerson||(altPersons.length?altPersons[0].name:'');
+    // ── Alternants/Stagiaires : calendrier JOUR PAR JOUR, comme les Congés (05/10/2026)
+    var selAlt=window._absPerson;
+    if(!altPersons.some(function(ap){return ap.name===selAlt;}))selAlt=altPersons.length?altPersons[0].name:'';
     if(!altPersons.length){
-      bodyHtml='<div style="text-align:center;padding:60px 24px;background:var(--bg2);border-radius:16px;border:2px dashed var(--bd)"><div style="font-size:48px;margin-bottom:16px">👤</div><div style="font-size:16px;font-weight:700;color:var(--tx);margin-bottom:8px">Aucun alternant ou stagiaire</div><div style="font-size:13px;color:var(--tx3)">Ajoutez des personnes avec le statut Alternant ou Stagiaire dans l\'éditeur</div></div>';
+      bodyHtml='<div style="text-align:center;padding:60px 24px;background:var(--bg2);border-radius:16px;border:2px dashed var(--bd)"><div style="font-size:48px;margin-bottom:16px">👤</div><div style="font-size:16px;font-weight:700;color:var(--tx);margin-bottom:8px">Aucun alternant ou stagiaire</div><div style="font-size:13px;color:var(--tx3)">Ajoutez des personnes avec le statut Alternant ou Stagiaire dans l\'annuaire</div></div>';
     } else {
-      var absData=STORE.absences[selAlt]||{school:[],company:[]};
-      var schoolWks=absData.school||[],companyWks=absData.company||[];
-      var months=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-      var weekToMonth={},monthToWeeks={};
-      for(var wk=PLANNING_YEAR_OFFSET+1;wk<=GANTT_WIDE_WEEKS;wk++){var d=weekDayToDate(wk,0);var moKey=d.getFullYear()+'-'+d.getMonth();weekToMonth[wk]=moKey;if(!monthToWeeks[moKey])monthToWeeks[moKey]=[];monthToWeeks[moKey].push(wk);}
-      var nS=schoolWks.length,nC=companyWks.length,total=nS+nC;
-      var pctS=total?Math.round(nS/total*100):0,pctC=total?100-pctS:0;
+      var _esc=function(s){return String(s).replace(/'/g,"\\'");};
+      var calHtml2=buildAltCalendar(selAlt); // fixe aussi window._altYear
+      var y0=window._altYear,cnt=altYearCounts(selAlt),tot=cnt.s+cnt.c;
+      var pctS=tot?Math.round(cnt.s/tot*100):0,pctC=tot?100-pctS:0;
       var personTabs2='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">';
       altPersons.forEach(function(ap){
         var isSel=ap.name===selAlt;
-        var ad=STORE.absences[ap.name]||{school:[],company:[]};
-        var ns=(ad.school||[]).length;
-        personTabs2+='<button onclick="window._absPerson=\''+ap.name.replace(/'/g,"\\'")+'\';window._absTab=\'altstagaire\';renderAbsences()" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;border:2px solid '+(isSel?'var(--ac)':'var(--bd)')+';background:'+(isSel?'var(--ac)':'var(--bg2)')+';color:'+(isSel?'#fff':'var(--tx2)')+'">'+ap.name+'<span style="opacity:.65;font-size:10px;margin-left:6px">'+ap.type+'</span>'+(ns?'<span style="margin-left:8px;background:'+(isSel?'rgba(255,255,255,.2)':'#DBEAFE')+';color:'+(isSel?'#fff':'#1D4ED8')+';border-radius:20px;padding:2px 8px;font-size:10px">'+ns+' sem.</span>':'')+'</button>';
+        personTabs2+='<button onclick="window._absPerson=\''+_esc(ap.name)+'\';window._absTab=\'altstagaire\';renderAbsences()" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;border:2px solid '+(isSel?'var(--ac)':'var(--bd)')+';background:'+(isSel?'var(--ac)':'var(--bg2)')+';color:'+(isSel?'#fff':'var(--tx2)')+'">'+escHtml(ap.name)+'<span style="opacity:.65;font-size:10px;margin-left:6px">'+ap.type+'</span></button>';
       });
       personTabs2+='</div>';
-      var statsBar2='';
-      if(total>0){
-        statsBar2='<div style="background:var(--bg2);border:2px solid var(--bd);border-radius:14px;padding:20px;margin-bottom:24px;display:flex;gap:32px;align-items:center">';
-        statsBar2+='<div style="text-align:center"><div style="font-size:32px;font-weight:900;color:#3B82F6">'+nS+'</div><div style="font-size:11px;color:var(--tx3);font-weight:600">SEM. ÉCOLE</div></div>';
-        statsBar2+='<div style="text-align:center"><div style="font-size:32px;font-weight:900;color:#22C55E">'+nC+'</div><div style="font-size:11px;color:var(--tx3);font-weight:600">SEM. ENTREPRISE</div></div>';
-        statsBar2+='<div style="flex:1"><div style="height:14px;background:var(--bg3);border-radius:7px;overflow:hidden;display:flex;margin-bottom:6px"><div style="background:#3B82F6;width:'+pctS+'%"></div><div style="background:#22C55E;width:'+pctC+'%"></div></div><div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700"><span style="color:#3B82F6">🏫 École '+pctS+'%</span><span style="color:#22C55E">🏭 Entreprise '+pctC+'%</span></div></div></div>';
-      }
-      var calHtml2='<div style="display:flex;flex-direction:column;gap:0;border-radius:16px;overflow:hidden;border:2px solid var(--bd)">';
-      var monthOrder2=Object.keys(monthToWeeks).sort(function(a,b){
-        var pa=a.split('-'),pb=b.split('-');
-        return (+pa[0]-+pb[0])||(+pa[1]-+pb[1]);
-      });
-      monthOrder2.forEach(function(moKey){
-        var wks=monthToWeeks[moKey];
-        var _moParts=moKey.split('-'),moYear=+_moParts[0],moIdx=+_moParts[1];
-        calHtml2+='<div style="display:flex;align-items:stretch;border-bottom:1px solid var(--bd)">';
-        calHtml2+='<div style="width:90px;min-width:90px;display:flex;align-items:center;justify-content:center;background:var(--bg3);border-right:2px solid var(--bd);padding:8px"><div style="text-align:center"><div style="font-size:13px;font-weight:800;color:var(--tx2)">'+months[moIdx]+' '+moYear+'</div><div style="font-size:10px;color:var(--tx3)">'+wks.length+' sem.</div></div></div>';
-        calHtml2+='<div style="display:flex;flex:1;gap:0">';
-        wks.forEach(function(wk2){
-          var isS2=schoolWks.indexOf(wk2)>=0,isC2=companyWks.indexOf(wk2)>=0;
-          var isTW2=TODAY&&TODAY.w===wk2;
-          var bg2=isS2?'#DBEAFE':isC2?'#DCFCE7':isTW2?'#FEF9C3':'var(--bg2)';
-          var bc2=isS2?'#3B82F6':isC2?'#22C55E':isTW2?'#EAB308':'var(--bd)';
-          var tc2=isS2?'#1E40AF':isC2?'#15803D':isTW2?'#92400E':'var(--tx3)';
-          var icon2=isS2?'🏫':isC2?'🏭':isTW2?'●':'';
-          calHtml2+='<div onclick="absToggle(\''+selAlt.replace(/'/g,"\\'")+'\','+wk2+')" style="flex:1;min-width:48px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px;background:'+bg2+';border-left:1px solid rgba(0,0,0,.06);border-top:3px solid '+bc2+';user-select:none">'
-            +'<div style="font-size:9px;font-weight:700;color:var(--tx3);margin-bottom:2px">S'+isoWeekOf(wk2)+'</div>'
-            +'<div style="font-size:16px;line-height:1">'+icon2+'</div>'
-            +'<div style="font-size:8px;font-weight:700;color:'+tc2+';margin-top:3px">'+(isS2?'ÉCOLE':isC2?'ENT.':'')+'</div>'
-            +'</div>';
-        });
-        calHtml2+='</div></div>';
-      });
-      calHtml2+='</div>';
-      bodyHtml=personTabs2+statsBar2
-        +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
-        +'<button onclick="absAddPeriod(\''+selAlt.replace(/'/g,"\\'")+'\',\'school\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:#EFF6FF;border:2px solid #BFDBFE;color:#1E40AF">🏫 Ajouter période École</button>'
-        +'<button onclick="absAddPeriod(\''+selAlt.replace(/'/g,"\\'")+'\',\'company\')" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:#F0FDF4;border:2px solid #BBF7D0;color:#15803D">🏭 Ajouter période Entreprise</button>'
-        +'<button onclick="absReset(\''+selAlt.replace(/'/g,"\\'")+'\')\" style="padding:10px 18px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:var(--bg3);border:2px solid var(--bd);color:var(--tx3)">🗑 Effacer tout</button>'
+      var statsBar2='<div style="background:var(--bg2);border:2px solid var(--bd);border-radius:14px;padding:16px 20px;margin-bottom:20px;display:flex;gap:28px;align-items:center;flex-wrap:wrap">'
+        +'<div style="display:flex;align-items:center;gap:6px"><button onclick="window._altYear--;renderAbsences()" title="Année scolaire précédente" style="width:30px;height:30px;border-radius:8px;border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-weight:800">◀</button>'
+        +'<div style="text-align:center;min-width:120px"><div style="font-size:10px;color:var(--tx3);font-weight:700">ANNÉE SCOLAIRE</div><div style="font-size:15px;font-weight:900;color:var(--tx)">'+y0+' – '+(y0+1)+'</div></div>'
+        +'<button onclick="window._altYear++;renderAbsences()" title="Année scolaire suivante" style="width:30px;height:30px;border-radius:8px;border:1px solid var(--bd);background:var(--bg2);cursor:pointer;font-weight:800">▶</button></div>'
+        +'<div style="text-align:center"><div style="font-size:28px;font-weight:900;color:#3B82F6">'+cnt.s+'</div><div style="font-size:11px;color:var(--tx3);font-weight:600">JOURS ÉCOLE</div></div>'
+        +'<div style="text-align:center"><div style="font-size:28px;font-weight:900;color:#22C55E">'+cnt.c+'</div><div style="font-size:11px;color:var(--tx3);font-weight:600">JOURS ENTREPRISE</div></div>'
+        +(tot?'<div style="flex:1;min-width:200px"><div style="height:14px;background:var(--bg3);border-radius:7px;overflow:hidden;display:flex;margin-bottom:6px"><div style="background:#3B82F6;width:'+pctS+'%"></div><div style="background:#22C55E;width:'+pctC+'%"></div></div><div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700"><span style="color:#3B82F6">🏫 École '+pctS+'%</span><span style="color:#22C55E">🏭 Entreprise '+pctC+'%</span></div></div>':'')
+        +'</div>';
+      // Saisie rapide : une période + les jours de la semaine concernés
+      var dowLbl=[[1,'Lun'],[2,'Mar'],[3,'Mer'],[4,'Jeu'],[5,'Ven']];
+      var period='<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);padding:14px 16px;margin-bottom:14px">'
+        +'<div style="font-size:12px;font-weight:800;color:var(--tx2);margin-bottom:10px">📅 Remplir une période</div>'
+        +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+        +'<span style="font-size:12px;color:var(--tx3)">Du</span><input type="date" id="alt-p-start" style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx)">'
+        +'<span style="font-size:12px;color:var(--tx3)">au</span><input type="date" id="alt-p-end" style="border:1px solid var(--bd);border-radius:var(--r);padding:5px 8px;font-size:12px;font-family:inherit;background:var(--bg2);color:var(--tx)">'
+        +'<span style="font-size:12px;color:var(--tx3);margin-left:6px">les</span>'
+        +dowLbl.map(function(x){return '<label style="display:inline-flex;align-items:center;gap:4px;padding:5px 9px;border:1.5px solid var(--bd);border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;background:var(--bg2)"><input type="checkbox" class="alt-p-dow" value="'+x[0]+'" checked style="accent-color:var(--ac)">'+x[1]+'</label>';}).join('')
         +'</div>'
-        +'<div style="font-size:10px;color:var(--tx3);margin-bottom:16px">Cliquez sur une semaine : non défini → École → Entreprise → effacé</div>'
-        +calHtml2;
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+        +'<button onclick="altApplyPeriod(\''+_esc(selAlt)+'\',\'S\')" style="padding:8px 16px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;background:#3B82F6;border:none;color:#fff">🏫 Mettre en École</button>'
+        +'<button onclick="altApplyPeriod(\''+_esc(selAlt)+'\',\'C\')" style="padding:8px 16px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;background:#22C55E;border:none;color:#fff">🏭 Mettre en Entreprise</button>'
+        +'<button onclick="altApplyPeriod(\''+_esc(selAlt)+'\',\'\')" style="padding:8px 16px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:var(--bg3);border:1px solid var(--bd);color:var(--tx2)">Effacer ces jours</button>'
+        +'<span style="flex:1"></span>'
+        +'<button onclick="if(confirm(\'Effacer tout le calendrier école / entreprise de cette personne ?\'))absReset(\''+_esc(selAlt)+'\')" style="padding:8px 14px;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;background:var(--bg3);border:1px solid var(--bd);color:var(--tx3)">🗑 Effacer tout</button>'
+        +'</div>'
+        +'<div style="font-size:11px;color:var(--tx3);margin-top:8px">Exemple : du 01/09 au 30/06, cocher seulement Lun et Mar → 🏭 Entreprise, puis Mer, Jeu, Ven → 🏫 École.</div>'
+        +'</div>';
+      var legend2='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--tx3)">'
+        +'<span><span style="display:inline-block;width:12px;height:12px;background:#3B82F6;border-radius:2px;vertical-align:middle;margin-right:4px"></span>École</span>'
+        +'<span><span style="display:inline-block;width:12px;height:12px;background:#22C55E;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Entreprise</span>'
+        +'<span><span style="display:inline-block;width:12px;height:12px;background:var(--bg3);border-radius:2px;vertical-align:middle;margin-right:4px"></span>Week-end</span>'
+        +'<span><span style="display:inline-block;width:12px;height:12px;background:#FEF08A;border-radius:2px;border:1px solid #EAB308;vertical-align:middle;margin-right:4px"></span>Aujourd\'hui</span>'
+        +'<span>· Clic sur un jour : non défini → École → Entreprise → non défini</span></div>';
+      bodyHtml=personTabs2+statsBar2+period+legend2+calHtml2;
     }
   }
 
@@ -15988,7 +16063,7 @@ function buildExpandPanel(row,ph,nd){
             ${nameOpts}
           </select>
           <span style="${entPillStyle}">${p.ent||''}</span>
-          ${(()=>{if(!p.name)return '';var _ad=STORE.absences&&STORE.absences[p.name];if(!_ad||!_ad.school||!_ad.school.length)return '';var _sw=_ad.school;var _cf=[];for(var _cw=row.s;_cw<=(row.e||row.s);_cw++){if(_sw.indexOf(_cw)>=0)_cf.push(_cw);}if(weekHasCongesDays(p.name,row.s)){return '<span style="font-size:9px;padding:2px 7px;border-radius:10px;background:#FEE2E2;color:#DC2626;border:1px solid #EF4444;font-weight:700">&#127958; En cong&#233;s</span>';}if(!_cf.length)return '';return '<span style="font-size:9px;padding:2px 7px;border-radius:10px;background:#FEE2E2;color:#DC2626;border:1px solid #EF4444;font-weight:700">\uD83C\uDFEB S'+_cf.join(',S')+'</span>';})()}
+          ${(()=>{if(!p.name)return '';var _ad=STORE.absences&&STORE.absences[p.name];if(!_ad)return '';var _cf=[];for(var _cw=row.s;_cw<=(row.e||row.s);_cw++){if(altWeekHasSchool(p.name,_cw))_cf.push(_cw);}if(weekHasCongesDays(p.name,row.s)){return '<span style="font-size:9px;padding:2px 7px;border-radius:10px;background:#FEE2E2;color:#DC2626;border:1px solid #EF4444;font-weight:700">&#127958; En cong&#233;s</span>';}if(!_cf.length)return '';return '<span style="font-size:9px;padding:2px 7px;border-radius:10px;background:#FEE2E2;color:#DC2626;border:1px solid #EF4444;font-weight:700">\uD83C\uDFEB S'+_cf.join(',S')+'</span>';})()}
           <button class="btn-dp" title="Jours d'affectation" onclick="pedDaysModal('${row.id}',${i})" style="background:${p.days&&p.days.length?'#EDE9FE':'var(--bg3)'};color:${p.days&&p.days.length?'#6D28D9':'var(--tx3)'}">📅${p.days&&p.days.length?' '+p.days.length+'j':''}</button>
           <button class="btn-dp" onclick="delP('${row.id}',${i})">×</button>
         </div>`;
@@ -16452,7 +16527,7 @@ function fhLineSet(aff,nm,w,d,li,field,val){
 }
 function fhLineAdd(aff,nm,w,d){
   var absData=STORE.absences&&STORE.absences[nm];
-  if(absData&&absData.school&&absData.school.indexOf(w)>=0){
+  var _fhD=weekDayToDate(w,d);if(absData&&_fhD&&altDayStatus(nm,_altDKey(_fhD),w)==='S'){
     if(!confirm('\u26a0\ufe0f ' + nm + ' est \u00e0 l\u2019\u00e9cole S' + w + ' !\nAjouter quand m\u00eame ?'))return;
   }
   var lines=fhGet(aff,nm,w,d).slice();
@@ -17911,7 +17986,7 @@ function updPAutoEnt(id,i,name){
   if(name&&match&&(match.type==='Alternant'||match.type==='Stagiaire')){
     var schoolWks=(STORE.absences&&STORE.absences[name]&&STORE.absences[name].school)||[];
     var actWks=[];for(var _w=r.s;_w<=(r.e||r.s);_w++)actWks.push(_w);
-    var conflict=actWks.filter(function(_w){return schoolWks.indexOf(_w)>=0;});
+    var conflict=actWks.filter(function(_w){return altWeekHasSchool(name,_w);});
     if(conflict.length>0){
       var wkStr=conflict.map(function(_w){return 'S'+isoWeekOf(_w);}).join(', ');
       alert('\u26a0\ufe0f ' + name + ' est \u00e0 l\u2019\u00e9cole !\nSemaines : ' + wkStr + '\nIl ne sera pas disponible.');
