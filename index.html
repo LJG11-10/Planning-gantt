@@ -1847,7 +1847,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
         <div class="petro-tile-ico" style="background:#4B3FC7">📁</div>
         <div class="petro-tile-t">Affaires</div>
         <div class="petro-tile-s">Tout ce qui concerne une affaire, choisie dans le menu de gauche</div>
-        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Récap</span><span>Heures</span><span>Modifications</span></div>
+        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Récap</span><span>Heures</span><span>Modifications</span><span id="petro-hub-chip-cmd">Commandes</span></div>
       </div>
       <div id="petro-hub-tile-equipe" class="petro-tile" onclick="petroHubEnterEquipe()">
         <div class="petro-tile-ico" style="background:#0F766E">👥</div>
@@ -1858,8 +1858,8 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
       <div id="petro-hub-tile-docs" class="petro-tile" onclick="petroHubEnterDocs()" style="display:none">
         <div class="petro-tile-ico" style="background:#B45309">⛑️</div>
         <div class="petro-tile-t">Chantier</div>
-        <div class="petro-tile-s">Documents du chantier et commandes</div>
-        <div class="petro-tile-chips"><span>Docs chantier</span><span>Commandes</span></div>
+        <div class="petro-tile-s">Documents du chantier : fiches de contrôle</div>
+        <div class="petro-tile-chips"><span>Docs chantier</span></div>
       </div>
     </div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:22px">
@@ -2012,7 +2012,9 @@ function petroHubBackToHub(){
   var backups = document.getElementById('petro-backups-shell');
   if(backups) backups.style.display='none';
   var docs = document.getElementById('petro-docs-shell');
-  if(docs && docs.style.display!=='none'){ docs.style.display='none'; if(window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave(); if(window.Commandes&&window.Commandes.leave) window.Commandes.leave(); }
+  if(docs && docs.style.display!=='none'){ docs.style.display='none'; if(window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave(); }
+  // Commandes (onglet de l'affaire) : enregistre une saisie en cours et arrête le suivi
+  if(window.Commandes&&window.Commandes.leave) window.Commandes.leave();
   var qrs = document.getElementById('petro-qr-shell');
   if(qrs) qrs.style.display='none';
   var hub = document.getElementById('petro-hub-screen');
@@ -3354,6 +3356,7 @@ window.DroitsAcces = (function () {
   <button class="nb" data-tab="recap" onclick="switchTab('recap')">📋 Tableau de bord</button>
   <button class="nb" data-tab="personnel" onclick="switchPersonnelTab(window._personnelTab||'equipe')">👤 Personnel</button>
   <button class="nb" data-tab="modifications" onclick="switchTab('modifications')">📄 Modifications</button>
+  <button class="nb" data-tab="commandes" onclick="switchTab('commandes')" style="display:none">📦 Commandes</button>
   <div class="nav-r">
     <span id="sv" class="sv">✓ Sauvegardé</span>
     <button id="btn-undo" onclick="undoAction()" title="Annuler la dernière action (Ctrl+Z)" style="background:var(--bg3);color:var(--tx3);border:1px solid var(--bd);font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit;opacity:.4;pointer-events:none">↩ Annuler</button>
@@ -3430,6 +3433,10 @@ window.DroitsAcces = (function () {
 </div>
 <div id="tab-modifications" class="tab" style="flex-direction:column">
   <div id="mods-w" class="pg" style="flex:1;overflow:auto"></div>
+</div>
+<!-- Commandes de l'affaire (module Commandes, bloc COMMANDES) : filtrées sur l'affaire choisie à gauche -->
+<div id="tab-commandes" class="tab" style="flex-direction:column">
+  <div id="aff-cmd-w" style="flex:1;min-height:0;overflow:auto"></div>
 </div>
 <div id="tab-personnel" class="tab" style="flex-direction:column">
   <!-- Sous-onglets Personnel -->
@@ -3717,8 +3724,10 @@ function applyRoleRestrictions() {
   if (qrTile) qrTile.style.display = (CURRENT_ROLE === 'admin' || hasView('qr_feuille')) ? '' : 'none';
   // Docs chantier (fiches de contrôle) : admins, + ceux qui ont le droit "Docs chantier" (Voir)
   var docsTile = document.getElementById('petro-hub-tile-docs');
-  // Chantier = Docs chantier + Commandes : visible si l'un des deux est accessible
-  if (docsTile) docsTile.style.display = (CURRENT_ROLE === 'admin' || hasView('docs_chantier') || hasView('commandes')) ? '' : 'none';
+  // Chantier = Docs chantier (les Commandes sont dans Affaires › Commandes depuis le 06/10/2026)
+  if (docsTile) docsTile.style.display = (CURRENT_ROLE === 'admin' || hasView('docs_chantier')) ? '' : 'none';
+  var cmdChip = document.getElementById('petro-hub-chip-cmd');
+  if (cmdChip) cmdChip.style.display = (CURRENT_ROLE === 'admin' || hasView('commandes')) ? '' : 'none';
   if (CURRENT_ROLE === 'chef_chantier') {
     // Masquer tous les onglets sauf GANTT, Planning réunion, Personnel, Absences et Tableau de bord
     // (le budget à l'intérieur du Tableau de bord est déjà géré finement par le
@@ -4461,8 +4470,17 @@ function renderFortuitesTab(){
   container.innerHTML=dbFortuites();
 }
 
+// Onglet Commandes de l'affaire : enter = on arrive sur l'onglet (le filtre reprend l'affaire choisie à gauche)
+function renderCommandesTab(enter){
+  if(window.Commandes&&typeof window.Commandes.render==='function')window.Commandes.render('aff-cmd-w',{aff:STORE.current||'',enter:!!enter});
+}
+function _leaveCommandesTab(t){
+  var on=document.querySelector('.nb.on');
+  if(on&&on.dataset&&on.dataset.tab==='commandes'&&t!=='commandes'&&window.Commandes&&window.Commandes.leave)window.Commandes.leave();
+}
 function switchTab(t){
   window._userTabClicked=true;
+  _leaveCommandesTab(t);
   // Mettre à jour les boutons de nav
   document.querySelectorAll('.nb').forEach(function(b){
     b.classList.remove('on');
@@ -4480,6 +4498,7 @@ function switchTab(t){
   else if(t==='planning-reunion'){renderPlanningReunionTab();}
   else if(t==='recap'){if(typeof _avResetView==='function')_avResetView();if(typeof _rcResetView==='function')_rcResetView();switchTdbTab(window._tdbTab||'overview');}
   else if(t==='modifications'){renderModificationsTab();}
+  else if(t==='commandes'){renderCommandesTab(true);}
   // Masquer/afficher les boutons Vue+Zoom selon onglet
   var _gvb=document.getElementById('gantt-view-btns');
   var _gvs=document.getElementById('gantt-view-sep');
@@ -4498,6 +4517,7 @@ function switchTab(t){
 }
 function switchPersonnelTab(sub){
   window._personnelTab=sub;
+  _leaveCommandesTab('personnel');
   // Activer l'onglet Personnel dans la nav principale
   document.querySelectorAll('.nb').forEach(function(b){
     b.classList.remove('on');
@@ -10375,6 +10395,7 @@ function refreshAllTabs(){
     else if(t==='planning-reunion')renderPlanningReunionTab();
 
     else if(t==='personnel')switchPersonnelTab(window._personnelTab||'equipe');
+    else if(t==='commandes')renderCommandesTab(false); // ne redessine que si l'affaire a changé
     // gantt déjà rendu ci-dessus si c'est l'onglet actif
   }
 }
@@ -11806,6 +11827,7 @@ function switchProjet(k){
     else if(t==='skids')renderSkids();
     else if(t==='fiche')renderFiche();
     else if(t==='dashboard')renderDashboard();
+    else if(t==='commandes')renderCommandesTab(false); // nouvelle affaire → ses commandes
   }
 }
 // ── Renommer une affaire ──────────────────────────────────────────────
@@ -21882,7 +21904,8 @@ window.Commandes=(function(){
   }
 
   // ── État de l'écran ──
-  var S={host:null,list:[],filterAff:(function(){ try{ return localStorage.getItem('cmd_filterAff')||''; }catch(e){ return ''; } })(),filterSt:'',q:'',cur:null,base:{},dirty:{},saving:false,saveT:null,pollT:null,listT:null,err:'',offline:false,needDraw:false};
+  // filterAff = affaire choisie dans la liste ; ctxAff = affaire choisie à gauche (onglet Commandes de l'affaire)
+  var S={host:null,list:[],filterAff:'',ctxAff:null,filterSt:'',q:'',cur:null,base:{},dirty:{},saving:false,saveT:null,pollT:null,listT:null,err:'',offline:false,needDraw:false};
   var D={}; // données de la commande ouverte
 
   // ═════════ LISTE ═════════
@@ -21934,7 +21957,7 @@ window.Commandes=(function(){
       +chip('encours',c.enc,'à recevoir','#F5F3FF','#3A2EAE')+chip('retard',c.late,'en retard','#FEF2F2','#B91C1C')
       +chip('changed',c.chg,'délais mis à jour','#FEF2F2','#B91C1C')+chip('complete',c.done,'livrées complètes','#F0FDF4','#15803D')+'</div>';
     if(!rows.length){
-      h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?'Aucune commande ne correspond au filtre.':'Aucune commande pour l’instant.'+(man?' Importez le reliquat ESABORA, ou cliquez sur « ＋ Nouvelle commande ».':''))+'</div>';
+      h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?(S.filterAff&&!inAff.length?'Aucune commande pour <b>'+esc(affLabel(S.filterAff))+'</b>. Choisissez une autre affaire (ou « Toutes les affaires ») dans la liste ci-dessus.':'Aucune commande ne correspond au filtre.'):'Aucune commande pour l’instant.'+(man?' Importez le reliquat ESABORA, ou cliquez sur « ＋ Nouvelle commande ».':''))+'</div>';
     }else{
       h+='<div style="overflow:auto"><table class="dcu-tbl cmu-tbl"><tr><th>N° commande</th><th>Chantier</th><th>Commande du</th><th>Prochaine livraison</th><th>Lignes</th><th>Reliquat</th><th>État</th><th></th></tr>';
       rows.forEach(function(r){
@@ -21971,8 +21994,20 @@ window.Commandes=(function(){
   function visible(){ var h=S.host; return !!(h&&h.offsetParent!==null); }
   function startListPoll(){ stopListPoll(); S.listT=setInterval(listTick,5000); }
   function stopListPoll(){ if(S.listT){ clearInterval(S.listT); S.listT=null; } }
-  async function render(hostId){
-    S.host=$(hostId)||S.host;
+  // opt.aff = affaire choisie à gauche. opt.enter = on arrive sur l'onglet → la liste reprend cette affaire.
+  // Sans enter (rafraîchissement du site, synchro) : rien n'est redessiné tant que l'affaire n'a pas changé
+  // (sinon une saisie de quantité en cours serait coupée).
+  async function render(hostId,opt){
+    opt=opt||{};
+    var host=$(hostId)||S.host;
+    if(opt.aff!==undefined){
+      var changed=opt.aff!==S.ctxAff;
+      if(!opt.enter&&!changed&&S.host===host) return;
+      S.ctxAff=opt.aff;
+      if(opt.enter||changed){ S.filterAff=opt.aff; S.q=''; }
+      if(changed&&S.cur){ S.host=host; await back(); return; } // autre affaire : on referme la commande (enregistrée d'abord)
+    }
+    S.host=host;
     if(S.cur){ drawDetail(); startPoll(); return; } // on revient sur l'onglet : la commande ouverte reste ouverte
     stopPoll();
     if(!ENV.canView()){ S.host.innerHTML='<div class="dcu"><div class="cmu-wrap"><div class="dcu-card">Vous n’avez pas accès aux commandes.</div></div></div>'; return; }
@@ -22664,7 +22699,7 @@ window.Commandes=(function(){
     render:render, refresh:function(){ S.cur=null; render(); }, open:open, newCmd:newCmd, del:del, back:back, leave:leave,
     canView:function(){ return ENV.canView(); },
     pending:function(){ return !!(S.cur&&Object.keys(S.dirty).length); },
-    _f:function(k,v){ S[k]=v; if(k==='filterAff'){ try{ localStorage.setItem('cmd_filterAff',v); }catch(e){} } drawList(); }, _q:function(v){ S.q=v; var pos=null,a=document.activeElement; if(a&&a.selectionStart!=null) pos=a.selectionStart; drawList(); var i=S.host&&S.host.querySelector('input[aria-label="Rechercher"]'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
+    _f:function(k,v){ S[k]=v; drawList(); }, _q:function(v){ S.q=v; var pos=null,a=document.activeElement; if(a&&a.selectionStart!=null) pos=a.selectionStart; drawList(); var i=S.host&&S.host.querySelector('input[aria-label="Rechercher"]'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
     _closeModal:closeModal, _create:_create, _qty:_qty, _qtyBlur:_qtyBlur, _all:_all, _note:_note,
     _editCmd:_editCmd, _saveCmd:_saveCmd, _editLine:_editLine, _saveLine:_saveLine, _delLine:_delLine,
     _addBL:_addBL, _blOpen:_blOpen, _blDel:_blDel,
@@ -22679,8 +22714,8 @@ window.ChantierNav=(function(){
   function tabs(){
     var adm=typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin';
     return [
-      {k:'docs',lbl:'📋 Docs chantier',vis:function(){ try{ return adm||hasView('docs_chantier'); }catch(e){ return adm; } }},
-      {k:'cmd',lbl:'📦 Commandes',vis:function(){ return !!(window.Commandes&&window.Commandes.canView()); }}
+      {k:'docs',lbl:'📋 Docs chantier',vis:function(){ try{ return adm||hasView('docs_chantier'); }catch(e){ return adm; } }}
+      // Commandes : déplacées dans Affaires › Commandes (06/10/2026), filtrées sur l'affaire choisie à gauche
     ].filter(function(t){ return t.vis(); });
   }
   function draw(){
@@ -22918,7 +22953,10 @@ window.PetroNav=(function(){
         go:function(){switchPersonnelTab('heures');}},
       {k:'modifs',lbl:'Modifications',vis:function(){return secVis('.nb[data-tab="modifications"]');},
         on:function(){return nbOn()==='modifications';},
-        go:function(){switchTab('modifications');}}
+        go:function(){switchTab('modifications');}},
+      {k:'commandes',lbl:'Commandes',vis:function(){return !!(window.Commandes&&window.Commandes.canView());},
+        on:function(){return nbOn()==='commandes';},
+        go:function(){switchTab('commandes');}}
     ],
     overview:[
       {k:'ov',lbl:'Tableau de bord',vis:function(){return secVis('.nb[data-tab="recap"]');},
@@ -23194,6 +23232,7 @@ window.PetroNav=(function(){
     }else{
       S.over=false;
       if(!TABS.affaire.some(function(x){return x.vis()&&x.on();})){var f=TABS.affaire.filter(function(x){return x.vis();})[0];if(f)f.go();}
+      else if(nbOn()==='commandes'&&can('renderCommandesTab'))renderCommandesTab(true); // retour de l'accueil : relance la liste
     }
     renderAll();
   }
