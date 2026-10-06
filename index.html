@@ -13967,10 +13967,12 @@ function gcCloseRowMenu(){var m=document.getElementById('gc-rowmenu');if(m)m.rem
 
 // ── Rendu complet de la vue « Semaines » ──
 function renderGantt(){
-  if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='day'){renderGanttDay();gcRenderToolbar();gcRenderPanel();return;}
+  // « Jours » (06/10/2026) = CE planning avec des colonnes de jour larges (gcIsDayScale), plus l'ancien
+  // dessin renderGanttDay (lent, autre style). Un ancien état 'day' est ramené ici.
+  if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='day'){GANTT_VIEW='week';if(ZOOM_DW<GC_DAY_DW)ZOOM_DW=GC_DAY_DW;}
   if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='global'){renderPortfolio();gcRenderToolbar();gcRenderPanel();return;}
   refreshAffaireDateRange();
-  var DW=ZOOM_DW,NC=GANTT_WIDE_WEEKS*7;
+  var DW=ZOOM_DW,NC=GANTT_WIDE_WEEKS*7,dayScale=gcIsDayScale();
   var wrap=document.getElementById('gw');
   var _MG=_computeMonthGroupsRange(1,GANTT_WIDE_WEEKS);
   var _win=_gcComputeWindow(wrap,DW,NC);
@@ -13988,13 +13990,15 @@ function renderGantt(){
       var ab=(w-1)*7+di,isTD=ab===todayAbs;
       if(di>=5&&!window._gcShowWE){dH+='<th class="gwh"></th>';continue;}
       var dt=weekDayToDate(w,di),fc=di<5&&isFerie(dt);
-      dH+='<th'+(isTD?' id="gc-tdth"':'')+' title="'+fmt(dt)+(fc?' — férié':'')+'" style="padding:2px 0;text-align:center;font-size:9px;font-weight:'+(isTD?900:700)+';color:'+(isTD?'#fff':fc?'#DC2626':'#8C88A8')+';background:'+(isTD?'#DC2626':di>=5?'#F1EFF8':'#FBFAFF')+';border-bottom:1px solid #E4E1F0;'+(di===0?'border-left:1px solid #E4E1F0;':'')+(isTD?'overflow:visible;':'')+'">'+DS[di]+(isTD?'<span style="position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#fff;background:#DC2626;border-radius:6px;padding:1px 6px;white-space:nowrap;z-index:2">Aujourd’hui</span>':'')+'</th>';
+      // vue Jours : nom du jour + date dans chaque colonne (assez large pour ça)
+      var dLbl=dayScale?'<div style="font-size:10.5px;font-weight:800;line-height:1.25">'+['LUN','MAR','MER','JEU','VEN','SAM','DIM'][di]+'</div><div style="font-size:10px;font-weight:600;line-height:1.25;opacity:.85">'+(dt?String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0'):'')+'</div>':DS[di];
+      dH+='<th'+(isTD?' id="gc-tdth"':'')+' title="'+fmt(dt)+(fc?' — férié':'')+'" style="padding:2px 0;text-align:center;font-size:9px;font-weight:'+(isTD?900:700)+';color:'+(isTD?'#fff':fc?'#DC2626':'#8C88A8')+';background:'+(isTD?'#DC2626':fc?'#FEF2F2':di>=5?'#F1EFF8':'#FBFAFF')+';border-bottom:1px solid #E4E1F0;'+(di===0?'border-left:1px solid #E4E1F0;':(dayScale?'border-left:1px solid #EFEDF7;':''))+(isTD?'overflow:visible;':'')+'">'+dLbl+(isTD?'<span style="position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#fff;background:#DC2626;border-radius:6px;padding:1px 6px;white-space:nowrap;z-index:2">Aujourd’hui</span>':'')+'</th>';
     }
   }
   var cols='';for(var c=0;c<NC;c++){cols+='<col style="width:'+(c%7>=5?gcWEW(DW):DW)+'px">';}
   var html='<table class="gt gc2" style="width:'+(GC_LW+gcX(NC,DW))+'px;min-width:'+(GC_LW+gcX(NC,DW))+'px"><colgroup><col style="width:'+GC_LW+'px">'+cols+'</colgroup><thead>'
     +'<tr style="height:26px"><th rowspan="3" style="position:sticky;left:0;top:0;z-index:31;background:#FBFAFF;border-right:1px solid #E4E1F0;border-bottom:1px solid #E4E1F0;vertical-align:bottom;text-align:left;padding:0 14px 8px;font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px">PHASE · ENSEMBLE · SOUS-PHASE · TÂCHE</th>'+mH+'</tr>'
-    +'<tr style="height:34px">'+wH+'</tr><tr style="height:17px">'+dH+'</tr></thead><tbody>';
+    +'<tr style="height:34px">'+wH+'</tr><tr style="height:'+(dayScale?32:17)+'px">'+dH+'</tr></thead><tbody>';
   // Lignes (repliées / filtrées)
   var _pend=(typeof gsPendingIds==='function')?gsPendingIds():{};
   var tree=gcTree(D().filter(function(r){return !_pend[r.id];})),meta={},kids={},byId={};
@@ -14037,7 +14041,8 @@ function renderGantt(){
   // Scroller vers aujourd'hui si demandé (même principe qu'avant : l'écouteur de scroll reconstruit la bonne zone)
   if(window._scrollToToday&&tw>0){
     window._scrollToToday=false;
-    requestAnimationFrame(function(){requestAnimationFrame(function(){var g=document.getElementById('gw');if(g)g.scrollLeft=Math.max(0,gcX((tw-2)*7,DW));});});
+    // vue Jours : aujourd'hui presque à gauche (2 jours avant) ; sinon 2 semaines avant, comme avant
+    requestAnimationFrame(function(){requestAnimationFrame(function(){var g=document.getElementById('gw');if(g)g.scrollLeft=Math.max(0,dayScale?gcX(Math.max(0,todayAbs-2),DW):gcX((tw-2)*7,DW));});});
   }
   var gdNav2=document.getElementById('gd-nav');if(gdNav2)gdNav2.innerHTML='';
   autoCalcAllHPrev();
@@ -14079,7 +14084,7 @@ function gcRenderToolbar(compact){
       +'<span style="font-size:12.5px;color:#4A4766;flex:1 1 400px">Cliquez-glissez sur une ligne : <b>moitié haute = Prévu</b>, <b>moitié basse = Réel</b> · pour poser <b>les deux d’un coup</b>, commencez dans une moitié et relâchez dans l’autre · recliquez sur un jour peint pour l’effacer · <b>clic droit sur une barre</b> : commentaire, décaler, effacer</span>'
       +leg+'<button type="button" onclick="gcSetPaint(false)" style="height:34px;padding:0 14px;border-radius:9px;border:none;background:#B45309;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">Terminer</button></div>';
   }else{
-    var scale=view==='day'?'day':(ZOOM_DW<=8?'month':'week');
+    var scale=(view==='day'||gcIsDayScale())?'day':(ZOOM_DW<=8?'month':'week');
     var seg=function(v,l,t){var on=scale===v;return '<button type="button" onclick="gcSetScale(\''+v+'\')" title="'+gcEsc(t)+'" style="height:32px;padding:0 13px;border-radius:8px;border:none;cursor:pointer;font-size:12.5px;font-weight:800;font-family:inherit;'+(on?'background:#4B3FC7;color:#fff':'background:transparent;color:#4A4766')+'">'+l+'</button>';};
     var fl=[['all','Tout','#4B3FC7'],['prog','En cours','#F59E0B'],['late','En retard','#EF4444'],['todo','À venir','#94A3B8'],['done','Terminé','#15803D']].map(function(x){var on=(window._gcFilter||'all')===x[0];return '<button type="button" onclick="gcSetFilter(\''+x[0]+'\')" style="height:32px;padding:0 11px;border-radius:16px;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;font-family:inherit;'+(on?'background:#1C1A33;color:#fff;border:1.5px solid #1C1A33':'background:#fff;color:#4A4766;border:1.5px solid #E4E1F0')+'"><span style="width:8px;height:8px;border-radius:50%;background:'+x[2]+'"></span>'+x[1]+'</button>';}).join('');
     var zb='height:32px;width:32px;border-radius:8px;border:1px solid #E4E1F0;background:#fff;color:#4A4766;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit';
@@ -14106,12 +14111,16 @@ function gcDispMenu(){window._gcDispOpen=!window._gcDispOpen;gcRenderToolbar();}
 document.addEventListener('click',function(e){if(window._gcDispOpen&&!e.target.closest('#gc-dispmenu')){window._gcDispOpen=false;gcRenderToolbar();}});
 window.addEventListener('resize',function(){var b=document.querySelector('.nb.on');if(b&&b.dataset.tab==='gantt')gcRenderToolbar();});
 // Jours / Semaines / Mois (Mois = la vue Semaines resserrée pour voir toute l'année, l'ancien « Tout voir »)
+// Jours (06/10/2026) = même planning que Semaines, colonnes de jour larges (même style, même rapidité,
+// peinture et détail de tâche identiques). Ctrl + molette passe d'une échelle à l'autre en continu.
+var GC_DAY_DW=64,GC_DAY_MIN=44,GC_DW_MAX=96;
+function gcIsDayScale(){return ZOOM_DW>=GC_DAY_MIN;}
 function gcSetScale(v){
-  var view=(typeof GANTT_VIEW!=='undefined')?GANTT_VIEW:'week';
-  if(v==='day'){if(view!=='day')setGanttView('day');return;}
-  if(view!=='week')setGanttView('week');
-  if(v==='month')setZoom('fit');
-  else if(ZOOM_DW<=8||view!=='week')setZoom('auto');
+  if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW!=='week')GANTT_VIEW='week';
+  window._scrollToToday=true;
+  if(v==='day'){ZOOM_DW=GC_DAY_DW;var lb=document.getElementById('zoom-lbl');if(lb)lb.textContent=ZOOM_DW+'px';renderGantt();return;}
+  if(v==='month'){setZoom('fit');return;}
+  setZoom('auto');
 }
 function gcSetPaint(on){window._gcPaint=!!on;if(on){window._gcSel=null;}_reRenderGanttKeepScroll();gcRenderToolbar();gcRenderPanel();}
 function gcSetFilter(f){window._gcFilter=f;_reRenderGanttKeepScroll();}
@@ -14778,6 +14787,7 @@ function _gcUpdateRowInPlace(rid){
 
 // (ancien renderGantt remplacé par le nouveau visuel, voir « GANTT — NOUVEAU VISUEL » plus haut)
 function setGanttView(mode){
+  if(mode==='day'){gcSetScale('day');return;} // plus d'ancienne vue jour séparée (06/10/2026)
   GANTT_VIEW=mode;
   var wb=document.getElementById('gv-week');
   var db=document.getElementById('gv-day');
@@ -14791,8 +14801,9 @@ function setGanttView(mode){
 }
 function setZoom(mode){
   const gw=document.getElementById('gw');
-  if(mode==='in'){ZOOM_DW=Math.min(40,ZOOM_DW+2);}
-  else if(mode==='out'){ZOOM_DW=Math.max(2,ZOOM_DW-2);}
+  // jusqu'à GC_DW_MAX : au-delà de GC_DAY_MIN on est dans la vue Jours (même planning, colonnes larges)
+  if(mode==='in'){ZOOM_DW=Math.min(typeof GC_DW_MAX!=='undefined'?GC_DW_MAX:40,ZOOM_DW+(ZOOM_DW>=40?4:2));}
+  else if(mode==='out'){ZOOM_DW=Math.max(2,ZOOM_DW-(ZOOM_DW>40?4:2));}
   else if(mode==='fit'){
     const fixedCols=GC_LW+20;
     const available=(gw?gw.clientWidth:1200)-fixedCols-20;
