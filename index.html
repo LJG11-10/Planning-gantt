@@ -3069,7 +3069,7 @@ window.DroitsAcces = (function () {
     {key:'plaque_pe', label:'Plaque PE'},
     {key:'qr_feuille', label:'QR Code feuille d\'heure (Voir = accès à l\'onglet ; Modifier = afficher le QR code, valider et débloquer les feuilles)'},
     {key:'docs_chantier', label:'Docs chantier (Voir = consulter et imprimer les fiches ; Modifier = créer, remplir, faire signer, verrouiller). Rouvrir une fiche signée : admin et chef de chantier'},
-    {key:'commandes', label:'Commandes (Voir = consulter les commandes et les bons de livraison ; Modifier = saisir les quantités reçues et joindre les bons de livraison)'},
+    {key:'commandes', label:'Commandes (Voir = consulter les commandes ; Modifier = saisir les quantités reçues)'},
     {key:'commandes_gestion', label:'Commandes — gestion (Modifier = créer, modifier et supprimer les commandes et leurs lignes, changer les délais, importer)'},
     {key:'budget_toolbar', label:'H vendues (barre d\'outils)', group:'Budget Heures'},
     {key:'budget_gantt',   label:'Budget heures dans le Gantt (par phase/ensemble/sous-phase)', group:'Budget Heures'},
@@ -21808,7 +21808,7 @@ window.Commandes=(function(){
     if(!rows.length){
       h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?'Aucune commande ne correspond au filtre.':'Aucune commande pour l’instant.'+(man?' Importez le reliquat ESABORA, ou cliquez sur « ＋ Nouvelle commande ».':''))+'</div>';
     }else{
-      h+='<div style="overflow:auto"><table class="dcu-tbl cmu-tbl"><tr><th>N° commande</th><th>Chantier</th><th>Commande du</th><th>Prochaine livraison</th><th>Lignes</th><th>Reliquat</th><th>État</th><th>BL</th><th></th></tr>';
+      h+='<div style="overflow:auto"><table class="dcu-tbl cmu-tbl"><tr><th>N° commande</th><th>Chantier</th><th>Commande du</th><th>Prochaine livraison</th><th>Lignes</th><th>Reliquat</th><th>État</th><th></th></tr>';
       rows.forEach(function(r){
         var m=r.meta||{},isNew=r.created_at&&(Date.now()-new Date(r.created_at).getTime())<7*864e5;
         var code=chantierOf(r),lb=affLabel(r.aff),known=r.aff&&lb!==r.aff;
@@ -21819,7 +21819,6 @@ window.Commandes=(function(){
           +'<td><b style="'+(m.late?'color:#B91C1C':'')+'">'+(m.next?esc(fr(m.next)):'—')+'</b>'+(m.late?' '+badge('En retard','#FEE2E2','#B91C1C'):'')+(m.changed?' '+badge('Délai mis à jour','#FEE2E2','#B91C1C'):'')+'</td>'
           +'<td>'+(m.n||0)+'</td><td>'+(m.rest?m.rest+' réf.':'—')+'</td>'
           +'<td>'+stateBadge(m.state||'vide',m.rest||0)+(m.absent?'<div style="margin-top:3px">'+badge('Soldée dans ESABORA','#ECFDF5','#047857')+'</div>':'')+'</td>'
-          +'<td>'+(m.nbl?'📎 '+m.nbl:'—')+'</td>'
           +'<td style="text-align:right;white-space:nowrap">'+(man?'<button class="cmu-ico red" title="Supprimer la commande" aria-label="Supprimer la commande '+esc(r.num)+'" onclick="event.stopPropagation();Commandes.del(\''+js(r.id)+'\')">🗑</button>':'')+'</td></tr>';
       });
       h+='</table></div>';
@@ -21892,7 +21891,7 @@ window.Commandes=(function(){
   async function del(id){
     if(!ENV.canManage()) return;
     var r=S.list.filter(function(x){ return x.id===id; })[0]; if(!r) return;
-    if(!confirm('Supprimer définitivement la commande '+r.num+' (et ses bons de livraison) ?\nCette action ne peut pas être annulée.')) return;
+    if(!confirm('Supprimer définitivement la commande '+r.num+' ?\nCette action ne peut pas être annulée.')) return;
     try{
       var full=await DB.get(id);
       var paths=full?bls(full.data||{}).map(function(x){ return x.path; }):[];
@@ -21963,21 +21962,11 @@ window.Commandes=(function(){
     }
     if(man) h+='<button class="dcu-btn2" style="margin-top:12px" onclick="Commandes._editLine(\'\')">＋ Ajouter une ligne</button>';
     h+='</div>';
-    // Remarque + bons de livraison
+    // Remarque
     h+='<div class="dcu-card"><div class="cmu-lbl" style="margin-bottom:6px">REMARQUE</div>'
       +'<textarea class="dcu-in" data-note="1" rows="2" style="width:100%;resize:vertical" placeholder="'+(ed?'Ex : 2 tourets manquants, fournisseur relancé…':'')+'"'+(ed?' oninput="Commandes._note(this)"':' disabled')+'>'+esc(D.note||'')+'</textarea></div>';
-    h+='<div class="dcu-card"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div class="cmu-lbl" style="flex:1">BONS DE LIVRAISON</div>'
-      +(ed?'<label class="dcu-btn" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">📷 Scanner / joindre un bon de livraison<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="Commandes._addBL(this)"></label>':'')+'</div>'
-      +'<div id="cmd-blmsg"></div>';
-    if(!B.length) h+='<div style="font-size:12.5px;color:#9A96B3">Aucun bon de livraison joint.</div>';
-    B.forEach(function(b){
-      var canDel=ed&&(man||b.by===ENV.who());
-      h+='<div class="cmu-bl"><span style="font-size:18px">'+(/pdf/i.test(b.type)?'📄':'🖼')+'</span><span style="flex:1;min-width:160px"><b>'+esc(b.name)+'</b><br><span style="font-size:11.5px;color:#6B6790">'+kb(b.size||0)+' · '+esc(fmtDT(b.at))+(b.by?' · '+esc(whoShort(b.by)):'')+'</span></span>'
-        +'<button class="dcu-btn2" onclick="Commandes._blOpen(\''+js(b.id)+'\',0)">👁 Voir</button>'
-        +'<button class="dcu-btn" onclick="Commandes._blOpen(\''+js(b.id)+'\',1)">⬇ Télécharger pour le magasinier</button>'
-        +(canDel?'<button class="cmu-ico red" title="Retirer ce bon de livraison" aria-label="Retirer ce bon de livraison" onclick="Commandes._blDel(\''+js(b.id)+'\')">🗑</button>':'')+'</div>';
-    });
-    h+='</div></div></div>';
+    // (bons de livraison retirés le 06/10/2026 à la demande de l'utilisateur)
+    h+='</div></div>';
     return h;
   }
   function drawDetail(){
