@@ -2086,13 +2086,81 @@ window.Sauvegardes = (function(){
     return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'})+' à '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
   }
 
+  // Liste COMPLÈTE (par pages : avant, seules les 300 premières étaient lues), la plus récente en premier
+  async function _listAll(){
+    var all=[],seen={},off=0,PAGE=1000;
+    for(var k=0;k<50;k++){
+      var res=await window.supa.storage.from(BUCKET).list('backups',{limit:PAGE,offset:off,sortBy:{column:'name',order:'desc'}});
+      if(res.error)throw res.error;
+      var d=res.data||[];
+      d.forEach(function(f){if(f.name&&f.name.indexOf('.json')>=0&&!seen[f.name]){seen[f.name]=1;all.push(f);}});
+      if(d.length<PAGE)break;
+      off+=d.length;
+    }
+    all.sort(function(a,b){var da=_parseBackupDate(a.name),db=_parseBackupDate(b.name);return (db?db.getTime():0)-(da?da.getTime():0);});
+    return all;
+  }
   async function _list(){
     if(!window.supa)return [];
+    try{return await _listAll();}catch(e){console.error('Erreur liste sauvegardes',e);return [];}
+  }
+
+  // ── Tri automatique (06/10/2026, règle validée par l'utilisateur) ──
+  //   moins de 2 jours : tout est gardé ; de 2 à 30 jours : une par jour (la dernière de la journée) ;
+  //   plus de 30 jours : supprimées. Copies « avant-restauration » : gardées 30 jours.
+  //   La plus récente n'est jamais supprimée ; un nom illisible n'est jamais supprimé.
+  //   Seul le dossier backups/ est touché (jamais data.json ni les fichiers des Modifications).
+  var KEEP_ALL_MS=2*864e5,KEEP_MS=30*864e5;
+  function _toDelete(files,now){
+    var dated=files.map(function(f){return {name:f.name,d:_parseBackupDate(f.name),pre:f.name.indexOf('avant-restauration')===0};}).filter(function(x){return x.d;});
+    if(!dated.length)return [];
+    var newest=dated.reduce(function(a,b){return b.d>a.d?b:a;});
+    var del=[],bestOfDay={};
+    dated.forEach(function(x){
+      if(x===newest)return;
+      var age=now-x.d.getTime();
+      if(x.pre){if(age>KEEP_MS)del.push(x.name);return;}
+      if(age<=KEEP_ALL_MS)return;
+      if(age>KEEP_MS){del.push(x.name);return;}
+      var k=x.d.getFullYear()+'-'+(x.d.getMonth()+1)+'-'+x.d.getDate(); // jour (heure locale)
+      var b=bestOfDay[k];
+      if(!b||x.d>b.d){if(b)del.push(b.name);bestOfDay[k]=x;}else del.push(x.name);
+    });
+    return del;
+  }
+  async function prune(){
+    if(!window.supa)return {total:0,asked:0,deleted:0,err:'Connexion au serveur indisponible.'};
+    var files=await _listAll(),del=_toDelete(files,Date.now()),done=0,err='';
+    for(var i=0;i<del.length;i+=100){
+      var chunk=del.slice(i,i+100).map(function(n){return 'backups/'+n;});
+      var r=await window.supa.storage.from(BUCKET).remove(chunk);
+      if(r.error){err=r.error.message||String(r.error);break;}
+      done+=(r.data||[]).length; // Supabase renvoie les fichiers vraiment supprimés (0 si les droits du stockage refusent)
+    }
+    if(!err&&del.length&&!done)err='le serveur n’a supprimé aucun fichier (droit de suppression du stockage refusé ?)';
+    return {total:files.length,asked:del.length,deleted:done,err:err};
+  }
+  // Une fois par jour, sur le poste d'un admin, 30 s après la connexion (en arrière-plan, sans message)
+  function autoPrune(){
     try{
-      var res=await window.supa.storage.from(BUCKET).list('backups',{limit:300,sortBy:{column:'name',order:'desc'}});
-      if(res.error){console.error('Erreur liste sauvegardes',res.error);return [];}
-      return (res.data||[]).filter(function(f){return f.name&&f.name.indexOf('.json')>=0;});
-    }catch(e){console.error(e);return [];}
+      if(typeof CURRENT_ROLE==='undefined'||CURRENT_ROLE!=='admin')return;
+      var today=new Date().toDateString();
+      if(localStorage.getItem('backup_prune_day')===today)return;
+      localStorage.setItem('backup_prune_day',today);
+    }catch(e){return;}
+    setTimeout(function(){
+      prune().then(function(r){if(r.err)console.warn('Tri des sauvegardes :',r.err);else if(r.deleted)console.info('Tri des sauvegardes : '+r.deleted+' supprimée(s) sur '+r.total);})
+        .catch(function(e){console.warn('Tri des sauvegardes :',e);});
+    },30000);
+  }
+  async function _pruneNow(containerId){
+    var btn=document.getElementById('bk-prune-btn');if(btn){btn.disabled=true;btn.textContent='Tri en cours…';}
+    try{
+      var r=await prune();
+      alert(r.err?'Tri des sauvegardes : '+r.err+(r.deleted?'\n('+r.deleted+' supprimée(s) avant l’erreur)':''):
+        (r.deleted?r.deleted+' ancienne'+(r.deleted>1?'s':'')+' sauvegarde'+(r.deleted>1?'s':'')+' supprimée'+(r.deleted>1?'s':'')+'. Il en reste '+(r.total-r.deleted)+'.':'Rien à supprimer : tout respecte déjà la règle.'));
+    }catch(e){alert('Tri des sauvegardes impossible : '+(e&&e.message||e));}
+    render(containerId);
   }
 
   async function render(containerId){
@@ -2109,7 +2177,11 @@ window.Sauvegardes = (function(){
       return;
     }
     var html='<div style="max-width:720px;margin:0 auto">'
-      +'<div style="background:#FFF7ED;border:2px solid #FED7AA;border-radius:12px;padding:16px 20px;margin-bottom:20px;font-size:13px;color:#9A3412"><strong>⚠️ Restaurer une sauvegarde remplace les données actuelles, pour tout le monde.</strong> Une copie de sécurité de l\'état actuel est automatiquement créée juste avant, au cas où vous changeriez d\'avis.</div>';
+      +'<div style="background:#FFF7ED;border:2px solid #FED7AA;border-radius:12px;padding:16px 20px;margin-bottom:14px;font-size:13px;color:#9A3412"><strong>⚠️ Restaurer une sauvegarde remplace les données actuelles, pour tout le monde.</strong> Une copie de sécurité de l\'état actuel est automatiquement créée juste avant, au cas où vous changeriez d\'avis.</div>'
+      +'<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:12.5px;color:#3A2EAE">'
+      +'<div style="flex:1;min-width:260px"><strong>'+files.length+' sauvegarde'+(files.length>1?'s':'')+'.</strong> Tri automatique une fois par jour : tout est gardé pendant 2 jours, puis une par jour jusqu’à 30 jours ; au-delà, elles sont supprimées.</div>'
+      +'<button id="bk-prune-btn" onclick="Sauvegardes._pruneNow(\''+esc(containerId).replace(/'/g,"\\'")+'\')" style="background:#fff;color:#3A2EAE;border:1.5px solid #C4B5FD;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🧹 Faire le tri maintenant</button>'
+      +'</div>';
     files.forEach(function(f){
       var d=_parseBackupDate(f.name);
       var isPreRestore=f.name.indexOf('avant-restauration')===0;
@@ -2166,7 +2238,7 @@ window.Sauvegardes = (function(){
     }
   }
 
-  return {render:render,_confirmRestore:_confirmRestore};
+  return {render:render,_confirmRestore:_confirmRestore,prune:prune,autoPrune:autoPrune,_pruneNow:_pruneNow,_toDelete:_toDelete};
 })();
 </script>
 <!-- ═══════════════════════════ /SAUVEGARDES ═══════════════════════════ -->
@@ -3702,6 +3774,8 @@ async function loadRoleAndStart() {
     checkAndSendRetardAlerts();
     // arrivée par le lien d'un mail « modification à faire » → directement sur la demande
     if (typeof _modsDeepLink === 'function') setTimeout(_modsDeepLink, 300);
+    // tri des anciennes sauvegardes (admin, une fois par jour, en arrière-plan)
+    if (window.Sauvegardes && window.Sauvegardes.autoPrune) window.Sauvegardes.autoPrune();
   } catch(e) {
     setLoginLoading(false);
     showLoginMsg("Erreur lors du chargement du rôle.");
@@ -16393,7 +16467,15 @@ function pedConfirmAddPhase(){
 
   // Collect activities
   const allA=D().filter(r=>r.t==='act');
-  const phases=Object.keys(getPH()).filter(pk=>allA.some(a=>a.pk===pk));
+  // Phases dans l'ordre du planning, comme la vue Semaines (gcTree) : toutes celles qui ont au
+  // moins un ensemble, une sous-phase ou une tâche. Avant (06/10/2026) : seulement les phases
+  // de getPH() ayant des TÂCHES → la phase Chantier disparaissait quand elle n'avait que des
+  // sous-phases, ou quand c'était une phase personnalisée absente de getPH().
+  const phases=[];
+  D().forEach(function(r){if(r&&r.pk&&(r.t==='ens'||r.t==='sb'||r.t==='act')&&phases.indexOf(r.pk)<0)phases.push(r.pk);});
+  // ordre des lignes « phase » du planning d'abord (une phase vide en tête de fichier ne change rien)
+  const _phOrder=[];D().forEach(function(r){if(r&&r.t==='ph'&&r.pk&&_phOrder.indexOf(r.pk)<0)_phOrder.push(r.pk);});
+  phases.sort(function(a,b){var ia=_phOrder.indexOf(a),ib=_phOrder.indexOf(b);return (ia<0?1e6:ia)-(ib<0?1e6:ib);});
 
   // Build table
   // Sticky header: day labels row
@@ -16413,8 +16495,7 @@ function pedConfirmAddPhase(){
   let tbody='';
   phases.forEach(function(pk){
     const ph=PH_get(pk);
-    const phActs=allA.filter(a=>a.pk===pk);
-    if(!phActs.length)return;
+    const phActs=allA.filter(a=>a.pk===pk); // peut être vide (phase avec seulement des sous-phases) : la phase s'affiche quand même
 
     // Phase header
     tbody+=`<tr style="height:28px">
