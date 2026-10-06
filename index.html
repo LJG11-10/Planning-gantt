@@ -21732,7 +21732,7 @@ window.Commandes=(function(){
     var next=rest.map(function(l){ return l.del; }).filter(Boolean).sort()[0]||'';
     return {n:L.length,rest:rest.length,state:!L.length?'vide':(!rest.length?'complete':(got?'partiel':'attente')),
       next:next,late:!!(next&&next<todayIso()),changed:rest.some(function(l){ return !!l.old; }),nbl:bls(d).length,
-      ngone:rest.filter(function(l){ return !!l.gone; }).length,absent:!!d._gone,imp:d._imp||'',date:d._date||'',chantier:d._chantier||''};
+      ngone:rest.filter(function(l){ return !!l.gone; }).length,absent:!!d._gone,imp:d._imp||'',date:d._date||'',chantier:d._chantier||'',four:d._four||''};
   }
   function stateBadge(st,rest){
     if(st==='complete') return badge('✓ Livrée complète','#DCFCE7','#15803D');
@@ -21775,7 +21775,7 @@ window.Commandes=(function(){
       else if(S.filterSt==='changed'){ if(!m.changed) return false; }
       else if(S.filterSt==='absent'){ if(!m.absent) return false; }
       else if(S.filterSt&&m.state!==S.filterSt) return false;
-      if(S.q){ var s=(r.num+' '+chantierOf(r)+' '+affLabel(r.aff)).toLowerCase(); if(s.indexOf(S.q.toLowerCase())<0) return false; }
+      if(S.q){ var s=(r.num+' '+((r.meta||{}).four||'')+' '+chantierOf(r)+' '+affLabel(r.aff)).toLowerCase(); if(s.indexOf(S.q.toLowerCase())<0) return false; }
       return true;
     });
     // les plus urgentes en haut : en retard, puis par prochaine livraison ; les complètes à la fin
@@ -21813,7 +21813,7 @@ window.Commandes=(function(){
         var m=r.meta||{},isNew=r.created_at&&(Date.now()-new Date(r.created_at).getTime())<7*864e5;
         var code=chantierOf(r),lb=affLabel(r.aff),known=r.aff&&lb!==r.aff;
         h+='<tr class="dcu-row" onclick="Commandes.open(\''+js(r.id)+'\')">'
-          +'<td style="white-space:nowrap"><b>'+esc(r.num)+'</b>'+(isNew?' '+badge('Nouvelle','#E0F2FE','#0369A1'):'')+'</td>'
+          +'<td style="white-space:nowrap"><b>'+esc(r.num)+'</b>'+fourTag(m.four)+(isNew?' '+badge('Nouvelle','#E0F2FE','#0369A1'):'')+'</td>'
           +'<td><b>'+esc(code||'—')+'</b>'+(known?'<div style="font-size:11px;color:#6B6790">'+esc(lb)+'</div>':'')+'</td>'
           +'<td style="white-space:nowrap">'+(m.date?esc(fr(m.date)):'—')+'</td>'
           +'<td><b style="'+(m.late?'color:#B91C1C':'')+'">'+(m.next?esc(fr(m.next)):'—')+'</b>'+(m.late?' '+badge('En retard','#FEE2E2','#B91C1C'):'')+(m.changed?' '+badge('Délai mis à jour','#FEE2E2','#B91C1C'):'')+'</td>'
@@ -21868,6 +21868,7 @@ window.Commandes=(function(){
     if(!ENV.canManage()) return;
     modal('<div style="font-size:16px;font-weight:900;margin-bottom:12px">Nouvelle commande</div>'
       +'<label class="cmu-lbl">N° DE COMMANDE *</label><input id="cmd-n-num" class="dcu-in cmu-fld" placeholder="EL2604512" autocomplete="off">'
+      +'<label class="cmu-lbl">FOURNISSEUR</label><input id="cmd-n-four" class="dcu-in cmu-fld" placeholder="REXE, HELU, SONE… (facultatif)" autocomplete="off">'
       +'<label class="cmu-lbl">AFFAIRE *</label>'+affSelect('cmd-n-aff',S.filterAff)
       +'<label class="cmu-lbl">REMARQUE</label><input id="cmd-n-note" class="dcu-in cmu-fld" placeholder="Facultatif" autocomplete="off">'
       +'<div style="display:flex;gap:8px;justify-content:flex-end"><button class="dcu-btn2" onclick="Commandes._closeModal()">Annuler</button><button class="dcu-btn" id="cmd-n-go" onclick="Commandes._create()">Créer la commande</button></div>');
@@ -21879,6 +21880,7 @@ window.Commandes=(function(){
     if(numExists(num)){ alert('La commande '+num+' existe déjà.'); return; }
     var b=$('cmd-n-go'); if(b){ b.disabled=true; b.textContent='Création…'; }
     var me=ENV.who(),data={_num:num,_aff:aff,order:[]};if(note) data.note=note;
+    var four=fourOf(($('cmd-n-num')||{}).value,($('cmd-n-four')||{}).value);if(four) data._four=four;
     try{
       var row=await DB.create({num:num,aff:aff,meta:stats(data),data:data,rev:1,created_by:me,updated_by:me,history:[{at:new Date().toISOString(),by:me,what:'created'}]});
       closeModal(); S.list.unshift(liteOf(row)); openRow(row);
@@ -21928,7 +21930,7 @@ window.Commandes=(function(){
     var h='<div class="dcu"><div class="cmu-wrap">';
     h+='<div class="dcu-card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
       +'<button class="dcu-btn2" onclick="Commandes.back()">← Commandes</button>'
-      +'<b style="font-size:18px">Commande '+esc(D._num||c.num)+'</b><span id="cmd-state">'+stateBadge(st.state,st.rest)+'</span>'
+      +'<b style="font-size:18px">Commande '+esc(D._num||c.num)+'</b>'+fourTag(D._four,1)+'<span id="cmd-state">'+stateBadge(st.state,st.rest)+'</span>'
       +'<span style="font-size:12.5px;color:#6B6790">'+(D._chantier&&affLabel(D._aff||c.aff)!==D._chantier?'chantier <b style="color:#1C1A33">'+esc(D._chantier)+'</b> · ':'')+esc(affLabel(D._aff||c.aff))+' · prochaine livraison : <b id="cmd-next" style="color:'+(st.late?'#B91C1C':'#1C1A33')+'">'+(st.next?esc(fr(st.next)):'—')+'</b></span>'
       +(D._date||D._esa?'<span style="font-size:12.5px;color:#6B6790">'+(D._date?'commande du '+esc(fr(D._date)):'')+(D._esa?' · ESABORA : '+esc(D._esa):'')+'</span>':'')
       +(D._gone&&st.state!=='complete'?'<span title="Cette commande n’apparaît plus dans le reliquat importé le '+esc(fr(D._gone))+' : sans doute livrée en totalité.">'+badge('Plus dans le reliquat ESABORA','#ECFDF5','#047857')+'</span>':'')
@@ -22030,6 +22032,7 @@ window.Commandes=(function(){
     if(!ENV.canManage()||!S.cur) return;
     modal('<div style="font-size:16px;font-weight:900;margin-bottom:12px">Modifier la commande</div>'
       +'<label class="cmu-lbl">N° DE COMMANDE *</label><input id="cmd-e-num" class="dcu-in cmu-fld" value="'+esc(D._num||'')+'" autocomplete="off">'
+      +'<label class="cmu-lbl">FOURNISSEUR</label><input id="cmd-e-four" class="dcu-in cmu-fld" value="'+esc(D._four||'')+'" placeholder="REXE, HELU, SONE… (facultatif)" autocomplete="off">'
       +'<label class="cmu-lbl">AFFAIRE *</label>'+affSelect('cmd-e-aff',D._aff||'')
       +'<div style="display:flex;gap:8px;justify-content:flex-end"><button class="dcu-btn2" onclick="Commandes._closeModal()">Annuler</button><button class="dcu-btn" onclick="Commandes._saveCmd()">Enregistrer</button></div>');
   }
@@ -22037,7 +22040,7 @@ window.Commandes=(function(){
     var num=cmdBase((($('cmd-e-num')||{}).value||'').trim()),aff=($('cmd-e-aff')||{}).value||'';
     if(!num||!aff){ alert('Le n° de commande et l’affaire sont obligatoires.'); return; }
     if(numExists(num,S.cur.id)){ alert('La commande '+num+' existe déjà.'); return; }
-    setVal('_num',num); setVal('_aff',aff); closeModal(); drawDetail();
+    setVal('_num',num); setVal('_aff',aff); setVal('_four',fourOf(($('cmd-e-num')||{}).value,($('cmd-e-four')||{}).value)); closeModal(); drawDetail();
   }
   function _editLine(k){
     if(!ENV.canManage()||!S.cur) return;
@@ -22261,6 +22264,10 @@ window.Commandes=(function(){
   function numFr(s){ var t=String(s||'').replace(/\s/g,'').replace(',','.'); var n=parseFloat(t); return isNaN(n)?null:n; }
   // « EL136651-M2S » → « EL136651 » (n° de commande seul, sans le code fournisseur)
   function cmdBase(n){ var s=String(n||'').trim().toUpperCase(),m=s.match(/^(EL\s*\d+)/); return m?m[1].replace(/\s+/g,''):s; }
+  // Fournisseur = suffixe du n° ESABORA (« EL136651-REXE » → « REXE »), affiché en petit à côté du n° EL
+  function fourOf(numTyped,fourTyped){ var f=String(fourTyped||'').trim().toUpperCase(); if(f) return f; var s=String(numTyped||'').trim().toUpperCase(),b=cmdBase(s); return s.slice(b.length).replace(/^[-\s.]+/,'').replace(/\.+$/,'').trim(); }
+  function fourTag(f,big){ return f?' <span title="Fournisseur" style="display:inline-block;font-size:'+(big?12:10.5)+'px;font-weight:800;padding:'+(big?'2px 8px':'1px 6px')+';border-radius:7px;background:#F1EFF8;color:#4A4766;letter-spacing:.3px;vertical-align:middle">'+esc(f)+'</span>':''; }
+  function fourStale(row,D2){ return ((row&&row.meta)||{}).four!==(D2._four||''); }
   var RE_HDR=/^Cmde\s*N°\s*(.+?)\s*\(\s*chantier\s*:\s*(.*?)\s*\)\s*du\s+(?:\S+\s+)?(\d{1,2})\s+(\S+)\s+(\d{4})\s*-\s*(.+?)\s*-\s*D[ée]lai\s*:\s*(\d{2}\/\d{2}\/\d{4})/i;
   async function readReliquatPdf(file,onProgress){
     var lib=await loadPdfJs();
@@ -22449,7 +22456,7 @@ window.Commandes=(function(){
         var a=affOfChantier(o.chantier); if(!a.known) sum.unknown[o.chantier]=1;
         var row=byNum[o.num],D2=JSON.parse(JSON.stringify(row?row.data||{}:{}));
         var ch=applyOrder(D2,o,a.id,today,a.known);
-        if(!ch.any) return;
+        if(!ch.any&&!(row&&fourStale(row,D2))) return; // (ou fournisseur pas encore affiché dans la liste)
         plan.push({type:row?'upd':'new',ord:o,aff:a.id,known:a.known,row:row,data:D2});
         if(!row){ sum.create++; sum.createLines+=o.lines.length; newList.push({num:o.num,ch:o.chantier,n:o.lines.length,next:stats(D2).next}); }
         else{ sum.upd++; sum.fresh+=ch.fresh; sum.gone+=ch.gone; sum.qty+=ch.qty; sum.back+=ch.back; sum.del+=ch.del.length; ch.del.forEach(function(d){ delList.push(Object.assign({num:o.num},d)); }); }
@@ -22518,7 +22525,7 @@ window.Commandes=(function(){
           for(var a=0;a<5;a++){
             var fresh=await DB.get(p.row.id); if(!fresh) break;
             var D2=JSON.parse(JSON.stringify(fresh.data||{})),ch=p.type==='absent'?applyAbsent(D2,today):applyOrder(D2,p.ord,p.aff,today,p.known);
-            if(!ch.any) break;
+            if(!ch.any&&!fourStale(fresh,D2)) break;
             var saved=await DB.update(fresh.id,fresh.rev,{data:D2,meta:stats(D2),num:D2._num||fresh.num,aff:D2._aff||fresh.aff||null,rev:fresh.rev+1,updated_by:me});
             if(saved){ if(S.cur&&S.cur.id===saved.id){ var c2=mergeRemote(saved); S.cur=Object.assign({},saved,{data:D}); applyKeys(c2); } break; }
           }
