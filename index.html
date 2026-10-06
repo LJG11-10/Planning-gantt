@@ -23047,34 +23047,17 @@ window.PetroNav=(function(){
   // Remet le champ « H vendues » à sa place d'origine (cachée) avant de reconstruire l'en-tête
   function budHome(){var bi=$('inp-bud'),home=$('sec-bud-home');if(bi&&home&&bi.previousSibling!==home)home.parentNode.insertBefore(bi,home.nextSibling);}
   function frDate(v){if(!v)return '';var m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+'/'+m[2]+'/'+m[1]:String(v);}
-  // Cases d'infos sous le titre : H vendues (le vrai champ), Consommé, Début, Fin, Échéance, Durée, Créée le
+  // Cases d'infos sous le titre : H vendues (le vrai champ), Début, Fin
+  // (Consommé, Échéance, Durée et Créée le retirés le 06/10/2026 à la demande de l'utilisateur)
   function chipsHtml(k){
-    var p=STORE.projects[k]||{},inf=p.infos||{},h='';
+    var p=STORE.projects[k]||{},h='';
     var ch=function(l,v,st){return '<span class="sec-chip"'+(st?' style="'+st+'"':'')+'><span class="sec-lbl">'+l+'</span><b>'+v+'</b></span>';};
-    var budOk=secVis('#inp-bud');
-    if(budOk)h+='<span class="sec-chip in"><span class="sec-lbl">H VENDUES</span><span id="sec-bud-slot"></span><b>h</b></span>';
-    if(budOk&&(typeof hasView!=='function'||hasView('budget_toolbar'))){
-      // même calcul que le Récap (H consommées) : seulement les lignes de CETTE affaire
-      var used=0;try{used=typeof _rcFhHours==='function'?_rcFhHours(k).total:0;}catch(e){}
-      var b=+p.budget||0;
-      h+=ch('CONSOMMÉ',String(used).replace('.',',')+' h'+(b?' ('+Math.round(used*100/b)+' %)':''),b&&used>b?'background:#FEF2F2;border-color:#FECACA':'');
-    }
+    if(secVis('#inp-bud'))h+='<span class="sec-chip in"><span class="sec-lbl">H VENDUES</span><span id="sec-bud-slot"></span><b>h</b></span>';
     if(secVis('#inp-dstart')){
       var ds=($('inp-dstart')||{}).value||p.dstart||'',de=($('inp-dend')||{}).value||p.dend||'';
       if(ds)h+=ch('DÉBUT',frDate(ds));
       if(de)h+=ch('FIN',frDate(de));
-      if(de&&!p.closed){
-        var d2=new Date(de+'T12:00:00'),now=new Date();now.setHours(12,0,0,0);
-        var nd=Math.round((d2-now)/864e5);
-        if(!isNaN(nd))h+=ch('ÉCHÉANCE',nd<0?'dépassée de '+(-nd)+' j':nd===0?'aujourd’hui':nd<14?'dans '+nd+' jour'+(nd>1?'s':''):'dans '+Math.round(nd/7)+' semaines',nd<0?'background:#FEF2F2;border-color:#FECACA':'');
-      }
-      if(ds&&de){
-        var a=new Date(ds+'T12:00:00'),z=new Date(de+'T12:00:00'),n=0;
-        if(z>=a){for(var c=new Date(a);c<=z&&n<5000;c.setDate(c.getDate()+1)){var wd=c.getDay();if(wd>=1&&wd<=5&&!(typeof isFerie==='function'&&isFerie(c)))n++;}
-          h+=ch('DURÉE',n+' j ouvrés · '+(n*8)+' h max');}
-      }
     }
-    if(inf.dateCreation)h+=ch('CRÉÉE LE',frDate(inf.dateCreation));
     return h;
   }
   function placeBud(bar){var slot=bar.querySelector('#sec-bud-slot'),bi=$('inp-bud');if(slot&&bi)slot.appendChild(bi);}
