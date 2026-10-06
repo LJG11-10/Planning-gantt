@@ -9779,7 +9779,7 @@ function _modsResponsables(){
 // ── Onglet Modifications, nouvelle version (06/10/2026) ───────────────────
 // Objectif : une modification demandée est faite, puis chaque personne concernée connaît
 // la DERNIÈRE version du document.
-//  1) « Nouvelle modification » : document, Détail modification, mail du client (fichiers
+//  1) « Nouvelle modification » : document, Détail modification, fichiers facultatifs (le mail du client se glisse dans le brouillon Outlook) (fichiers
 //     joints), personnes qui doivent la faire → email « Modification à faire » tout prêt.
 //  2) La personne qui l'a faite : « ✓ Marquer comme faite » → version (saisie à la main),
 //     fichier, personnes à prévenir → email « Nouvelle version » tout prêt.
@@ -9940,7 +9940,7 @@ function renderModificationsTab(){
   var nTodo=docs.reduce(function(n,d){return n+_modsPending(d).length;},0);
   var h='<div class="mdx">'
     +'<div class="mdx-card mdx-top"><div style="flex:1;min-width:260px"><div class="mdx-h">📄 Modifications et documents'+(nTodo?' <span class="mdx-new org" style="font-size:12px">'+nTodo+' à faire</span>':'')+'</div>'
-    +'<div class="mdx-sub">1) « Nouvelle modification » : le détail, le mail du client, et qui doit la faire → un email tout prêt s’ouvre dans Outlook.<br>2) Une fois faite : « ✓ Marquer comme faite », avec la version et les personnes à prévenir → un 2e email tout prêt avec le document.</div>'
+    +'<div class="mdx-sub">1) « Nouvelle modification » : le détail et qui doit la faire → un email tout prêt s’ouvre dans Outlook (glissez-y le mail du client).<br>2) Une fois faite : « ✓ Marquer comme faite », avec la version et les personnes à prévenir → un 2e email tout prêt avec le document.</div>'
     +(nPeople||!ed?'':'<div class="mdx-warn">Aucune personne avec un email dans les infos de l’affaire. <button type="button" class="mdx-lnk" onclick="openAffaireInfos()">ℹ️ Ajouter des personnes</button></div>')
     +'</div><div class="mdx-acts">'
     +(docs.length?'<button type="button" class="mdx-btn2" onclick="modsExportAll()">⬇ Exporter (.zip)</button>':'')
@@ -10007,7 +10007,7 @@ function _modsBuildDocCard(doc,ed){
         +'<button type="button" class="mdx-ico" onclick="modDeleteReq(\''+doc.id+'\',\''+m.id+'\')" title="Annuler cette demande" aria-label="Annuler cette demande">✕</button>':'')
       +'</div><div style="display:grid;gap:7px">'
       +'<div class="mdx-row"><span class="mdx-l">DÉTAIL MODIFICATION</span><span style="flex:1;min-width:200px;white-space:pre-wrap">'+esc2(m.detail||'—')+'</span></div>'
-      +'<div class="mdx-row"><span class="mdx-l">MAIL DU CLIENT / FICHIERS</span><span style="flex:1;min-width:200px">'+_modsFilesHtml(m.files)+'</span></div>'
+      +((m.files||[]).length?'<div class="mdx-row"><span class="mdx-l">FICHIERS</span><span style="flex:1;min-width:200px">'+_modsFilesHtml(m.files)+'</span></div>':'')
       +'<div class="mdx-row"><span class="mdx-l">À FAIRE PAR</span><span style="flex:1;min-width:200px">'+_modsChips(m.to,'personne n’est coché')+'</span></div>'
       +'<div class="mdx-row"><span class="mdx-l">EMAIL</span>'+_modsMailState(m)+'</div>'
       +'</div></div>';
@@ -10080,11 +10080,14 @@ function _modsBusyForm(on,msg){
 }
 var _modsVerHelp='Saisie libre : 3, B, Ind. C…';
 
-// Zone « mail du client » : glisser-déposer (depuis Outlook ou le bureau) ou choisir des fichiers
+// Fichiers facultatifs d'une demande (PDF annoté…). Le mail du client ne passe PAS par le site :
+// Chrome / Edge ne reçoivent pas un mail glissé depuis Outlook (06/10/2026). On le glisse
+// directement dans le brouillon Outlook qui s'ouvre (Outlook le joint tout seul).
 function _modsDropHtml(){
-  return '<div id="mf-drop" class="mdx-drop" tabindex="0" role="button" onclick="document.getElementById(\'mf-files\').click()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}"'
+  return '<div id="mf-drop" class="mdx-drop" tabindex="0" role="button" aria-label="Ajouter des fichiers" onclick="document.getElementById(\'mf-files\').click()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}"'
     +' ondragover="event.preventDefault();this.classList.add(\'on\')" ondragleave="this.classList.remove(\'on\')" ondrop="event.preventDefault();this.classList.remove(\'on\');modAddFiles(event.dataTransfer.files)">'
-    +'📧 Glissez ici le mail du client (depuis Outlook) ou d’autres fichiers<br><span style="font-size:11.5px;color:#9A96B3">ou cliquez pour les choisir. Si le glisser depuis Outlook ne marche pas : glissez d’abord le mail sur le bureau, puis ici.</span></div>'
+    +'📎 Glissez ici un PDF ou un autre fichier, ou cliquez pour le choisir (facultatif)'
+    +'<br><span style="font-size:11.5px;color:#9A96B3">Le mail du client : glissez-le directement dans le brouillon Outlook qui va s’ouvrir.</span></div>'
     +'<input type="file" id="mf-files" multiple style="display:none" onchange="modAddFiles(this.files);this.value=\'\'">'
     +'<div id="mf-flist" class="mdx-fls"></div>';
 }
@@ -10118,7 +10121,7 @@ function modShowReqForm(docId){
   _modsShowForm('<div class="mdx-ft">🛠 Nouvelle modification</div>'
     +'<label class="mdx-fl">DOCUMENT</label>'+docField
     +'<label class="mdx-fl" for="mf-note">DÉTAIL MODIFICATION</label><textarea id="mf-note" class="mdx-in" rows="4" placeholder="Ex : le client demande d’ajouter le départ pompe P3 et de passer le câble en 5G6²"></textarea>'
-    +'<label class="mdx-fl">MAIL DU CLIENT / FICHIERS</label>'+_modsDropHtml()
+    +'<label class="mdx-fl">FICHIERS</label>'+_modsDropHtml()
     +'<label class="mdx-fl">À FAIRE PAR <span style="font-weight:600;color:#9A96B3">(elles recevront l’email « modification à faire »)</span></label>'+_modsPeopleHtml(_modsSelOf(prevReq&&prevReq.to),prevReq&&prevReq.to)
     +_modsFormButtons('modConfirmReq.bind(null,\''+(docId||'')+'\')','Enregistrer et préparer l’email'),'org');
 }
@@ -10361,14 +10364,16 @@ async function _modsMakeEml(o){
   setTimeout(function(){URL.revokeObjectURL(url);},10000);
   return {fn:fn,attached:n};
 }
-function _modsDoneToast(r,nTo,msgs){
+function _modsDoneToast(r,nTo,msgs,tip){
   _modsToast('📧 <b>Email prêt</b> : ouvrez le fichier « '+esc2(r.fn)+' » (barre des téléchargements du navigateur). Outlook l’affiche avec '+nTo+' destinataire'+(nTo>1?'s':'')+(r.attached?' et '+r.attached+' pièce'+(r.attached>1?'s':'')+' jointe'+(r.attached>1?'s':''):'')+' : vérifiez, puis cliquez sur Envoyer.'
+    +(tip?'<small style="color:#FDE68A;font-weight:700">'+tip+'</small>':'')
     +msgs.map(function(m){return '<small>⚠️ '+esc2(m)+'</small>';}).join('')
     +'<small>Astuce : dans le menu des téléchargements, choisissez « Toujours ouvrir les fichiers de ce type » pour qu’Outlook s’ouvre directement la prochaine fois.</small>',14000);
 }
 function _modsAffTxt(){var p=currP()||{},inf=p.infos||{};var num=inf.numero||STORE.current||'',lib=inf.libelle||'';return {num:num,txt:num+(lib?' — '+lib:'')};}
 
-// Email « modification à faire » (aux personnes qui doivent la faire, avec le mail du client)
+// Email « modification à faire » (aux personnes qui doivent la faire, avec les fichiers de la demande ;
+// le mail du client est glissé à la main dans le brouillon, donc le texte n'en parle pas)
 async function modsPrepareReqEmail(docId,modId,localFiles){
   var doc=_modsDoc(docId);if(!doc)return;
   var m=(doc.mods||[]).find(function(x){return x.id===modId;});if(!m)return;
@@ -10379,9 +10384,9 @@ async function modsPrepareReqEmail(docId,modId,localFiles){
   var att=await _modsGetAttachments(localFiles,m.files);
   var rows=[['Affaire',A.txt],['Document',doc.nom,1]];
   if(last)rows.push(['Version actuelle',_modsVerLbl(last.version)]);
-  rows.push(['Détail modification',m.detail||''],['Demandée le',m.date||_modsNowFr()]);
+  rows.push(['Détail modification',m.detail||'']); // pas de date dans l'email (demande de l'utilisateur, 06/10)
   var lines=[];
-  if(att.files.length)lines.push(att.files.length>1?'Le mail du client et les fichiers sont joints à ce message.':'Le mail du client est joint à ce message.');
+  if(att.files.length)lines.push(att.files.length>1?'Les fichiers sont joints à ce message.':'Le fichier est joint à ce message.');
   att.msgs.forEach(function(x){lines.push(x);});
   lines.push('Une fois la modification faite, merci de l’indiquer sur Pétrosphère : affaire '+A.num+', onglet Modifications, bouton « ✓ Marquer comme faite ».');
   var r=await _modsMakeEml({to:to,subject:'['+A.num+'] Modification à faire : '+doc.nom,intro:'Une modification est à faire sur un document de l’affaire '+A.txt+'.',
@@ -10389,7 +10394,7 @@ async function modsPrepareReqEmail(docId,modId,localFiles){
   m.mailAt=Date.now();m.mailBy=_modsMyName();
   saveNow();
   if(!_modsBusy())renderModificationsTab();
-  _modsDoneToast(r,to.length,att.msgs);
+  _modsDoneToast(r,to.length,att.msgs,'👉 Pour joindre le mail du client : dans Outlook, glissez-le de votre boîte de réception dans ce brouillon.');
 }
 // Email « nouvelle version » (aux personnes à prévenir, avec le document)
 async function modsPrepareEmail(docId,verId,localFile){
@@ -10403,8 +10408,7 @@ async function modsPrepareEmail(docId,verId,localFile){
   var att=await _modsGetAttachments(localFile?[localFile]:null,v.attachmentPath?[{path:v.attachmentPath,name:v.attachmentName}]:[]);
   var rows=[['Affaire',A.txt],['Document',doc.nom,1],['Version',_modsVerLbl(v.version)+(prev?' (remplace '+_modsVerLbl(prev.version)+')':''),1]];
   if(v.note)rows.push(['Détail modification',v.note]);
-  if(v.reqDate)rows.push(['Demandée le',v.reqDate+(v.reqBy?' par '+v.reqBy:'')]);
-  rows.push(['Date',v.date||_modsNowFr()]);
+  // pas de « Demandée le » ni de « Date » dans l'email (demande de l'utilisateur, 06/10)
   var lines=[(att.files.length?'Le document est joint à ce message.':(att.msgs.length?'':'Pas de fichier pour cette version.'))+(prev?' Merci de ne plus utiliser les versions précédentes.':'')].filter(function(x){return x.trim();});
   att.msgs.forEach(function(x){lines.push(x);});
   var nv=!!(prev||v.modId); // suite d'une modification = nouvelle version, même sans version d'avant enregistrée
@@ -10591,7 +10595,7 @@ function modsExportAll(){
     (doc.versions||[]).forEach(function(v){
       if(v.attachmentPath)attachments.push({doc:doc,v:v});
     });
-    // fichiers des demandes de modification (mail du client…)
+    // fichiers des demandes de modification (PDF annoté…)
     (doc.mods||[]).forEach(function(m){
       (m.files||[]).forEach(function(f){if(f&&f.path)attachments.push({doc:doc,v:{version:'demande '+(m.date||'').replace(/\//g,'-'),attachmentPath:f.path,attachmentName:f.name}});});
     });
