@@ -617,9 +617,39 @@
   // qui ont leur propre fusion : fortuits, archivage, budgets skid, dates,
   // couleurs de phase, infos, documents... champ par champ.
   var _PROJ_OWN_MERGE={data:1,fh:1,_fhModAt:1,_orderModAt:1,_deletedRowIds:1,_metaModAt:1};
+  // Liste d'objets avec un "id" (documents de l'onglet Modifications, leurs
+  // versions) : fusion à trois élément par élément. Ajouté d'un côté = gardé ;
+  // supprimé d'un côté et pas modifié de l'autre = supprimé ; présent des deux
+  // côtés = itemMerge (ou le côté qui a changé). Avant (06/10/2026), toute la
+  // liste "documents" était prise d'un seul côté : deux personnes qui
+  // ajoutaient une version en même temps → l'une des deux était perdue.
+  function _m3list(b,l,r,itemMerge){
+    b=Array.isArray(b)?b:[];l=Array.isArray(l)?l:[];r=Array.isArray(r)?r:[];
+    function idx(a){var m={};a.forEach(function(x){if(x&&x.id!=null)m[x.id]=x;});return m;}
+    var bm=idx(b),lm=idx(l),rm=idx(r),out=[],seen={};
+    function one(x){
+      if(!x||x.id==null||seen[x.id])return;seen[x.id]=1;
+      var bi=bm[x.id],li=lm[x.id],ri=rm[x.id],v;
+      if(li&&ri)v=itemMerge?itemMerge(bi,li,ri):_pick3(bi,li,ri);
+      else if(li)v=(bi&&_eqJ(li,bi))?undefined:li;   // absent du serveur : supprimé par un collègue, sauf si modifié ici
+      else v=(bi&&_eqJ(ri,bi))?undefined:ri;          // absent d'ici : supprimé ici, sauf si modifié par un collègue
+      if(v!==undefined)out.push(v);
+    }
+    r.forEach(one);l.forEach(one);
+    return out;
+  }
+  function _m3doc(bd,ld,rd){
+    bd=bd||{};var out={};
+    _keysOf(bd,ld,rd).forEach(function(k){
+      var v=k==='versions'?_m3list(bd.versions,ld.versions,rd.versions):_pick3(bd[k],ld[k],rd[k]);
+      if(v!==undefined)out[k]=v;
+    });
+    return out;
+  }
   function _merge3ProjectFields(baseP,localP,remoteP){
     _keysOf(baseP,localP,remoteP).forEach(function(f){
       if(_PROJ_OWN_MERGE[f])return;
+      if(f==='documents'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f],_m3doc);return;}
       var v=_pick3(baseP[f],localP[f],remoteP[f]);
       if(v===undefined)delete remoteP[f];else remoteP[f]=v;
     });
@@ -3646,6 +3676,7 @@ async function loadRoleAndStart() {
       return;
     }
     CURRENT_ROLE = res.data.role;
+    window.CURRENT_USER_NOM = res.data.nom || ''; // nom de la personne connectée (signature des emails Modifications)
     await loadCurrentPermissions();
     document.getElementById('login-screen').style.display = 'none';
     showHub();
@@ -9730,7 +9761,7 @@ function fhBuildPersonWeekBlock(nm,w){
 
 // ══════════════════════════════════════════════════════════════════════
 // ONGLET MODIFICATIONS — registre de documents par affaire, avec versions,
-// pièces jointes, cases "fait", responsables et notifications par email.
+// pièces jointes et email préparé dans Outlook (.eml) — voir « nouvelle version (06/10/2026) » plus bas.
 // ══════════════════════════════════════════════════════════════════════
 function _modsGetDocs(){
   var p=currP();
@@ -9743,175 +9774,415 @@ function _modsResponsables(){
   if(!p.infos.modifResponsables)p.infos.modifResponsables={contacts:[]};
   return p.infos.modifResponsables;
 }
+// ── Onglet Modifications, nouvelle version (06/10/2026) ───────────────────
+// Objectif : chaque personne concernée par un document connaît sa DERNIÈRE version.
+// - Personnes concernées = contacts (avec email) des Infos de l'affaire (ℹ️), cochées
+//   à chaque version (par défaut : les mêmes que la version d'avant).
+// - « ✉ Préparer l'email » fabrique un fichier .eml (brouillon « X-Unsent ») : Outlook
+//   l'ouvre avec les destinataires, le message et le fichier joint ; la personne
+//   connectée vérifie et clique sur Envoyer, depuis SA boîte. Plus d'envoi automatique
+//   (le service d'envoi demandait d'authentifier le domaine), plus de SMS, plus de « Fait ».
+// - Pastille sur le sous-onglet tant qu'une nouvelle version d'un collègue n'a pas été vue
+//   (mémoire du poste, par personne connectée).
+// - Version : {id, version, date, note (ce qui change), dest [{email,nom}], byEmail, byName,
+//   attachmentPath, attachmentName, mailAt, mailBy, _createdAt}. Ancien champ « fait » ignoré.
+var _MODS_CATS=[['els','ELS'],['client','Client'],['auto','Automatisme'],['be','ELS Bureau d’Études'],['chantier','Chantier'],['tableauterie','Tableauterie']];
+var _MODS_MAX_ATT=20*1024*1024; // au-delà, la plupart des messageries refusent la pièce jointe
+(function(){
+  if(document.getElementById('mdx-css'))return;
+  var st=document.createElement('style');st.id='mdx-css';
+  st.textContent='.mdx{max-width:1100px;margin:0 auto;padding:16px 20px 60px;font-family:inherit;color:#1C1A33}'
+    +'.mdx-card{background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 2px rgba(28,26,51,.04)}'
+    +'.mdx-top{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}'
+    +'.mdx-h{font-size:18px;font-weight:900}.mdx-sub{font-size:12.5px;color:#6B6790;margin-top:4px;line-height:1.45}'
+    +'.mdx-warn{margin-top:10px;font-size:12.5px;font-weight:700;color:#92400E;background:#FFFBEB;border:1px solid #FCD34D;border-radius:10px;padding:8px 12px}'
+    +'.mdx-btn{height:36px;padding:0 14px;border-radius:10px;border:none;background:#4B3FC7;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}'
+    +'.mdx-btn:hover{background:#3A2EAE}.mdx-btn:disabled{opacity:.55;cursor:default}'
+    +'.mdx-btn2{height:36px;padding:0 13px;border-radius:10px;border:1.5px solid #E4E1F0;background:#fff;color:#3A2EAE;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}'
+    +'.mdx-btn2:hover{border-color:#C7C1F5;background:#FAF9FF}.mdx-btn2.red{color:#B91C1C}'
+    +'.mdx-ico{width:32px;height:32px;border-radius:9px;border:1px solid #E4E1F0;background:#fff;color:#9A96B3;cursor:pointer;font-size:13px;flex-shrink:0}.mdx-ico:hover{color:#B91C1C;border-color:#FCA5A5}'
+    +'.mdx-lnk{border:none;background:none;color:#4B3FC7;font-weight:800;cursor:pointer;font-family:inherit;font-size:12.5px;padding:0;text-decoration:underline}'
+    +'.mdx-doc.new{border-color:#A5B4FC;box-shadow:0 0 0 3px #EEF2FF}'
+    +'.mdx-dh{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}'
+    +'.mdx-dn{font-size:16px;font-weight:900;color:#1C1A33}.mdx-dv{font-size:12.5px;color:#6B6790;margin-top:3px}.mdx-dv b{color:#3A2EAE;font-size:14px}'
+    +'.mdx-new{display:inline-block;margin-left:8px;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:8px;background:#EEF2FF;color:#4338CA;vertical-align:middle}'
+    +'.mdx-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}'
+    +'.mdx-body{margin-top:12px;border-top:1px solid #EFEDF7;padding-top:10px;display:grid;gap:7px}'
+    +'.mdx-row{display:flex;gap:12px;align-items:baseline;font-size:13px;flex-wrap:wrap}'
+    +'.mdx-l{width:120px;flex-shrink:0;font-size:10.5px;font-weight:800;color:#9A96B3;letter-spacing:.4px}'
+    +'.mdx-chip{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:#F1EFF8;color:#4A4766;margin:0 4px 4px 0}'
+    +'.mdx-ok{color:#15803D;font-weight:700}.mdx-todo{color:#B45309;font-weight:800}'
+    +'.mdx-file{color:#4B3FC7;font-weight:800;text-decoration:underline;cursor:pointer}'
+    +'.mdx-old{margin-top:10px;border-top:1px dashed #E4E1F0;padding-top:8px}'
+    +'.mdx-old summary{cursor:pointer;font-size:12px;font-weight:800;color:#6B6790}'
+    +'.mdx-ov{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid #F4F3F9;font-size:12.5px;color:#9A96B3}'
+    +'.mdx-ov .mdx-file{color:#8B86B0}.mdx-vtag{font-weight:800;color:#6B6790;background:#F4F3F9;border-radius:6px;padding:1px 7px;text-decoration:line-through}'
+    +'.mdx-rep{font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:7px;background:#F4F3F9;color:#9A96B3}'
+    +'.mdx-form{border:2px solid #C7C1F5;background:#FBFAFF}.mdx-ft{font-size:15px;font-weight:900;margin-bottom:10px}'
+    +'.mdx-fl{display:block;font-size:10.5px;font-weight:800;color:#6B6790;letter-spacing:.4px;margin:10px 0 4px}'
+    +'.mdx-in{width:100%;box-sizing:border-box;border:1.5px solid #E4E1F0;border-radius:10px;padding:8px 11px;font-size:13px;font-family:inherit;background:#fff;color:#1C1A33}'
+    +'.mdx-in:focus{outline:none;border-color:#4B3FC7}'
+    +'.mdx-pp{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:4px 14px;background:#fff;border:1.5px solid #E4E1F0;border-radius:10px;padding:10px 12px}'
+    +'.mdx-pg{grid-column:1/-1;font-size:10.5px;font-weight:800;color:#9A96B3;letter-spacing:.4px;margin-top:6px}.mdx-pg:first-child{margin-top:0}'
+    +'.mdx-pl{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer;padding:3px 0}.mdx-pl input{accent-color:#4B3FC7;margin-top:2px}'
+    +'.mdx-pl small{display:block;color:#9A96B3;font-size:11px}'
+    +'#mods-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9700;max-width:620px;width:calc(100% - 32px);background:#1C1A33;color:#fff;border-radius:14px;padding:13px 16px;font-size:13px;line-height:1.45;box-shadow:0 12px 40px rgba(0,0,0,.3)}'
+    +'#mods-toast small{display:block;color:#C7C1F5;margin-top:4px;font-size:11.5px}'
+    +'.sec-badge{display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:#DC2626;color:#fff;font-size:10.5px;font-weight:800;text-align:center;vertical-align:1px}';
+  document.head.appendChild(st);
+})();
+
+// Personnes des Infos de l'affaire (avec un email), sans doublon
+function _modsPeople(){
+  var p=currP()||{},inf=p.infos||{},resps=inf.responsables||{},out=[],seen={};
+  function add(c,cat){
+    var e=String((c&&c.email)||'').trim();if(!e||e.indexOf('@')<0)return;
+    var k=e.toLowerCase();
+    if(seen[k]){if(seen[k].cats.indexOf(cat)<0)seen[k].cats.push(cat);if(!seen[k].nom&&c.nom)seen[k].nom=String(c.nom).trim();return;}
+    var o={email:e,nom:String(c.nom||'').trim(),cats:[cat]};seen[k]=o;out.push(o);
+  }
+  _MODS_CATS.forEach(function(c){_getContacts(resps[c[0]]).forEach(function(ct){add(ct,c[1]);});});
+  // ancienne liste « Responsables à prévenir » de cet onglet : gardée, pour ne perdre personne
+  ((inf.modifResponsables&&inf.modifResponsables.contacts)||[]).forEach(function(ct){add(ct,'Autres');});
+  return out;
+}
+function _modsMe(){var e='';try{e=(CURRENT_USER&&CURRENT_USER.email)||'';}catch(x){}return String(e).trim().toLowerCase();}
+function _modsMyName(){
+  var n=String(window.CURRENT_USER_NOM||'').trim();if(n)return n;
+  var me=_modsMe(),gp=(STORE&&STORE.globalPersons)||{};
+  if(me)Object.keys(gp).some(function(k){if(String((gp[k]&&gp[k].email)||'').trim().toLowerCase()===me){n=k;return true;}return false;});
+  if(n)return n;
+  return me?me.split('@')[0].replace(/[._-]+/g,' ').replace(/(^|\s)\S/g,function(c){return c.toUpperCase();}):'';
+}
+function _modsVersSorted(doc){return (doc.versions||[]).slice().sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});}
+function _modsLatest(doc){return _modsVersSorted(doc)[0]||null;}
+function _modsNextVer(v){
+  v=String(v==null?'':v).trim();var m;
+  if(/^\d+$/.test(v))return String(+v+1);
+  if((m=v.match(/^(.*?)(\d+)$/)))return m[1]+(+m[2]+1);
+  if(/^[A-Ya-y]$/.test(v))return String.fromCharCode(v.charCodeAt(0)+1);
+  return '';
+}
+function _modsNowFr(){return new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});}
+function _modsFmtDT(t){if(!t)return '';var d=new Date(t);if(isNaN(d))return '';return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' à '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}
+
+// ── Nouvelles versions pas encore vues (mémoire du poste, par personne connectée) ──
+function _modsSeenKey(){return 'mods_seen::'+(_modsMe()||'?');}
+function _modsSeen(){
+  var s=null;try{s=JSON.parse(localStorage.getItem(_modsSeenKey())||'null');}catch(e){}
+  if(!s||typeof s!=='object'){
+    // 1re fois sur ce poste : ce qui existe déjà compte comme vu (pas une pluie de pastilles)
+    s={};
+    Object.keys((STORE&&STORE.projects)||{}).forEach(function(a){(STORE.projects[a].documents||[]).forEach(function(d){(d.versions||[]).forEach(function(v){s[v.id]=1;});});});
+    try{localStorage.setItem(_modsSeenKey(),JSON.stringify(s));}catch(e){}
+  }
+  return s;
+}
+function modsUnseen(aff){
+  var p=STORE&&STORE.projects&&STORE.projects[aff];
+  if(!p||!Array.isArray(p.documents)||!p.documents.length)return [];
+  var s=_modsSeen(),me=_modsMe(),lim=Date.now()-30*864e5;
+  return p.documents.map(_modsLatest).filter(function(v){
+    return v&&!s[v.id]&&(v._createdAt||0)>lim&&String(v.byEmail||'').toLowerCase()!==me;
+  });
+}
+function _modsMarkSeen(vers){
+  if(!vers.length)return;var s=_modsSeen();
+  vers.forEach(function(v){s[v.id]=1;});
+  try{localStorage.setItem(_modsSeenKey(),JSON.stringify(s));}catch(e){}
+}
+// Saisie en cours dans l'onglet : ne pas redessiner (synchro)
+function _modsBusy(){
+  var fa=document.getElementById('mods-form-area'),w=document.getElementById('mods-w'),a=document.activeElement;
+  return !!((fa&&fa.innerHTML)||(w&&a&&w.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)));
+}
+
 function renderModificationsTab(){
   var w=document.getElementById('mods-w');
   if(!w)return;
-  var docs=_modsGetDocs();
-  var resp=_modsResponsables();
-  var contacts=(resp.contacts||[]).filter(function(c){return c.nom||c.email;});
-
-  var html='<div style="padding:16px 20px;max-width:1100px;margin:0 auto">';
-
-  // ── Responsables à prévenir ──────────────────────────────────────────
-  html+='<div style="background:var(--bg2);border-radius:var(--r2);padding:16px 18px;margin-bottom:18px">'
-    +'<div style="font-size:11px;font-weight:800;color:var(--tx3);letter-spacing:.6px;margin-bottom:10px">🔔 RESPONSABLES À PRÉVENIR (nouveaux documents, modifications, documents terminés)</div>'
-    +_nafRespBlock('modif','Responsables',contacts,'mods','modsAddEmail')
-    +'<button class="btn btn-a" style="margin-top:8px" onclick="modsSaveResponsables()">💾 Enregistrer les responsables</button>'
-    +'</div>';
-
-  // ── Bouton nouveau document ──────────────────────────────────────────
-  html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
-    +'<div style="font-size:11px;font-weight:800;color:var(--tx3);letter-spacing:.6px">📄 DOCUMENTS — '+esc2(STORE.current)+'</div>'
-    +'<div style="display:flex;gap:8px">'
-    +(docs.length?'<button class="btn btn-g" onclick="modsExportAll()">⬇ Exporter tous les documents (.zip)</button>':'')
-    +(docs.some(function(d){return d.versions.some(function(v){return v.attachmentPath;});})?'<button class="btn" style="background:#FEF2F2;color:#B91C1C;border:1px solid #FCA5A5" onclick="modsPurgeAttachments()">🗑 Purger les pièces jointes</button>':'')
-    +'<button class="btn btn-a" onclick="modShowAddDocForm()">+ Ajouter document</button>'
-    +'</div></div>';
-
-  html+='<div id="mods-form-area"></div>';
-
-  // ── Liste des documents ───────────────────────────────────────────────
+  var docs=_modsGetDocs(),aff=STORE.current;
+  // nouvelles versions pour moi : surlignées pendant cette visite, puis comptées comme vues
+  if(window._modsNewAff!==aff){window._modsNewAff=aff;window._modsNew={};}
+  var un=modsUnseen(aff);un.forEach(function(v){window._modsNew[v.id]=1;});_modsMarkSeen(un);
+  var nPeople=_modsPeople().length;
+  var hasAtt=docs.some(function(d){return (d.versions||[]).some(function(v){return v.attachmentPath;});});
+  var h='<div class="mdx">'
+    +'<div class="mdx-card mdx-top"><div style="flex:1;min-width:260px"><div class="mdx-h">📄 Documents de l’affaire</div>'
+    +'<div class="mdx-sub">À chaque nouvelle version, « ✉ Préparer l’email » ouvre Outlook avec les personnes concernées, le message et le fichier joint : il ne reste qu’à vérifier et envoyer. Les personnes viennent des infos de l’affaire (ℹ️).</div>'
+    +(nPeople?'':'<div class="mdx-warn">Aucune personne avec un email dans les infos de l’affaire. <button type="button" class="mdx-lnk" onclick="openAffaireInfos()">ℹ️ Ajouter des personnes</button></div>')
+    +'</div><div class="mdx-acts">'
+    +(docs.length?'<button type="button" class="mdx-btn2" onclick="modsExportAll()">⬇ Exporter (.zip)</button>':'')
+    +(hasAtt?'<button type="button" class="mdx-btn2 red" onclick="modsPurgeAttachments()">🗑 Purger les fichiers</button>':'')
+    +'<button type="button" class="mdx-btn" onclick="modShowAddDocForm()">＋ Ajouter un document</button>'
+    +'</div></div>'
+    +'<div id="mods-form-area"></div>';
   if(!docs.length){
-    html+='<div style="padding:30px;text-align:center;color:var(--tx3);border:1px dashed var(--bd);border-radius:var(--r2)">Aucun document pour cette affaire — cliquez "+ Ajouter document" pour commencer.</div>';
+    h+='<div class="mdx-card" style="text-align:center;color:#9A96B3;padding:30px">Aucun document pour cette affaire. Cliquez sur « ＋ Ajouter un document » pour commencer.</div>';
   }else{
-    docs.slice().sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);}).forEach(function(doc){
-      html+=_modsBuildDocCard(doc);
-    });
+    docs.slice().sort(function(a,b){
+      var la=_modsLatest(a),lb=_modsLatest(b);
+      return ((lb&&lb._createdAt)||b._createdAt||0)-((la&&la._createdAt)||a._createdAt||0);
+    }).forEach(function(doc){h+=_modsBuildDocCard(doc);});
   }
-
-  html+='</div>';
-  w.innerHTML=html;
+  h+='</div>';
+  w.innerHTML=h;
 }
 function esc2(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+function _modsFileLink(v){
+  if(v.attachmentPath)return '<a class="mdx-file" href="#" onclick="modDownloadAttachment(\''+v.attachmentPath.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\',\''+String(v.attachmentName||'document').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\');return false;">📎 '+esc2(v.attachmentName||'fichier')+'</a>';
+  if(v.attachmentName)return '<span style="font-style:italic;color:#9A96B3">'+esc2(v.attachmentName)+'</span>';
+  return '<span style="font-style:italic;color:#9A96B3">Pas de fichier</span>';
+}
 function _modsBuildDocCard(doc){
-  var versions=(doc.versions||[]).slice().sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);});
-  var latest=versions[0]||{};
-  var html='<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);margin-bottom:14px;overflow:hidden">'
-    +'<div style="padding:12px 16px;background:var(--ac2);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'
-    +'<div><span style="font-size:14px;font-weight:800;color:var(--ac)">'+esc2(doc.nom)+'</span>'
-    +'<span style="font-size:10px;color:var(--tx3);margin-left:10px">Version actuelle : '+esc2(latest.version||'—')+'</span></div>'
-    +'<div style="display:flex;gap:6px">'
-    +'<button class="btn" style="font-size:11px;padding:5px 10px" onclick="modShowAddVersionForm(\''+doc.id+'\')">+ Nouvelle modif</button>'
-    +'<button class="btn" style="font-size:11px;padding:5px 8px;background:var(--rd2);color:var(--rd)" onclick="modDeleteDoc(\''+doc.id+'\')" title="Supprimer le document">✕</button>'
+  var vs=_modsVersSorted(doc),last=vs[0]||{},old=vs.slice(1);
+  var isNew=!!(window._modsNew&&last.id&&window._modsNew[last.id]);
+  var dest=(last.dest||[]).filter(function(d){return d&&d.email;});
+  var h='<div class="mdx-card mdx-doc'+(isNew?' new':'')+'">'
+    +'<div class="mdx-dh"><div style="min-width:0;flex:1 1 300px">'
+    +'<div class="mdx-dn">'+esc2(doc.nom)+(isNew?'<span class="mdx-new">Nouvelle version</span>':'')+'</div>'
+    +'<div class="mdx-dv">Dernière version : <b>v'+esc2(last.version||'—')+'</b> du '+esc2(last.date||'—')+(last.byName?' · ajoutée par '+esc2(last.byName):'')
+    +(last.id?' · <button type="button" class="mdx-lnk" style="font-size:11.5px;color:#9A96B3" onclick="modDeleteVersion(\''+doc.id+'\',\''+last.id+'\')">supprimer cette version</button>':'')+'</div>'
+    +'</div><div class="mdx-acts">'
+    +(last.id?'<button type="button" class="mdx-btn" onclick="modEditDest(\''+doc.id+'\',\''+last.id+'\')" title="Ouvre Outlook avec les personnes concernées, le message et le fichier de cette version">✉ Préparer l’email</button>':'')
+    +'<button type="button" class="mdx-btn2" onclick="modShowAddVersionForm(\''+doc.id+'\')">＋ Nouvelle version</button>'
+    +'<button type="button" class="mdx-ico" onclick="modDeleteDoc(\''+doc.id+'\')" title="Supprimer le document" aria-label="Supprimer le document">✕</button>'
     +'</div></div>'
-    +'<div style="padding:6px 16px 12px">';
+    +'<div class="mdx-body">'
+    +(last.note?'<div class="mdx-row"><span class="mdx-l">CE QUI CHANGE</span><span style="flex:1;min-width:200px">'+esc2(last.note)+'</span></div>':'')
+    +'<div class="mdx-row"><span class="mdx-l">FICHIER</span>'+_modsFileLink(last)+'</div>'
+    +'<div class="mdx-row"><span class="mdx-l">CONCERNÉS</span><span style="flex:1;min-width:200px">'+(dest.length?dest.map(function(d){return '<span class="mdx-chip" title="'+escHtml(d.email)+'">'+esc2(d.nom||d.email)+'</span>';}).join(''):'<i style="color:#9A96B3">personne n’est coché</i>')+'</span></div>'
+    +'<div class="mdx-row"><span class="mdx-l">EMAIL</span>'+(last.mailAt?'<span class="mdx-ok">✓ Préparé'+(last.mailBy?' par '+esc2(last.mailBy):'')+' le '+_modsFmtDT(last.mailAt)+'</span>':'<span class="mdx-todo">Pas encore préparé</span>')+'</div>'
+    +'</div>';
+  if(old.length){
+    h+='<details class="mdx-old"><summary>Versions remplacées ('+old.length+')</summary>'
+      +old.map(function(v){
+        return '<div class="mdx-ov"><span class="mdx-vtag">v'+esc2(v.version)+'</span><span>'+esc2(v.date)+'</span><span class="mdx-rep">remplacée</span>'
+          +(v.note?'<span style="flex:1 1 200px;min-width:0">'+esc2(v.note)+'</span>':'<span style="flex:1"></span>')
+          +_modsFileLink(v)
+          +'<button type="button" class="mdx-ico" style="width:26px;height:26px;font-size:11px" onclick="modDeleteVersion(\''+doc.id+'\',\''+v.id+'\')" title="Supprimer cette version" aria-label="Supprimer cette version">✕</button></div>';
+      }).join('')+'</details>';
+  }
+  return h+'</div>';
+}
 
-  versions.forEach(function(v){
-    html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--bd)">'
-      +'<label style="display:flex;align-items:center;gap:5px;cursor:pointer;flex-shrink:0" title="Cocher quand cette version est terminée">'
-      +'<input type="checkbox" '+(v.fait?'checked':'')+' onchange="modToggleFait(\''+doc.id+'\',\''+v.id+'\',this.checked)" style="width:16px;height:16px;cursor:pointer">'
-      +'<span style="font-size:10px;font-weight:700;color:'+(v.fait?'var(--gn)':'var(--tx3)')+'">'+(v.fait?'✓ Fait':'À faire')+'</span>'
-      +'</label>'
-      +'<span style="font-size:11px;font-weight:700;color:var(--tx);background:var(--bg3);border-radius:4px;padding:2px 8px">v'+esc2(v.version)+'</span>'
-      +'<span style="font-size:10px;color:var(--tx3)">'+esc2(v.date)+'</span>'
-      +(v.attachmentPath?'<a href="#" onclick="modDownloadAttachment(\''+v.attachmentPath.replace(/'/g,"\\'")+'\',\''+ (v.attachmentName||'document').replace(/'/g,"\\'")+'\');return false;" style="font-size:11px;color:var(--ac);font-weight:700;text-decoration:underline">📎 '+esc2(v.attachmentName||'pièce jointe')+'</a>':'<span style="font-size:10px;color:var(--tx3);font-style:italic">Sans pièce jointe</span>')
-      +'<span style="flex:1"></span>'
-      +'<button onclick="modDeleteVersion(\''+doc.id+'\',\''+v.id+'\')" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:12px" title="Supprimer cette version">✕</button>'
-      +'</div>';
+// Cases « personnes concernées » : groupées par rubrique des infos de l'affaire
+function _modsPeopleHtml(sel,extra){
+  var people=_modsPeople(),known={};
+  people.forEach(function(p){known[p.email.toLowerCase()]=1;});
+  // destinataires d'une version précédente qui ne sont plus dans les infos : gardés
+  (extra||[]).forEach(function(d){if(d&&d.email&&!known[String(d.email).toLowerCase()]){known[String(d.email).toLowerCase()]=1;people.push({email:d.email,nom:d.nom||'',cats:['Version précédente']});}});
+  if(!people.length)return '<div class="mdx-warn" style="margin-top:0">Aucune personne avec un email dans les infos de l’affaire. <button type="button" class="mdx-lnk" onclick="openAffaireInfos()">ℹ️ Ajouter des personnes</button></div>';
+  var groups=_MODS_CATS.map(function(c){return c[1];}).concat(['Autres','Version précédente']);
+  var h='<div style="display:flex;gap:10px;margin-bottom:6px"><button type="button" class="mdx-lnk" onclick="document.querySelectorAll(\'#mods-form-area .mf-dest\').forEach(function(c){c.checked=true;})">Tout cocher</button><button type="button" class="mdx-lnk" onclick="document.querySelectorAll(\'#mods-form-area .mf-dest\').forEach(function(c){c.checked=false;})">Tout décocher</button></div><div class="mdx-pp">';
+  groups.forEach(function(g){
+    var inG=people.filter(function(p){return p.cats[0]===g;});
+    if(!inG.length)return;
+    h+='<div class="mdx-pg">'+esc2(g.toUpperCase())+'</div>';
+    inG.forEach(function(p){
+      h+='<label class="mdx-pl"><input type="checkbox" class="mf-dest" value="'+escHtml(p.email)+'" data-nom="'+escHtml(p.nom)+'"'+(sel[p.email.toLowerCase()]?' checked':'')+'><span>'+esc2(p.nom||p.email)+'<small>'+esc2(p.email)+(p.cats.length>1?' · aussi '+esc2(p.cats.slice(1).join(', ')):'')+'</small></span></label>';
+    });
   });
-
-  html+='</div></div>';
-  return html;
+  return h+'</div>';
+}
+function _modsCheckedDest(){
+  return Array.prototype.map.call(document.querySelectorAll('#mods-form-area .mf-dest:checked'),function(cb){return {email:cb.value,nom:cb.getAttribute('data-nom')||''};});
+}
+function _modsSelOf(v){var s={};((v&&v.dest)||[]).forEach(function(d){if(d&&d.email)s[String(d.email).toLowerCase()]=1;});return s;}
+function _modsShowForm(html){
+  var fa=document.getElementById('mods-form-area');if(!fa)return;
+  fa.innerHTML='<div class="mdx-card mdx-form">'+html+'</div>';
+  fa.scrollIntoView({behavior:'smooth',block:'nearest'});
+  var f=fa.querySelector('input[type=text]');if(f)setTimeout(function(){try{f.focus();}catch(e){}},50);
+}
+function modCloseForm(){var fa=document.getElementById('mods-form-area');if(fa)fa.innerHTML='';}
+function _modsFormButtons(arg){
+  return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">'
+    +'<button type="button" class="mdx-btn" onclick="modConfirmSave('+arg+',true)">✉ Enregistrer et préparer l’email</button>'
+    +'<button type="button" class="mdx-btn2" onclick="modConfirmSave('+arg+',false)">Enregistrer sans email</button>'
+    +'<button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button>'
+    +'<span id="mf-status" style="font-size:12px;font-weight:700;color:#6B6790"></span></div>';
 }
 
-// ── Formulaire nouveau document ──────────────────────────────────────
+// ── Nouveau document ──
 function modShowAddDocForm(){
-  var fa=document.getElementById('mods-form-area');
-  if(!fa)return;
-  fa.innerHTML='<div class="ped-form" style="margin-bottom:16px">'
-    +'<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Nouveau document</div>'
-    +'<label>NOM DU DOCUMENT</label><input type="text" id="mf-doc-nom" placeholder="Ex: Schéma unifilaire MCC-1">'
-    +'<label style="margin-top:8px">VERSION</label><input type="text" id="mf-doc-version" placeholder="Ex: 0" value="0">'
-    +'<label style="margin-top:8px">PIÈCE JOINTE (PDF, Excel...) — optionnel</label><input type="file" id="mf-doc-file">'
-    +'<div style="display:flex;gap:8px;margin-top:10px">'
-    +'<button class="btn btn-a" onclick="modConfirmAddDoc()">✓ Créer</button>'
-    +'<button class="btn btn-g" onclick="document.getElementById(\'mods-form-area\').innerHTML=\'\'">Annuler</button>'
-    +'</div></div>';
-  fa.scrollIntoView({behavior:'smooth',block:'nearest'});
+  _modsShowForm('<div class="mdx-ft">Nouveau document</div>'
+    +'<label class="mdx-fl" for="mf-doc-nom">NOM DU DOCUMENT</label><input type="text" id="mf-doc-nom" class="mdx-in" placeholder="Ex : Schéma unifilaire MCC-1">'
+    +'<div style="display:grid;grid-template-columns:140px 1fr;gap:12px">'
+    +'<div><label class="mdx-fl" for="mf-ver">VERSION</label><input type="text" id="mf-ver" class="mdx-in" value="0"></div>'
+    +'<div><label class="mdx-fl" for="mf-file">FICHIER (PDF, Excel…)</label><input type="file" id="mf-file" class="mdx-in" style="padding:6px"></div></div>'
+    +'<label class="mdx-fl" for="mf-note">CE QUI CHANGE</label><textarea id="mf-note" class="mdx-in" rows="2">Première diffusion</textarea>'
+    +'<label class="mdx-fl">PERSONNES CONCERNÉES</label>'+_modsPeopleHtml({},[])
+    +_modsFormButtons('\'\''));
 }
-function modConfirmAddDoc(){
-  var nomEl=document.getElementById('mf-doc-nom');
-  var verEl=document.getElementById('mf-doc-version');
-  var fileEl=document.getElementById('mf-doc-file');
-  if(!nomEl||!nomEl.value.trim()){alert('Indiquez un nom de document.');return;}
-  var nom=nomEl.value.trim();
-  var version=(verEl&&verEl.value.trim())||'0';
-  var docId='doc_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-  var verId='v_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-  var now=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
-  var file=(fileEl&&fileEl.files&&fileEl.files[0])||null;
-
-  function finish(attachmentPath,attachmentName){
-    var doc={id:docId,nom:nom,_createdAt:Date.now(),versions:[{
-      id:verId,version:version,date:now,fait:false,
-      attachmentPath:attachmentPath||null,attachmentName:attachmentName||null,_createdAt:Date.now()
-    }]};
-    _modsGetDocs().push(doc);
-    saveNow();
-    document.getElementById('mods-form-area').innerHTML='';
-    renderModificationsTab();
-    modsNotify(doc,doc.versions[0],'nouveau document');
-  }
-  if(file){
-    modUploadAttachment(file,docId,verId,function(path){finish(path,file.name);},function(err){alert('Document créé, mais échec de l\'envoi de la pièce jointe : '+err);finish(null,null);});
-  }else{
-    finish(null,null);
-  }
-}
-
-// ── Formulaire nouvelle version/modif ────────────────────────────────
+// ── Nouvelle version d'un document ──
 function modShowAddVersionForm(docId){
-  var fa=document.getElementById('mods-form-area');
-  if(!fa)return;
-  var doc=_modsGetDocs().find(function(d){return d.id===docId;});
-  if(!doc)return;
-  fa.innerHTML='<div class="ped-form" style="margin-bottom:16px">'
-    +'<div style="font-size:11px;font-weight:700;color:var(--tx2);margin-bottom:8px">Nouvelle modification — '+esc2(doc.nom)+'</div>'
-    +'<label>NOUVELLE VERSION</label><input type="text" id="mf-ver-version" placeholder="Ex: 1">'
-    +'<label style="margin-top:8px">PIÈCE JOINTE (PDF, Excel...) — optionnel</label><input type="file" id="mf-ver-file">'
-    +'<div style="display:flex;gap:8px;margin-top:10px">'
-    +'<button class="btn btn-a" onclick="modConfirmAddVersion(\''+docId+'\')">✓ Ajouter</button>'
-    +'<button class="btn btn-g" onclick="document.getElementById(\'mods-form-area\').innerHTML=\'\'">Annuler</button>'
-    +'</div></div>';
-  fa.scrollIntoView({behavior:'smooth',block:'nearest'});
+  var doc=_modsGetDocs().find(function(d){return d.id===docId;});if(!doc)return;
+  var last=_modsLatest(doc)||{};
+  _modsShowForm('<div class="mdx-ft">Nouvelle version — '+esc2(doc.nom)+'</div>'
+    +'<div style="font-size:12px;color:#6B6790">Version actuelle : v'+esc2(last.version||'—')+'</div>'
+    +'<div style="display:grid;grid-template-columns:140px 1fr;gap:12px">'
+    +'<div><label class="mdx-fl" for="mf-ver">NOUVELLE VERSION</label><input type="text" id="mf-ver" class="mdx-in" value="'+escHtml(_modsNextVer(last.version))+'" placeholder="Ex : 3"></div>'
+    +'<div><label class="mdx-fl" for="mf-file">FICHIER (PDF, Excel…)</label><input type="file" id="mf-file" class="mdx-in" style="padding:6px"></div></div>'
+    +'<label class="mdx-fl" for="mf-note">CE QUI CHANGE</label><textarea id="mf-note" class="mdx-in" rows="2" placeholder="Ex : ajout du départ pompe P3"></textarea>'
+    +'<label class="mdx-fl">PERSONNES CONCERNÉES <span style="font-weight:600;color:#9A96B3">(les mêmes que la version d’avant, à ajuster si besoin)</span></label>'+_modsPeopleHtml(_modsSelOf(last),last.dest)
+    +_modsFormButtons('\''+docId+'\''));
 }
-function modConfirmAddVersion(docId){
-  var doc=_modsGetDocs().find(function(d){return d.id===docId;});
-  if(!doc)return;
-  var verEl=document.getElementById('mf-ver-version');
-  var fileEl=document.getElementById('mf-ver-file');
-  if(!verEl||!verEl.value.trim()){alert('Indiquez un numéro/nom de version.');return;}
-  var version=verEl.value.trim();
+function modConfirmSave(docId,withMail){
+  var isNew=!docId,doc=isNew?null:_modsGetDocs().find(function(d){return d.id===docId;});
+  if(!isNew&&!doc)return;
+  var val=function(id){var e=document.getElementById(id);return e?String(e.value||'').trim():'';};
+  var nom=isNew?val('mf-doc-nom'):doc.nom;
+  if(isNew&&!nom){alert('Indiquez le nom du document.');return;}
+  var version=val('mf-ver');
+  if(!version){alert('Indiquez le n° de version.');return;}
+  if(!isNew&&(doc.versions||[]).some(function(v){return String(v.version).trim()===version;})&&!confirm('La version « '+version+' » existe déjà pour ce document. L’ajouter quand même ?'))return;
+  var note=val('mf-note'),dest=_modsCheckedDest();
+  if(withMail&&!dest.length){alert('Cochez au moins une personne concernée pour préparer l’email.');return;}
+  var fe=document.getElementById('mf-file'),file=(fe&&fe.files&&fe.files[0])||null;
+  var newDocId=isNew?'doc_'+Date.now()+'_'+Math.random().toString(36).slice(2,7):docId;
   var verId='v_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-  var now=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
-  var file=(fileEl&&fileEl.files&&fileEl.files[0])||null;
-
-  function finish(attachmentPath,attachmentName){
-    var v={id:verId,version:version,date:now,fait:false,attachmentPath:attachmentPath||null,attachmentName:attachmentName||null,_createdAt:Date.now()};
-    doc.versions.push(v);
+  var aff=STORE.current;
+  function finish(path,name){
+    if(STORE.current!==aff){alert('L’affaire a changé pendant l’enregistrement : la version n’a pas été ajoutée.');return;}
+    var v={id:verId,version:version,date:_modsNowFr(),note:note,dest:dest,byEmail:_modsMe(),byName:_modsMyName(),
+      attachmentPath:path||null,attachmentName:name||null,_createdAt:Date.now()};
+    var d=isNew?null:_modsGetDocs().find(function(x){return x.id===docId;});
+    if(isNew){d={id:newDocId,nom:nom,_createdAt:Date.now(),versions:[v]};_modsGetDocs().push(d);}
+    else{if(!d){alert('Ce document a été supprimé entre-temps.');return;}d.versions=d.versions||[];d.versions.push(v);}
     saveNow();
-    document.getElementById('mods-form-area').innerHTML='';
+    modCloseForm();
     renderModificationsTab();
-    modsNotify(doc,v,'nouvelle modification');
+    if(withMail)modsPrepareEmail(d.id,v.id,file);
   }
   if(file){
-    modUploadAttachment(file,docId,verId,function(path){finish(path,file.name);},function(err){alert('Modification ajoutée, mais échec de l\'envoi de la pièce jointe : '+err);finish(null,null);});
-  }else{
-    finish(null,null);
-  }
+    var st=document.getElementById('mf-status');if(st)st.textContent='Envoi du fichier…';
+    document.querySelectorAll('#mods-form-area button').forEach(function(b){b.disabled=true;});
+    modUploadAttachment(file,newDocId,verId,function(path){finish(path,file.name);},function(err){
+      alert('Le fichier n’a pas pu être enregistré sur le serveur ('+err+').\nLa version est enregistrée sans fichier'+(withMail?', mais il sera quand même joint à l’email.':'.'));
+      finish(null,file.name+' (non enregistré sur le serveur)');
+    });
+  }else finish(null,null);
 }
 
-// ── Case "fait" ────────────────────────────────────────────────────────
-function modToggleFait(docId,verId,checked){
-  var doc=_modsGetDocs().find(function(d){return d.id===docId;});
-  if(!doc)return;
-  var v=doc.versions.find(function(x){return x.id===verId;});
-  if(!v)return;
-  v.fait=checked;
+// ── Préparer l'email d'une version existante : vérifier les personnes, puis Outlook ──
+function modEditDest(docId,verId){
+  var doc=_modsGetDocs().find(function(d){return d.id===docId;});if(!doc)return;
+  var v=(doc.versions||[]).find(function(x){return x.id===verId;});if(!v)return;
+  _modsShowForm('<div class="mdx-ft">✉ Préparer l’email — '+esc2(doc.nom)+' v'+esc2(v.version)+'</div>'
+    +'<div style="font-size:12px;color:#6B6790;margin-bottom:4px">Cochez les personnes à prévenir. Outlook s’ouvrira avec le message et le fichier joint.</div>'
+    +'<label class="mdx-fl">PERSONNES CONCERNÉES</label>'+_modsPeopleHtml(_modsSelOf(v),v.dest)
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">'
+    +'<button type="button" class="mdx-btn" onclick="modDestAndMail(\''+docId+'\',\''+verId+'\')">✉ Préparer l’email</button>'
+    +'<button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button></div>');
+}
+function modDestAndMail(docId,verId){
+  var doc=_modsGetDocs().find(function(d){return d.id===docId;});if(!doc)return;
+  var v=(doc.versions||[]).find(function(x){return x.id===verId;});if(!v)return;
+  var dest=_modsCheckedDest();
+  if(!dest.length){alert('Cochez au moins une personne.');return;}
+  v.dest=dest;
   saveNow();
+  modCloseForm();
   renderModificationsTab();
-  if(checked)modsNotify(doc,v,'document terminé');
+  modsPrepareEmail(docId,verId,null);
+}
+
+// ── Fichier .eml : brouillon Outlook (X-Unsent) avec destinataires, message et pièce jointe ──
+function _emlB64Utf8(s){return btoa(unescape(encodeURIComponent(s)));}
+function _emlWrap(b){return (b.match(/.{1,76}/g)||['']).join('\r\n');}
+function _emlHdr(s){s=String(s||'');return /^[\x20-\x7E]*$/.test(s)?s:'=?UTF-8?B?'+_emlB64Utf8(s)+'?=';}
+function _emlAddr(d){
+  var n=String(d.nom||'').replace(/["\\\r\n]/g,'').trim(),e=String(d.email||'').replace(/[\r\n<>]/g,'').trim();
+  if(!n)return e;
+  return (/^[\x20-\x7E]*$/.test(n)?'"'+n+'"':_emlHdr(n))+' <'+e+'>';
+}
+function _emlBlobB64(blob){
+  return new Promise(function(res,rej){
+    var fr=new FileReader();
+    fr.onload=function(){var s=String(fr.result||'');res(s.slice(s.indexOf(',')+1));};
+    fr.onerror=function(){rej(fr.error||new Error('lecture du fichier impossible'));};
+    fr.readAsDataURL(blob);
+  });
+}
+function _emlMime(name,blob){
+  if(blob&&blob.type)return blob.type;
+  var x=(String(name||'').split('.').pop()||'').toLowerCase();
+  return ({pdf:'application/pdf',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',xls:'application/vnd.ms-excel',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',doc:'application/msword',dwg:'application/acad',dxf:'application/dxf',zip:'application/zip',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg'})[x]||'application/octet-stream';
+}
+function _modsToast(html,ms){
+  var t=document.getElementById('mods-toast');
+  if(!t){t=document.createElement('div');t.id='mods-toast';t.setAttribute('role','status');document.body.appendChild(t);t.onclick=function(){t.remove();};}
+  t.innerHTML=html;
+  clearTimeout(_modsToast._t);
+  if(ms)_modsToast._t=setTimeout(function(){var x=document.getElementById('mods-toast');if(x)x.remove();},ms);
+}
+async function modsPrepareEmail(docId,verId,localFile){
+  var doc=_modsGetDocs().find(function(d){return d.id===docId;});if(!doc)return;
+  var v=(doc.versions||[]).find(function(x){return x.id===verId;});if(!v)return;
+  var dest=(v.dest||[]).filter(function(d){return d&&d.email;});
+  if(!dest.length){modEditDest(docId,verId);return;}
+  var p=currP()||{},inf=p.infos||{},num=inf.numero||STORE.current||'',lib=inf.libelle||'';
+  var asc=_modsVersSorted(doc).reverse(),i=asc.indexOf(v),prev=i>0?asc[i-1]:null;
+  var first=!prev;
+  _modsToast('⏳ Préparation de l’email…');
+  // Fichier : celui qu'on vient de choisir, sinon celui enregistré sur le serveur
+  var blob=null,fname=v.attachmentName||'',fileMsg='';
+  if(localFile){blob=localFile;fname=localFile.name;}
+  else if(v.attachmentPath){
+    try{var r=await supa.storage.from(BUCKET).download(v.attachmentPath);if(r.error||!r.data)throw r.error||new Error('fichier introuvable');blob=r.data;}
+    catch(e){fileMsg='Le fichier n’a pas pu être récupéré sur le serveur : il n’est pas joint.';}
+  }
+  var tooBig=false;
+  if(blob&&blob.size>_MODS_MAX_ATT){
+    tooBig=true;var mo=String(Math.round(blob.size/104857.6)/10).replace('.',',');blob=null;
+    fileMsg='Le fichier est trop lourd pour être joint ('+mo+' Mo) : il est disponible sur Pétrosphère, onglet Modifications de l’affaire.';
+  }
+  var me=_modsMyName(),meMail=_modsMe();
+  var verTxt='v'+v.version;
+  var subject='['+num+'] '+(first?'Nouveau document':'Nouvelle version')+' : '+doc.nom+' — '+verTxt;
+  var affTxt=num+(lib?' — '+lib:'');
+  var fileLine=blob?'Le document est joint à ce message.':(fileMsg||'Pas de fichier pour cette version.');
+  var rows=[['Affaire',affTxt],['Document',doc.nom],['Version',verTxt+(prev?' (remplace la v'+prev.version+')':'')]];
+  if(v.note)rows.push(['Ce qui change',v.note]);
+  rows.push(['Date',v.date||_modsNowFr()]);
+  var txt='Bonjour,\r\n\r\n'+(first?'Un nouveau document de l\'affaire '+affTxt+' est disponible.':'Une nouvelle version d\'un document de l\'affaire '+affTxt+' est disponible.')+'\r\n\r\n'
+    +rows.map(function(r){return r[0]+' : '+r[1];}).join('\r\n')+'\r\n\r\n'+fileLine+(prev?' Merci de ne plus utiliser les versions précédentes.':'')+'\r\n\r\nCordialement,\r\n'+me+'\r\n';
+  var e=function(s){return esc2(s).replace(/\r?\n/g,'<br>');};
+  var html='<html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#1C1A33">'
+    +'<p>Bonjour,</p><p>'+(first?'Un nouveau document de l\'affaire <b>'+e(affTxt)+'</b> est disponible.':'Une nouvelle version d\'un document de l\'affaire <b>'+e(affTxt)+'</b> est disponible.')+'</p>'
+    +'<table style="border-collapse:collapse;font-size:11pt">'
+    +rows.map(function(r){return '<tr><td style="padding:4px 16px 4px 0;color:#6B6790;vertical-align:top;white-space:nowrap">'+e(r[0])+'</td><td style="padding:4px 0">'+(r[0]==='Document'||r[0]==='Version'?'<b>'+e(r[1])+'</b>':e(r[1]))+'</td></tr>';}).join('')
+    +'</table><p>'+e(fileLine)+(prev?' <b>Merci de ne plus utiliser les versions précédentes.</b>':'')+'</p>'
+    +'<p>Cordialement,<br>'+e(me)+'</p></body></html>';
+  var b1='mix_'+Date.now().toString(36)+Math.random().toString(36).slice(2),b2='alt_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
+  var L=['X-Unsent: 1'];
+  if(meMail)L.push('From: '+_emlAddr({nom:me,email:meMail}));
+  L.push('To: '+dest.map(_emlAddr).join(', '),'Subject: '+_emlHdr(subject),'MIME-Version: 1.0',
+    'Content-Type: multipart/mixed; boundary="'+b1+'"','','--'+b1,
+    'Content-Type: multipart/alternative; boundary="'+b2+'"','','--'+b2,
+    'Content-Type: text/plain; charset=utf-8','Content-Transfer-Encoding: base64','',_emlWrap(_emlB64Utf8(txt)),
+    '--'+b2,'Content-Type: text/html; charset=utf-8','Content-Transfer-Encoding: base64','',_emlWrap(_emlB64Utf8(html)),
+    '--'+b2+'--','');
+  if(blob){
+    try{
+      var b64=await _emlBlobB64(blob),an=_emlHdr(fname||'document');
+      L.push('--'+b1,'Content-Type: '+_emlMime(fname,blob)+'; name="'+an+'"','Content-Disposition: attachment; filename="'+an+'"','Content-Transfer-Encoding: base64','',_emlWrap(b64));
+    }catch(err){_modsToast('⚠️ Le fichier n’a pas pu être lu : l’email est préparé sans pièce jointe.',6000);}
+  }
+  L.push('--'+b1+'--','');
+  var out=new Blob([L.join('\r\n')],{type:'message/rfc822'});
+  var fn=(num+' - '+doc.nom+' '+verTxt).replace(/[\\\/:*?"<>|\r\n]+/g,'_').replace(/\s+/g,' ').trim().slice(0,120)+'.eml';
+  var url=URL.createObjectURL(out),a=document.createElement('a');
+  a.href=url;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},10000);
+  // trace : qui a préparé l'email de cette version, et quand
+  v.mailAt=Date.now();v.mailBy=me;
+  saveNow();
+  if(!_modsBusy())renderModificationsTab();
+  _modsToast('📧 <b>Email prêt</b> : ouvrez le fichier « '+esc2(fn)+' » (barre des téléchargements du navigateur). Outlook l’affiche avec '+dest.length+' destinataire'+(dest.length>1?'s':'')+(blob?' et le fichier joint':'')+' : vérifiez, puis cliquez sur Envoyer.'
+    +(tooBig||fileMsg?'<small>⚠️ '+esc2(fileMsg)+'</small>':'')
+    +'<small>Astuce : dans le menu des téléchargements, choisissez « Toujours ouvrir les fichiers de ce type » pour qu’Outlook s’ouvre directement la prochaine fois.</small>',14000);
 }
 
 // ── Suppression ───────────────────────────────────────────────────────
@@ -9925,9 +10196,10 @@ function modDeleteDoc(docId){
   renderModificationsTab();
 }
 function modDeleteVersion(docId,verId){
-  if(!confirm('Supprimer cette version ?'))return;
   var doc=_modsGetDocs().find(function(d){return d.id===docId;});
   if(!doc)return;
+  if((doc.versions||[]).length<=1){modDeleteDoc(docId);return;}
+  if(!confirm('Supprimer cette version ?'))return;
   doc.versions=doc.versions.filter(function(v){return v.id!==verId;});
   saveNow();
   renderModificationsTab();
@@ -10092,7 +10364,7 @@ function modsExportAll(){
   docs.forEach(function(doc){
     recap+='=== '+doc.nom+' ===\n';
     (doc.versions||[]).slice().sort(function(a,b){return (a._createdAt||0)-(b._createdAt||0);}).forEach(function(v){
-      recap+='  v'+v.version+' — '+v.date+' — '+(v.fait?'Fait':'À faire')+(v.attachmentPath?' — pièce jointe : '+v.attachmentName:' — sans pièce jointe')+'\n';
+      recap+='  v'+v.version+' — '+v.date+(v.note?' — '+v.note:'')+(v.dest&&v.dest.length?' — concernés : '+v.dest.map(function(d){return d.nom||d.email;}).join(', '):'')+(v.attachmentPath?' — pièce jointe : '+v.attachmentName:' — sans pièce jointe')+'\n';
     });
     recap+='\n';
   });
@@ -10133,7 +10405,7 @@ function modsPurgeAttachments(){
   var paths=[];
   docs.forEach(function(doc){(doc.versions||[]).forEach(function(v){if(v.attachmentPath)paths.push(v.attachmentPath);});});
   if(!paths.length){alert('Aucune pièce jointe à purger pour cette affaire.');return;}
-  if(!confirm('Supprimer les '+paths.length+' pièce(s) jointe(s) de cette affaire du serveur ?\n\nAssurez-vous d\'avoir bien exporté les documents avant (bouton "Exporter tous les documents").\n\nL\'historique (noms, versions, dates, cases "fait") sera conservé — seuls les fichiers seront supprimés.'))return;
+  if(!confirm('Supprimer les '+paths.length+' pièce(s) jointe(s) de cette affaire du serveur ?\n\nAssurez-vous d\'avoir bien exporté les documents avant (bouton "Exporter tous les documents").\n\nL\'historique (noms, versions, dates, ce qui change, personnes concernées) sera conservé — seuls les fichiers seront supprimés.'))return;
   supa.storage.from(BUCKET).remove(paths).then(function(){
     docs.forEach(function(doc){(doc.versions||[]).forEach(function(v){if(v.attachmentPath){v.attachmentPath=null;v.attachmentName=(v.attachmentName||'')+' (purgé, exporté localement)';}});});
     saveNow();
@@ -10396,6 +10668,7 @@ function refreshAllTabs(){
 
     else if(t==='personnel')switchPersonnelTab(window._personnelTab||'equipe');
     else if(t==='commandes')renderCommandesTab(false); // ne redessine que si l'affaire a changé
+    else if(t==='modifications'&&!_modsBusy())renderModificationsTab(); // version ajoutée par un collègue
     // gantt déjà rendu ci-dessus si c'est l'onglet actif
   }
 }
@@ -11828,6 +12101,7 @@ function switchProjet(k){
     else if(t==='fiche')renderFiche();
     else if(t==='dashboard')renderDashboard();
     else if(t==='commandes')renderCommandesTab(false); // nouvelle affaire → ses commandes
+    else if(t==='modifications')renderModificationsTab(); // nouvelle affaire → ses documents
   }
 }
 // ── Renommer une affaire ──────────────────────────────────────────────
@@ -22953,6 +23227,8 @@ window.PetroNav=(function(){
         go:function(){switchPersonnelTab('heures');}},
       {k:'modifs',lbl:'Modifications',vis:function(){return secVis('.nb[data-tab="modifications"]');},
         on:function(){return nbOn()==='modifications';},
+        // nouvelles versions de documents pas encore vues par la personne connectée
+        badge:function(){var k=curAff();try{return k&&typeof modsUnseen==='function'?modsUnseen(k).length:0;}catch(e){return 0;}},
         go:function(){switchTab('modifications');}},
       {k:'commandes',lbl:'Commandes',vis:function(){return !!(window.Commandes&&window.Commandes.canView());},
         on:function(){return nbOn()==='commandes';},
@@ -23032,7 +23308,7 @@ window.PetroNav=(function(){
     box.innerHTML='';
   }
   function tabsHtml(cls){
-    return tabList().filter(function(x){return x.vis();}).map(function(x){return '<button type="button" class="'+cls+(x.on()?' on':'')+'" data-sectab="'+x.k+'">'+esc(x.lbl)+'</button>';}).join('');
+    return tabList().filter(function(x){return x.vis();}).map(function(x){var n=x.badge?x.badge():0;return '<button type="button" class="'+cls+(x.on()?' on':'')+'" data-sectab="'+x.k+'">'+esc(x.lbl)+(n?'<span class="sec-badge" title="'+n+' nouvelle'+(n>1?'s':'')+' version'+(n>1?'s':'')+'">'+n+'</span>':'')+'</button>';}).join('');
   }
   function bindTabs(el){el.querySelectorAll('[data-sectab]').forEach(function(b){b.onclick=function(){go(b.getAttribute('data-sectab'));};});}
   function go(k){
@@ -23232,7 +23508,7 @@ window.PetroNav=(function(){
     var ae=document.activeElement;
     if(ae&&(ae.id==='sec-side-q'||ae.id==='inp-bud'))return; // jamais reconstruire pendant une saisie
     var k=curAff(),p=k?STORE.projects[k]:null,hd=[];
-    if(p&&S.sec==='affaire'){var u=0;try{u=typeof _rcFhHours==='function'?_rcFhHours(k).total:0;}catch(e){}hd=[p.budget,u,p.dstart,p.dend,(p.infos||{}).dateCreation,($('inp-dstart')||{}).value,($('inp-dend')||{}).value,secVis('#inp-bud'),!!window._gcStruct];}
+    if(p&&S.sec==='affaire'){var u=0;try{u=typeof _rcFhHours==='function'?_rcFhHours(k).total:0;}catch(e){}hd=[p.budget,u,p.dstart,p.dend,(p.infos||{}).dateCreation,($('inp-dstart')||{}).value,($('inp-dend')||{}).value,secVis('#inp-bud'),!!window._gcStruct,TABS.affaire.filter(function(x){return x.badge;}).map(function(x){return x.badge();})];}
     var sig=JSON.stringify([affList().map(function(a){return [a.k,a.lbl,a.closed];}),typeof STORE!=='undefined'?STORE.current:'',nbOn(),window._tdbTab,window._personnelTab,typeof GANTT_VIEW!=='undefined'?GANTT_VIEW:'',qrOpen(),hd]);
     if(sig!==S.sig){S.sig=sig;renderAll();}
   }
