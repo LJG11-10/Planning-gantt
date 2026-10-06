@@ -3700,6 +3700,8 @@ async function loadRoleAndStart() {
     applyRoleRestrictions();
     applyModulePermissions();
     checkAndSendRetardAlerts();
+    // arrivée par le lien d'un mail « modification à faire » → directement sur la demande
+    if (typeof _modsDeepLink === 'function') setTimeout(_modsDeepLink, 300);
   } catch(e) {
     setLoginLoading(false);
     showLoginMsg("Erreur lors du chargement du rôle.");
@@ -9843,6 +9845,7 @@ var _MODS_MAX_ATT=20*1024*1024; // au-delà, la plupart des messageries refusent
     +'.mdx-pg{grid-column:1/-1;font-size:10.5px;font-weight:800;color:#9A96B3;letter-spacing:.4px;margin-top:6px}.mdx-pg:first-child{margin-top:0}'
     +'.mdx-pl{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer;padding:3px 0}.mdx-pl input{accent-color:#4B3FC7;margin-top:2px}'
     +'.mdx-pl small{display:block;color:#9A96B3;font-size:11px}'
+    +'@keyframes mdxFlash{0%,100%{box-shadow:0 0 0 0 rgba(75,63,199,0)}30%,70%{box-shadow:0 0 0 6px rgba(75,63,199,.35)}}.mdx-flash{animation:mdxFlash 1.6s ease 2}'
     +'.mdx-quote{font-size:12.5px;background:#fff;border:1px solid #FED7AA;border-radius:10px;padding:8px 11px;white-space:pre-wrap}'
     +'#mods-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9700;max-width:620px;width:calc(100% - 32px);background:#1C1A33;color:#fff;border-radius:14px;padding:13px 16px;font-size:13px;line-height:1.45;box-shadow:0 12px 40px rgba(0,0,0,.3);cursor:pointer}'
     +'#mods-toast small{display:block;color:#C7C1F5;margin-top:4px;font-size:11.5px}'
@@ -9987,7 +9990,7 @@ function _modsMailState(x){
 function _modsBuildDocCard(doc,ed){
   var vs=_modsVersSorted(doc),last=vs[0]||null,old=vs.slice(1),pend=_modsPending(doc);
   var nw=window._modsNew||{},isNew=!!(last&&nw[last.id])||pend.some(function(m){return nw[m.id];});
-  var h='<div class="mdx-card mdx-doc'+(isNew?' new':'')+'">'
+  var h='<div class="mdx-card mdx-doc'+(isNew?' new':'')+'" id="mdx-doc-'+escHtml(doc.id)+'">'
     +'<div class="mdx-dh"><div style="min-width:0;flex:1 1 300px">'
     +'<div class="mdx-dn">'+esc2(doc.nom)+(last&&nw[last.id]?'<span class="mdx-new">Nouvelle version</span>':'')+(pend.length?'<span class="mdx-new org">'+pend.length+' modification'+(pend.length>1?'s':'')+' à faire</span>':'')+'</div>'
     +'<div class="mdx-dv">'+(last?'Dernière version : <b>'+esc2(_modsVerLbl(last.version))+'</b> du '+esc2(last.date||'—')+(last.byName?' · ajoutée par '+esc2(last.byName):'')
@@ -10000,7 +10003,7 @@ function _modsBuildDocCard(doc,ed){
     +'</div></div>';
   // Modifications à faire
   pend.forEach(function(m){
-    h+='<div class="mdx-req">'
+    h+='<div class="mdx-req" id="mdx-req-'+escHtml(m.id)+'">'
       +'<div class="mdx-rt"><div class="mdx-rtt">🛠 Modification à faire'+(nw[m.id]?' <span class="mdx-new org">Nouvelle</span>':'')+' <span>· demandée'+(m.byName?' par '+esc2(m.byName):'')+' le '+esc2(m.date||'')+'</span></div>'
       +(ed?'<button type="button" class="mdx-btn grn" onclick="modShowDoneForm(\''+doc.id+'\',\''+m.id+'\')">✓ Marquer comme faite</button>'
         +'<button type="button" class="mdx-btn2" onclick="modEditReqDest(\''+doc.id+'\',\''+m.id+'\')">✉ Préparer l’email</button>'
@@ -10330,14 +10333,14 @@ async function _modsGetAttachments(local,stored){
 async function _modsMakeEml(o){
   var me=_modsMyName(),meMail=_modsMe();
   var txt='Bonjour,\r\n\r\n'+o.intro+'\r\n\r\n'+o.rows.map(function(r){return r[0]+' : '+r[1];}).join('\r\n')+'\r\n\r\n'
-    +o.lines.join('\r\n')+'\r\n\r\nCordialement,\r\n'+me+'\r\n';
+    +o.lines.map(function(l){return typeof l==='string'?l:l.t;}).join('\r\n')+'\r\n\r\nCordialement,\r\n'+me+'\r\n';
   txt=txt.replace(/\r?\n/g,'\r\n');
   var e=function(s){return esc2(s).replace(/\r?\n/g,'<br>');};
   var html='<html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#1C1A33">'
     +'<p>Bonjour,</p><p>'+e(o.intro)+'</p>'
     +'<table style="border-collapse:collapse;font-size:11pt">'
     +o.rows.map(function(r){return '<tr><td style="padding:4px 16px 4px 0;color:#6B6790;vertical-align:top;white-space:nowrap">'+e(r[0])+'</td><td style="padding:4px 0">'+(r[2]?'<b>'+e(r[1])+'</b>':e(r[1]))+'</td></tr>';}).join('')
-    +'</table>'+o.lines.map(function(l){return '<p>'+e(l)+'</p>';}).join('')
+    +'</table>'+o.lines.map(function(l){return '<p>'+(typeof l==='string'?e(l):l.h)+'</p>';}).join('') // {t:texte, h:html déjà échappé} pour un lien
     +'<p>Cordialement,<br>'+e(me)+'</p></body></html>';
   var b1='mix_'+Date.now().toString(36)+Math.random().toString(36).slice(2),b2='alt_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
   var L=['X-Unsent: 1'];
@@ -10388,7 +10391,10 @@ async function modsPrepareReqEmail(docId,modId,localFiles){
   var lines=[];
   if(att.files.length)lines.push(att.files.length>1?'Les fichiers sont joints à ce message.':'Le fichier est joint à ce message.');
   att.msgs.forEach(function(x){lines.push(x);});
-  lines.push('Une fois la modification faite, merci de l’indiquer sur Pétrosphère : affaire '+A.num+', onglet Modifications, bouton « ✓ Marquer comme faite ».');
+  // Lien direct : ouvre le site, (connexion si besoin), puis l'affaire › Modifications › cette demande (_modsDeepLink)
+  var link=location.origin+location.pathname+'?go=modifs&aff='+encodeURIComponent(STORE.current)+'&mod='+encodeURIComponent(m.id);
+  lines.push({t:'Une fois la modification faite, merci de l’indiquer sur Pétrosphère : '+link+' (bouton « ✓ Marquer comme faite »).',
+    h:'Une fois la modification faite, merci de l’indiquer sur Pétrosphère : <a href="'+escHtml(link)+'" style="color:#4B3FC7;font-weight:bold">ouvrir la modification</a> (bouton « ✓ Marquer comme faite »).'});
   var r=await _modsMakeEml({to:to,subject:'['+A.num+'] Modification à faire : '+doc.nom,intro:'Une modification est à faire sur un document de l’affaire '+A.txt+'.',
     rows:rows,lines:lines,files:att.files,fn:A.num+' - Modification à faire - '+doc.nom});
   m.mailAt=Date.now();m.mailBy=_modsMyName();
@@ -10422,6 +10428,42 @@ async function modsPrepareEmail(docId,verId,localFile){
 }
 
 // ── Suppression ───────────────────────────────────────────────────────
+// ── Lien du mail « modification à faire » : ?go=modifs&aff=<affaire>&mod=<id de la demande> ──
+// Lu au chargement de la page (avant toute connexion), utilisé à la fin de loadRoleAndStart :
+// affaire › Modifications › la demande mise en évidence. Les données du serveur peuvent arriver
+// quelques secondes après la connexion : on attend la demande jusqu'à 20 s.
+window._modsLinkReq=(function(){
+  try{var q=new URLSearchParams(location.search);return q.get('go')==='modifs'&&q.get('aff')?{aff:q.get('aff'),mod:q.get('mod')||''}:null;}catch(e){return null;}
+})();
+function _modsDeepLink(){
+  var L=window._modsLinkReq;if(!L)return;window._modsLinkReq=null;
+  // l'adresse redevient normale : un rechargement ne refait pas le saut
+  try{var u=new URL(location.href);['go','aff','mod'].forEach(function(k){u.searchParams.delete(k);});history.replaceState(history.state,'',u.pathname+u.search+u.hash);}catch(e){}
+  var t0=Date.now();
+  function findMod(p){var r=null;(p&&p.documents||[]).some(function(d){var m=(d.mods||[]).find(function(x){return x.id===L.mod;});if(m){r={doc:d,m:m};return true;}return false;});return r;}
+  (function tryGo(){
+    var p=STORE&&STORE.projects&&STORE.projects[L.aff],f=findMod(p);
+    if(!f&&Date.now()-t0<20000){setTimeout(tryGo,700);return;}
+    if(!p){alert('L’affaire de ce lien ('+L.aff+') n’existe pas (ou plus) sur Pétrosphère.');return;}
+    var ok=false;try{ok=CURRENT_ROLE==='admin'||hasView('modifications');}catch(e){}
+    if(!ok){alert('Vous n’avez pas accès à l’onglet Modifications.\nDemandez à un administrateur le droit « Modifications de documents » (Gestion des droits).');return;}
+    try{
+      if(window.PetroNav)PetroNav.enter('affaire');
+      if(STORE.current!==L.aff)switchProjet(L.aff);
+      switchTab('modifications');
+      if(window.PetroNav)PetroNav.render();
+    }catch(e){console.error('Lien Modifications :',e);}
+    setTimeout(function(){
+      var el=document.getElementById('mdx-req-'+L.mod);
+      if(!el){
+        if(f)el=document.getElementById('mdx-doc-'+f.doc.id);
+        _modsToast(f?(f.m.status==='fait'?'✓ Cette modification a déjà été marquée faite'+(f.m.doneBy?' par '+esc2(f.m.doneBy):'')+'.':''):'Cette demande de modification a été annulée ou supprimée.',8000);
+      }
+      if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('mdx-flash');setTimeout(function(){el.classList.remove('mdx-flash');},3400);}
+    },350);
+  })();
+}
+
 function modDeleteDoc(docId){
   if(!confirm('Supprimer ce document, ses versions et ses modifications ?'))return;
   var docs=_modsGetDocs();
