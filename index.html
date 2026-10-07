@@ -23856,6 +23856,7 @@ window.PunchList=(function(){
       +'<b style="font-size:17px">'+esc(D._title||c.title||'Punch list')+'</b>'+(cv.rev?'<span class="plx-tag">Rév. '+esc(cv.rev)+'</span>':'')
       +'<span style="font-size:12.5px;color:#6B6790">'+esc(affLabel(D._aff||c.aff))+(cv.project||cv.company?' · '+esc([cv.project,cv.company].filter(Boolean).join(' · ')):'')+'</span>'
       +'<span style="flex:1"></span><span id="pl-savest" style="font-size:12px;color:#6B6790"></span>'
+      +'<button id="pl-xls" class="dcu-btn" onclick="PunchList.exportXlsx()" title="Télécharger la punch list avec nos réponses et les photos, à envoyer au client">⬇ Excel</button>'
       +'</div>';
     var chip=function(f,n,l){ return '<button type="button" class="plx-chip'+(S.f===f?' on':'')+'" onclick="PunchList._f(\'f\',\''+f+'\')">'+l+' <span style="opacity:.75">'+n+'</span></button>'; };
     h+='<div class="plx-chips" style="margin-top:10px">'+chip('all',st.n,'Toutes')+chip('open',st.open,'Ouvertes')+chip('ours',st.ours,'À nous (ELS)')+chip('snf',st.snf,'Côté SNF')+chip('late',st.late,'En retard')+chip('closed',st.closed+st.na,'Fermées / N/A')+'</div>'
@@ -23993,6 +23994,98 @@ window.PunchList=(function(){
     var el=$('plx-'+p.k); if(el){ var tmp=document.createElement('div'); tmp.innerHTML=lineHtml(p.k); el.replaceWith(tmp.firstChild); loadThumbs(); }
   }
 
+  // ═════════ EXPORT EXCEL (étape 2, 07/10/2026) ═════════
+  // Un .xlsx neuf (le client se moque que ce soit son fichier) : ses colonnes + « ELS answer » et les
+  // photos DANS les cellules, à côté de leur ligne (2 au maximum, « +N » au-delà). Pas d'email : on
+  // télécharge le fichier, l'utilisateur l'envoie lui-même. ExcelJS 4.4.0 chargé depuis cdnjs à la demande.
+  var EXCELJS='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+  var XP_MAX=2,XP_W=150,XP_RES=900; // photos par ligne, largeur affichée (px), résolution gardée (px)
+  function loadExcelJs(){
+    if(window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    return new Promise(function(res,rej){
+      var s=document.createElement('script'); s.src=EXCELJS;
+      s.onload=function(){ window.ExcelJS?res(window.ExcelJS):rej(new Error('générateur Excel indisponible')); };
+      s.onerror=function(){ rej(new Error('générateur Excel indisponible (connexion internet ?)')); };
+      document.head.appendChild(s);
+    });
+  }
+  // Photo prête pour l'Excel : la grande version réduite à 900 px (le client peut l'agrandir dans Excel)
+  async function photoForExport(p){
+    var b=null;
+    try{ b=await FILES.download(p.path); }catch(e){ if(p.thumb) b=await FILES.download(p.thumb); }
+    if(!b) throw new Error('photo introuvable');
+    var url=URL.createObjectURL(b.type?b:new Blob([b],{type:'image/jpeg'}));
+    try{
+      var img=await new Promise(function(res,rej){ var i=new Image(); i.onload=function(){ res(i); }; i.onerror=function(){ rej(new Error('photo illisible')); }; i.src=url; });
+      var w=img.naturalWidth,h=img.naturalHeight,s=Math.min(1,XP_RES/Math.max(w,h));
+      var cv=document.createElement('canvas'); cv.width=Math.round(w*s); cv.height=Math.round(h*s);
+      var cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(img,0,0,cv.width,cv.height);
+      return {data:cv.toDataURL('image/jpeg',0.8),w:cv.width,h:cv.height};
+    }finally{ URL.revokeObjectURL(url); }
+  }
+  async function exportXlsx(){
+    if(!S.cur) return;
+    if(Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); }
+    var btn=$('pl-xls'),lbl=function(t){ if(btn){ btn.textContent=t; } };
+    if(btn) btn.disabled=true; lbl('Préparation…');
+    try{
+      var X=await loadExcelJs();
+      var d=D,K=keys(d),cv=d._cover||{},st=stats(d),NC=16;
+      var wb=new X.Workbook(); wb.creator='Pétrosphère — ELS'; wb.created=new Date();
+      var ws=wb.addWorksheet('Punch list',{pageSetup:{orientation:'landscape',paperSize:9,fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}}});
+      var COLX=[['Item',7],['Phase',13],['Discipline',14],['Issued by',9],['Date of issue',11],['Description of punch list item',42],['Equipment / PID',18],['Proposed actions',22],['PIC',10],['Status',10],['Target date',11],['Client comments',24],['ELS answer',38],['Photo 1',22],['Photo 2',22],['More photos',9]];
+      COLX.forEach(function(c,i){ ws.getColumn(i+1).width=c[1]; });
+      var thin={style:'thin',color:{argb:'FFD9D6E8'}},box={top:thin,left:thin,bottom:thin,right:thin};
+      ws.mergeCells(1,1,1,NC); var c1=ws.getCell(1,1); c1.value=(d._title||'Punch list')+(cv.rev?' — Rev. '+cv.rev:''); c1.font={bold:true,size:15,color:{argb:'FF1C1A33'}};
+      ws.mergeCells(2,1,2,NC); ws.getCell(2,1).value=[cv.project,cv.company,cv.projectNo?'Project No '+cv.projectNo:''].filter(Boolean).join(' · ')+(d._aff?'  ·  ELS : '+affLabel(d._aff):'');
+      ws.mergeCells(3,1,3,NC); ws.getCell(3,1).value='Answered by ELS — exported on '+fr(todayIso())+' — '+st.n+' items : '+st.open+' open, '+st.closed+' closed'+(st.na?', '+st.na+' N/A':'');
+      ws.getCell(3,1).font={italic:true,color:{argb:'FF6B6790'}};
+      var HR=5,hr=ws.getRow(HR);
+      COLX.forEach(function(c,i){ var cell=hr.getCell(i+1); cell.value=c[0]; cell.font={bold:true,color:{argb:'FFFFFFFF'}}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1C1A33'}}; cell.alignment={wrapText:true,vertical:'middle',horizontal:'center'}; cell.border=box; });
+      hr.height=30;
+      ws.views=[{state:'frozen',ySplit:HR}];
+      ws.autoFilter={from:{row:HR,column:1},to:{row:HR,column:NC}};
+      var totalPh=K.reduce(function(n,k){ return n+Math.min(XP_MAX,photosOf(d,k).length); },0),doneP=0,missing=0;
+      var FILL={Closed:['FFDCFCE7','FF15803D'],Open:['FFFEF3C7','FF92400E'],'N/A':['FFE2E8F0','FF334155']};
+      for(var ri=0;ri<K.length;ri++){
+        var k=K[ri],i=d['i:'+k]||{},s=stOf(d,k),t=(d['t:'+k]||{}).txt||'',ph=photosOf(d,k),more=Math.max(0,ph.length-XP_MAX);
+        var rn=HR+1+ri,row=ws.getRow(rn);
+        row.values=[i.n||'',i.phase||'',i.disc||'',i.by||'',fr(i.dt),i.des||'',i.eq||'',i.prop||'',i.pic||'',s,fr(i.tgt),i.ccom||'',t,'','',more?'+'+more:''];
+        for(var ci=1;ci<=NC;ci++){ var cell=row.getCell(ci); cell.alignment={wrapText:true,vertical:'top',horizontal:(ci===1||ci===10||ci===16)?'center':'left'}; cell.border=box; }
+        var sc=row.getCell(10),f=FILL[s]; sc.fill={type:'pattern',pattern:'solid',fgColor:{argb:f[0]}}; sc.font={bold:true,color:{argb:f[1]}};
+        if(isLate(d,k)) row.getCell(11).font={bold:true,color:{argb:'FFB91C1C'}};
+        if(t) row.getCell(13).font={color:{argb:'FF1D3FBF'}};
+        // hauteur : assez pour le texte le plus long, et pour la photo la plus haute
+        var lines=1;[[6,42],[7,18],[8,22],[12,24],[13,38]].forEach(function(x){ var v=String(row.getCell(x[0]).value||''); var n=v.split('\n').reduce(function(a,l){ return a+Math.max(1,Math.ceil(l.length/(x[1]*1.05))); },0); if(n>lines) lines=n; });
+        var maxH=0;
+        for(var j=0;j<Math.min(XP_MAX,ph.length);j++){
+          doneP++; lbl('Photos '+doneP+' / '+totalPh+'…');
+          try{
+            var im=await photoForExport(ph[j]);
+            var w=XP_W,h=Math.round(XP_W*im.h/im.w); if(h>XP_W){ h=XP_W; w=Math.round(XP_W*im.w/im.h); }
+            var id=wb.addImage({base64:im.data,extension:'jpeg'});
+            ws.addImage(id,{tl:{col:13+j+0.05,row:rn-1+0.05},ext:{width:w,height:h},editAs:'oneCell'});
+            if(h>maxH) maxH=h;
+          }catch(e){ missing++; row.getCell(14+j).value='(photo indisponible)'; }
+        }
+        var hText=lines*15+4,hPh=maxH?Math.round(maxH*0.75)+8:0;
+        if(maxH||lines>1) row.height=Math.max(hText,hPh,18);
+      }
+      var endR=HR+K.length+2;
+      ws.mergeCells(endR,1,endR,NC); ws.getCell(endR,1).value='Status = statut ELS. Photos : cliquer sur une photo puis l’agrandir dans Excel. '+(missing?missing+' photo(s) n’ont pas pu être jointes.':'');
+      ws.getCell(endR,1).font={italic:true,size:9,color:{argb:'FF6B6790'}};
+      lbl('Fichier…');
+      var buf=await wb.xlsx.writeBuffer();
+      var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      var fn=String((d._title||'Punch list')+(cv.rev?' Rev '+cv.rev:'')+' - ELS '+fr(todayIso()).replace(/\//g,'-')).replace(/[\\\/:*?"<>|\r\n]+/g,'_').slice(0,120)+'.xlsx';
+      var url=URL.createObjectURL(blob),a=document.createElement('a'); a.href=url; a.download=fn; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); },15000);
+      if(missing) alert(missing+' photo(s) n’ont pas pu être récupérées : elles sont indiquées « photo indisponible » dans le fichier.');
+      return {fn:fn,size:blob.size,rows:K.length,photos:doneP-missing};
+    }catch(e){ alert('Export Excel impossible : '+(e&&e.message||e)); }
+    finally{ if(btn){ btn.disabled=false; btn.textContent='⬇ Excel'; } }
+  }
+
   // ── Enregistrement (même principe que Commandes / Docs chantier) ──
   function keepLocal(){
     if(!S.cur) return;
@@ -24085,7 +24178,7 @@ window.PunchList=(function(){
   window.addEventListener('pagehide',function(){ if(S.cur&&Object.keys(S.dirty).length) keepLocal(); });
 
   return {
-    render:render, open:open, back:back, leave:leave, del:del, importer:importer,
+    render:render, open:open, back:back, leave:leave, del:del, importer:importer, exportXlsx:exportXlsx,
     canView:function(){ return ENV.canView(); },
     pending:function(){ return !!(S.cur&&Object.keys(S.dirty).length)||S.queue.length>0; },
     _f:function(k,v){ S[k]=v; if(S.cur) drawDetail(); else drawList(); },
