@@ -1889,8 +1889,8 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
       <div id="petro-hub-tile-docs" class="petro-tile" onclick="petroHubEnterDocs()" style="display:none">
         <div class="petro-tile-ico" style="background:#B45309">⛑️</div>
         <div class="petro-tile-t">Chantier</div>
-        <div class="petro-tile-s">Documents du chantier : fiches de contrôle</div>
-        <div class="petro-tile-chips"><span>Docs chantier</span></div>
+        <div class="petro-tile-s">Documents du chantier et punch lists du client</div>
+        <div class="petro-tile-chips"><span>Docs chantier</span><span>Punch lists</span></div>
       </div>
     </div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:22px">
@@ -2043,7 +2043,7 @@ function petroHubBackToHub(){
   var backups = document.getElementById('petro-backups-shell');
   if(backups) backups.style.display='none';
   var docs = document.getElementById('petro-docs-shell');
-  if(docs && docs.style.display!=='none'){ docs.style.display='none'; if(window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave(); }
+  if(docs && docs.style.display!=='none'){ docs.style.display='none'; if(window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave(); if(window.PunchList&&window.PunchList.leave) window.PunchList.leave(); }
   // Commandes (onglet de l'affaire) : enregistre une saisie en cours et arrête le suivi
   if(window.Commandes&&window.Commandes.leave) window.Commandes.leave();
   var qrs = document.getElementById('petro-qr-shell');
@@ -3174,6 +3174,7 @@ window.DroitsAcces = (function () {
     {key:'plaque_pe', label:'Plaque PE'},
     {key:'qr_feuille', label:'QR Code feuille d\'heure (Voir = accès à l\'onglet ; Modifier = afficher le QR code, valider et débloquer les feuilles)'},
     {key:'docs_chantier', label:'Docs chantier (Voir = consulter et imprimer les fiches ; Modifier = créer, remplir, faire signer, verrouiller). Rouvrir une fiche signée : admin et chef de chantier'},
+    {key:'punch_list', label:'Punch lists du client (Voir = consulter ; Modifier = importer l\'Excel du client, répondre, statut Closed / Open / N/A, photos). Supprimer une punch list : admin'},
     {key:'modifications', label:'Modifications de documents (Voir = l\'onglet Modifications de l\'affaire ; Modifier = demander une modification, la marquer faite, ajouter des versions, préparer les emails)'},
     {key:'commandes', label:'Commandes (Voir = consulter les commandes ; Modifier = saisir les quantités reçues)'},
     {key:'commandes_gestion', label:'Commandes — gestion (Modifier = créer, modifier et supprimer les commandes et leurs lignes, changer les délais, importer)'},
@@ -3834,7 +3835,8 @@ function applyRoleRestrictions() {
   // Docs chantier (fiches de contrôle) : admins, + ceux qui ont le droit "Docs chantier" (Voir)
   var docsTile = document.getElementById('petro-hub-tile-docs');
   // Chantier = Docs chantier (les Commandes sont dans Affaires › Commandes depuis le 06/10/2026)
-  if (docsTile) docsTile.style.display = (CURRENT_ROLE === 'admin' || hasView('docs_chantier')) ? '' : 'none';
+  // Chantier = Docs chantier + Punch lists (06/10/2026) : visible si l'un des deux est accessible
+  if (docsTile) docsTile.style.display = (CURRENT_ROLE === 'admin' || hasView('docs_chantier') || hasView('punch_list')) ? '' : 'none';
   var cmdChip = document.getElementById('petro-hub-chip-cmd');
   if (cmdChip) cmdChip.style.display = (CURRENT_ROLE === 'admin' || hasView('commandes')) ? '' : 'none';
   if (CURRENT_ROLE === 'chef_chantier') {
@@ -21573,6 +21575,7 @@ if(window._QR_TOKEN){window.QRFeuille.startPublic();}
   <div id="petro-ch-tabs" style="padding:14px 22px 0;flex-shrink:0"></div>
   <div id="petro-docs-content" style="flex:1;min-height:0;overflow:auto;padding:0"></div>
   <div id="petro-cmd-content" style="display:none;flex:1;min-height:0;overflow:auto;padding:0"></div>
+  <div id="petro-pl-content" style="display:none;flex:1;min-height:0;overflow:auto;padding:0"></div>
 </div>
 <div id="dcf-modal" style="display:none;position:fixed;inset:0;z-index:9600;background:rgba(20,16,50,.5);overflow:auto;padding:24px 12px"></div>
 <style>
@@ -22530,8 +22533,13 @@ window.Commandes=(function(){
     Object.keys(d).filter(function(x){ return x.indexOf('l:')===0&&!seen[x.slice(2)]; }).sort().forEach(function(x){ out.push(x.slice(2)); });
     return out;
   }
+  // Lignes qui ne sont pas du matériel : réf. « DIV REMISE » (remise de 1 %…) — jamais suivies (06/10/2026)
+  function isRemiseRef(ref){ return /^DIV\s*REMISE\b/.test(String(ref||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim()); }
+  // Ligne « hors suivi » : supprimée avec la croix (sup) ou remise. Gardée dans les données pour que
+  // l'import la reconnaisse et ne la recrée pas, mais absente de l'écran, du reliquat et des retards.
+  function lineOff(l){ return !!(l&&(l.sup||isRemiseRef(l.ref))); }
   function lines(d){
-    return lineKeys(d).map(function(k){ var l=d['l:'+k]||{};
+    return lineKeys(d).filter(function(k){ return !lineOff(d['l:'+k]); }).map(function(k){ var l=d['l:'+k]||{};
       return {k:k,ref:l.ref||'',des:l.des||'',unit:l.unit||'',qc:nb(l.qc),del:l.del||'',old:l.old||'',qr:nb(d['q:'+k]),
         src:l.src||'',liv:nb(l.liv),gone:l.gone||'',chg:l.chg||''}; });
   }
@@ -22783,6 +22791,14 @@ window.Commandes=(function(){
       h+='<div style="font-size:12px;color:#6B6790;margin-top:8px">Exemple : 40 presse-étoupes commandés, 20 reçus → la ligne passe en « Partiel 20 / 40 », il en reste 20, et la commande en « Livrée partiellement ».</div>';
     }
     if(man) h+='<button class="dcu-btn2" style="margin-top:12px" onclick="Commandes._editLine(\'\')">＋ Ajouter une ligne</button>';
+    // Lignes supprimées (croix) : plus suivies, ne reviennent pas à l'import ; on peut les rétablir
+    var off=lineKeys(D).filter(function(k){ var l=D['l:'+k]; return l&&l.sup&&!isRemiseRef(l.ref); }); // les remises restent toujours cachées
+    if(off.length){
+      h+='<details style="margin-top:12px;font-size:12.5px;color:#6B6790"><summary style="cursor:pointer;font-weight:700">'+off.length+' ligne'+(off.length>1?'s':'')+' supprimée'+(off.length>1?'s':'')+' (plus suivie'+(off.length>1?'s':'')+', ne revien'+(off.length>1?'nent':'t')+' pas à l’import)</summary>'
+        +off.map(function(k){ var l=D['l:'+k]; return '<div style="display:flex;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid #F4F3F9"><code style="text-decoration:line-through">'+esc(l.ref||'—')+'</code><span style="flex:1;text-decoration:line-through">'+esc(l.des||'')+'</span><span>'+fq(nb(l.qc))+'</span>'
+          +(man?'<button type="button" class="dcu-btn2" style="padding:3px 10px;font-size:12px" onclick="Commandes._undelLine(\''+js(k)+'\')">↺ Rétablir</button>':'')+'</div>'; }).join('')
+        +'</details>';
+    }
     h+='</div>';
     // Remarque
     h+='<div class="dcu-card"><div class="cmu-lbl" style="margin-bottom:6px">REMARQUE</div>'
@@ -22883,10 +22899,22 @@ window.Commandes=(function(){
   function _delLine(k){
     if(!ENV.canManage()||!S.cur) return;
     var l=D['l:'+k]||{};
+    if(l.src==='esa'){
+      // ligne venue du reliquat : marquée supprimée (sinon le prochain import la recréerait)
+      if(!confirm('Supprimer la ligne '+(l.ref||l.des||'')+' ?\n\nElle ne sera plus suivie et ne reviendra pas aux prochains imports du reliquat (vous pourrez la rétablir en bas de la commande).')) return;
+      setVal('l:'+k,Object.assign({},l,{sup:todayIso(),supBy:ENV.who()}));
+      drawDetail(); return;
+    }
     if(!confirm('Supprimer la ligne '+(l.ref||l.des||'')+' ?')) return;
     setVal('order',lineKeys(D).filter(function(x){ return x!==k; }));
     setVal('l:'+k,''); setVal('q:'+k,'');
     drawDetail();
+  }
+  function _undelLine(k){
+    if(!ENV.canManage()||!S.cur) return;
+    var l=D['l:'+k];if(!l||!l.sup) return;
+    var nl=Object.assign({},l);delete nl.sup;delete nl.supBy;
+    setVal('l:'+k,nl); drawDetail();
   }
 
   // ── Bons de livraison ──
@@ -23199,10 +23227,15 @@ window.Commandes=(function(){
     // toutes les lignes servent au rapprochement (une ligne tapée à la main avant l'import n'est pas doublée),
     // mais seules les lignes venues d'un import peuvent être soldées
     var exist=lineKeys(D2).filter(function(k){ return D2['l:'+k]; }).map(function(k){ return {k:k,l:D2['l:'+k]}; });
-    var m=matchLines(exist,ord.lines);
+    // Remises (réf. « DIV REMISE ») : jamais créées ni suivies ; une ancienne ligne remise passe hors suivi.
+    // (Les lignes supprimées à la croix — « sup » — restent dans le rapprochement : reconnues, donc pas recréées.)
+    exist.forEach(function(e){ if(isRemiseRef(e.l.ref)&&!e.l.sup){ D2['l:'+e.k]=Object.assign({},e.l,{sup:today,supAuto:1}); any=true; } });
+    exist=exist.filter(function(e){ return !isRemiseRef(e.l.ref); });
+    var inc=ord.lines.filter(function(n){ return !isRemiseRef(n.ref); });
+    var m=matchLines(exist,inc);
     m.lost=m.lost.filter(function(k){ return D2['l:'+k].src==='esa'; });
     m.pairs.forEach(function(p){
-      var n=ord.lines[p.ni],o=D2['l:'+p.k],nl=Object.assign({},o,{src:'esa'});
+      var n=inc[p.ni],o=D2['l:'+p.k],nl=Object.assign({},o,{src:'esa'});
       if(o.gone){
         delete nl.gone; ch.back++;
         if(o.auto){ D2['q:'+p.k]=Math.max(nb(o.qprev),n.liv||0)||''; if(!D2['q:'+p.k]) delete D2['q:'+p.k]; }
@@ -23360,7 +23393,7 @@ window.Commandes=(function(){
     pending:function(){ return !!(S.cur&&Object.keys(S.dirty).length); },
     _f:function(k,v){ S[k]=v; drawList(); }, _q:function(v){ S.q=v; var pos=null,a=document.activeElement; if(a&&a.selectionStart!=null) pos=a.selectionStart; drawList(); var i=S.host&&S.host.querySelector('input[aria-label="Rechercher"]'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
     _closeModal:closeModal, _create:_create, _qty:_qty, _qtyBlur:_qtyBlur, _all:_all, _note:_note,
-    _editCmd:_editCmd, _saveCmd:_saveCmd, _editLine:_editLine, _saveLine:_saveLine, _delLine:_delLine,
+    _editCmd:_editCmd, _saveCmd:_saveCmd, _editLine:_editLine, _saveLine:_saveLine, _delLine:_delLine, _undelLine:_undelLine,
     _addBL:_addBL, _blOpen:_blOpen, _blDel:_blDel,
     importer:impPick, _impRead:impRead, _impApply:impApply, _read:readReliquatPdf,
     _state:function(){ return {S:S,D:D}; }, _stats:stats
@@ -23373,8 +23406,9 @@ window.ChantierNav=(function(){
   function tabs(){
     var adm=typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin';
     return [
-      {k:'docs',lbl:'📋 Docs chantier',vis:function(){ try{ return adm||hasView('docs_chantier'); }catch(e){ return adm; } }}
+      {k:'docs',lbl:'📋 Docs chantier',vis:function(){ try{ return adm||hasView('docs_chantier'); }catch(e){ return adm; } }},
       // Commandes : déplacées dans Affaires › Commandes (06/10/2026), filtrées sur l'affaire choisie à gauche
+      {k:'pl',lbl:'🔧 Punch lists',vis:function(){ return !!(window.PunchList&&window.PunchList.canView()); }}
     ].filter(function(t){ return t.vis(); });
   }
   function draw(){
@@ -23389,14 +23423,17 @@ window.ChantierNav=(function(){
     if(cur&&cur!==k){
       if(cur==='docs'&&window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave();
       if(cur==='cmd'&&window.Commandes) window.Commandes.leave();
+      if(cur==='pl'&&window.PunchList) window.PunchList.leave();
     }
     cur=k;
-    var dc=document.getElementById('petro-docs-content'),cc=document.getElementById('petro-cmd-content');
+    var dc=document.getElementById('petro-docs-content'),cc=document.getElementById('petro-cmd-content'),pc=document.getElementById('petro-pl-content');
     if(dc) dc.style.display=k==='docs'?'':'none';
     if(cc) cc.style.display=k==='cmd'?'':'none';
+    if(pc) pc.style.display=k==='pl'?'':'none';
     draw();
     if(k==='docs'&&window.DocsChantier) window.DocsChantier.render('petro-docs-content');
     if(k==='cmd'&&window.Commandes) window.Commandes.render('petro-cmd-content');
+    if(k==='pl'&&window.PunchList) window.PunchList.render('petro-pl-content');
   }
   function enter(){
     // logo O&G de l'en-tête (repris de l'image du site, pour ne pas la dupliquer)
@@ -23404,11 +23441,663 @@ window.ChantierNav=(function(){
     if(lg&&src&&!lg.getAttribute('src')){ lg.src=src.src; lg.style.display='block'; }
     show(cur||'docs');
   }
-  function leave(){ if(cur==='cmd'&&window.Commandes) window.Commandes.leave(); }
+  function leave(){ if(cur==='cmd'&&window.Commandes) window.Commandes.leave(); if(cur==='pl'&&window.PunchList) window.PunchList.leave(); }
   return {enter:enter,show:show,leave:leave,current:function(){ return cur; }};
 })();
 </script>
 <!-- ═══════════════════════════ /COMMANDES ═══════════════════════ -->
+
+<!-- ═══════════════════════════ PUNCH LISTS — module isolé ═══════════════════════
+     Écran Chantier › Punch lists (06/10/2026). Le client (ex. SNF) envoie un Excel des points
+     qui ne vont pas (essais, FAT…) ; on l'importe, on répond ligne par ligne (statut Closed / Open /
+     N/A, réponse ELS, photos prises au téléphone), puis on lui renvoie un export (étape 2).
+     Pas dans data.json : table Supabase "punch_lists" (script punch_list_supabase.sql), une ligne
+     par punch list, "data" = objet PLAT pour la fusion case par case (comme Commandes / Docs chantier) :
+       _title, _aff, _cover {project, company, projectNo, docNo, rev, revDate}, _file, _imp, order [k]
+       i:<k>  = ligne du client {n, cls, phase, disc, by, dt, des, eq, prop, pic, cst, tgt, ccom, add}
+       s:<k>  = notre statut {st:'Closed'|'Open'|'N/A', by, at}
+       t:<k>  = notre réponse {txt, by, at}
+       p:<id> = photo {k, path, thumb, at, by}
+     Photos : dossier privé "punch_photos" (photo réduite 1600 px + vignette 360 px).
+     Droit "punch_list" : Voir / Modifier (importer, répondre, photos). Supprimer une punch list : admin.
+     ═════════════════════════════════════════════════════════════════════════════ -->
+<style>
+.plx-wrap{max-width:1180px;margin:0 auto;padding:16px 16px 70px}
+.plx-chips{display:flex;gap:6px;flex-wrap:wrap}
+.plx-chip{border:1.5px solid #E4E1F0;background:#fff;border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;color:#4A4766;white-space:nowrap}
+.plx-chip.on{background:#1C1A33;border-color:#1C1A33;color:#fff}
+.plx-line{background:#fff;border:1px solid #E4E1F0;border-radius:14px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(28,26,51,.04)}
+.plx-line.closed{background:#FBFDFB;border-color:#D1F0DC}
+.plx-line.late{border-left:4px solid #DC2626}
+.plx-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.plx-n{font-size:15px;font-weight:900;color:#1C1A33;min-width:34px}
+.plx-tag{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:8px;background:#F1EFF8;color:#4A4766;white-space:nowrap}
+.plx-des{font-size:14px;font-weight:700;color:#1C1A33;line-height:1.4;white-space:pre-wrap}
+.plx-kv{display:flex;gap:8px;font-size:12.5px;color:#4A4766;margin-top:4px;flex-wrap:wrap}
+.plx-kv b{color:#6B6790;font-size:10.5px;letter-spacing:.3px;min-width:96px;font-weight:800}
+.plx-ans{margin-top:10px;padding-top:10px;border-top:1px dashed #E4E1F0;display:grid;gap:8px}
+.plx-seg{display:inline-flex;background:#F1EFFC;border-radius:10px;padding:3px;gap:2px}
+.plx-seg button{border:none;background:transparent;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;color:#4A4766}
+.plx-seg button.on-open{background:#F59E0B;color:#fff}.plx-seg button.on-closed{background:#16A34A;color:#fff}.plx-seg button.on-na{background:#64748B;color:#fff}
+.plx-ta{width:100%;box-sizing:border-box;border:1.5px solid #E4E1F0;border-radius:10px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical;min-height:40px}
+.plx-ta:focus{outline:none;border-color:#6457F4}
+.plx-ph{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.plx-th{position:relative;width:86px;height:86px;border-radius:10px;overflow:hidden;background:#F1EFF8;border:1px solid #E4E1F0;cursor:pointer;flex-shrink:0}
+.plx-th img{width:100%;height:100%;object-fit:cover;display:block}
+.plx-th .x{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:12px;cursor:pointer;line-height:22px;padding:0}
+.plx-th .w{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#6B6790;text-align:center;padding:4px}
+.plx-add{width:86px;height:86px;border-radius:10px;border:2px dashed #C7C1F5;background:#FAF9FF;color:#4B3FC7;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.plx-st{display:inline-block;font-size:11.5px;font-weight:900;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.plx-st.Open{background:#FEF3C7;color:#92400E}.plx-st.Closed{background:#DCFCE7;color:#15803D}.plx-st.NA{background:#E2E8F0;color:#334155}
+.plx-head{position:sticky;top:0;z-index:5}
+/* téléphone : en-tête qui défile avec la page (sinon il cache la moitié de l'écran), filtres sur une ligne qu'on fait glisser */
+@media(max-width:700px){.plx-head{position:static}.plx-chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}.plx-kv b{min-width:0;width:100%}.plx-wrap{padding:10px 8px 70px}}
+</style>
+<div id="pl-modal" style="display:none;position:fixed;inset:0;z-index:9600;background:rgba(20,16,50,.5);overflow:auto;padding:24px 12px"></div>
+<script>
+window.PunchList=(function(){
+  'use strict';
+  // ── Environnement (droits, utilisateur, affaires) ──
+  var ENV={
+    canView:function(){ try{ return CURRENT_ROLE==='admin'||hasView('punch_list'); }catch(e){ return false; } },
+    canEdit:function(){ try{ return CURRENT_ROLE==='admin'||hasEdit('punch_list'); }catch(e){ return false; } },
+    isAdmin:function(){ try{ return CURRENT_ROLE==='admin'; }catch(e){ return false; } },
+    who:function(){ try{ return (CURRENT_USER&&CURRENT_USER.email)||''; }catch(e){ return ''; } },
+    affaires:function(){
+      try{ return Object.keys(STORE.projects||{}).sort().map(function(k){ var p=STORE.projects[k]||{},inf=p.infos||{};
+        return {id:k,label:(typeof getAffLabel==='function'?getAffLabel(k):k),closed:!!p.closed,num:inf.numero||'',cli:inf.numeroClient||''}; }); }
+      catch(e){ return []; }
+    }
+  };
+  var LIST_COLS='id,aff,title,meta,rev,created_at,created_by,updated_at,updated_by';
+  var DB={
+    _c:function(){ if(!window.supa) throw new Error('Pas de connexion au serveur'); return window.supa.from('punch_lists'); },
+    list:async function(){ var r=await this._c().select(LIST_COLS).order('updated_at',{ascending:false}).limit(2000); if(r.error) throw r.error; return r.data||[]; },
+    get:async function(id){ var r=await this._c().select('*').eq('id',id).maybeSingle(); if(r.error) throw r.error; return r.data; },
+    head:async function(id){ var r=await this._c().select('rev').eq('id',id).maybeSingle(); if(r.error) throw r.error; return r.data; },
+    create:async function(row){ var r=await this._c().insert(row).select('*').single(); if(r.error) throw r.error; return r.data; },
+    // Écrit seulement si personne n'a enregistré entre-temps (même "rev") ; null sinon.
+    update:async function(id,rev,patch){ var r=await this._c().update(patch).eq('id',id).eq('rev',rev).select('*'); if(r.error) throw r.error; return (r.data&&r.data[0])||null; },
+    remove:async function(id){ var r=await this._c().delete().eq('id',id); if(r.error) throw r.error; }
+  };
+  var FILES={
+    _b:function(){ if(!window.supa) throw new Error('Pas de connexion au serveur'); return window.supa.storage.from('punch_photos'); },
+    upload:async function(path,blob){ var r=await this._b().upload(path,blob,{contentType:'image/jpeg',upsert:false}); if(r.error) throw r.error; },
+    download:async function(path){ var r=await this._b().download(path); if(r.error) throw r.error; return r.data; },
+    remove:async function(paths){ var r=await this._b().remove(paths); if(r.error) throw r.error; }
+  };
+
+  // ── Outils ──
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function js(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+  function $(id){ return document.getElementById(id); }
+  function pad(n){ return ('0'+n).slice(-2); }
+  function todayIso(){ var d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+  function fr(iso){ var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+'/'+m[2]+'/'+m[1]:(iso||''); }
+  function fmtDT(s){ if(!s) return ''; var d=new Date(s); if(isNaN(d)) return ''; return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear()+' '+pad(d.getHours())+':'+pad(d.getMinutes()); }
+  function whoShort(e){ e=String(e||''); var i=e.indexOf('@'); return i>0?e.slice(0,i):e; }
+  function sameV(a,b){ return JSON.stringify(a==null?'':a)===JSON.stringify(b==null?'':b); }
+  function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  function noAcc(s){ return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,''); }
+  function normK(s){ return noAcc(s).toUpperCase().replace(/[^A-Z0-9]/g,''); }
+  function affLabel(id){ if(!id) return '—'; var a=ENV.affaires().filter(function(x){ return x.id===id; })[0]; return a?a.label:id; }
+
+  // ── Lignes et compteurs ──
+  function keys(d){
+    var seen={},out=[];
+    (d.order||[]).forEach(function(k){ if(d['i:'+k]&&!seen[k]){ seen[k]=1; out.push(k); } });
+    Object.keys(d).filter(function(x){ return x.indexOf('i:')===0&&!seen[x.slice(2)]; }).sort().forEach(function(x){ out.push(x.slice(2)); });
+    return out;
+  }
+  // Statut retenu : le nôtre s'il a été donné, sinon celui du fichier du client
+  function stOf(d,k){ var s=d['s:'+k],i=d['i:'+k]||{}; var v=(s&&s.st)||i.cst||'Open'; return /^clos/i.test(v)?'Closed':(/^n\/?a$/i.test(v)?'N/A':'Open'); }
+  function ours(i){ return /ELS/i.test(i.pic||''); }
+  function snf(i){ return /SNF/i.test(i.pic||''); }
+  function isLate(d,k){ var i=d['i:'+k]||{}; return stOf(d,k)==='Open'&&!!i.tgt&&i.tgt<todayIso(); }
+  function photosOf(d,k){ return Object.keys(d).filter(function(x){ return x.indexOf('p:')===0&&d[x]&&d[x].k===k; }).map(function(x){ return Object.assign({id:x.slice(2)},d[x]); }).sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); }); }
+  function stats(d){
+    var K=keys(d),o={n:K.length,open:0,closed:0,na:0,ours:0,snf:0,late:0,photos:0};
+    K.forEach(function(k){ var i=d['i:'+k]||{},st=stOf(d,k);
+      if(st==='Open'){ o.open++; if(ours(i)) o.ours++; if(snf(i)) o.snf++; if(isLate(d,k)) o.late++; } else if(st==='Closed') o.closed++; else o.na++; });
+    o.photos=Object.keys(d).filter(function(x){ return x.indexOf('p:')===0&&d[x]; }).length;
+    o.title=d._title||''; o.imp=d._imp||''; o.rev=(d._cover&&d._cover.rev)||'';
+    return o;
+  }
+  function stPill(st){ return '<span class="plx-st '+(st==='N/A'?'NA':st)+'">'+st+'</span>'; }
+
+  // ── État de l'écran ──
+  var S={host:null,list:[],filterAff:'',q:'',f:'all',disc:'',cur:null,base:{},dirty:{},saving:false,saveT:null,pollT:null,listT:null,err:'',offline:false,needDraw:false,thumbs:{},queue:[]};
+  var D={};
+
+  // ═════════ LISTE DES PUNCH LISTS ═════════
+  async function loadList(){ try{ S.list=await DB.list(); S.err=''; }catch(e){ S.err=String(e&&e.message||e); } }
+  function listHtml(){
+    var ed=ENV.canEdit(),adm=ENV.isAdmin();
+    var affs={}; S.list.forEach(function(r){ var a=r.aff||''; affs[a]=(affs[a]||0)+1; });
+    var rows=S.list.filter(function(r){ return !S.filterAff||(r.aff||'')===S.filterAff; });
+    var h='<div class="dcu"><div class="plx-wrap">';
+    h+='<div class="dcu-card"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'
+      +'<div style="flex:1;min-width:240px"><div style="font-size:18px;font-weight:900">🔧 Punch lists</div>'
+      +'<div style="font-size:12.5px;color:#6B6790;margin-top:3px">Importez l’Excel envoyé par le client, puis répondez ligne par ligne : statut (Closed / Open / N/A), réponse et photos prises au téléphone.</div></div>'
+      +(ed?'<button class="dcu-btn" onclick="PunchList.importer()">⬆ Importer une punch list (Excel)</button>':'')
+      +'</div></div>';
+    if(S.err) h+='<div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Impossible de lire les punch lists : '+esc(S.err)+(/punch_lists|relation|does not exist|schema cache/i.test(S.err)?'<br>➜ Le script <b>punch_list_supabase.sql</b> n’a sans doute pas encore été lancé dans Supabase.':'')+'</div>';
+    h+='<div class="dcu-card">';
+    if(Object.keys(affs).length>1) h+='<div style="margin-bottom:10px"><select class="dcu-in" aria-label="Affaire" style="min-width:260px;font-weight:700" onchange="PunchList._f(\'filterAff\',this.value)"><option value="">Toutes les affaires — '+S.list.length+'</option>'
+      +Object.keys(affs).sort().map(function(a){ return '<option value="'+esc(a)+'"'+(S.filterAff===a?' selected':'')+'>'+esc(a?affLabel(a):'(sans affaire)')+' — '+affs[a]+'</option>'; }).join('')+'</select></div>';
+    if(!rows.length){
+      h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?'Aucune punch list pour cette affaire.':'Aucune punch list pour l’instant.'+(ed?' Cliquez sur « ⬆ Importer une punch list ».':''))+'</div>';
+    }else{
+      h+='<div style="overflow:auto"><table class="dcu-tbl"><tr><th>Punch list</th><th>Affaire</th><th>Ouvertes</th><th>À nous</th><th>En retard</th><th>Fermées</th><th class="dcu-hide-sm">Mise à jour</th><th></th></tr>';
+      rows.forEach(function(r){ var m=r.meta||{};
+        h+='<tr class="dcu-row" onclick="PunchList.open(\''+js(r.id)+'\')">'
+          +'<td><b>'+esc(r.title||m.title||'Punch list')+'</b>'+(m.rev?' <span class="plx-tag">Rév. '+esc(m.rev)+'</span>':'')+'</td>'
+          +'<td>'+esc(affLabel(r.aff))+'</td>'
+          +'<td><b style="color:'+(m.open?'#B45309':'#15803D')+'">'+(m.open||0)+'</b> / '+(m.n||0)+'</td>'
+          +'<td>'+(m.ours||0)+'</td>'
+          +'<td>'+(m.late?'<b style="color:#B91C1C">'+m.late+'</b>':'0')+'</td>'
+          +'<td style="color:#15803D;font-weight:700">'+(m.closed||0)+'</td>'
+          +'<td class="dcu-hide-sm" style="font-size:12px;color:#6B6790">'+esc(fmtDT(r.updated_at))+'</td>'
+          +'<td style="text-align:right">'+(adm?'<button class="cmu-ico red" title="Supprimer la punch list" aria-label="Supprimer la punch list" onclick="event.stopPropagation();PunchList.del(\''+js(r.id)+'\')">🗑</button>':'')+'</td></tr>';
+      });
+      h+='</table></div>';
+    }
+    h+='</div></div></div>';
+    return h;
+  }
+  function drawList(){ if(S.host&&!S.cur) S.host.innerHTML=listHtml(); }
+  function visible(){ var h=S.host; return !!(h&&h.offsetParent!==null); }
+  function listSig(){ return S.list.map(function(r){ return r.id+':'+r.rev; }).join('|'); }
+  async function listTick(){
+    if(S.cur||!S.host||S._listBusy||document.hidden||!visible()) return;
+    S._listBusy=true;
+    try{ var before=listSig(); await loadList(); if(!S.cur&&listSig()!==before&&!typing()) drawList(); }catch(e){}
+    finally{ S._listBusy=false; }
+  }
+  function startListPoll(){ stopListPoll(); S.listT=setInterval(listTick,5000); }
+  function stopListPoll(){ if(S.listT){ clearInterval(S.listT); S.listT=null; } }
+  async function render(hostId){
+    S.host=$(hostId)||S.host;
+    if(!S.host) return;
+    if(S.cur){ drawDetail(); startPoll(); return; }
+    stopPoll();
+    if(!ENV.canView()){ S.host.innerHTML='<div class="dcu"><div class="plx-wrap"><div class="dcu-card">Vous n’avez pas accès aux punch lists.</div></div></div>'; return; }
+    startListPoll();
+    S.host.innerHTML='<div class="dcu"><div class="plx-wrap"><div class="dcu-card" style="color:#6B6790">Chargement…</div></div></div>';
+    await loadList();
+    drawList();
+  }
+  async function del(id){
+    if(!ENV.isAdmin()) return;
+    var r=S.list.filter(function(x){ return x.id===id; })[0];
+    if(!confirm('Supprimer la punch list « '+((r&&r.title)||'')+' », toutes ses réponses et ses photos ?\n\nCette suppression est définitive.')) return;
+    try{
+      var row=await DB.get(id),d=(row&&row.data)||{},paths=[];
+      Object.keys(d).forEach(function(k){ if(k.indexOf('p:')===0&&d[k]){ if(d[k].path) paths.push(d[k].path); if(d[k].thumb) paths.push(d[k].thumb); } });
+      await DB.remove(id);
+      if(paths.length){ try{ await FILES.remove(paths); }catch(e){ console.warn('Punch list : photos non effacées',e); } }
+      S.list=S.list.filter(function(x){ return x.id!==id; });
+      if(S.cur&&S.cur.id===id){ S.cur=null; D={}; S.dirty={}; }
+      drawList();
+    }catch(e){ alert('Suppression impossible : '+(e&&e.message||e)); }
+  }
+
+  // ═════════ IMPORT DE L'EXCEL DU CLIENT ═════════
+  var XLSXJS='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  function loadXlsx(){
+    if(window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise(function(res,rej){
+      var s=document.createElement('script'); s.src=XLSXJS;
+      s.onload=function(){ window.XLSX?res(window.XLSX):rej(new Error('lecteur Excel indisponible')); };
+      s.onerror=function(){ rej(new Error('lecteur Excel indisponible (connexion internet ?)')); };
+      document.head.appendChild(s);
+    });
+  }
+  // Titres de colonnes reconnus (anglais ou français, ordre libre)
+  var COLS=[
+    ['n',/^(item|n°|no\b|n\b|#|numero|num)/],['cls',/classif/],['phase',/^phase/],['disc',/disciplin|lot\b|metier/],
+    ['by',/issued by|emis par|emetteur|^by$|auteur/],['dt',/date of issue|date d.?emission|issue date|^date$/],
+    ['des',/description|libelle|desc/],['eq',/equipment|equipement|pid|tag|repere/],['prop',/proposed|action/],
+    ['pic',/^pic\b|person in charge|responsable|in charge|resp\b/],['cst',/^status|^statut|^etat/],
+    ['tgt',/target|cible|due date|echeance/],['ccom',/comment|remarque|observation/]
+  ];
+  function cellTxt(v){ if(v==null) return ''; if(v instanceof Date) return v.toISOString(); return String(v).replace(/\r/g,'').trim(); }
+  function toIso(v){
+    if(v==null||v==='') return '';
+    if(v instanceof Date&&!isNaN(v)) return v.getFullYear()+'-'+pad(v.getMonth()+1)+'-'+pad(v.getDate());
+    if(typeof v==='number'&&v>20000&&v<90000){ var d=new Date(Math.round((v-25569)*864e5)); return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate()); }
+    var m=String(v).match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/); if(m){ var y=+m[3]; if(y<100) y+=2000; return y+'-'+pad(+m[2])+'-'+pad(+m[1]); }
+    m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[0]:'';
+  }
+  // Lit le fichier (dans le navigateur, jamais envoyé ni gardé) → {cover, lines, sheet, cols, warn}
+  async function readExcel(file){
+    var X=await loadXlsx();
+    // dates laissées en n° de série Excel puis converties en UTC (cellDates décalait d'un jour avec le fuseau horaire)
+    var wb=X.read(await file.arrayBuffer(),{type:'array',cellDates:false});
+    var best=null;
+    wb.SheetNames.forEach(function(sn){
+      if(best) return;
+      var rows=X.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});
+      for(var r=0;r<Math.min(rows.length,40);r++){
+        var hd=rows[r].map(function(c){ return noAcc(cellTxt(c)).toLowerCase().replace(/\s+/g,' ').trim(); });
+        if(hd.some(function(c){ return /description|libelle/.test(c); })&&hd.some(function(c){ return /^(item|status|statut|n°)/.test(c); })){
+          var map={};
+          hd.forEach(function(c,ci){ if(!c) return; for(var j=0;j<COLS.length;j++){ if(map[COLS[j][0]]==null&&COLS[j][1].test(c)){ map[COLS[j][0]]=ci; break; } } });
+          best={sheet:sn,rows:rows,hr:r,map:map}; return;
+        }
+      }
+    });
+    if(!best) return {lines:[],cover:{},warn:['Aucune feuille avec une ligne de titres « Item … Description … Status » n’a été trouvée.']};
+    var M=best.map,lines=[],warn=[];
+    var g=function(row,f){ return M[f]==null?'':row[M[f]]; };
+    for(var r=best.hr+1;r<best.rows.length;r++){
+      var row=best.rows[r],des=cellTxt(g(row,'des')),n=cellTxt(g(row,'n'));
+      if(!des&&!n) continue;
+      if(!des){ warn.push('Ligne '+(r+1)+' : item '+n+' sans description, ignorée.'); continue; }
+      lines.push({n:n,cls:cellTxt(g(row,'cls')),phase:cellTxt(g(row,'phase')),disc:cellTxt(g(row,'disc')),by:cellTxt(g(row,'by')),
+        dt:toIso(g(row,'dt')),des:des,eq:cellTxt(g(row,'eq')),prop:cellTxt(g(row,'prop')),pic:cellTxt(g(row,'pic')),
+        cst:cellTxt(g(row,'cst')),tgt:toIso(g(row,'tgt')),ccom:cellTxt(g(row,'ccom'))});
+    }
+    // Page de garde : « PROJECT: », « COMPANY: », « PROJECT No: », « DOC No : », tableau des révisions
+    var cover={};
+    wb.SheetNames.forEach(function(sn){
+      var rows=X.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''}),revCol=-1,dateCol=-1;
+      rows.forEach(function(row){
+        row.forEach(function(c,ci){
+          var t=noAcc(cellTxt(c)).toLowerCase().replace(/\s+/g,' ').trim(),nx=function(){ for(var j=ci+1;j<row.length;j++){ var v=cellTxt(row[j]); if(v&&!/^#/.test(v)) return row[j]; } return ''; };
+          if(/^project ?:$/.test(t)&&!cover.project) cover.project=cellTxt(nx());
+          else if(/^company ?:$/.test(t)&&!cover.company) cover.company=cellTxt(nx());
+          else if(/^project no ?:$/.test(t)&&!cover.projectNo) cover.projectNo=cellTxt(nx());
+          else if(/^doc no ?:$/.test(t)&&!cover.docNo) cover.docNo=cellTxt(nx());
+          else if(/^revision (n°|no\b|n\b|number|nr)/.test(t)){ revCol=ci; } // pas « REVISION NOTES »
+          else if(/^issue date/.test(t)){ dateCol=ci; }
+        });
+        if(revCol>=0){ var rv=cellTxt(row[revCol]); if(rv&&/^[0-9A-Z]{1,3}$/i.test(rv)){ cover.rev=rv; if(dateCol>=0) cover.revDate=toIso(row[dateCol]); } }
+      });
+    });
+    var dup={}; lines.forEach(function(l){ if(l.n){ dup[l.n]=(dup[l.n]||0)+1; } });
+    Object.keys(dup).forEach(function(n){ if(dup[n]>1) warn.push('Le n° d’item '+n+' apparaît '+dup[n]+' fois dans le fichier (gardé tel quel).'); });
+    var found=COLS.filter(function(c){ return M[c[0]]!=null; }).map(function(c){ return c[0]; });
+    return {sheet:best.sheet,lines:lines,cover:cover,cols:found,warn:warn};
+  }
+  // Affaire du site correspondant au n° de projet du client (« 231-S-0063 » = « 231S0063 »), ou au nom du fichier
+  function guessAff(cover,fname){
+    var cands=[normK(cover.projectNo),normK(cover.docNo),normK(String(fname||'').split(/[-_ .]/)[0])].filter(function(x){ return x&&x.length>=5; });
+    var A=ENV.affaires();
+    for(var i=0;i<cands.length;i++){
+      var c=cands[i],hit=A.filter(function(a){ return [a.cli,a.num,a.id].some(function(v){ var n=normK(v); return n&&n.length>=5&&(n===c||c.indexOf(n)===0||n.indexOf(c)===0); }); })[0];
+      if(hit) return hit.id;
+    }
+    return '';
+  }
+  var IMP=null;
+  function modal(html,wide){ var m=$('pl-modal'); m.innerHTML='<div class="dcu" style="max-width:'+(wide?760:520)+'px;margin:6vh auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)">'+html+'</div>'; m.style.display='block'; }
+  function closeModal(){ var m=$('pl-modal'); m.style.display='none'; m.innerHTML=''; IMP=null; }
+  function importer(){
+    if(!ENV.canEdit()) return;
+    var i=document.createElement('input'); i.type='file'; i.accept='.xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+    i.onchange=function(){ if(i.files&&i.files[0]) impRead(i.files[0]); };
+    i.click();
+  }
+  async function impRead(file){
+    modal('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Import d’une punch list</div><div style="font-size:13px;color:#4A4766">Lecture de « '+esc(file.name)+' »…</div>');
+    try{
+      var res=file.__parsed||await readExcel(file); // __parsed : banc de test uniquement
+      if(!res.lines.length){ modal('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Import d’une punch list</div><div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Aucune ligne trouvée dans ce fichier.'+(res.warn&&res.warn.length?'<br>'+res.warn.map(esc).join('<br>'):'')+'</div><div style="text-align:right"><button class="dcu-btn2" onclick="PunchList._closeModal()">Fermer</button></div>'); return; }
+      var cv=res.cover||{},aff=guessAff(cv,file.name);
+      var title=(cv.docNo||String(file.name).replace(/\.[^.]+$/,'')).trim();
+      var tmp={order:[]};res.lines.forEach(function(l,ix){ tmp['i:'+ix]=Object.assign({},l); tmp.order.push(String(ix)); });
+      var st=stats(tmp);
+      IMP={res:res,fname:file.name};
+      var A=ENV.affaires();
+      modal('<div style="font-size:16px;font-weight:900;margin-bottom:6px">Import d’une punch list</div>'
+        +'<div style="font-size:12.5px;color:#6B6790;margin-bottom:12px">« '+esc(file.name)+' »'+(cv.project||cv.company?' · '+esc([cv.project,cv.company].filter(Boolean).join(' · ')):'')+(cv.projectNo?' · projet '+esc(cv.projectNo):'')+(cv.rev?' · révision '+esc(cv.rev)+(cv.revDate?' du '+esc(fr(cv.revDate)):''):'')+'</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><span class="plx-tag" style="font-size:12.5px">'+st.n+' lignes</span><span class="plx-tag" style="font-size:12.5px;background:#FEF3C7;color:#92400E">'+st.open+' ouvertes</span><span class="plx-tag" style="font-size:12.5px">'+st.ours+' à nous (ELS)</span><span class="plx-tag" style="font-size:12.5px;background:#DCFCE7;color:#15803D">'+st.closed+' fermées</span></div>'
+        +'<label class="cmu-lbl">TITRE</label><input id="pl-i-title" class="dcu-in cmu-fld" value="'+esc(title)+'">'
+        +'<label class="cmu-lbl">AFFAIRE *</label><select id="pl-i-aff" class="dcu-in cmu-fld"><option value="">— Choisir l’affaire —</option>'
+        +A.filter(function(a){ return !a.closed||a.id===aff; }).map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===aff?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>'
+        +(aff?'<div style="font-size:11.5px;color:#15803D;margin-top:4px">✓ Affaire trouvée d’après le n° de projet du client.</div>':'')
+        +(res.warn&&res.warn.length?'<div class="dcu-msg" style="background:#FFFBEB;border:1px solid #FCD34D;color:#92400E;max-width:none;margin:12px 0 0">'+res.warn.map(esc).join('<br>')+'</div>':'')
+        +'<div style="font-size:11.5px;color:#9A96B3;margin-top:10px">Colonnes reconnues : '+esc((res.cols||[]).map(function(c){ return {n:'Item',cls:'Classification',phase:'Phase',disc:'Discipline',by:'Émis par',dt:'Date',des:'Description',eq:'Équipement',prop:'Action proposée',pic:'PIC',cst:'Status',tgt:'Date cible',ccom:'Commentaires'}[c]||c; }).join(', '))+'. Le fichier est lu sur cet appareil et n’est pas gardé.</div>'
+        +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="dcu-btn2" onclick="PunchList._closeModal()">Annuler</button><button id="pl-i-go" class="dcu-btn" onclick="PunchList._impCreate()">Créer la punch list</button></div>');
+    }catch(e){
+      modal('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Import d’une punch list</div><div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Lecture impossible : '+esc(e&&e.message||e)+'</div><div style="text-align:right"><button class="dcu-btn2" onclick="PunchList._closeModal()">Fermer</button></div>');
+    }
+  }
+  async function impCreate(){
+    if(!IMP||!ENV.canEdit()) return;
+    var aff=($('pl-i-aff')||{}).value||'',title=(($('pl-i-title')||{}).value||'').trim()||'Punch list';
+    if(!aff){ alert('Choisissez l’affaire.'); return; }
+    var b=$('pl-i-go'); if(b){ b.disabled=true; b.textContent='Création…'; }
+    var res=IMP.res,today=todayIso(),data={_title:title,_aff:aff,_cover:res.cover||{},_file:IMP.fname,_imp:today,order:[]};
+    res.lines.forEach(function(l){ var k=uid()+Math.random().toString(36).slice(2,4); data['i:'+k]=Object.assign({add:today},l); data.order.push(k); });
+    try{
+      var me=ENV.who();
+      var row=await DB.create({aff:aff,title:title,meta:stats(data),data:data,rev:1,created_by:me,updated_by:me});
+      closeModal();
+      S.list.unshift(liteOf(row));
+      openRow(row);
+    }catch(e){ if(b){ b.disabled=false; b.textContent='Créer la punch list'; } alert('Création impossible : '+(e&&e.message||e)+(/punch_lists|relation|does not exist/i.test(String(e&&e.message||e))?'\n\nLe script punch_list_supabase.sql n’a sans doute pas encore été lancé dans Supabase.':'')); }
+  }
+
+  // ═════════ DÉTAIL D'UNE PUNCH LIST ═════════
+  async function open(id){
+    stopPoll(); stopListPoll();
+    if(S.host) S.host.innerHTML='<div class="dcu"><div class="plx-wrap"><div class="dcu-card" style="color:#6B6790">Ouverture de la punch list…</div></div></div>';
+    try{ var row=await DB.get(id); if(!row) throw new Error('punch list introuvable (supprimée ?)'); openRow(row); }
+    catch(e){ alert('Impossible d’ouvrir la punch list : '+(e&&e.message||e)); S.cur=null; render(); }
+  }
+  function openRow(row){
+    stopListPoll();
+    S.cur=row; S.base=JSON.parse(JSON.stringify(row.data||{})); S.dirty={}; S.needDraw=false;
+    D=JSON.parse(JSON.stringify(row.data||{}));
+    try{
+      var loc=JSON.parse(localStorage.getItem('pl_unsaved_'+row.id)||'null');
+      if(loc&&loc.dirty) Object.keys(loc.dirty).forEach(function(k){ if(loc.data[k]==null) delete D[k]; else D[k]=loc.data[k]; S.dirty[k]=1; });
+    }catch(e){}
+    drawDetail();
+    if(Object.keys(S.dirty).length) scheduleSave(200);
+    startPoll();
+  }
+  function lineVisible(k){
+    var i=D['i:'+k]||{},st=stOf(D,k);
+    if(S.f==='open'&&st!=='Open') return false;
+    if(S.f==='ours'&&!(st==='Open'&&ours(i))) return false;
+    if(S.f==='snf'&&!(st==='Open'&&snf(i))) return false;
+    if(S.f==='late'&&!isLate(D,k)) return false;
+    if(S.f==='closed'&&st==='Open') return false;
+    if(S.disc&&(i.disc||'')!==S.disc) return false;
+    if(S.q){ var s=noAcc([i.n,i.des,i.eq,i.prop,i.ccom,i.pic,(D['t:'+k]||{}).txt].join(' ')).toLowerCase(); if(s.indexOf(noAcc(S.q).toLowerCase())<0) return false; }
+    return true;
+  }
+  function lineHtml(k){
+    var i=D['i:'+k]||{},st=stOf(D,k),s=D['s:'+k],t=D['t:'+k]||{},ed=ENV.canEdit(),late=isLate(D,k),ph=photosOf(D,k);
+    var kv=function(lb,v){ return v?'<div class="plx-kv"><b>'+lb+'</b><span style="flex:1;min-width:180px;white-space:pre-wrap">'+esc(v)+'</span></div>':''; };
+    var h='<div class="plx-line'+(st!=='Open'?' closed':'')+(late?' late':'')+'" id="plx-'+esc(k)+'">'
+      +'<div class="plx-top"><span class="plx-n">'+(i.n?'#'+esc(i.n):'—')+'</span>'+stPill(st)
+      +(i.disc?'<span class="plx-tag">'+esc(i.disc)+'</span>':'')+(i.phase?'<span class="plx-tag" style="background:#fff;border:1px solid #E4E1F0">'+esc(i.phase)+'</span>':'')
+      +(i.pic?'<span class="plx-tag" style="background:'+(ours(i)?'#EEF2FF;color:#4338CA':'#FEF3C7;color:#92400E')+'">PIC : '+esc(i.pic)+'</span>':'')
+      +'<span style="flex:1"></span>'
+      +(i.tgt?'<span style="font-size:12px;font-weight:800;color:'+(late?'#B91C1C':'#6B6790')+'">'+(late?'⚠ En retard · ':'')+'cible '+esc(fr(i.tgt))+'</span>':'')
+      +'</div>'
+      +'<div class="plx-des">'+esc(i.des)+'</div>'
+      +kv('ÉQUIPEMENT',i.eq)+kv('ACTION PROPOSÉE',i.prop)+kv('COMMENTAIRE CLIENT',i.ccom)
+      +'<div class="plx-kv" style="font-size:11.5px;color:#9A96B3">'+[i.by?'émis par '+esc(i.by):'',i.dt?'le '+esc(fr(i.dt)):'',i.cst&&i.cst!==st?'statut client : '+esc(i.cst):''].filter(Boolean).join(' · ')+'</div>';
+    h+='<div class="plx-ans">';
+    if(ed){
+      h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div class="plx-seg" role="group" aria-label="Statut">'
+        +[['Open','on-open'],['Closed','on-closed'],['N/A','on-na']].map(function(x){ return '<button type="button" class="'+(st===x[0]?x[1]:'')+'" aria-pressed="'+(st===x[0])+'" onclick="PunchList._st(\''+js(k)+'\',\''+x[0]+'\')">'+x[0]+'</button>'; }).join('')+'</div>'
+        +(s&&s.at?'<span style="font-size:11.5px;color:#6B6790">'+esc(s.st)+' par '+esc(whoShort(s.by))+' le '+esc(fmtDT(s.at))+'</span>':'')+'</div>'
+        +'<textarea class="plx-ta" rows="2" data-t="'+esc(k)+'" placeholder="Réponse ELS : ce qui a été fait, ou pourquoi c’est impossible…" oninput="PunchList._txt(\''+js(k)+'\',this.value)">'+esc(t.txt||'')+'</textarea>';
+    }else{
+      if(t.txt) h+='<div class="plx-kv"><b>RÉPONSE ELS</b><span style="flex:1;white-space:pre-wrap">'+esc(t.txt)+'</span></div>';
+      if(s&&s.at) h+='<div style="font-size:11.5px;color:#6B6790">'+esc(s.st)+' par '+esc(whoShort(s.by))+' le '+esc(fmtDT(s.at))+'</div>';
+    }
+    // photos (+ celles en attente de réseau)
+    var q=S.queue.filter(function(x){ return x.listId===S.cur.id&&x.k===k; });
+    if(ph.length||q.length||ed){
+      h+='<div class="plx-ph">'
+        +ph.map(function(p){ return '<div class="plx-th" title="Ouvrir la photo" onclick="PunchList._phOpen(\''+js(p.id)+'\')"><img data-thumb="'+esc(p.thumb||p.path)+'" alt="Photo de la ligne '+esc(i.n)+'" style="display:none"><span class="w">…</span>'
+          +(ed?'<button type="button" class="x" title="Retirer la photo" aria-label="Retirer la photo" onclick="event.stopPropagation();PunchList._phDel(\''+js(p.id)+'\')">✕</button>':'')+'</div>'; }).join('')
+        +q.map(function(x){ return '<div class="plx-th" title="En attente de réseau"><img src="'+x.url+'" alt="" style="opacity:.55"><span class="w" style="background:rgba(255,255,255,.4);font-weight:800;color:#92400E">⏳ envoi…</span></div>'; }).join('')
+        +(ed?'<label class="plx-add" title="Prendre ou ajouter une photo">📷<span>Photo</span><input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="PunchList._phAdd(\''+js(k)+'\',this)"></label>':'')
+        +'</div>';
+    }
+    h+='</div></div>';
+    return h;
+  }
+  function detailHtml(){
+    var c=S.cur,st=stats(D),cv=D._cover||{},ed=ENV.canEdit(),K=keys(D);
+    var discs={}; K.forEach(function(k){ var d=(D['i:'+k]||{}).disc; if(d) discs[d]=1; });
+    var vis=K.filter(lineVisible);
+    var h='<div class="dcu"><div class="plx-wrap">';
+    h+='<div class="dcu-card plx-head"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+      +'<button class="dcu-btn2" onclick="PunchList.back()">← Punch lists</button>'
+      +'<b style="font-size:17px">'+esc(D._title||c.title||'Punch list')+'</b>'+(cv.rev?'<span class="plx-tag">Rév. '+esc(cv.rev)+'</span>':'')
+      +'<span style="font-size:12.5px;color:#6B6790">'+esc(affLabel(D._aff||c.aff))+(cv.project||cv.company?' · '+esc([cv.project,cv.company].filter(Boolean).join(' · ')):'')+'</span>'
+      +'<span style="flex:1"></span><span id="pl-savest" style="font-size:12px;color:#6B6790"></span>'
+      +'</div>';
+    var chip=function(f,n,l){ return '<button type="button" class="plx-chip'+(S.f===f?' on':'')+'" onclick="PunchList._f(\'f\',\''+f+'\')">'+l+' <span style="opacity:.75">'+n+'</span></button>'; };
+    h+='<div class="plx-chips" style="margin-top:10px">'+chip('all',st.n,'Toutes')+chip('open',st.open,'Ouvertes')+chip('ours',st.ours,'À nous (ELS)')+chip('snf',st.snf,'Côté SNF')+chip('late',st.late,'En retard')+chip('closed',st.closed+st.na,'Fermées / N/A')+'</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+      +(Object.keys(discs).length>1?'<select class="dcu-in" aria-label="Discipline" onchange="PunchList._f(\'disc\',this.value)"><option value="">Toutes les disciplines</option>'+Object.keys(discs).sort().map(function(d){ return '<option'+(S.disc===d?' selected':'')+'>'+esc(d)+'</option>'; }).join('')+'</select>':'')
+      +'<input class="dcu-in" style="flex:1;min-width:160px" placeholder="Rechercher (n°, description, équipement…)" aria-label="Rechercher" value="'+esc(S.q)+'" oninput="PunchList._q(this.value)">'
+      +'</div>';
+    if(!ed) h+='<div class="dcu-msg" style="background:#F3F4F6;border:1px solid #E5E7EB;color:#374151;max-width:none;margin:10px 0 0">Lecture seule : vous n’avez pas le droit de répondre aux punch lists.</div>';
+    h+='</div>';
+    if(!vis.length) h+='<div class="dcu-card" style="text-align:center;color:#9A96B3;padding:26px">Aucune ligne ne correspond au filtre.</div>';
+    vis.forEach(function(k){ h+=lineHtml(k); });
+    h+='<div style="font-size:11.5px;color:#9A96B3;text-align:center;margin-top:8px">'+(D._file?'Importée de « '+esc(D._file)+' »':'')+(D._imp?' le '+esc(fr(D._imp)):'')+'</div>';
+    h+='</div></div>';
+    return h;
+  }
+  function drawDetail(){
+    if(!S.host||!S.cur) return;
+    var sc=S.host.scrollTop;
+    S.host.innerHTML=detailHtml();
+    S.host.scrollTop=sc; S.needDraw=false;
+    updSaveSt(); loadThumbs();
+  }
+  // Vignettes : téléchargées une fois, gardées en mémoire le temps de la visite
+  async function loadThumbs(){
+    if(!S.host) return;
+    var imgs=[].slice.call(S.host.querySelectorAll('img[data-thumb]'));
+    for(var i=0;i<imgs.length;i++){
+      var img=imgs[i],p=img.getAttribute('data-thumb');
+      if(!S.thumbs[p]){
+        try{ var b=await FILES.download(p); S.thumbs[p]=URL.createObjectURL(b.type?b:new Blob([b],{type:'image/jpeg'})); }
+        catch(e){ var w=img.nextElementSibling; if(w) w.textContent='photo indisponible'; continue; }
+      }
+      if(!img.isConnected) continue;
+      img.src=S.thumbs[p]; img.style.display='block'; var w2=img.nextElementSibling; if(w2&&w2.className==='w') w2.remove();
+    }
+  }
+  function back(){
+    if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); saveNow(); }
+    stopPoll(); S.cur=null; D={}; S.dirty={};
+    startListPoll(); drawList();
+    loadList().then(function(){ if(!S.cur) drawList(); });
+  }
+  function leave(){ if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); saveNow(); } stopPoll(); stopListPoll(); }
+
+  // ── Saisie ──
+  function setVal(k,val){
+    if(sameV(D[k],val)) return;
+    if(val===''||val==null) delete D[k]; else D[k]=val;
+    S.dirty[k]=1; keepLocal(); scheduleSave();
+  }
+  function _st(k,st){
+    if(!ENV.canEdit()||!S.cur) return;
+    setVal('s:'+k,{st:st,by:ENV.who(),at:new Date().toISOString()});
+    scheduleSave(300);
+    var el=$('plx-'+k); if(el){ var tmp=document.createElement('div'); tmp.innerHTML=lineHtml(k); el.replaceWith(tmp.firstChild); loadThumbs(); }
+    var keep=S.host.scrollTop; drawHeadOnly(); S.host.scrollTop=keep;
+  }
+  // Compteurs du haut sans redessiner les lignes (garde la saisie en cours)
+  function drawHeadOnly(){
+    var st=stats(D),box=S.host&&S.host.querySelector('.plx-chips'); if(!box) return;
+    var n={all:st.n,open:st.open,ours:st.ours,snf:st.snf,late:st.late,closed:st.closed+st.na};
+    [].slice.call(box.querySelectorAll('button')).forEach(function(b){ var f=(b.getAttribute('onclick').match(/'f','(\w+)'/)||[])[1],sp=b.querySelector('span'); if(f&&sp) sp.textContent=n[f]; });
+  }
+  function _txt(k,v){
+    if(!ENV.canEdit()||!S.cur) return;
+    setVal('t:'+k,v.trim()?{txt:v,by:ENV.who(),at:new Date().toISOString()}:'');
+  }
+  function typing(){ var a=document.activeElement; return !!(a&&S.host&&S.host.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); }
+
+  // ── Photos ──
+  function shrink(file,max,q){
+    return new Promise(function(res,rej){
+      var url=URL.createObjectURL(file),img=new Image();
+      img.onload=function(){
+        var w=img.naturalWidth,h=img.naturalHeight,s=Math.min(1,max/Math.max(w,h));
+        var cv=document.createElement('canvas'); cv.width=Math.round(w*s); cv.height=Math.round(h*s);
+        var cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(img,0,0,cv.width,cv.height);
+        URL.revokeObjectURL(url);
+        cv.toBlob(function(b){ b?res(b):rej(new Error('compression impossible')); },'image/jpeg',q);
+      };
+      img.onerror=function(){ URL.revokeObjectURL(url); rej(new Error('image illisible (format non pris en charge)')); };
+      img.src=url;
+    });
+  }
+  async function _phAdd(k,input){
+    if(!ENV.canEdit()||!S.cur) return;
+    var files=[].slice.call(input.files||[]); input.value='';
+    for(var i=0;i<files.length;i++){
+      var f=files[i];
+      if(!/^image\//i.test(f.type)&&!/\.(jpe?g|png|webp|heic)$/i.test(f.name)){ alert('« '+f.name+' » n’est pas une photo.'); continue; }
+      try{
+        var big=await shrink(f,1600,0.72),small=await shrink(f,360,0.7);
+        var id=uid(),base=S.cur.id+'/'+k+'/'+id;
+        S.queue.push({listId:S.cur.id,k:k,id:id,big:big,small:small,path:base+'.jpg',thumb:base+'_t.jpg',url:URL.createObjectURL(small)});
+      }catch(e){ alert('Photo « '+f.name+' » : '+(e&&e.message||e)); }
+    }
+    var el=$('plx-'+k); if(el){ var tmp=document.createElement('div'); tmp.innerHTML=lineHtml(k); el.replaceWith(tmp.firstChild); loadThumbs(); }
+    flushQueue();
+  }
+  // Envoi des photos ; sans réseau, elles attendent (tant que la page reste ouverte) et repartent seules
+  async function flushQueue(){
+    if(S._flushing||!S.queue.length) return;
+    S._flushing=true;
+    try{
+      while(S.queue.length){
+        var x=S.queue[0];
+        try{ await FILES.upload(x.path,x.big); await FILES.upload(x.thumb,x.small); }
+        catch(e){ S.offlinePh=true; break; }
+        S.queue.shift(); S.offlinePh=false;
+        S.thumbs[x.thumb]=x.url;
+        var rec={k:x.k,path:x.path,thumb:x.thumb,at:new Date().toISOString(),by:ENV.who()};
+        if(S.cur&&S.cur.id===x.listId){ setVal('p:'+x.id,rec); scheduleSave(150); var el=$('plx-'+x.k); if(el&&!el.contains(document.activeElement)){ var tmp=document.createElement('div'); tmp.innerHTML=lineHtml(x.k); el.replaceWith(tmp.firstChild); loadThumbs(); } }
+        else await addPhotoTo(x.listId,x.id,rec); // la punch list a été quittée entre-temps
+      }
+    }finally{ S._flushing=false; updSaveSt(); }
+    if(S.queue.length){ clearTimeout(S.qT); S.qT=setTimeout(flushQueue,15000); }
+  }
+  async function addPhotoTo(listId,id,rec){
+    for(var a=0;a<4;a++){ var row=await DB.get(listId); if(!row) return; var d=Object.assign({},row.data||{}); d['p:'+id]=rec;
+      if(await DB.update(listId,row.rev,{data:d,meta:stats(d),rev:row.rev+1,updated_by:ENV.who()})) return; }
+  }
+  window.addEventListener('online',function(){ flushQueue(); });
+  async function _phOpen(id){
+    var p=D['p:'+id]; if(!p) return;
+    var w=window.open('','_blank');
+    try{ var b=await FILES.download(p.path); var url=URL.createObjectURL(b.type?b:new Blob([b],{type:'image/jpeg'})); if(w) w.location.href=url; else window.open(url,'_blank'); setTimeout(function(){ URL.revokeObjectURL(url); },120000); }
+    catch(e){ if(w) w.close(); alert('Impossible d’ouvrir la photo : '+(e&&e.message||e)); }
+  }
+  async function _phDel(id){
+    if(!ENV.canEdit()) return;
+    var p=D['p:'+id]; if(!p) return;
+    if(!confirm('Retirer cette photo ?')) return;
+    try{ await FILES.remove([p.path,p.thumb].filter(Boolean)); }catch(e){ console.warn('Punch list : photo non effacée',e); }
+    setVal('p:'+id,''); scheduleSave(50);
+    var el=$('plx-'+p.k); if(el){ var tmp=document.createElement('div'); tmp.innerHTML=lineHtml(p.k); el.replaceWith(tmp.firstChild); loadThumbs(); }
+  }
+
+  // ── Enregistrement (même principe que Commandes / Docs chantier) ──
+  function keepLocal(){
+    if(!S.cur) return;
+    try{ var dd={}; Object.keys(S.dirty).forEach(function(k){ dd[k]=1; }); localStorage.setItem('pl_unsaved_'+S.cur.id,JSON.stringify({rev:S.cur.rev,dirty:dd,data:D})); }catch(e){}
+  }
+  function clearLocal(id){ try{ localStorage.removeItem('pl_unsaved_'+(id||(S.cur&&S.cur.id))); }catch(e){} }
+  function scheduleSave(ms){ clearTimeout(S.saveT); S.saveT=setTimeout(saveNow,ms==null?900:ms); updSaveSt(); }
+  function updSaveSt(){
+    var el=$('pl-savest'); if(!el||!S.cur) return;
+    var n=Object.keys(S.dirty).length,qn=S.queue.filter(function(x){ return x.listId===S.cur.id; }).length;
+    var ph=qn?' · <span style="color:#B45309;font-weight:700">⏳ '+qn+' photo'+(qn>1?'s':'')+(S.offlinePh?' en attente de réseau':' en cours d’envoi')+'</span>':'';
+    if(S.offline&&n) el.innerHTML='<span style="color:#B45309;font-weight:700">⚠ '+(S.lastErr?'Pas enregistré ('+esc(S.lastErr)+')':'Pas de connexion')+' — gardé sur cet appareil, nouvel essai automatique…</span>'+ph;
+    else if(n||S.saving) el.innerHTML='Enregistrement…'+ph;
+    else el.innerHTML=esc(['✓ Enregistré',fmtDT(S.cur.updated_at),whoShort(S.cur.updated_by)].filter(Boolean).join(' · '))+ph;
+  }
+  // Fusion à trois : nos cases modifiées gagnent, on prend celles des autres.
+  function mergeRemote(remote){
+    var rd=remote.data||{},ks={};
+    Object.keys(rd).forEach(function(k){ ks[k]=1; }); Object.keys(S.base).forEach(function(k){ ks[k]=1; }); Object.keys(D).forEach(function(k){ ks[k]=1; });
+    var changed=[];
+    Object.keys(ks).forEach(function(k){
+      if(S.dirty[k]) return;
+      if(!sameV(D[k],rd[k])){ if(rd[k]==null) delete D[k]; else D[k]=rd[k]; changed.push(k); }
+    });
+    S.base=JSON.parse(JSON.stringify(rd));
+    return changed;
+  }
+  function liteOf(row){ var o={}; LIST_COLS.split(',').forEach(function(c){ o[c]=row[c]; }); return o; }
+  function syncListRow(row){ var lite=liteOf(row),i=S.list.findIndex(function(x){ return x.id===row.id; }); if(i>=0) S.list[i]=lite; else S.list.unshift(lite); }
+  async function saveNow(){
+    if(!S.cur||S.saving) return;
+    if(!Object.keys(S.dirty).length){ updSaveSt(); return; }
+    S.saving=true; updSaveSt();
+    var cur=S.cur,me=ENV.who();
+    try{
+      for(var attempt=0;attempt<4;attempt++){
+        var sent=JSON.parse(JSON.stringify(D)),sentDirty=Object.assign({},S.dirty);
+        var saved=await DB.update(cur.id,cur.rev,{data:sent,meta:stats(sent),title:sent._title||cur.title,aff:sent._aff||cur.aff||null,rev:cur.rev+1,updated_by:me});
+        if(saved){
+          S.offline=false; S.lastErr='';
+          if(S.cur&&S.cur.id===saved.id){
+            S.cur=saved; S.base=JSON.parse(JSON.stringify(saved.data||{}));
+            Object.keys(sentDirty).forEach(function(k){ if(sameV(D[k],sent[k])) delete S.dirty[k]; });
+            if(Object.keys(S.dirty).length) keepLocal(); else clearLocal(saved.id);
+          }
+          syncListRow(saved);
+          break;
+        }
+        var remote=await DB.get(cur.id);
+        if(!remote){ alert('Cette punch list a été supprimée par quelqu’un d’autre.'); S.saving=false; S.dirty={}; clearLocal(cur.id); back(); return; }
+        var ch=mergeRemote(remote); S.cur=remote; cur=remote; applyKeys(ch);
+      }
+    }catch(e){
+      var em=String(e&&e.message||e);
+      S.lastErr=(/fetch|network|Load failed|timeout/i.test(em))?'':em;
+      S.offline=true; keepLocal();
+      clearTimeout(S.saveT); S.saveT=setTimeout(saveNow,6000);
+    }
+    S.saving=false;
+    updSaveSt();
+    if(Object.keys(S.dirty).length&&!S.offline) scheduleSave(400);
+  }
+  // Changements d'un collègue : on redessine, sauf pendant une saisie (fait en quittant le champ)
+  function applyKeys(ks){
+    if(!ks.length||!S.cur) return;
+    if(typing()) S.needDraw=true; else drawDetail();
+  }
+  function startPoll(){ stopPoll(); S.pollT=setInterval(pollOnce,4000); }
+  function stopPoll(){ if(S.pollT){ clearInterval(S.pollT); S.pollT=null; } }
+  async function pollOnce(){
+    if(!S.cur||S.saving||document.hidden||S._polling||!visible()) return;
+    S._polling=true;
+    try{
+      var h=await DB.head(S.cur.id);
+      if(!h){ stopPoll(); alert('Cette punch list a été supprimée.'); S.dirty={}; clearLocal(); back(); return; }
+      if(h.rev!==S.cur.rev){
+        var remote=await DB.get(S.cur.id); if(!remote) return;
+        var ch=mergeRemote(remote); S.cur=Object.assign({},remote,{data:D}); S.cur.rev=remote.rev; syncListRow(remote);
+        applyKeys(ch); updSaveSt();
+      }
+    }catch(e){}
+    finally{ S._polling=false; }
+  }
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden) return;
+    if(S.cur&&S.pollT){ pollOnce(); if(Object.keys(S.dirty).length) scheduleSave(100); flushQueue(); }
+    else if(S.listT) listTick();
+  });
+  document.addEventListener('focusout',function(ev){ if(S.needDraw&&S.host&&S.host.contains(ev.target)) setTimeout(function(){ if(S.needDraw&&!typing()) drawDetail(); },0); });
+  window.addEventListener('pagehide',function(){ if(S.cur&&Object.keys(S.dirty).length) keepLocal(); });
+
+  return {
+    render:render, open:open, back:back, leave:leave, del:del, importer:importer,
+    canView:function(){ return ENV.canView(); },
+    pending:function(){ return !!(S.cur&&Object.keys(S.dirty).length)||S.queue.length>0; },
+    _f:function(k,v){ S[k]=v; if(S.cur) drawDetail(); else drawList(); },
+    _q:function(v){ S.q=v; var pos=null,a=document.activeElement; if(a&&a.selectionStart!=null) pos=a.selectionStart; drawDetail(); var i=S.host&&S.host.querySelector('input[aria-label="Rechercher"]'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
+    _closeModal:closeModal, _impCreate:impCreate, _impRead:impRead, _read:readExcel,
+    _st:_st, _txt:_txt, _phAdd:_phAdd, _phOpen:_phOpen, _phDel:_phDel,
+    _state:function(){ return {S:S,D:D}; }, _stats:stats
+  };
+})();
+</script>
+<!-- ═══════════════════════════ /PUNCH LISTS ═══════════════════════ -->
+
 
 <!-- ═══════════════ NAVIGATION PAR SECTIONS (Affaires / Équipe / Chantier) — module isolé ═══════════════
      Nouvelle disposition (validée sur la maquette du 05/10/2026). Ce module ne fait QUE ranger
@@ -23982,6 +24671,7 @@ function petroHubEnterEquipe(){PetroNav.enter('equipe');}
     try{ p=localStorage.getItem('plan26v5_dirty')==='1'; }catch(e){}
     try{ var dc=window.DocsChantier&&window.DocsChantier._state&&window.DocsChantier._state().S; if(dc&&dc.cur&&Object.keys(dc.dirty||{}).length) p=true; }catch(e){}
     try{ if(window.Commandes&&window.Commandes.pending&&window.Commandes.pending()) p=true; }catch(e){}
+    try{ if(window.PunchList&&window.PunchList.pending&&window.PunchList.pending()) p=true; }catch(e){} // réponses / photos pas encore envoyées
     return p;
   }
   function typing(){
@@ -24005,6 +24695,7 @@ function petroHubEnterEquipe(){PetroNav.enter('equipe');}
   function reloadWhenSaved(fromClick){
     try{ if(window.DocsChantier&&window.DocsChantier._state&&window.DocsChantier._state().S.cur){ var dcs=window.DocsChantier._state().S; if(Object.keys(dcs.dirty||{}).length&&window.DocsChantier.leave) window.DocsChantier.leave(); } }catch(e){}
     try{ if(window.Commandes&&window.Commandes.pending&&window.Commandes.pending()) window.Commandes.leave(); }catch(e){}
+    try{ if(window.PunchList&&window.PunchList.pending&&window.PunchList.pending()) window.PunchList.leave(); }catch(e){}
     var go=document.getElementById('petro-newver-go'); if(go){ go.disabled=true; go.textContent='Enregistrement…'; }
     var t0=Date.now();
     (function wait(){
