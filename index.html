@@ -7072,10 +7072,102 @@ function _dlTaskPctHtml(r){
 // la fenêtre « Export client » (window._clientFilter). Barres = jours Prévu
 // (getTaskDays5 'prev') : ✓ terminé / plein = commencé / pointillés = à venir.
 // Une tâche sans aucun jour Prévu n'apparaît pas (pas encore planifiée).
-function downloadClientPlanning(){
+// Script DU DOCUMENT planning client (jamais exécuté sur le site : son texte
+// est recopié dans le fichier via toString). ES5, aucune dépendance.
+// Impression propre (07/10/2026) : au lieu de tout réduire sur une page,
+// le planning est découpé en pages A4 / A3 paysage au zoom choisi —
+// tranches de semaines entières en largeur, paquets de lignes en hauteur —
+// avec la colonne des noms, l'en-tête (mois / semaines / jours) et un titre
+// « page x / y » répétés sur chaque page. Les lignes repliées ne sont pas
+// imprimées. Ctrl+P passe aussi par ce découpage (beforeprint).
+function _cpDocScript(){
+  var de=document.documentElement;
+  function $$(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function dw(){return parseFloat(getComputedStyle(de).getPropertyValue('--dw'))||28;}
+  function R(){
+    var c={};$$('.gin .g.cl').forEach(function(e){c[e.getAttribute('data-id')]=1;});
+    $$('.gin [data-anc]').forEach(function(e){var h=e.getAttribute('data-anc').split(' ').some(function(a){return c[a];});e.classList.toggle('hid',h);});
+  }
+  window.T=function(e){e.classList.toggle('cl');R();};
+  window.ALL=function(o){$$('.gin .g').forEach(function(e){e.classList.toggle('cl',!o);});R();};
+  window.CM=function(b){var off=document.body.classList.toggle('nocm');if(b)b.classList.toggle('on',!off);};
+  var Z=[12,18,28,40,56],zi=2;
+  window.ZM=function(d){
+    zi=Math.max(0,Math.min(Z.length-1,zi+d));
+    var w=Z[zi],sc=document.querySelector('.gx'),lw=document.querySelector('.gin .lc').offsetWidth,mid=(sc.scrollLeft+(sc.clientWidth-lw)/2)/dw();
+    de.style.setProperty('--dw',w+'px');
+    document.body.classList.toggle('small',w<24);document.body.classList.toggle('tiny',w<16);
+    document.getElementById('zp').textContent=Math.round(w/28*100)+' %';
+    sc.scrollLeft=mid*w-(sc.clientWidth-lw)/2;
+  };
+  window.TD=function(){
+    var sc=document.querySelector('.gx'),t=document.querySelector('.gin .today');if(!t)return;
+    var lw=document.querySelector('.gin .lc').offsetWidth;
+    sc.scrollLeft=Math.max(0,t.offsetLeft-lw-(sc.clientWidth-lw)*0.3);
+  };
+  function build(){
+    var old=document.getElementById('pp');if(old)old.parentNode.removeChild(old);
+    var fmt=(document.getElementById('pf')||{}).value==='A3'?'A3':'A4';
+    // Zone imprimable en px (96 ppp), marges de 8 mm : A4 paysage 281×194 mm, A3 paysage 404×281 mm
+    var PW=fmt==='A3'?1510:1050,PH=fmt==='A3'?1040:715;
+    var W=dw(),N=parseInt(getComputedStyle(de).getPropertyValue('--n'),10)||0;
+    var LW=Math.min(document.querySelector('.gin .lc').offsetWidth,fmt==='A3'?320:250);
+    var per=Math.max(5,Math.floor((PW-LW)/W/5)*5); // semaines entières par page
+    var hdr=document.querySelector('.gin .hdr');
+    var rows=$$('.gin > .r').filter(function(r){return !r.classList.contains('hid');});
+    var avail=PH-34-(hdr.offsetHeight||84)-6,chunks=[],cur=[],h=0;
+    rows.forEach(function(r){var rh=r.offsetHeight||36;if(cur.length&&h+rh>avail){chunks.push(cur);cur=[];h=0;}cur.push(r);h+=rh;});
+    if(cur.length)chunks.push(cur);
+    var slices=[];for(var s=0;s<N;s+=per)slices.push([s,Math.min(per,N-s)]);
+    var title=(document.querySelector('.top h1')||{}).textContent||'';
+    var refs=$$('.refs b').map(function(b){return b.textContent;}).join(' · ');
+    var td=document.querySelector('.gin .today'),tpos=td?parseFloat(td.getAttribute('data-pos')):null;
+    var pp=document.createElement('div');pp.id='pp';
+    var tot=slices.length*chunks.length,k=0;
+    slices.forEach(function(sl){chunks.forEach(function(ch){
+      k++;
+      var pg=document.createElement('div');pg.className='pg'+(W<24?' small':'')+(W<16?' tiny':'');
+      pg.style.cssText='--off:'+(sl[0]*W)+'px;--n:'+sl[1]+';--lw:'+LW+'px;--dw:'+W+'px';
+      var lg=document.querySelector('.tools .lg');
+      pg.innerHTML='<div class="pt"><b>'+esc(title)+'</b>'+(lg?lg.outerHTML.replace('class="lg"','class="lg" style="margin-left:auto;font-size:11px"'):'')+'<span>'+esc(refs)+(tot>1?' · page '+k+' / '+tot:'')+'</span></div>';
+      var pin=document.createElement('div');pin.className='pin';
+      pin.appendChild(hdr.cloneNode(true));
+      ch.forEach(function(r){pin.appendChild(r.cloneNode(true));});
+      if(tpos!==null&&tpos>=sl[0]&&tpos<=sl[0]+sl[1]){
+        var t=td.cloneNode(true);t.style.left='calc(var(--lw) + var(--dw)*'+tpos+')';
+        t.style.transform='translateX(calc(-1*var(--off)))';pin.appendChild(t);
+      }
+      // Mois commencé avant la page : son nom est ramené au bord gauche de la page
+      $$('.hm',pin).forEach(function(m){
+        var a=+m.getAttribute('data-a'),n=+m.getAttribute('data-n'),sp=m.querySelector('span');
+        if(sp&&a<sl[0]&&a+n>sl[0])sp.style.marginLeft=((sl[0]-a)*W)+'px';
+      });
+      pg.appendChild(pin);pp.appendChild(pg);
+    });});
+    document.body.appendChild(pp);
+    document.getElementById('pgsz').textContent='@page{size:'+fmt+' landscape;margin:8mm}';
+    document.body.classList.add('printing');
+  }
+  function clean(){document.body.classList.remove('printing');var pp=document.getElementById('pp');if(pp)pp.parentNode.removeChild(pp);}
+  var building=false;
+  window.PR=function(){building=true;build();setTimeout(function(){window.print();building=false;},120);};
+  window.addEventListener('beforeprint',function(){if(!building&&!document.getElementById('pp'))build();});
+  window.addEventListener('afterprint',function(){setTimeout(clean,50);});
+  window.addEventListener('load',function(){
+    window.TD();
+    if(location.hash==='#imprimer')setTimeout(window.PR,400);
+  });
+}
+// opts.print : impression depuis le site (toutes les phases, sans les cases
+// de l'export client) → le document s'ouvre dans un nouvel onglet et lance
+// l'impression découpée en pages.
+function printGanttPlanning(){downloadClientPlanning({print:true});}
+function downloadClientPlanning(opts){
+  opts=opts||{};
   var aff=STORE.current,p=aff&&STORE.projects[aff];
   if(!p){alert('Aucune affaire sélectionnée.');return;}
-  var inf=p.infos||{},cf=window._clientFilter||null;
+  var inf=p.infos||{},cf=opts.print?null:(window._clientFilter||null);
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
   function res(v){ // couleur CSS var(--X) → vraie couleur (le document est autonome)
     if(!v||typeof v!=='string'||v.indexOf('var(')!==0)return v;
@@ -7107,22 +7199,28 @@ function downloadClientPlanning(){
     if(r.t==='sb'){curSb=r.id;sb=null;
       if(!inc(r.pk,curEns,r.id))return; sb={t:'sb',r:r,k:[]};((ens||ph)?(ens||ph).k:roots).push(sb);return;}
     if(r.t!=='act'||!inc(r.pk,curEns,curSb,r.id))return;
-    var days=(getTaskDays5(r,'prev')||[]).filter(function(x){return x>=0;}).slice().sort(function(a,b){return a-b;});
-    if(!days.length)return;
-    ((sb||ens||ph)?(sb||ens||ph).k:roots).push({t:'act',r:r,days:days});
+    var clean=function(a){return (a||[]).filter(function(x){return x>=0;}).slice().sort(function(a,b){return a-b;});};
+    var pv=clean(getTaskDays5(r,'prev'));
+    // Réel : même source que le GANTT du site (_gcActRowHtml), pour montrer exactement la même chose
+    var rl=clean(getTaskDays5(r,'reel'));
+    // Tâche non planifiée (ni Prévu ni Réel) : affichée quand même (demande du 07/10/2026)
+    ((sb||ens||ph)?(sb||ens||ph).k:roots).push({t:'act',r:r,pv:pv,rl:rl});
   });
-  // Étendue de chaque groupe ; groupes vides retirés
+  // Étendue de chaque groupe (Prévu + Réel) ; n.a = null si rien de planifié dessous
   function span(n){
-    if(n.t==='act'){n.a=n.days[0];n.b=n.days[n.days.length-1];return true;}
-    n.k=n.k.filter(span);
-    if(!n.k.length)return false;
-    n.a=Math.min.apply(null,n.k.map(function(x){return x.a;}));
-    n.b=Math.max.apply(null,n.k.map(function(x){return x.b;}));
-    return true;
+    if(n.t==='act'){
+      var all=n.pv.concat(n.rl);
+      n.a=all.length?Math.min.apply(null,all):null;n.b=all.length?Math.max.apply(null,all):null;return;
+    }
+    n.k.forEach(span);
+    var ks=n.k.filter(function(x){return x.a!==null;});
+    n.a=ks.length?Math.min.apply(null,ks.map(function(x){return x.a;})):null;
+    n.b=ks.length?Math.max.apply(null,ks.map(function(x){return x.b;})):null;
   }
-  roots=roots.filter(span);
-  if(!roots.length){alert('Rien à afficher : aucune tâche cochée n’a de barre Prévu sur le planning.');return;}
-  var minD=Math.min.apply(null,roots.map(function(n){return n.a;})),maxD=Math.max.apply(null,roots.map(function(n){return n.b;}));
+  roots.forEach(span);
+  if(!roots.length){alert('Rien à afficher : aucune phase cochée.');return;}
+  var planned=roots.filter(function(n){return n.a!==null;}),td0=TODAY,tdD=td0&&td0.w?(td0.w-1)*5+Math.min(td0.di,4):0;
+  var minD=planned.length?Math.min.apply(null,planned.map(function(n){return n.a;})):tdD,maxD=planned.length?Math.max.apply(null,planned.map(function(n){return n.b;})):tdD+20;
   var start=Math.max(0,Math.floor(minD/5)*5-5),end=Math.floor(maxD/5)*5+4+5,N=end-start+1;
   function dateOf(d5){return weekDayToDate(Math.floor(d5/5)+1,d5%5);}
   // ── En-tête : mois / semaines / jours ──
@@ -7140,7 +7238,7 @@ function downloadClientPlanning(){
     if(curM===null)curM=mk;
     if(mk!==curM){
       var d0=dateOf(start+mStart);
-      months+='<div class="hm" style="left:calc(var(--dw)*'+mStart+');width:calc(var(--dw)*'+(i-mStart)+')"><span>'+MO[d0.getMonth()].replace(/^./,function(c){return c.toUpperCase();})+' '+d0.getFullYear()+'</span></div>';
+      months+='<div class="hm" data-a="'+mStart+'" data-n="'+(i-mStart)+'" style="left:calc(var(--dw)*'+mStart+');width:calc(var(--dw)*'+(i-mStart)+')"><span>'+MO[d0.getMonth()].replace(/^./,function(c){return c.toUpperCase();})+' '+d0.getFullYear()+'</span></div>';
       curM=mk;mStart=i;
     }
     if(i===N)break;
@@ -7149,26 +7247,47 @@ function downloadClientPlanning(){
   }
   // ── Lignes ──
   var rows='',gid=0;
+  // Deux barres par tâche, comme le GANTT du site : Prévu en haut (clair,
+  // bordé de la couleur de la phase), Réel en dessous (plein). ✓ = terminée.
+  function segsOf(days){
+    var segs=[];if(!days.length)return segs;
+    var a=days[0],b=a;
+    for(var j=1;j<=days.length;j++){var x=days[j];if(x===b+1||x===b){b=x;continue;}segs.push([a,b]);a=b=x;}
+    return segs;
+  }
+  // Commentaires des barres (clic droit sur une barre dans le GANTT : r.barComments.prev / .reel,
+  // retrouvés par _gcFindComment comme sur le site) : texte au bout de la barre.
+  // Ce ne sont PAS les commentaires d'Avancement (avComment), qui ne sortent jamais du site.
+  var nCmt=0;
+  function cmt(txt,s,cls){
+    if(!txt)return '';nCmt++;
+    return '<span class="cm '+cls+'" style="left:calc(var(--dw)*'+(s[1]-start+1)+' + 3px)" title="'+esc(txt)+'">💬 '+esc(txt)+'</span>';
+  }
   function bars(n,c){
-    var segs=[],a=n.days[0],b=a;
-    for(var j=1;j<=n.days.length;j++){var x=n.days[j];if(x===b+1||x===b){b=x;continue;}segs.push([a,b]);a=b=x;}
-    var r=n.r,done=!!r.done,started=!done&&(!!r.inProgress||(Array.isArray(r.reelDays)&&r.reelDays.length>0)||+r.progress>0); // (pas getTaskDays5 'reel' : sans barre Réel, il reprend le Prévu)
-    var st=done?'background:'+c.m:started?'background:'+c.m:'background:'+c.l+';border:1.5px dashed '+c.m;
-    return segs.map(function(s,si){
-      return '<div class="br" style="left:calc(var(--dw)*'+(s[0]-start)+' + 2px);width:calc(var(--dw)*'+(s[1]-s[0]+1)+' - 4px);'+st+'">'+(done&&si===0?'<i>✓</i>':'')+'</div>';
-    }).join('');
+    var h='',bc=n.r.barComments||{};
+    segsOf(n.pv).forEach(function(s){
+      h+='<div class="br bp" style="left:calc(var(--dw)*'+(s[0]-start)+' + 2px);width:calc(var(--dw)*'+(s[1]-s[0]+1)+' - 4px);background:'+c.l+';border-color:'+c.m+'"></div>'
+        +cmt(_gcFindComment(bc.prev,s[0],s[1]),s,'cp');
+    });
+    segsOf(n.rl).forEach(function(s,si){
+      h+='<div class="br brl" style="left:calc(var(--dw)*'+(s[0]-start)+' + 2px);width:calc(var(--dw)*'+(s[1]-s[0]+1)+' - 4px);background:'+c.m+'">'+(n.r.done&&si===0?'<i>✓</i>':'')+'</div>'
+        +cmt(_gcFindComment(bc.reel,s[0],s[1]),s,'cr');
+    });
+    return h;
   }
   function walk(n,level,anc){
     var c=colors(n.r.pk),id='g'+(gid++);
     var ancA=anc.length?' data-anc="'+anc.join(' ')+'"':'';
     if(n.t==='act'){
-      rows+='<div class="r t"'+ancA+'><div class="lc" style="padding-left:'+(18+level*18)+'px" title="'+esc(n.r.lb)+'"><span class="nm">'+esc(n.r.lb)+'</span></div><div class="rc">'+bars(n,c)+'</div></div>';
+      var np=!n.pv.length&&!n.rl.length;
+      rows+='<div class="r t"'+ancA+'><div class="lc" style="padding-left:'+(18+level*18)+'px" title="'+esc(n.r.lb)+'"><span class="nm">'+esc(n.r.lb)+'</span>'
+        +(np?'<span class="np">Non planifiée</span>':(n.r.done&&!n.rl.length?'<span class="np ok">✓</span>':''))+'</div><div class="rc">'+bars(n,c)+'</div></div>';
       return;
     }
     var isPh=n.t==='ph',lbl=isPh?nice(n.r.lb||n.r.pk):n.r.lb;
     rows+='<div class="r g g-'+n.t+'" data-id="'+id+'"'+ancA+' onclick="T(this)"><div class="lc" style="padding-left:'+(12+level*18)+'px" title="'+esc(lbl)+'"><span class="ch">▼</span>'
       +(isPh?'<span class="dot" style="background:'+c.m+'"></span>':'')+'<span class="nm">'+esc(lbl)+'</span></div>'
-      +'<div class="rc"><div class="sm" style="left:calc(var(--dw)*'+(n.a-start)+' + 2px);width:calc(var(--dw)*'+(n.b-n.a+1)+' - 4px);background:'+(isPh?c.m:c.l)+'"></div></div></div>';
+      +'<div class="rc">'+(n.a!==null?'<div class="sm" style="left:calc(var(--dw)*'+(n.a-start)+' + 2px);width:calc(var(--dw)*'+(n.b-n.a+1)+' - 4px);background:'+(isPh?c.m:c.l)+'"></div>':'')+'</div></div>';
     n.k.forEach(function(k){walk(k,level+1,anc.concat(id));});
   }
   roots.forEach(function(n){walk(n,0,[]);});
@@ -7191,12 +7310,17 @@ function downloadClientPlanning(){
     +'.lc{position:sticky;left:0;z-index:3;width:var(--lw);flex-shrink:0;background:#fff;border-right:1px solid var(--bd);display:flex;align-items:center;gap:9px;padding-right:12px;min-width:0}'
     +'.nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
     +'.rc{position:relative;flex:1;background-image:linear-gradient(to right,#E6E4EF 1px,transparent 1px),linear-gradient(to right,#F3F2F8 1px,transparent 1px);background-size:calc(var(--dw)*5) 100%,var(--dw) 100%}'
-    +'.t{height:36px;border-bottom:1px solid #F3F2F8;font-size:13.5px}'
+    +'.t{height:40px;border-bottom:1px solid #F3F2F8;font-size:13.5px}'
     +'.g{cursor:pointer;user-select:none;border-bottom:1px solid #F0EFF6}.g-ph{height:44px;font-weight:800;font-size:14.5px}.g-ph .lc,.g-ph .rc{background-color:#FBFAFD}'
     +'.g-ens{height:38px;font-weight:700;font-size:13.5px}.g-sb{height:36px;font-weight:600;font-size:13px;color:var(--tx2)}'
     +'.ch{font-size:9px;color:var(--tx3);width:10px;flex-shrink:0;transition:transform .15s}.g.cl .ch{transform:rotate(-90deg)}'
     +'.dot{width:11px;height:11px;border-radius:4px;flex-shrink:0}'
-    +'.br{position:absolute;top:9px;height:18px;border-radius:9px;overflow:hidden;display:flex;align-items:center}.br i{font-style:normal;color:#fff;font-size:11px;font-weight:800;padding-left:7px}'
+    +'.br{position:absolute;height:12px;border-radius:6px;overflow:hidden;display:flex;align-items:center}.br i{font-style:normal;color:#fff;font-size:9.5px;font-weight:800;padding-left:6px}'
+    +'.bp{top:7px;border:1.5px solid}.brl{top:21px}'
+    +'.cm{position:absolute;z-index:1;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-style:italic;font-weight:500;line-height:13px;color:#4A4766;background:rgba(255,255,255,.88);border-radius:4px;padding:0 4px}'
+    +'.cp{top:6px}.cr{top:20px}body.nocm .cm{display:none}.tools button.on{background:#EEF2FF;border-color:#C7D2FE;color:#3730A3}'
+    +'.np{flex-shrink:0;font-size:10.5px;font-weight:700;color:#92400E;background:#FEF3C7;border-radius:8px;padding:2px 7px;white-space:nowrap}.np.ok{color:#15803D;background:#DCFCE7}'
+    +'.lg{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:12px;font-weight:700;color:var(--tx2)}.lg i{display:inline-block;width:22px;height:10px;border-radius:5px;vertical-align:-1px;margin-right:6px}'
     +'.sm{position:absolute;top:50%;margin-top:-3px;height:6px;border-radius:4px}'
     +'.hdr{position:sticky;top:0;z-index:6;display:flex;width:calc(var(--lw) + var(--dw)*var(--n));background:#fff;border-bottom:1px solid var(--bd)}'
     +'.hdr .lc{z-index:7;height:84px;align-items:flex-end;justify-content:space-between;padding:0 14px 9px 18px;font-size:11px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px}'
@@ -7210,22 +7334,17 @@ function downloadClientPlanning(){
     +'.foot{font-size:11.5px;color:var(--tx3);padding:10px 16px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;border-top:1px solid var(--bd)}'
     +'.hid{display:none!important}'
     +'@media (max-width:700px){:root{--lw:170px}body{padding:10px}.top{padding:12px 14px}.top img{height:38px}.top h1{font-size:17px}.refs{margin-left:0;text-align:left}.t{font-size:12.5px}.gx{max-height:calc(100vh - 150px)}}'
-    +'@page{size:A3 landscape;margin:7mm}'
-    +'@media print{body{padding:0;background:#fff}.tools,.foot{display:none}.card,.top{border:none;border-radius:0}.gx{overflow:visible;max-height:none}.lc,.hdr{position:static}}';
-  var js=''
-    +'function R(){var c={};document.querySelectorAll(".g.cl").forEach(function(e){c[e.getAttribute("data-id")]=1;});'
-    +'document.querySelectorAll("[data-anc]").forEach(function(e){var h=e.getAttribute("data-anc").split(" ").some(function(a){return c[a];});e.classList.toggle("hid",h);});}'
-    +'function T(e){e.classList.toggle("cl");R();}'
-    +'function ALL(o){document.querySelectorAll(".g").forEach(function(e){e.classList.toggle("cl",!o);});R();}'
-    +'var Z=[12,18,28,40,56],zi=2;function ZM(d){zi=Math.max(0,Math.min(Z.length-1,zi+d));var w=Z[zi],sc=document.querySelector(".gx"),lw=document.querySelector(".lc").offsetWidth,'
-    +'mid=(sc.scrollLeft+(sc.clientWidth-lw)/2)/(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dw"))||28);'
-    +'document.documentElement.style.setProperty("--dw",w+"px");document.body.classList.toggle("small",w<24);document.body.classList.toggle("tiny",w<16);'
-    +'document.getElementById("zp").textContent=Math.round(w/28*100)+" %";sc.scrollLeft=mid*w-(sc.clientWidth-lw)/2;}'
-    +'function TD(){var sc=document.querySelector(".gx"),t=document.querySelector(".today");if(!t)return;var lw=document.querySelector(".lc").offsetWidth;sc.scrollLeft=Math.max(0,t.offsetLeft-lw-(sc.clientWidth-lw)*0.3);}'
-    +'function PR(){var sc=document.querySelector(".gin"),w=sc.scrollWidth,max=1530;document.body.style.zoom=w>max?(max/w):1;setTimeout(function(){window.print();document.body.style.zoom="";},60);}'
-    +'window.addEventListener("load",TD);';
+    +'#pp{display:none}'
+    // Impression : pages découpées par _cpDocScript (colonne des noms et en-tête répétés sur chaque page)
+    +'@media print{body{padding:0;background:#fff}body.printing>*:not(#pp){display:none!important}body.printing #pp{display:block}'
+    +'.pg{break-after:page;page-break-after:always;overflow:hidden}.pg:last-child{break-after:auto;page-break-after:auto}'
+    +'.pt{display:flex;justify-content:space-between;align-items:baseline;gap:12px;height:28px;font-size:12px;color:#55536E;border-bottom:2px solid #1B1A2E;margin-bottom:5px}.pt b{font-size:14px;color:#1B1A2E}'
+    +'.pin{position:relative;border:1px solid #E7E5F0;overflow:hidden}.pg .lc,.pg .hdr{position:static}'
+    +'.pg .r,.pg .hdr{width:calc(var(--lw) + var(--dw)*var(--n))}.pg .r{break-inside:avoid}'
+    +'.pg .rc{overflow:hidden;background-position:calc(-1*var(--off)) 0}.pg .rc>*{transform:translateX(calc(-1*var(--off)))}.pg .hm span{position:static}}';
+  var js='('+_cpDocScript.toString()+')();';
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-    +'<title>'+esc((inf.numeroClient||inf.numero||aff)+' — Planning')+'</title><style>'+css+'</style></head><body>'
+    +'<title>'+esc((inf.numeroClient||inf.numero||aff)+' — Planning')+'</title><style>'+css+'</style><style id="pgsz">@page{size:A4 landscape;margin:8mm}</style></head><body>'
     +'<div class="top">'+(typeof LOGO_ELS_B64!=='undefined'?'<img src="'+LOGO_ELS_B64+'" alt="ELS">':'')
     +'<div><h1>'+esc(title)+'</h1></div>'
     +'<div class="refs">N° affaire <b>'+esc(inf.numero||aff)+'</b>'+(inf.numeroClient?' · N° client <b>'+esc(inf.numeroClient)+'</b>':'')+'<br><span class="upd">Mis à jour le '+esc(dateStr)+'</span></div></div>'
@@ -7233,17 +7352,26 @@ function downloadClientPlanning(){
     +'<div class="zm"><button type="button" onclick="ZM(-1)" title="Dézoomer">−</button><span id="zp">100 %</span><button type="button" onclick="ZM(1)" title="Zoomer">+</button></div>'
     +(todayPos!==null?'<button type="button" onclick="TD()">Aujourd’hui</button>':'')
     +'<button type="button" onclick="ALL(true)">▾ Tout déplier</button><button type="button" onclick="ALL(false)">▸ Tout replier</button>'
-    +'<button type="button" onclick="PR()">🖨 Imprimer</button></div>'
+    +(nCmt?'<button type="button" class="on" onclick="CM(this)" title="Afficher / masquer les commentaires des barres">💬 Commentaires</button>':'')
+    +'<select id="pf" title="Format du papier" style="border:1px solid var(--bd);border-radius:10px;padding:6px 8px;font-size:12.5px;font-family:inherit;color:var(--tx2);background:#fff"><option value="A4">A4 paysage</option><option value="A3">A3 paysage</option></select>'
+    +'<button type="button" onclick="PR()">🖨 Imprimer</button>'
+    +'<span class="lg"><span><i style="background:#E4E1FA;border:1.5px solid #4B3FC7"></i>Prévu</span><span><i style="background:#4B3FC7"></i>Réel</span></span></div>'
     +'<div class="gx"><div class="gin">'
     +'<div class="hdr"><div class="lc"><span>Étape</span></div><div class="rc">'+months+weeks+daysH+'</div></div>'
     +rows
-    +(todayPos!==null?'<div class="today" style="left:calc(var(--lw) + var(--dw)*'+todayPos+')"></div>':'')
+    +(todayPos!==null?'<div class="today" data-pos="'+todayPos+'" style="left:calc(var(--lw) + var(--dw)*'+todayPos+')"></div>':'')
     +'</div></div>'
     +'<div class="foot"><span>Cliquez sur une phase pour afficher ou masquer ses étapes · faites défiler pour parcourir le planning</span><span>Document établi par ELS</span></div></div>'
     +'<script>'+js+'<'+'/script></body></html>';
   var date=new Date().toISOString().slice(0,10);
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
+  if(opts.print){
+    var win=window.open(url+'#imprimer','_blank');
+    if(!win)alert('Autorisez les fenêtres (pop-up) pour ce site afin d’imprimer le planning.');
+    setTimeout(function(){URL.revokeObjectURL(url);},120000);
+    return;
+  }
   var a=document.createElement('a');
   a.href=url;
   a.download='Planning_'+String(inf.numeroClient||aff).replace(/[^a-z0-9]/gi,'_')+'_'+date+'.html';
@@ -14292,6 +14420,7 @@ function gcRenderToolbar(compact){
     h='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:#fff;border-bottom:1px solid #EFEDF7">'
       +(canPaint&&view==='week'?'<button type="button" onclick="gcSetPaint(true)" title="Peindre les barres Prévu / Réel jour par jour" style="height:34px;padding:0 13px;border-radius:10px;border:1.5px solid #FCD34D;background:#FFFBEB;color:#92400E;font-size:13px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit">🖌 Peindre les barres</button>':'')
       +'<div style="display:flex;background:#F1EFFC;border-radius:10px;padding:3px">'+seg('day','Jours','Vue jour par jour')+seg('week','Semaines','Vue par semaine (Ctrl + molette pour zoomer)')+seg('month','Mois','Vue large : toute l’année sur l’écran (Ctrl + molette pour zoomer)')+'</div>'
+      +'<button type="button" onclick="printGanttPlanning()" title="Imprimer le planning par jour, découpé proprement en pages A4 / A3 paysage" style="height:32px;padding:0 12px;border-radius:8px;border:1px solid #E4E1F0;background:#fff;color:#4A4766;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🖨 Imprimer</button>'
       +(view==='week'?'<div style="display:flex;gap:6px;flex-wrap:wrap">'+fl+'</div>':'')
       +'<div style="flex-grow:1"></div>'+leg;
     var tgs=view==='week'?tg('gcToggleCmt()',window._gcShowCmt!==false,'Commentaires','Texte des commentaires à côté des barres')+tg('gcToggleWE()',!!window._gcShowWE,'Week-ends','Afficher les samedis et dimanches (pour marquer un week-end travaillé)')
@@ -24807,6 +24936,7 @@ window.PetroNav=(function(){
     var dl=[];
     if(secVis('#nav [onclick*="downloadPlanning"]'))dl.push(['downloadPlanning(\'interne\')','📥 Planning interne','Planning complet, avec heures et budget']);
     if(secVis('#nav [onclick*="showClientDownload"]'))dl.push(['showClientDownloadModal()','📄 Planning client','Version simplifiée à envoyer au client']);
+    if(dl.length)dl.push(['printGanttPlanning()','🖨 Imprimer le planning','GANTT par jour, découpé en pages A4 / A3 paysage']);
     var more=[];
     if(secVis('#sbar .btn-da[onclick*="openAffaireInfos"]'))more.push(['openAffaireInfos()','ℹ️ Infos affaire (libellé, n° client, responsables)']);
     if(secVis('#nav [onclick*="openRappelsSettings"]'))more.push(['openRappelsSettings()','🔔 Rappels automatiques']);
