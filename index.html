@@ -4351,7 +4351,8 @@ function alignReelToPrev(id){
   r.sReel  = r.sPrev  || r.s;
   r.eReel  = r.ePrev  || r.e;
   r.dDurR  = r.dDur   || r.dDurR;
-  r.hReel  = r.hPrev  || r.hReel;
+  // (08/10/2026) hReel n'est plus copié depuis hPrev : les heures réelles = feuilles d'heure seulement
+  // (sinon le barème / la durée de la barre devenaient des « heures pointées » dans le Bilan).
   r.dStartR= r.dStart != null ? r.dStart : 0;
   r._isoR  = r._isoP  || r._isoR;
   saveNow();
@@ -6131,6 +6132,10 @@ function dbRecap(){
 
 
 function syncWeekPlanToGantt(){
+  // (08/10/2026) DÉSACTIVÉ : recopiait les heures PLANIFIÉES du planning réunion dans hReel / p[].heures
+  // des tâches, qui s'affichaient ensuite comme des heures pointées (Bilan) alors que personne n'avait
+  // rempli de feuille d'heure. Les heures réelles viennent uniquement des feuilles d'heure (syncFichesToGantt).
+  return;
   if(!STORE.weekPlan)return;
   
   // Build map: realAff → actId → { totalH, persons: Set of names }
@@ -7692,7 +7697,7 @@ function downloadPlanning(mode){
     _phsWB.forEach(function(ph_r){
       var _a=acts.filter(function(a){return a.pk===ph_r.pk;});
       var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
-      var _rv=Math.round(_a.reduce(function(s,a){return s+(+a.hReel||0);},0)*10)/10;
+      var _rv=Math.round(_a.reduce(function(s,a){return s+(_FH.byId[a.id]||0);},0)*10)/10;
       var _bv=ph_r.budgetH||0;
       var _df=_bv>0?Math.round((_bv-_pv)*10)/10:null;
       var _cl=_df<0?'#DC2626':_df>0?'#059669':'#374151';
@@ -14428,7 +14433,8 @@ function gcGroupRowHtml(e,DW,NC,acts){
     // Même calcul que le Bilan (_rcHoursData), corrigé le 08/10/2026 : les heures pointées SUR la sous-phase
     // elle-même (r.hReel, posé par syncFichesToGantt) + celles de ses tâches. Avant : seulement les tâches → 0 / 24 h.
     // Sous-traité (la sous-phase ou son ensemble) : heures calculées = budget × avancement, comme le Bilan.
-    var bud=+r.budgetH||0,hr=(+r.hReel||0)+acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
+    var _fh=window._gcFHc||(window._gcFHc=_rcFhHours(STORE.current)); // feuilles d'heure, lues une fois par dessin
+    var bud=+r.budgetH||0,hr=(_fh.byId[r.id]||0)+acts.reduce(function(s,a){return s+(_fh.byId[a.id]||0);},0);
     var _pEns=(e.par||[]).map(function(id){return D().find(function(x){return x.id===id;});}).filter(function(x){return x&&x.t==='ens'&&_subco(x);})[0];
     if(_subco(r)||_pEns)hr=bud*calcHierProgress(D(),{filterSbId:r.id})/100;
     lbl+='<span title="Heures des feuilles d’heure / budget" style="flex-shrink:0;font-size:11px;font-weight:700;white-space:nowrap;color:'+(bud&&hr>bud?'#B91C1C':'#6B6790')+'">'+(Math.round(hr*10)/10)+' / '+bud+' h</span>';
@@ -14499,6 +14505,7 @@ function gcCloseRowMenu(){var m=document.getElementById('gc-rowmenu');if(m)m.rem
 
 // ── Rendu complet de la vue « Semaines » ──
 function renderGantt(){
+  window._gcFHc=null; // heures des feuilles d'heure (affichage « Heures ») : relues à chaque dessin
   // « Jours » (06/10/2026) = CE planning avec des colonnes de jour larges (gcIsDayScale), plus l'ancien
   // dessin renderGanttDay (lent, autre style). Un ancien état 'day' est ramené ici.
   if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='day'){GANTT_VIEW='week';if(ZOOM_DW<GC_DAY_DW)ZOOM_DW=GC_DAY_DW;}
@@ -19690,11 +19697,14 @@ function effHP(a){
 // l'écran (voir renderRecap), mais le contenu du fichier "Export HTML", qui
 // doit rester exhaustif même si des sections sont repliées à l'écran.
 function _recapTableHtml(){
-  const maxP=Math.max(...D().filter(r=>r.t==='act').map(a=>a.p.length),1);
+  // (08/10/2026) personnes et heures réelles lues dans les feuilles d'heure (plus r.p / r.hReel, voir _rcHoursData)
+  const _FH=_rcFhHours(STORE.current),_projPers=(currP().persons||[]);
+  const _pOf=r=>{const bp=_FH.byPers[r.id]||{};return Object.keys(bp).map(n=>{const m=_projPers.find(ap=>ap.name===n);return {name:n,ent:m?m.type||'':'',heures:Math.round(bp[n]*10)/10};});};
+  const maxP=Math.max(...D().filter(r=>r.t==='act').map(a=>_pOf(a).length),1);
   const pc_hdr=Array.from({length:maxP},(_,i)=>`<th>P.${i+1}</th><th>Ent.</th><th>H</th>`).join('');
 
   function aRow(r,extraCls){
-    const ph=PH_get(r.pk),tot=r.p.reduce((s,p)=>s+(+p.heures||0),0);
+    const P=_pOf(r),ph=PH_get(r.pk),tot=Math.round(P.reduce((s,p)=>s+(+p.heures||0),0)*10)/10;
     // Statut depuis le GANTT : done > retard réel > en cours > non planifié
     const _reelDays=r.reelDays&&r.reelDays.length?r.reelDays:[];
     const _prevDays=r.prevDays&&r.prevDays.length?r.prevDays:[];
@@ -19712,13 +19722,13 @@ function _recapTableHtml(){
         :(r.inProgress&&!r.done&&r.progress>0)
           ?'<span style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;font-size:9px;font-weight:700;color:#D97706;padding:1px 6px;margin-right:3px">⚡'+r.progress+'%</span>'
           :'';
-    const pc=r.p.map((p,i)=>{const es=p.ent?ES[p.ent]:null;
+    const pc=P.map((p,i)=>{const es=p.ent?ES[p.ent]:null;
       return `<td style="white-space:nowrap">${p.name||'—'}</td>`+
              `<td>${p.ent?`<span class="pill" style="background:${es.bg};color:${es.tc}">${p.ent}</span>`:'—'}</td>`+
              `<td style="text-align:right;font-weight:600;color:var(--ac)">${+p.heures||''}</td>`;
-    }).join('')+Array.from({length:maxP-r.p.length},()=>'<td></td><td></td><td></td>').join('');
-    const hp=effHP(r),hr=r.hReel||0;
-    const delta=(r.hPrev!=null||r.hReel!=null)?(hp-hr):null;
+    }).join('')+Array.from({length:maxP-P.length},()=>'<td></td><td></td><td></td>').join('');
+    const hp=effHP(r),hr=Math.round((_FH.byId[r.id]||0)*10)/10;
+    const delta=(r.hPrev!=null||hr)?Math.round((hp-hr)*10)/10:null;
     const deltaCell=delta!==null
       ?`<td style="text-align:center;font-weight:700;font-size:10px;color:${delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--tx3)'}">${delta>0?'+':''}${delta}H</td>`
       :'<td style="text-align:center;color:var(--tx3)">—</td>';
@@ -19734,7 +19744,7 @@ function _recapTableHtml(){
       <td style="padding:4px 8px;white-space:nowrap">${progBadge}${done}${r.lb}</td>${pc}
       <td style="text-align:right;font-weight:700;color:${tot?'var(--ac)':'var(--tx3)'};">${tot||'—'}</td>
       <td style="text-align:center;font-weight:700;color:var(--or)">${r.hPrev!=null&&r.hPrev>0?r.hPrev+'H':'—'}</td>
-      <td style="text-align:center;font-weight:700;color:var(--gn)">${r.hReel!=null&&r.hReel>0?r.hReel+'H':'—'}</td>
+      <td style="text-align:center;font-weight:700;color:var(--gn)">${hr>0?hr+'H':'—'}</td>
       ${deltaCell}
       <td style="font-size:10px;color:var(--tx3);text-align:center">${_dateStr}</td>
     </tr>`;
@@ -19791,9 +19801,9 @@ function _recapTableHtml(){
         _curGroupCls=_curGroupCls+' rec-c-'+_sbGid;
       } else if(r.t==='act'){
         html+=aRow(r,_curGroupCls);
-        totH+=r.p.reduce((s,p)=>s+(+p.heures||0),0);
+        totH+=_pOf(r).reduce((s,p)=>s+(+p.heures||0),0);
         totPrev+=(+r.hPrev||0);
-        if(r.hReel)totReel+=r.hReel;
+        totReel+=_FH.byId[r.id]||0;
       }
     });
     // ── Section Modifications ───────────────────────────────────────────
@@ -19977,8 +19987,10 @@ function _recapInfosHtml(){
 function _recapTotals(){
   const allActs=D().filter(r=>r.t==='act');
   const affTotPrev=allActs.reduce((s,a)=>s+(+a.hPrev||0),0);
-  const affTotReel=allActs.reduce((s,a)=>s+(+a.hReel||0),0);
-  const affTotH=allActs.reduce((s,a)=>s+a.p.reduce((s2,p)=>s2+(+p.heures||0),0),0);
+  // (08/10/2026) heures réelles = feuilles d'heure (plus r.hReel / r.p[].heures, qui gardaient des heures fantômes)
+  const _FHt=_rcFhHours(STORE.current);
+  const affTotReel=allActs.reduce((s,a)=>s+(_FHt.byId[a.id]||0),0);
+  const affTotH=Math.round((_FHt.total-_FHt.general)*10)/10;
   const affDelta=Math.round((affTotReel-affTotPrev)*10)/10;
   const affDone=allActs.filter(a=>a.done).length;
   // Avancement pondéré par H Prévues sur les % saisis manuellement
@@ -19990,6 +20002,7 @@ function _recapTotals(){
 // ceux qui ont lieu d'être affichés (mêmes conditions et même ordre qu'avant).
 function _recapBudgetSections(){
   var _out=[];
+  var _FH=_rcFhHours(STORE.current); // (08/10/2026) heures réelles = feuilles d'heure seulement (plus r.hReel)
   // Heures "générales" de cette affaire (sans sous-phase précise, voir
   // fhGeneralHoursForAff) — à rattacher à la phase CHANTIER pour qu'elles
   // comptent quand même dans son Réel H, comme demandé.
@@ -20005,7 +20018,7 @@ function _recapBudgetSections(){
       var _a=D().filter(function(r){return (r.t==='act'||r.t==='sb')&&r.pk===ph_r.pk;});
       var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
       var _isChantierRow=_chantierPh&&ph_r.pk===_chantierPh.pk;
-      var _rv=Math.round((_a.reduce(function(s,a){return s+(+a.hReel||0);},0)+(_isChantierRow?_genHoursAff.totalH:0))*10)/10;
+      var _rv=Math.round((_a.reduce(function(s,a){return s+(_FH.byId[a.id]||0);},0)+(_isChantierRow?_genHoursAff.totalH:0))*10)/10;
       var _bv=ph_r.budgetH||0;
       // Ecart = ce qu'il RESTE du budget (positif/vert) ou le dépassement
       // (négatif/rouge) — Budget moins Prévu/Réel, pas l'inverse.
@@ -20051,7 +20064,7 @@ function _recapBudgetSections(){
         if(_br.t==='act'||_br.t==='sb')_a.push(_br);
       }
       var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
-      var _rv=Math.round(_a.reduce(function(s,a){return s+(+a.hReel||0);},0)*10)/10;
+      var _rv=Math.round(_a.reduce(function(s,a){return s+(_FH.byId[a.id]||0);},0)*10)/10;
       var _bv=ens_r.budgetH||0;
       if(!_bv)return;
       var _dp=Math.round((_bv-_pv)*10)/10;
@@ -20090,7 +20103,7 @@ function _recapBudgetSections(){
       var _gph=g.ph?PH_get(g.ph.pk):{};
       var _gc=/^#[0-9a-f]{6}$/i.test(_gph.t||'')?_gph.t:'#4F46E5';
       var _gb=0,_gr=0;
-      g.sbs.forEach(function(s){_gb+=+s.budgetH||0;_gr+=+s.hReel||0;});
+      g.sbs.forEach(function(s){_gb+=+s.budgetH||0;_gr+=_FH.byId[s.id]||0;});
       _gb=Math.round(_gb*10)/10;_gr=Math.round(_gr*10)/10;
       var _gd=Math.round((_gb-_gr)*10)/10;
       var _gdc=_gd<0?'#DC2626':_gd>0?'#059669':'#6B7280';
@@ -20101,11 +20114,11 @@ function _recapBudgetSections(){
         +'<span style="font-size:11px;font-weight:700;color:#6B7280;white-space:nowrap">Budget <b style="color:#1F2937">'+_gb+'H</b> &nbsp;&middot;&nbsp; R&eacute;el <b style="color:#1F2937">'+_gr+'H</b> &nbsp;&middot;&nbsp; Ecart <b style="color:'+_gdc+'">'+(_gd>0?'+':'')+_gd+'H</b></span>'
         +'</div></td></tr>';
       g.sbs.forEach(function(sb_r){
-      var _rv=Math.round((+sb_r.hReel||0)*10)/10;
+      var _rv=Math.round((_FH.byId[sb_r.id]||0)*10)/10;
       var _bv=sb_r.budgetH||0;
       var _dr=Math.round((_bv-_rv)*10)/10;
       var _cr=_dr<0?'#DC2626':_dr>0?'#059669':'var(--tx2)';
-      var _persons=(sb_r.p||[]).filter(function(pp){return pp.name&&pp.name.trim();});
+      var _bp=_FH.byPers[sb_r.id]||{},_persons=Object.keys(_bp).map(function(n){return {name:n,heures:Math.round(_bp[n]*10)/10};});
       var _persDetail=_persons.length
         ?_persons.map(function(pp){return '<span style="display:inline-block;background:var(--bg3);border-radius:10px;padding:1px 8px;margin:1px 3px 1px 0;font-size:10px;font-weight:700">'+pp.name+' &middot; '+pp.heures+'H</span>';}).join('')
         :'<span style="color:var(--tx3);font-style:italic;font-size:10px">Personne encore renseign&eacute;</span>';
@@ -20177,7 +20190,7 @@ function _rcBar(pct,w){
 // rangées — même règle que fhGeneralHoursForAff (l.affId, sinon l'affaire
 // qui contient la ligne).
 function _rcFhHours(aff){
-  var byId={},general=0,total=0;
+  var byId={},byPers={},general=0,total=0; // byPers[id][nom] = heures (08/10/2026 : source unique des heures du Bilan / GANTT)
   Object.keys(STORE.projects).forEach(function(bucketAff){
     var p=STORE.projects[bucketAff];
     if(!p||!p.fh)return;
@@ -20193,13 +20206,13 @@ function _rcFhHours(aff){
             var h=+(l.hours||l.h)||0;
             if(!h)return;
             total+=h;
-            if(l.actId)byId[l.actId]=(byId[l.actId]||0)+h;else general+=h;
+            if(l.actId){byId[l.actId]=(byId[l.actId]||0)+h;var bp=byPers[l.actId]||(byPers[l.actId]={});bp[nm]=(bp[nm]||0)+h;}else general+=h;
           });
         });
       });
     });
   });
-  return {byId:byId,general:general,total:Math.round(total*10)/10};
+  return {byId:byId,byPers:byPers,general:general,total:Math.round(total*10)/10};
 }
 function _rcTaskHtml(r,level,counts){
   // Mêmes statuts et mêmes dates que le tableau du récap (voir aRow dans
@@ -20307,22 +20320,26 @@ function _rcSectionHtml(key,label,color,right,bodyFn){
 function _rcR1(v){return (Math.round((+v||0)*10)/10).toLocaleString('fr-FR',{maximumFractionDigits:1});}
 function _rcHoursData(){
   var data=D(),groups=[],byKey={},curPh=null,curEns=null,curSb=null;
+  // (08/10/2026) Heures lues DIRECTEMENT dans les feuilles d'heure (_rcFhHours, comme « Consommé »),
+  // et plus dans r.hReel / r.p[].heures : ces copies gardaient d'anciennes heures (durée de barre × 8 h,
+  // saisies manuelles de l'ancien planning) qui revenaient par la synchro → heures sans aucun pointage.
+  var FH=_rcFhHours(STORE.current);
   function grp(key,title,ph,ens){
     if(!byKey[key]){byKey[key]={key:key,title:title,ph:ph,ens:ens,subco:ens?_subco(ens):null,bud:ens?(+ens.budgetH||0):0,sbs:[],sbMap:{},loose:{h:0,pers:{}}};groups.push(byKey[key]);}
     return byKey[key];
   }
-  function addPers(target,p){(p||[]).forEach(function(pp){var n=pp&&pp.name&&pp.name.trim();var h=+pp.heures||0;if(!n||!h)return;target[n]=(target[n]||0)+h;});}
+  function addPers(target,id){var bp=FH.byPers[id]||{};Object.keys(bp).forEach(function(n){target[n]=(target[n]||0)+bp[n];});}
   data.forEach(function(r){
     if(r.t==='ph'){curPh=r;curEns=null;curSb=null;return;}
     if(r.t==='ensend'){curEns=null;curSb=null;return;}
     if(r.t==='ens'){curEns=r;curSb=null;grp('e:'+r.id,r.lb||'',curPh,r);return;}
     var g=curEns?grp('e:'+curEns.id,curEns.lb||'',curPh,curEns):(curPh?grp('p:'+curPh.pk,curPh.lb||curPh.pk,curPh,null):null);
     if(!g)return;
-    if(r.t==='sb'){curSb=r;var s={row:r,lb:r.lb||'',subco:_subco(r),bud:+r.budgetH||0,h:+r.hReel||0,pers:{}};addPers(s.pers,r.p);g.sbs.push(s);g.sbMap[r.id]=s;return;}
+    if(r.t==='sb'){curSb=r;var s={row:r,lb:r.lb||'',subco:_subco(r),bud:+r.budgetH||0,h:FH.byId[r.id]||0,pers:{}};addPers(s.pers,r.id);g.sbs.push(s);g.sbMap[r.id]=s;return;}
     if(r.t==='act'){
-      var h=+r.hReel||0;if(!h&&!(r.p||[]).some(function(pp){return +pp.heures;}))return;
+      var h=FH.byId[r.id]||0;if(!h)return;
       var t=curSb&&g.sbMap[curSb.id];
-      if(t){t.h+=h;addPers(t.pers,r.p);}else{g.loose.h+=h;addPers(g.loose.pers,r.p);}
+      if(t){t.h+=h;addPers(t.pers,r.id);}else{g.loose.h+=h;addPers(g.loose.pers,r.id);}
     }
   });
   // Sous-traité (08/10/2026, demande de l'utilisateur) : les heures d'un ensemble / d'une sous-phase
@@ -20349,7 +20366,7 @@ function _rcHoursData(){
   // Par phase : mêmes calculs que l'ancien tableau (Prévu/Réel des tâches et sous-phases de la phase)
   var phs=data.filter(function(r){return r.t==='ph';}).map(function(ph){
     var a=data.filter(function(r){return (r.t==='act'||r.t==='sb')&&r.pk===ph.pk;});
-    var pv=a.reduce(function(s,x){return s+(+x.hPrev||0);},0),rv=a.reduce(function(s,x){return s+(+x.hReel||0);},0)+(chPh&&ph.pk===chPh.pk?gen.totalH:0);
+    var pv=a.reduce(function(s,x){return s+(+x.hPrev||0);},0),rv=a.reduce(function(s,x){return s+(FH.byId[x.id]||0);},0)+(chPh&&ph.pk===chPh.pk?gen.totalH:0);
     // sous-traité : les heures des feuilles d'heure de ces éléments sont remplacées par les heures calculées
     groups.forEach(function(g){
       if(!g.ph||g.ph.pk!==ph.pk)return;
@@ -20381,12 +20398,12 @@ function _rcHoursBlock(){
   if(open&&open!=='gen'&&!d.groups.some(function(g){return g.key===open;}))open=window._rcHOpen=null;
   var jsq=function(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");};
   // ── Par phase : une rangée de tuiles ──
-  var phT=d.phs.filter(function(p){return p.bud>0||p.rv>0||p.pv>0;}).map(function(p){
+  var phT=d.phs.filter(function(p){return p.bud>0||p.rv>0; /* (08/10/2026) plus de « Prévu (barres) » : anciennes heures prévues, sans rapport avec les pointages */}).map(function(p){
     var col=PH_get(p.row.pk).h||'#4B3FC7',pc=p.bud?Math.min(100,p.rv*100/p.bud):0;
     return '<div class="rch-ph" style="border-top:3px solid '+col+'"><div style="font-size:12px;font-weight:800;color:#1C1A33;margin-bottom:6px">'+escHtml(p.row.lb||p.row.pk)+'</div>'
       +'<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:20px;font-weight:900;color:#1C1A33">'+_rcR1(p.rv)+' h</span><span style="font-size:11.5px;color:#6B6790">'+(p.bud?'sur '+_rcR1(p.bud)+' h':'réel')+'</span></div>'
       +(p.bud?'<div class="rch-bar"><span style="width:'+pc+'%;background:'+_rcBarCol(p.rv,p.bud)+'"></span></div><div style="font-size:11.5px;margin-top:4px">'+_rcEcart(p.rv,p.bud)+'</div>':'')
-      +(p.pv?'<div style="font-size:11px;color:#6B6790;margin-top:3px">Prévu (barres) : '+_rcR1(p.pv)+' h</div>':'')+'</div>';
+      +'</div>';
   }).join('');
   // ── Cartes : sous-ensembles (PAE 4…) et phases sans sous-ensemble ──
   var list=d.groups.slice();
