@@ -13316,12 +13316,25 @@ function _applyBareme(phPk){
     });
   });
 
+  // (08/10/2026, demande de l'utilisateur) le bar\u00E8me remplit aussi le BUDGET HEURES :
+  // chaque sous-phase du bar\u00E8me = somme des heures de ses t\u00E2ches, la phase = total saisi.
+  // (C'est ce budget qu'utilisent le Bilan, l'Avancement pond\u00E9r\u00E9 et l'affichage \u00AB Heures \u00BB du GANTT.)
+  var sbBud={};
+  BAREME_AUTO.phases.forEach(function(row){sbBud[row.sb]=(sbBud[row.sb]||0)+Math.round(totalH*row.pct[tr]/100*10)/10;});
+  var budLines=[];
+  Object.keys(sbBud).forEach(function(sbLb){
+    var sb=data.find(function(r){return r.id===curSbs[sbLb];});
+    if(sb){sb.budgetH=Math.round(sbBud[sbLb]*10)/10;budLines.push('  \u00B7 '+sbLb+' : '+sb.budgetH+' h');}
+  });
+  var phRow=data.find(function(r){return r.t==='ph'&&r.pk===phPk;});
+  if(phRow)phRow.budgetH=totalH;
   p.data=data;
   saveNow();
   renderGantt();
   if(typeof renderPlanEditor==='function')renderPlanEditor();
   alert('\u2705 Bar\u00E8me appliqu\u00E9 ! '+(tr===0?'Tranche < 75H':tr===1?'Tranche 75\u2013150H':'Tranche > 150H')+
-    '\nTotal : '+totalH+'H r\u00E9parti sur '+BAREME_AUTO.phases.length+' t\u00E2ches.');
+    '\nTotal : '+totalH+'H r\u00E9parti sur '+BAREME_AUTO.phases.length+' t\u00E2ches.'+
+    '\n\nBudget heures mis \u00E0 jour :\n  \u00B7 Phase '+phPk+' : '+totalH+' h\n'+budLines.join('\n'));
 }
 
 function openAffaireInfos(){
@@ -14407,11 +14420,17 @@ function gcGroupRowHtml(e,DW,NC,acts){
     +(isPh?'<span style="width:10px;height:10px;border-radius:3px;flex-shrink:0;background:'+(ph.xd||phCol)+'"></span>':'')
     +gsNameHtml(r,'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:'+(isPh?14:13)+'px;font-weight:'+(t==='sb'?700:800)+';color:'+(isPh?phCol:(t==='sb'?'#4A4766':'#1C1A33'))+';'+(isPh?'letter-spacing:.4px;':''),gcEsc(r.lb||r.pk));
   if(r._orphan)lbl+=gcPill('⚠ À réparer','#FEF3C7','#92400E');
-  if((t==='ens'||t==='sb')&&_subco(r))lbl+=_subcoTag(r);
+  // Sous-traité : seulement une icône dans le planning (le nom de la ligne reste entier), le détail au survol
+  if((t==='ens'||t==='sb')&&_subco(r))lbl+='<span title="'+escHtml(_subcoLbl(r).replace(/^🤝 /,''))+'" aria-label="'+escHtml(_subcoLbl(r).replace(/^🤝 /,''))+'" style="flex-shrink:0;font-size:13px;line-height:1;cursor:help">🤝</span>';
   if(isPh&&r.phStatus==='done')lbl+=gcPill('✓ Terminée','#DCFCE7','#15803D');
   else if(isPh&&r.phStatus==='inprogress')lbl+=gcPill('⚡ En cours','#FEF3C7','#B45309');
   if(window._gcShowH&&t==='sb'&&typeof hasView==='function'&&hasView('budget_gantt')){
-    var hr=acts.reduce(function(s,a){return s+(+a.hReel||0);},0),bud=+r.budgetH||0;
+    // Même calcul que le Bilan (_rcHoursData), corrigé le 08/10/2026 : les heures pointées SUR la sous-phase
+    // elle-même (r.hReel, posé par syncFichesToGantt) + celles de ses tâches. Avant : seulement les tâches → 0 / 24 h.
+    // Sous-traité (la sous-phase ou son ensemble) : heures calculées = budget × avancement, comme le Bilan.
+    var bud=+r.budgetH||0,hr=(+r.hReel||0)+acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
+    var _pEns=(e.par||[]).map(function(id){return D().find(function(x){return x.id===id;});}).filter(function(x){return x&&x.t==='ens'&&_subco(x);})[0];
+    if(_subco(r)||_pEns)hr=bud*calcHierProgress(D(),{filterSbId:r.id})/100;
     lbl+='<span title="Heures des feuilles d’heure / budget" style="flex-shrink:0;font-size:11px;font-weight:700;white-space:nowrap;color:'+(bud&&hr>bud?'#B91C1C':'#6B6790')+'">'+(Math.round(hr*10)/10)+' / '+bud+' h</span>';
   }
   if(pct!=null&&acts.length)lbl+=gcPill(pct+' %',pct>=100?'#DCFCE7':'#F1EFFC',pct>=100?'#15803D':'#4B3FC7');
@@ -17820,9 +17839,9 @@ function syncFichesToGantt(){
   var _sfgChanged=false;
   Object.keys(STORE.projects).forEach(function(aff){
     var p=STORE.projects[aff];
-    if(!p||!p.fh||!p.data)return;
+    if(!p||!p.data)return; // (08/10/2026) aussi sans aucune feuille d'heure : les anciennes heures fantômes sont remises à 0
     var actMap={};
-    Object.keys(p.fh).forEach(function(nm){
+    Object.keys(p.fh||{}).forEach(function(nm){
       var nmData=p.fh[nm];
       Object.keys(nmData).forEach(function(wk){
         var wkData=nmData[wk];
@@ -17863,10 +17882,14 @@ function syncFichesToGantt(){
         // avant l'ajout de ce marqueur). Pour une tâche ('act'), on ne
         // réinitialise que si ce marqueur est bien présent, pour ne jamais
         // toucher un hReel qui viendrait d'ailleurs.
-        if(r.t==='sb'||r._hReelFromFH){
+        // (08/10/2026, demande de l'utilisateur) : les heures affichées (Bilan, Heures du GANTT) ne viennent
+        // QUE des feuilles d'heure. Une tâche sans heure pointée repasse donc aussi à 0, même sans le marqueur :
+        // sinon d'anciennes valeurs (durée de la barre × 8 h posée par autoCalcAllHPrev, saisie manuelle de
+        // l'ancien planning) apparaissaient comme des heures alors que personne n'avait pointé.
+        if(r.t==='sb'||r._hReelFromFH||+r.hReel>0||(r.p||[]).some(function(pp){return +pp.heures>0&&!pp.fromFH;})){
           r.hReel=0;
           r._hReelFromFH=false;
-          r.p=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim()&&!pp.fromFH;});
+          r.p=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim()&&!pp.fromFH;}).map(function(pp){return +pp.heures?Object.assign({},pp,{heures:0}):pp;});
           if(!r.p.length)r.p=[{name:'',ent:'',heures:0}];
         }
       } else {
@@ -17884,7 +17907,8 @@ function syncFichesToGantt(){
         // "✕") ne retirait jamais les heures correspondantes ici, elles
         // restaient affichées à tort après suppression.
         (r.p||[]).forEach(function(pp){
-          if(pp.name&&pp.name.trim()&&!data.persons[pp.name]&&!pp.fromFH)newP.push(pp);
+          // (08/10/2026) leurs anciennes heures saisies à la main ne comptent plus : seulement les feuilles d'heure
+          if(pp.name&&pp.name.trim()&&!data.persons[pp.name]&&!pp.fromFH)newP.push(Object.assign({},pp,{heures:0}));
         });
         r.p=newP.length?newP:[{name:'',ent:'',heures:0}];
       }
@@ -19645,12 +19669,9 @@ function autoCalcAllHPrev(){
           changed = true;
         }
       }
-      if(r.hReel == null){
-        if(durR && durR > 0){
-          r.hReel = Math.round(durR * hjR * 10) / 10;
-          changed = true;
-        }
-      }
+      // (08/10/2026) hReel n'est PLUS rempli ici : les heures réelles viennent uniquement des
+      // feuilles d'heure (syncFichesToGantt). Avant, une tâche sans heure pointée recevait
+      // « durée de la barre × 8 h », affichée ensuite comme des heures pointées dans le Bilan.
     });
   });
   if(changed) localStorage.setItem(SK, JSON.stringify(STORE));
@@ -20304,10 +20325,20 @@ function _rcHoursData(){
       if(t){t.h+=h;addPers(t.pers,r.p);}else{g.loose.h+=h;addPers(g.loose.pers,r.p);}
     }
   });
+  // Sous-traité (08/10/2026, demande de l'utilisateur) : les heures d'un ensemble / d'une sous-phase
+  // sous-traité(e) ne viennent pas des feuilles d'heure mais sont CALCULÉES = budget × avancement
+  // (ex. 200 h à 50 % → 100 h). Seulement pour ce qui est sous-traité. s.calc / g.calc = {pct, bud}.
+  var r1=function(x){return Math.round(x*10)/10;};
   groups.forEach(function(g){
+    g.sbs.forEach(function(s){
+      s.rawH=s.h;
+      if(s.subco||g.subco){var pc=calcHierProgress(data,{filterSbId:s.row.id});s.calc={pct:pc,bud:s.bud};s.h=r1(s.bud*pc/100);s.pers={};}
+    });
+    g.rawH=g.sbs.reduce(function(a,s){return a+s.rawH;},0)+g.loose.h;
     g.sbBud=g.sbs.reduce(function(a,s){return a+s.bud;},0);
     if(!g.bud)g.bud=g.sbBud;
     g.h=g.sbs.reduce(function(a,s){return a+s.h;},0)+g.loose.h;
+    if(g.subco){var pe=calcHierProgress(data,{filterEnsId:g.ens.id});g.calc={pct:pe,bud:g.bud};g.h=r1(g.bud*pe/100);g.loose={h:0,pers:{}};}
     g.pers={};g.sbs.forEach(function(s){Object.keys(s.pers).forEach(function(n){g.pers[n]=(g.pers[n]||0)+s.pers[n];});});
     Object.keys(g.loose.pers).forEach(function(n){g.pers[n]=(g.pers[n]||0)+g.loose.pers[n];});
     g.over=g.sbs.filter(function(s){return s.bud>0&&s.h>s.bud;}).length;
@@ -20319,6 +20350,12 @@ function _rcHoursData(){
   var phs=data.filter(function(r){return r.t==='ph';}).map(function(ph){
     var a=data.filter(function(r){return (r.t==='act'||r.t==='sb')&&r.pk===ph.pk;});
     var pv=a.reduce(function(s,x){return s+(+x.hPrev||0);},0),rv=a.reduce(function(s,x){return s+(+x.hReel||0);},0)+(chPh&&ph.pk===chPh.pk?gen.totalH:0);
+    // sous-traité : les heures des feuilles d'heure de ces éléments sont remplacées par les heures calculées
+    groups.forEach(function(g){
+      if(!g.ph||g.ph.pk!==ph.pk)return;
+      if(g.subco)rv+=g.h-g.rawH;
+      else g.sbs.forEach(function(s){if(s.calc)rv+=s.h-s.rawH;});
+    });
     return {row:ph,bud:+ph.budgetH||0,pv:Math.round(pv*10)/10,rv:Math.round(rv*10)/10};
   });
   // un ensemble / une sous-phase sous-traité(e) apparaît même sans budget ni heures ELS (08/10/2026)
@@ -20365,7 +20402,8 @@ function _rcHoursBlock(){
       +'<span style="flex-grow:1;min-width:0"><span style="display:block;font-size:'+(isOpen?18:15)+'px;font-weight:800;color:#1C1A33;line-height:1.25;word-break:break-word">'+escHtml(g.title)+'</span>'
         +(g.subco?'<span style="display:block;margin-top:4px">'+_subcoTag(g.ens)+'</span>':'')
         +'<span style="display:block;font-size:11.5px;color:#6B6790;margin-top:2px">'+sub+(!g.subco&&g.nSub?' · <b style="color:#0369A1">🤝 '+g.nSub+' sous-traitée'+(g.nSub>1?'s':'')+'</b>':'')+'</span></span>'
-      +'<span style="text-align:right;flex-shrink:0"><span style="display:block;font-size:'+(isOpen?22:18)+'px;font-weight:900;color:#1C1A33">'+_rcR1(g.h)+' h</span><span style="font-size:11px;color:#6B6790">'+(g.bud?'sur '+_rcR1(g.bud)+' h':'réel')+'</span></span>'
+      +'<span style="text-align:right;flex-shrink:0"><span style="display:block;font-size:'+(isOpen?22:18)+'px;font-weight:900;color:#1C1A33">'+_rcR1(g.h)+' h</span><span style="font-size:11px;color:#6B6790">'+(g.bud?'sur '+_rcR1(g.bud)+' h':'réel')+'</span>'
+        +(g.calc?'<span style="display:block;font-size:10.5px;font-weight:700;color:#0369A1" title="Sous-traité : heures calculées = budget × avancement">calculé · '+g.calc.pct+' % du budget</span>':'')+'</span>'
       +'<span class="hr-chev" aria-hidden="true" style="transform:rotate('+(isOpen?180:0)+'deg)">▾</span></button>'
       +(g.bud?'<div class="rch-bar" style="margin-top:10px"><span style="width:'+pc+'%;background:'+_rcBarCol(g.h,g.bud)+'"></span></div>':'')
       +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#4A4766">'+(g.gen?'<span></span>':'<span>'+_rcEcart(g.h,g.bud)+'</span>')
@@ -20375,10 +20413,11 @@ function _rcHoursBlock(){
     var rows=g.sbs.filter(function(s){return s.bud>0||s.h>0||s.subco;}).map(function(s){
       var spc=s.bud?Math.min(100,s.h*100/s.bud):0;
       return '<div class="rch-sb"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="flex:1 1 200px;font-size:13.5px;color:#1C1A33">'+escHtml(s.lb)+(s.subco?' '+_subcoTag(s.row):'')+'</b>'
-        +'<span style="font-size:13px;color:#1C1A33;white-space:nowrap"><b>'+_rcR1(s.h)+' h</b>'+(s.bud?' <span style="color:#6B6790">/ '+_rcR1(s.bud)+' h</span>':'')+'</span>'
+        +'<span style="font-size:13px;color:#1C1A33;white-space:nowrap"><b>'+_rcR1(s.h)+' h</b>'+(s.bud?' <span style="color:#6B6790">/ '+_rcR1(s.bud)+' h</span>':'')
+        +(s.calc?' <span style="font-size:11px;font-weight:700;color:#0369A1" title="Sous-traité : heures calculées = budget × avancement">(calculé · '+s.calc.pct+' %)</span>':'')+'</span>'
         +'<span style="font-size:12px;white-space:nowrap;min-width:130px;text-align:right">'+_rcEcart(s.h,s.bud)+'</span></div>'
         +(s.bud?'<div class="rch-bar" style="height:6px;margin:6px 0 8px"><span style="width:'+spc+'%;background:'+_rcBarCol(s.h,s.bud)+'"></span></div>':'<div style="height:6px"></div>')
-        +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+_rcPersChips(s.pers)+'</div></div>';
+        +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+(s.calc?'<span style="font-size:12px;color:#0369A1">Sous-traité : heures = budget × avancement'+(s.bud?'':' — saisissez un budget d’heures pour les calculer')+'</span>':_rcPersChips(s.pers))+'</div></div>';
     }).join('');
     if(g.loose&&g.loose.h)rows+='<div class="rch-sb"><div style="display:flex;gap:10px"><b style="flex:1;font-size:13.5px">Tâches hors sous-phase</b><b>'+_rcR1(g.loose.h)+' h</b></div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">'+_rcPersChips(g.loose.pers)+'</div></div>';
     if(g.gen)rows='<div class="rch-sb"><div style="font-size:12.5px;color:#4A4766;margin-bottom:8px">Heures pointées sur l’affaire sans choisir de sous-phase. Elles comptent dans le réel de la phase '+escHtml(g.ph?(g.ph.lb||g.ph.pk):'Chantier')+'.</div><div style="display:flex;gap:5px;flex-wrap:wrap">'+_rcPersChips(g.pers)+'</div></div>';
