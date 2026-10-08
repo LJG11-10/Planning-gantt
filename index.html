@@ -11819,10 +11819,50 @@ function _avcCol(p){return p<30?'#F59E0B':'#16A34A';}
 // Barre d'une sous-phase dans le détail : orange tant qu'elle n'est pas finie,
 // verte seulement à 100 %.
 function _avcSbCol(p){return p>=100?'#16A34A':'#F59E0B';}
+// Les anneaux du graphique (08/10/2026, règle validée par l'utilisateur),
+// décidés PHASE PAR PHASE :
+// - phase sans sous-ensemble → UN anneau pour la phase (détail = ses sous-phases) ;
+// - phase avec sous-ensembles → un anneau par sous-ensemble (comme avant) ;
+// - + ses sous-phases rangées directement sous la phase → un anneau
+//   « <phase> — hors sous-ensemble ».
+// Chaque élément garde la forme d'un nœud (row.id / row.lb / kids) pour le
+// reste du code du graphique ; pct() = son %, selKey = sa case dans la
+// fenêtre de téléchargement.
 function _avcEnsList(){
   var l=[];
-  _avTree().forEach(function(ph){ph.kids.forEach(function(k){if(k.type==='ens')l.push(k);});});
+  _avTree().forEach(function(ph){
+    var pk=ph.row.pk,ens=ph.kids.filter(function(k){return k.type==='ens';}),loose=ph.kids.filter(function(k){return k.type==='sb';});
+    if(!ens.length){
+      if(!ph.kids.length)return;
+      l.push({kind:'ph',ph:pk,row:{id:'ph:'+pk,lb:pk},kids:loose,selKey:_avNodeKey(ph),
+        pct:function(){return calcHierProgress(D(),{filterPk:pk});}});
+      return;
+    }
+    ens.forEach(function(e){
+      l.push({kind:'ens',ph:pk,row:e.row,kids:e.kids,selKey:_avNodeKey(e),
+        pct:function(){return calcHierProgress(D(),{filterEnsId:e.row.id});}});
+    });
+    if(loose.length)l.push({kind:'hors',ph:pk,row:{id:'hors:'+pk,lb:pk+' — hors sous-ensemble'},kids:loose,selKey:_avNodeKey(ph),
+      pct:function(){return _avcLoosePct(loose);}});
+  });
   return l;
+}
+function _avcTitle(list){
+  var hasE=list.some(function(e){return e.kind==='ens';}),hasP=list.some(function(e){return e.kind!=='ens';});
+  return 'Avancement par '+(hasE&&hasP?'phase et sous-ensemble':hasE?'sous-ensemble':'phase');
+}
+// % des sous-phases hors sous-ensemble d'une phase : même règle que
+// calcHierProgress (poids = budget d'heures ; aucun budget → parts égales).
+function _avcLoosePct(loose){
+  var w=0,s=0,eq=[];
+  loose.forEach(function(k){
+    var acts=k.kids.filter(function(n){return n.type==='act'&&!n.row.excludeProgress;});
+    if(!acts.length)return;
+    var p=acts.reduce(function(a,n){return a+(n.row.done?100:(+n.row.progress||0));},0)/acts.length;
+    eq.push(p);var b=+k.row.budgetH||0;if(b>0){s+=p*b;w+=b;}
+  });
+  if(w>0)return _pctFloor(s/w);
+  var a=_avgOrNull(eq);return a===null?0:_pctFloor(a);
 }
 function _avcTask(r){
   var excl=!!r.excludeProgress,done=!!r.done;
@@ -11846,7 +11886,7 @@ function _avcRowsHtml(ens,anim){
       // Détail du graphique : sous-phases seulement (pas les tâches).
     }
   });
-  return h||'<div style="font-size:12px;color:var(--tx3)">Aucune sous-phase dans ce sous-ensemble.</div>';
+  return h||'<div style="font-size:12px;color:var(--tx3)">Aucune sous-phase.</div>';
 }
 function _avChartHtml(){
   var list=_avcEnsList();
@@ -11864,26 +11904,28 @@ function _avChartHtml(){
     +'</style>';
   h+='<div style="margin-top:18px;border:1px solid var(--bd);border-radius:var(--r2);background:var(--bg2);padding:16px 18px">';
   if(!list.length){
-    return h+'<div style="font-size:12px;color:var(--tx3);text-align:center;padding:10px">Aucun sous-ensemble dans cette affaire pour le graphique.</div></div>';
+    return h+'<div style="font-size:12px;color:var(--tx3);text-align:center;padding:10px">Aucune sous-phase dans cette affaire pour le graphique.</div></div>';
   }
+  var _ttl=_avcTitle(list);
   var openId=window._avChartOpen,open=null;
   list.forEach(function(e){if(e.row.id===openId)open=e;});
   if(!open)window._avChartOpen=null;
   var anim=!!window._avChartFresh;
   h+='<div id="avc-wrap" style="position:relative;display:grid">';
   h+='<div id="avc-grid" style="grid-area:1/1;transition:opacity .28s ease;opacity:'+(open?0:1)+';pointer-events:'+(open?'none':'auto')+(open?';position:absolute;left:0;right:0;top:0':'')+'">'
-    +'<div style="font-size:13px;font-weight:800;color:var(--tx2);margin-bottom:10px">Avancement par sous-ensemble</div>'
+    +'<div style="font-size:13px;font-weight:800;color:var(--tx2);margin-bottom:10px">'+_ttl+'</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">';
   list.forEach(function(e){
-    var p=calcHierProgress(D(),{filterEnsId:e.row.id}),s=_avSafe(e.row.id);
+    var p=e.pct(),s=_avSafe(e.row.id);
+    var cap=e.kind==='ens'?'<div style="font-size:10px;font-weight:800;letter-spacing:.3px;color:'+(PH_get(e.ph).h||'var(--tx3)')+'">'+escHtml(e.ph)+'</div>':'';
     h+='<div class="avc-rc" id="avc-rc-'+s+'" onclick="avChartOpen(\''+_avJs(e.row.id)+'\')" role="button" title="Voir le détail de '+escHtml(e.row.lb)+'">'
       +'<svg width="84" height="84" viewBox="0 0 84 84"><circle cx="42" cy="42" r="30" fill="none" stroke="var(--bg3)" stroke-width="10"/>'
       +'<circle id="avc-arc-'+s+'" data-pct="'+p+'" cx="42" cy="42" r="30" fill="none" stroke="'+_avcCol(p)+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+(anim?0:(_AVC_C*p/100).toFixed(1))+' '+_AVC_C.toFixed(1)+'" transform="rotate(-90 42 42)" style="transition:stroke-dasharray .9s cubic-bezier(.2,.8,.2,1),stroke .3s"/>'
       +'<text id="avc-txt-'+s+'" x="42" y="47" text-anchor="middle" style="font-size:16px;font-weight:800;fill:var(--tx);font-family:inherit">'+p+'%</text></svg>'
-      +'<div style="font-size:12px;color:var(--tx2);line-height:1.3;margin-top:4px">'+escHtml(e.row.lb)+'</div></div>';
+      +cap+'<div style="font-size:12px;color:'+(e.kind==='ens'?'var(--tx2)':'var(--tx)')+';font-weight:'+(e.kind==='ens'?400:700)+';line-height:1.3;margin-top:'+(cap?'1px':'4px')+'">'+escHtml(e.row.lb)+'</div></div>';
   });
   h+='</div></div>';
-  var op=open?calcHierProgress(D(),{filterEnsId:open.row.id}):0;
+  var op=open?open.pct():0;
   h+='<div id="avc-det" style="grid-area:1/1;transition:opacity .28s ease;opacity:'+(open?1:0)+';pointer-events:'+(open?'auto':'none')+(open?'':';position:absolute;left:0;right:0;top:0')+'">'
     +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">'
     +'<span id="avc-dname" style="font-size:15px;font-weight:800;color:var(--tx)">'+(open?escHtml(open.row.lb):'')+'</span>'
@@ -11914,7 +11956,7 @@ function avChartOpen(ensId){
   var e=_avcFindEns(ensId);if(!e)return;
   var s=_avSafe(ensId),ring=document.querySelector('#avc-rc-'+s+' svg');if(!ring)return;
   window._avcBusy=true;window._avChartOpen=ensId;
-  var p=calcHierProgress(D(),{filterEnsId:ensId}),col=_avcCol(p);
+  var p=e.pct(),col=_avcCol(p);
   document.getElementById('avc-dname').textContent=e.row.lb;
   document.getElementById('avc-dpct').textContent=p+'%';
   var df=document.getElementById('avc-dfill');df.style.background=col;df.style.width=p+'%';
@@ -11948,7 +11990,7 @@ function avChartBack(){
   var id=window._avChartOpen,s=_avSafe(id),ring=document.querySelector('#avc-rc-'+s+' svg'),bar=document.getElementById('avc-dbar');
   if(!ring||!bar){window._avChartOpen=null;renderAvancement();return;}
   window._avcBusy=true;
-  var p=calcHierProgress(D(),{filterEnsId:id}),col=_avcCol(p);
+  var _it=_avcFindEns(id),p=_it?_it.pct():0,col=_avcCol(p);
   var wrap=document.getElementById('avc-wrap');
   var from=_avcRel(bar),to=_avcRel(ring);
   var m=document.createElement('div');m.id='avc-morph';
@@ -11975,7 +12017,7 @@ function avChartBack(){
 // Mise à jour en place pendant la saisie d'un % (sans rejouer d'animation).
 function _avChartRefresh(){
   _avcEnsList().forEach(function(e){
-    var s=_avSafe(e.row.id),p=calcHierProgress(D(),{filterEnsId:e.row.id});
+    var s=_avSafe(e.row.id),p=e.pct();
     var t=document.getElementById('avc-txt-'+s),a=document.getElementById('avc-arc-'+s);
     if(t)t.textContent=p+'%';
     if(a){a.dataset.pct=p;a.setAttribute('stroke',_avcCol(p));a.setAttribute('stroke-dasharray',(_AVC_C*p/100).toFixed(1)+' '+_AVC_C.toFixed(1));}
@@ -12180,7 +12222,7 @@ var _AVDL_CHART_CSS=''
   +'@media print{.avc-rc{cursor:default}#avc-det{display:none}#avc-grid{opacity:1!important;position:static!important}}';
 function _avDlChartData(sel){
   function col(c){return c==='var(--bd2)'?'#D1D5DB':c;}
-  return _avcEnsList().filter(function(e){return sel[_avNodeKey(e)];}).map(function(e){
+  return _avcEnsList().filter(function(e){return sel[e.selKey];}).map(function(e){
     var rows=[];
     e.kids.forEach(function(k){
       if(!sel[_avNodeKey(k)])return;
@@ -12190,24 +12232,24 @@ function _avDlChartData(sel){
         // Détail du graphique : sous-phases seulement (pas les tâches).
       }
     });
-    var p=calcHierProgress(D(),{filterEnsId:e.row.id});
-    return {lb:e.row.lb,p:p,c:_avcCol(p),rows:rows};
+    var p=e.pct();
+    return {lb:e.row.lb,p:p,c:_avcCol(p),rows:rows,kind:e.kind,cap:e.kind==='ens'?e.ph:'',cc:(PH_get(e.ph).t||'#6B7280')};
   });
 }
 function _avDlChartHtml(sel){
-  var data=_avDlChartData(sel);
+  var data=_avDlChartData(sel),ttl=_avcTitle(data);
   if(!data.length)return '';
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
   var h='<div class="avc-box"><div id="avc-wrap" style="position:relative;display:grid">'
     +'<div id="avc-grid" style="grid-area:1/1;transition:opacity .28s ease">'
-    +'<div class="avc-ttl">Avancement par sous-ensemble <span style="font-weight:600;color:#9CA3AF;font-size:11px">— cliquez sur un anneau pour voir le détail</span></div>'
+    +'<div class="avc-ttl">'+ttl+' <span style="font-weight:600;color:#9CA3AF;font-size:11px">— cliquez sur un anneau pour voir le détail</span></div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">';
   data.forEach(function(e,i){
     h+='<div class="avc-rc" id="avc-rc-'+i+'" onclick="avcOpen('+i+')" role="button" title="Voir le détail de '+esc(e.lb)+'">'
       +'<svg width="84" height="84" viewBox="0 0 84 84"><circle cx="42" cy="42" r="30" fill="none" stroke="#F1F2F5" stroke-width="10"/>'
       +'<circle class="avc-arc" data-pct="'+e.p+'" cx="42" cy="42" r="30" fill="none" stroke="'+e.c+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+(_AVC_C*e.p/100).toFixed(1)+' '+_AVC_C.toFixed(1)+'" transform="rotate(-90 42 42)" style="transition:stroke-dasharray .9s cubic-bezier(.2,.8,.2,1)"/>'
       +'<text x="42" y="47" text-anchor="middle" style="font-size:16px;font-weight:800;fill:#1A1917;font-family:Arial,sans-serif">'+e.p+'%</text></svg>'
-      +'<div style="font-size:12px;color:#4B5563;line-height:1.3;margin-top:4px">'+esc(e.lb)+'</div></div>';
+      +(e.cap?'<div style="font-size:10px;font-weight:800;letter-spacing:.3px;color:'+e.cc+'">'+esc(e.cap)+'</div>':'')+'<div style="font-size:12px;color:'+(e.cap?'#4B5563':'#1A1917')+';font-weight:'+(e.cap?400:700)+';line-height:1.3;margin-top:'+(e.cap?'1px':'4px')+'">'+esc(e.lb)+'</div></div>';
   });
   h+='</div></div>'
     +'<div id="avc-det" style="grid-area:1/1;transition:opacity .28s ease;opacity:0;pointer-events:none;position:absolute;left:0;right:0;top:0">'
@@ -12237,7 +12279,7 @@ function _avDlChartClient(DATA){
         +'<div class="avc-trk" style="height:'+(sm?8:12)+'px"><div class="avc-fil" data-w="'+r.p+'" style="background:'+r.c+';width:0%"></div></div>'
         +'<span class="avc-pc"'+(sm?' style="font-weight:600;color:#9CA3AF"':'')+'>'+(r.x?'Hors av.':r.p+'%')+'</span></div>';
     }).join('');
-    return h||'<div style="font-size:12px;color:#9CA3AF">Aucune sous-phase dans ce sous-ensemble.</div>';
+    return h||'<div style="font-size:12px;color:#9CA3AF">Aucune sous-phase.</div>';
   }
   window.avcOpen=function(i){
     if(busy||openI>=0)return;
