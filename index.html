@@ -18740,7 +18740,8 @@ function gcDown(rid, w, d, ev){
   }
   // Nouveau visuel : on ne peint qu'en mode « Peindre les barres » (sinon un clic ouvre le détail de la tâche)
   if(!window._gcPaint)return;
-  if(ev)ev.stopPropagation();
+  if(ev){ev.stopPropagation();ev.preventDefault();} // preventDefault : le glisser ne commence pas de sélection de texte
+  try{var _sel=window.getSelection&&window.getSelection();if(_sel&&_sel.rangeCount)_sel.removeAllRanges();}catch(e){}
   var rect=ev&&ev.currentTarget?ev.currentTarget.getBoundingClientRect():null;
   var relY=rect?(ev.clientY-rect.top):40;
   var cellH=rect?rect.height:80;
@@ -24760,6 +24761,8 @@ select.fhx-big:focus{border-color:#6457F4}
 .gt.gc2 td.gcell{padding:0;border-bottom:1px solid #F1EFF8;cursor:pointer}
 .gt.gc2 td.gb{vertical-align:top;position:relative}
 body.gc-paint .gt.gc2 td.gcell,body.gc-paint .gt.gc2 td.gwe{cursor:crosshair}
+/* Peinture (08/10/2026) : glisser la souris ne surligne plus les textes en bleu (les champs de saisie restent sélectionnables) */
+body.gc-paint #tab-gantt *:not(input):not(textarea):not(select){-webkit-user-select:none;user-select:none}
 .gt.gc2 td.tw{background:rgba(75,63,199,.045)}
 .gt.gc2 td.w0{border-left:1px solid #EFEDF7}
 /* .tdy : la ligne rouge d'aujourd'hui est maintenant un seul trait (#gc-today, gcPlaceToday) */
