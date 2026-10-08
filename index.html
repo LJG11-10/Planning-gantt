@@ -13324,12 +13324,20 @@ function _applyBareme(phPk){
   // (08/10/2026, demande de l'utilisateur) le bar\u00E8me remplit aussi le BUDGET HEURES :
   // chaque sous-phase du bar\u00E8me = somme des heures de ses t\u00E2ches, la phase = total saisi.
   // (C'est ce budget qu'utilisent le Bilan, l'Avancement pond\u00E9r\u00E9 et l'affichage \u00AB Heures \u00BB du GANTT.)
-  var sbBud={};
-  BAREME_AUTO.phases.forEach(function(row){sbBud[row.sb]=(sbBud[row.sb]||0)+Math.round(totalH*row.pct[tr]/100*10)/10;});
+  // Budget pos\u00E9 sur la sous-phase o\u00F9 se trouve R\u00C9ELLEMENT chaque t\u00E2che du bar\u00E8me (les t\u00E2ches existantes
+  // restent dans leurs propres sous-phases, qui ne portent pas forc\u00E9ment le nom du bar\u00E8me).
+  var hByLb={};BAREME_AUTO.phases.forEach(function(row){hByLb[row.lb]=Math.round(totalH*row.pct[tr]/100*10)/10;});
+  var sbSum={},curSbRow=null;
+  data.forEach(function(r){
+    if(r.pk!==phPk)return;
+    if(r.t==='ph'){curSbRow=null;return;}
+    if(r.t==='ens'||r.t==='ensend'){curSbRow=null;return;}
+    if(r.t==='sb'){curSbRow=r;return;}
+    if(r.t==='act'&&curSbRow&&hByLb[r.lb]!=null)sbSum[curSbRow.id]=(sbSum[curSbRow.id]||0)+hByLb[r.lb];
+  });
   var budLines=[];
-  Object.keys(sbBud).forEach(function(sbLb){
-    var sb=data.find(function(r){return r.id===curSbs[sbLb];});
-    if(sb){sb.budgetH=Math.round(sbBud[sbLb]*10)/10;budLines.push('  \u00B7 '+sbLb+' : '+sb.budgetH+' h');}
+  data.forEach(function(r){
+    if(r.t==='sb'&&sbSum[r.id]){r.budgetH=Math.round(sbSum[r.id]*10)/10;budLines.push('  \u00B7 '+r.lb+' : '+r.budgetH+' h');}
   });
   var phRow=data.find(function(r){return r.t==='ph'&&r.pk===phPk;});
   if(phRow)phRow.budgetH=totalH;
@@ -14429,6 +14437,21 @@ function gcGroupRowHtml(e,DW,NC,acts){
   if((t==='ens'||t==='sb')&&_subco(r))lbl+='<span title="'+escHtml(_subcoLbl(r).replace(/^🤝 /,''))+'" aria-label="'+escHtml(_subcoLbl(r).replace(/^🤝 /,''))+'" style="flex-shrink:0;font-size:13px;line-height:1;cursor:help">🤝</span>';
   if(isPh&&r.phStatus==='done')lbl+=gcPill('✓ Terminée','#DCFCE7','#15803D');
   else if(isPh&&r.phStatus==='inprogress')lbl+=gcPill('⚡ En cours','#FEF3C7','#B45309');
+  // (08/10/2026) Interrupteur « Heures » : aussi sur les lignes de PHASE et d'ENSEMBLE (heures pointées / budget).
+  // Budget = celui de la ligne, sinon la somme des budgets de ses sous-phases.
+  if(window._gcShowH&&(t==='ph'||t==='ens')&&typeof hasView==='function'&&hasView('budget_gantt')){
+    var _fhG=window._gcFHc||(window._gcFHc=_rcFhHours(STORE.current)),_under=[],_on=false,_dd=D();
+    _dd.forEach(function(x){
+      if(t==='ph'){if(x.pk===r.pk&&(x.t==='sb'||x.t==='act'))_under.push(x);return;}
+      if(x.id===r.id){_on=true;return;}
+      if(!_on)return;
+      if(x.t==='ph'||x.t==='ens'||x.t==='ensend'){_on=false;return;}
+      if(x.t==='sb'||x.t==='act')_under.push(x);
+    });
+    var _hG=_under.reduce(function(s,x){return s+(_fhG.byId[x.id]||0);},0)+(t==='ph'&&_isChantierPhase(r.pk)?_fhG.general:0);
+    var _bG=+r.budgetH||_under.reduce(function(s,x){return s+(x.t==='sb'?(+x.budgetH||0):0);},0);
+    lbl+='<span title="Heures des feuilles d’heure / budget" style="flex-shrink:0;font-size:11px;font-weight:800;white-space:nowrap;color:'+(_bG&&_hG>_bG?'#B91C1C':'#4A4766')+'">'+(Math.round(_hG*10)/10)+' / '+(Math.round(_bG*10)/10)+' h</span>';
+  }
   if(window._gcShowH&&t==='sb'&&typeof hasView==='function'&&hasView('budget_gantt')){
     // Même calcul que le Bilan (_rcHoursData), corrigé le 08/10/2026 : les heures pointées SUR la sous-phase
     // elle-même (r.hReel, posé par syncFichesToGantt) + celles de ses tâches. Avant : seulement les tâches → 0 / 24 h.
@@ -20354,6 +20377,8 @@ function _rcHoursData(){
     g.rawH=g.sbs.reduce(function(a,s){return a+s.rawH;},0)+g.loose.h;
     g.sbBud=g.sbs.reduce(function(a,s){return a+s.bud;},0);
     if(!g.bud)g.bud=g.sbBud;
+    // carte d'une phase sans sous-ensemble : à défaut de budgets de sous-phases, le budget de la phase
+    if(!g.ens&&!g.bud&&g.ph&&+g.ph.budgetH>0&&!data.some(function(x){return x.t==='ens'&&x.pk===g.ph.pk;}))g.bud=+g.ph.budgetH;
     g.h=g.sbs.reduce(function(a,s){return a+s.h;},0)+g.loose.h;
     if(g.subco){var pe=calcHierProgress(data,{filterEnsId:g.ens.id});g.calc={pct:pe,bud:g.bud};g.h=r1(g.bud*pe/100);g.loose={h:0,pers:{}};}
     g.pers={};g.sbs.forEach(function(s){Object.keys(s.pers).forEach(function(n){g.pers[n]=(g.pers[n]||0)+s.pers[n];});});
@@ -20377,7 +20402,8 @@ function _rcHoursData(){
   });
   // un ensemble / une sous-phase sous-traité(e) apparaît même sans budget ni heures ELS (08/10/2026)
   groups.forEach(function(g){g.nSub=g.sbs.filter(function(s){return s.subco;}).length;});
-  return {groups:groups.filter(function(g){return g.bud>0||g.h>0||g.subco||g.nSub;}),phs:phs,gen:gen,chPh:chPh};
+  // (08/10/2026) TOUTES les phases et sous-ensembles qui ont des sous-phases / tâches, même sans budget ni heure
+  return {groups:groups.filter(function(g){return g.sbs.length||g.loose.h||g.bud>0||g.h>0||g.subco;}),phs:phs,gen:gen,chPh:chPh};
 }
 function _rcBarCol(h,b){if(!b)return '#94A3B8';var p=h/b;return p>1?'#DC2626':p>.85?'#F59E0B':'#16A34A';}
 function _rcEcart(h,b){
@@ -20398,7 +20424,7 @@ function _rcHoursBlock(){
   if(open&&open!=='gen'&&!d.groups.some(function(g){return g.key===open;}))open=window._rcHOpen=null;
   var jsq=function(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");};
   // ── Par phase : une rangée de tuiles ──
-  var phT=d.phs.filter(function(p){return p.bud>0||p.rv>0; /* (08/10/2026) plus de « Prévu (barres) » : anciennes heures prévues, sans rapport avec les pointages */}).map(function(p){
+  var phT=d.phs.filter(function(p){return true; /* (08/10/2026) toutes les phases, même sans budget ni heure ; (08/10/2026) plus de « Prévu (barres) » : anciennes heures prévues, sans rapport avec les pointages */}).map(function(p){
     var col=PH_get(p.row.pk).h||'#4B3FC7',pc=p.bud?Math.min(100,p.rv*100/p.bud):0;
     return '<div class="rch-ph" style="border-top:3px solid '+col+'"><div style="font-size:12px;font-weight:800;color:#1C1A33;margin-bottom:6px">'+escHtml(p.row.lb||p.row.pk)+'</div>'
       +'<div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:20px;font-weight:900;color:#1C1A33">'+_rcR1(p.rv)+' h</span><span style="font-size:11.5px;color:#6B6790">'+(p.bud?'sur '+_rcR1(p.bud)+' h':'réel')+'</span></div>'
@@ -20427,7 +20453,7 @@ function _rcHoursBlock(){
       +'<span>'+nP+' personne'+(nP>1?'s':'')+(g.over?' · <b style="color:#DC2626">'+g.over+' sous-phase'+(g.over>1?'s':'')+' dépassée'+(g.over>1?'s':'')+'</b>':'')+'</span></div>';
     if(!isOpen)return '<div class="hr-card" data-rch="'+escHtml(g.key)+'">'+head+'</div>';
     // ── Détail : sous-phases (avec qui a travaillé et combien), puis total par personne ──
-    var rows=g.sbs.filter(function(s){return s.bud>0||s.h>0||s.subco;}).map(function(s){
+    var rows=g.sbs.map(function(s){
       var spc=s.bud?Math.min(100,s.h*100/s.bud):0;
       return '<div class="rch-sb"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="flex:1 1 200px;font-size:13.5px;color:#1C1A33">'+escHtml(s.lb)+(s.subco?' '+_subcoTag(s.row):'')+'</b>'
         +'<span style="font-size:13px;color:#1C1A33;white-space:nowrap"><b>'+_rcR1(s.h)+' h</b>'+(s.bud?' <span style="color:#6B6790">/ '+_rcR1(s.bud)+' h</span>':'')
@@ -20448,9 +20474,9 @@ function _rcHoursBlock(){
   var cards=list.map(function(g){return cardOf(g,false);}).join('');
   var og=open?list.filter(function(g){return g.key===open;})[0]:null;
   window._rcHOpenHtml=og?cardOf(og,true):'';
-  return '<section class="rch-wrap"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px"><div><div style="font-size:16px;font-weight:800;color:#1C1A33">⏱ Heures et budget</div><div style="font-size:12.5px;color:#6B6790;margin-top:2px">Heures des feuilles d’heure comparées aux budgets saisis sur le planning · cliquez sur un sous-ensemble pour voir ses sous-phases et qui y a travaillé</div></div></div>'
+  return '<section class="rch-wrap"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px"><div><div style="font-size:16px;font-weight:800;color:#1C1A33">⏱ Heures et budget</div><div style="font-size:12.5px;color:#6B6790;margin-top:2px">Heures des feuilles d’heure comparées aux budgets saisis sur le planning · cliquez sur une phase ou un sous-ensemble pour voir ses sous-phases, leurs budgets et qui y a travaillé</div></div></div>'
     +(phT?'<div class="hr-sub" style="margin-bottom:8px">PAR PHASE</div><div class="rch-phs">'+phT+'</div>':'')
-    +(cards?'<div class="hr-sub" style="margin:16px 0 8px">PAR SOUS-ENSEMBLE</div><div class="hr-grid">'+cards+'</div>':'')
+    +(cards?'<div class="hr-sub" style="margin:16px 0 8px">PAR PHASE ET SOUS-ENSEMBLE — cliquez pour voir les sous-phases et leurs budgets</div><div class="hr-grid">'+cards+'</div>':'')
     +(function(){var st=_subcoSummaryHtml(false);return st?'<div class="hr-sub" style="margin:18px 0 4px">SOUS-TRAITANCE</div><div>'+st+'</div>':'';})()
     +'</section>';
 }
