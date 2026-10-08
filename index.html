@@ -5783,7 +5783,7 @@ function renderSearch(){
   allAff.forEach(function(aff){
     const afActs=(STORE.projects[aff].data||[]).filter(r=>r.t==='act');
     afActs.forEach(function(a){
-      if(a.p.some(p=>p.name.toLowerCase().includes(q))){
+      if(a.p.some(p=>p.name.toLowerCase().includes(q))||_persReal(aff,a).some(p=>p.name.toLowerCase().includes(q))){
         matchAll.push({a:a,aff:aff});
       }
     });
@@ -5807,7 +5807,8 @@ function renderSearch(){
     </div>`;
   }).join('');
   const cards=matchAll.map(function({a,aff}){
-    const ph=PH_get(a.pk),mp=a.p.filter(p=>p.name.toLowerCase().includes(q));
+    // (08/10/2026) heures = feuilles d'heure (_persReal) ; sans pointage, la personne affectée apparaît avec 0 h
+    const ph=PH_get(a.pk),_fp=_persReal(aff,a).filter(p=>p.name.toLowerCase().includes(q)),mp=_fp.length?_fp:a.p.filter(p=>p.name.toLowerCase().includes(q)).map(p=>Object.assign({},p,{heures:0}));
     const tH=mp.reduce((s,p)=>s+(+p.heures||0),0);
     const isCurrentAff=aff===STORE.current;
     const ps=mp.map(p=>{const es=p.ent?ES[p.ent]:null;
@@ -5876,11 +5877,11 @@ document.querySelectorAll('.nb[data-tab]').forEach(btn=>{
 
 function exportRecapCSV(){
   const all=acts();
-  const rows=[['Phase','Activité','Terminé','H.Affectées','H.Prévues','H.Réelles','Δ Heures','Début','Fin']];
+  // (08/10/2026) heures = feuilles d'heure seulement ; plus de colonnes « H.Prévues / Δ » (anciennes heures prévues)
+  const rows=[['Phase','Activité','Terminé','H. pointées (feuilles d\'heure)','Personnes','Début','Fin']];
   all.forEach(r=>{
-    const tot=r.p.reduce((s,p)=>s+(+p.heures||0),0);
-    const dlt=(r.hPrev&&r.hReel)?(r.hPrev-r.hReel):'';
-    rows.push([r.pk,r.lb,r.done?'OUI':'NON',tot,r.hPrev||'',r.hReel||'',dlt,'S'+isoWeekOf(r.s),'S'+isoWeekOf(r.e)]);
+    const P=_persReal(STORE.current,r);
+    rows.push([r.pk,r.lb,r.done?'OUI':'NON',_hReal(STORE.current,r)||'',P.map(p=>p.name+' '+p.heures+'h').join(', '),r.s?'S'+isoWeekOf(r.s):'',r.e?'S'+isoWeekOf(r.e):'']);
   });
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
@@ -6043,8 +6044,9 @@ function dbRecap(){
   affs.forEach(function(aff){
     var p=STORE.projects[aff];
     var acts=(p.data||[]).filter(function(r){return r.t==='act';});
-    gPrev+=acts.reduce(function(s,a){return s+(+a.hPrev||0);},0);
-    gReel+=acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
+    // (08/10/2026) prévues = budgets heures des phases ; réelles = feuilles d'heure (plus hPrev / hReel)
+    gPrev+=(p.data||[]).reduce(function(s,r){return s+(r.t==='ph'?(+r.budgetH||0):0);},0);
+    gReel+=_fhOf(aff).total;
     gBud+=(p.budget||0);
     gActs+=acts.length;
     gDone+=acts.filter(function(a){return a.done;}).length;
@@ -6052,7 +6054,7 @@ function dbRecap(){
   var gPct=gBud?Math.min(100,gReel/gBud*100):0;
   html+='<div style="background:var(--ac2);border:2px solid var(--ac);border-radius:var(--r2);padding:14px 18px;margin-bottom:20px;display:flex;gap:20px;flex-wrap:wrap;align-items:center">'
     +'<div style="font-size:11px;font-weight:700;color:var(--ac)">GLOBAL</div>'
-    +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--or)">'+gPrev+'H</div><div style="font-size:8px;color:var(--tx3)">PRÉVUES</div></div>'
+    +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--or)">'+gPrev+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET PHASES</div></div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--gn)">'+gReel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:'+(gPrev-gReel<0?'var(--rd)':gPrev-gReel>0?'var(--gn)':'var(--tx3)')+'">'+(gPrev-gReel===0?'—':(gPrev-gReel>0?'+':'')+(gPrev-gReel)+'H')+'</div><div style="font-size:8px;color:var(--tx3)">Δ</div></div>'
     +(hasView('budget_recap')?'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gBud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
@@ -6064,9 +6066,9 @@ function dbRecap(){
     var p=STORE.projects[aff];
     var acts=(p.data||[]).filter(function(r){return r.t==='act';});
     var bud=p.budget||0;
-    var prev=acts.reduce(function(s,a){return s+(+a.hPrev||0);},0);
-    var reel=acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
-    var delta=prev-reel;
+    var prev=Math.round((p.data||[]).reduce(function(s,r){return s+(r.t==='ph'?(+r.budgetH||0):0);},0)*10)/10;
+    var reel=_fhOf(aff).total;
+    var delta=Math.round((prev-reel)*10)/10;
     var done=acts.filter(function(a){return a.done;}).length;
     // Avancement pondéré par H Prévues sur les % de tâches saisis
     var pct=calcHierProgress(p.data,{});
@@ -6074,20 +6076,20 @@ function dbRecap(){
     var isCurrent=aff===STORE.current;
 
     // Persons summary
+    // (08/10/2026) personnes et heures = feuilles d'heure (tâches, sous-phases et heures générales)
     var pm={};
-    acts.forEach(function(a){a.p.forEach(function(pp){
-      if(!pp.name.trim())return;
-      var nm=pp.name.trim();
-      if(!pm[nm])pm[nm]={h:0,ent:pp.ent||''};
-      pm[nm].h+=+pp.heures||0;
+    (p.data||[]).forEach(function(r){if(r.t!=='act'&&r.t!=='sb')return;_persReal(aff,r).forEach(function(pp){
+      if(!pm[pp.name])pm[pp.name]={h:0,ent:pp.ent||''};
+      pm[pp.name].h=Math.round((pm[pp.name].h+pp.heures)*10)/10;
     });});
+    try{var _gen=fhGeneralHoursForAff(aff).persons||{};Object.keys(_gen).forEach(function(nm){if(!pm[nm])pm[nm]={h:0,ent:''};pm[nm].h=Math.round((pm[nm].h+(+_gen[nm]||0))*10)/10;});}catch(e){}
 
     // Skids summary
     var skids={};
     acts.forEach(function(a){
       if(/^Skid \d+$/i.test(a.grp)){
         if(!skids[a.grp])skids[a.grp]={h:0};
-        skids[a.grp].h+=a.p.reduce(function(s,pp){return s+(+pp.heures||0);},0);
+        skids[a.grp].h+=_hReal(aff,a);
       }
     });
 
@@ -6099,7 +6101,7 @@ function dbRecap(){
       +'<span style="font-size:15px;font-weight:700;color:var(--ac);cursor:pointer" onclick="switchProjet(\''+aff.replace(/'/g,"\\'")+'\')">'+getAffLabel(aff)+' ↗</span>'
       +'</div>'
       +'<div style="display:flex;gap:12px;flex-wrap:wrap">'
-      +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--or)">'+prev+'H</div><div style="font-size:8px;color:var(--tx3)">PRÉVUES</div></div>'
+      +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--or)">'+prev+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET PHASES</div></div>'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--gn)">'+reel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:'+(delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--tx3)')+'">'+(delta===0?'—':(delta>0?'+':'')+delta+'H')+'</div><div style="font-size:8px;color:var(--tx3)">DELTA</div></div>'
       +(hasView('budget_recap')?'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+bud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
@@ -7470,8 +7472,11 @@ function downloadPlanning(mode){
     return true;
   }
   var forts=p.fortuites||[];
-  var totP=acts.reduce(function(s,a){return s+(+a.hPrev||0);},0);
-  var totR=acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
+  // (08/10/2026) heures réelles = feuilles d'heure (_FH) ; « prévues » = budgets heures des phases
+  // (plus hPrev / hReel : anciennes copies, durée de barre × 8 h, heures fantômes)
+  var _FH=_rcFhHours(aff);
+  var totP=(p.data||[]).reduce(function(s,r){return s+(r.t==='ph'?(+r.budgetH||0):0);},0);
+  var totR=Math.round(acts.reduce(function(s,a){return s+(_FH.byId[a.id]||0);},0)*10)/10;
   var done=acts.filter(function(a){return a.done;}).length;
   var pct=calcHierProgress(p.data,{includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}});
   var bud=p.budget||0;
@@ -7554,10 +7559,10 @@ function downloadPlanning(mode){
     }
     if(r.t!=='act')return;
     if(!_clientRowIncluded(r.pk,curEnsIdZ,curSbIdZ,r.id))return;
-    var hP=+r.hPrev||0;
-    var hR=Math.round((+r.hReel||0)*10)/10;
-    var d=Math.round((hP-hR)*10)/10;
-    var persons=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim();}).map(function(pp){return esc(pp.name);}).join(', ');
+    var hP=0; // plus d'« heures prévues » par tâche (le budget est sur les sous-phases / phases)
+    var hR=Math.round((_FH.byId[r.id]||0)*10)/10;
+    var d=0;
+    var persons=_persReal(aff,r).map(function(pp){return esc(pp.name)+' ('+pp.heures+'H)';}).join(', ');
     var _rowGroups=[curPhGroupId,curEnsGroupId,curSbGroupId].filter(Boolean).join(' ');
     var _rowClasses=[curPhGroupId,curEnsGroupId,curSbGroupId].filter(Boolean).map(function(g){return 'pc-c-'+g;}).join(' ');
     body+='<tr class="pc-hidden '+_rowClasses+'" data-groups="'+_rowGroups+'" style="border-bottom:1px solid #F0EDE8;background:'+(r.done?'#F0FDF4':ri%2===0?'#fff':'#FAFAFA')+'">'
@@ -7566,8 +7571,8 @@ function downloadPlanning(mode){
       +'<td style="padding:7px 10px;text-align:center;color:#888;white-space:nowrap">S'+(r.e?isoWeekOf(r.e):'—')+'</td>'
 
       +(mode!=='client'
-        ?('<td style="padding:7px 10px;text-align:center;font-weight:700;color:#D97706">'+hP+'H</td>'
-          +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:#059669">'+hR+'H</td>'
+        ?('<td style="padding:7px 10px;text-align:center;font-weight:700;color:#D97706">'+(hP?hP+'H':'—')+'</td>'
+          +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:#059669">'+(hR?hR+'H':'—')+'</td>'
           +'<td style="padding:7px 10px;text-align:center;font-weight:700;color:'+(d<0?'#DC2626':d>0?'#059669':'#888')+'">'+(d===0?'—':(d>0?'+':'')+d+'H')+'</td>'
           +'<td style="padding:7px 10px;font-size:10px;color:#555">'+persons+'</td>')
         :'')
@@ -7673,7 +7678,7 @@ function downloadPlanning(mode){
   // ── Personnes impliquées (uniquement pour l'usage interne, pas le
   // téléchargement client — on n'affiche pas les noms de l'équipe au client) ──
   var persMap={};
-  acts.forEach(function(a){(a.p||[]).forEach(function(pp){if(pp.name&&pp.name.trim())persMap[pp.name]=(persMap[pp.name]||0)+1;});});
+  acts.forEach(function(a){_persReal(aff,a).forEach(function(pp){persMap[pp.name]=(persMap[pp.name]||0)+1;});}); // (08/10/2026) feuilles d'heure
   var pers=Object.keys(persMap);
   if(pers.length&&mode!=='client'){
     body+='<h2 style="font-size:15px;font-weight:800;color:#1F4E79;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #BFDBFE">👥 Équipe ('+pers.length+' personne'+(pers.length>1?'s':'')+')</h2>';
@@ -7696,16 +7701,15 @@ function downloadPlanning(mode){
     body+='<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px">';
     _phsWB.forEach(function(ph_r){
       var _a=acts.filter(function(a){return a.pk===ph_r.pk;});
-      var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
-      var _rv=Math.round(_a.reduce(function(s,a){return s+(_FH.byId[a.id]||0);},0)*10)/10;
+      // (08/10/2026) Budget / Réel (feuilles d'heure, sous-phases comprises) / Écart = budget − réel
+      var _rv=Math.round((p.data||[]).reduce(function(s,a){return s+((a.t==='act'||a.t==='sb')&&a.pk===ph_r.pk?(_FH.byId[a.id]||0):0);},0)*10)/10;
       var _bv=ph_r.budgetH||0;
-      var _df=_bv>0?Math.round((_bv-_pv)*10)/10:null;
+      var _df=_bv>0?Math.round((_bv-_rv)*10)/10:null;
       var _cl=_df<0?'#DC2626':_df>0?'#059669':'#374151';
       body+='<div style="background:#F8F9FA;border-radius:10px;padding:14px 18px;border-top:3px solid #1F4E79;min-width:180px">';
       body+='<div style="font-weight:800;font-size:12px;color:#1F4E79;margin-bottom:8px">'+esc(ph_r.lb)+'</div>';
       body+='<div style="display:flex;gap:12px;font-size:11px">';
       body+='<div><div style="color:#888">Budget</div><div style="font-weight:800;color:#1F4E79">'+_bv+'H</div></div>';
-      body+='<div><div style="color:#888">Pr&eacute;vu</div><div style="font-weight:800;color:#D97706">'+_pv+'H</div></div>';
       body+='<div><div style="color:#888">R&eacute;el</div><div style="font-weight:800;color:#059669">'+_rv+'H</div></div>';
       if(_df!==null)body+='<div><div style="color:#888">&Eacute;cart</div><div style="font-weight:800;color:'+_cl+'">'+(_df>0?'+':'')+_df+'H</div></div>';
       body+='</div></div>';
@@ -7877,8 +7881,8 @@ function downloadPlanning(mode){
       var _ganttRowGroups=[curPhGroupG,curEnsGroupG,curSbGroupG].filter(Boolean).join(' ');
 
       var phC=getPHC(r.pk||curPk);
-      var hP=+r.hPrev||0;
-      var nb=(r.p||[]).filter(function(pp){return pp.name&&pp.name.trim();}).length;
+      var hP=Math.round((_FH.byId[r.id]||0)*10)/10; // (08/10/2026) heures pointées (feuilles d'heure)
+      var nb=_persReal(aff,r).length;
       var lbl=esc(r.lb);
       // Jours précis (Prévu/Réel) via getTaskDays5 — la même fonction
       // canonique utilisée par le GANTT vue Semaines et vue Jours du site
@@ -11265,8 +11269,10 @@ function renderFiche(){
   var ent='—',budH=0,savedT=0;
   allActs.forEach(function(a){a.p.forEach(function(pp){
     if(pp.name.trim()!==selNm)return;
-    if(pp.ent)ent=pp.ent;budH+=+pp.heures||0;
+    if(pp.ent)ent=pp.ent;
   });});
+  // (08/10/2026) heures de la personne sur les tâches = feuilles d'heure (plus p[].heures, qui gardait des heures fantômes)
+  (function(){var _a=window._fhAff||STORE.current,_bp=_fhOf(_a).byPers;Object.keys(_bp).forEach(function(id){budH+=+(_bp[id][selNm]||0);});budH=Math.round(budH*10)/10;})();
   Object.keys(fhNm).forEach(function(wk){
     if(selWk!=='all'&&+wk!==+selWk)return;
     // Même calcul que partout ailleurs (toutes affaires + trajet) — voir wkT plus bas.
@@ -19750,8 +19756,8 @@ function _recapTableHtml(){
              `<td>${p.ent?`<span class="pill" style="background:${es.bg};color:${es.tc}">${p.ent}</span>`:'—'}</td>`+
              `<td style="text-align:right;font-weight:600;color:var(--ac)">${+p.heures||''}</td>`;
     }).join('')+Array.from({length:maxP-P.length},()=>'<td></td><td></td><td></td>').join('');
-    const hp=effHP(r),hr=Math.round((_FH.byId[r.id]||0)*10)/10;
-    const delta=(r.hPrev!=null||hr)?Math.round((hp-hr)*10)/10:null;
+    const hp=0,hr=Math.round((_FH.byId[r.id]||0)*10)/10; // (08/10/2026) plus d'« heures prévues » par tâche
+    const delta=null;
     const deltaCell=delta!==null
       ?`<td style="text-align:center;font-weight:700;font-size:10px;color:${delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--tx3)'}">${delta>0?'+':''}${delta}H</td>`
       :'<td style="text-align:center;color:var(--tx3)">—</td>';
@@ -19766,7 +19772,7 @@ function _recapTableHtml(){
     return `<tr class="${extraCls||''}" style="border-bottom:1px solid var(--bd);background:${_isOverdue?'rgba(254,226,226,.2)':r.done?'rgba(209,250,229,.1)':''}">
       <td style="padding:4px 8px;white-space:nowrap">${progBadge}${done}${r.lb}</td>${pc}
       <td style="text-align:right;font-weight:700;color:${tot?'var(--ac)':'var(--tx3)'};">${tot||'—'}</td>
-      <td style="text-align:center;font-weight:700;color:var(--or)">${r.hPrev!=null&&r.hPrev>0?r.hPrev+'H':'—'}</td>
+      <td style="text-align:center;font-weight:700;color:var(--or)">—</td>
       <td style="text-align:center;font-weight:700;color:var(--gn)">${hr>0?hr+'H':'—'}</td>
       ${deltaCell}
       <td style="font-size:10px;color:var(--tx3);text-align:center">${_dateStr}</td>
@@ -19825,7 +19831,7 @@ function _recapTableHtml(){
       } else if(r.t==='act'){
         html+=aRow(r,_curGroupCls);
         totH+=_pOf(r).reduce((s,p)=>s+(+p.heures||0),0);
-        totPrev+=(+r.hPrev||0);
+        /* (08/10/2026) totPrev n'additionne plus les anciennes heures prévues */
         totReel+=_FH.byId[r.id]||0;
       }
     });
@@ -20036,7 +20042,7 @@ function _recapBudgetSections(){
   var _hBud=D().some(function(r){return r.t==='ph'&&r.budgetH>0;})&&hasView('budget_recap');
   if(_hBud){
     var html='';
-    html+='<table class="rt"><thead><tr><th>Phase</th><th>Budget H</th><th>Pr&eacute;vu H</th><th>R&eacute;el H</th><th>Ecart Bud/Pr&eacute;vu</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
+    html+='<table class="rt"><thead><tr><th>Phase</th><th>Budget H</th><th>R&eacute;el H</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
     D().filter(function(r){return r.t==='ph';}).forEach(function(ph_r){
       var _a=D().filter(function(r){return (r.t==='act'||r.t==='sb')&&r.pk===ph_r.pk;});
       var _pv=Math.round(_a.reduce(function(s,a){return s+(+a.hPrev||0);},0)*10)/10;
@@ -20052,8 +20058,7 @@ function _recapBudgetSections(){
       html+='<tr>';
       html+='<td style="font-weight:700">'+ph_r.lb+'</td>';
       html+='<td style="font-weight:700">'+(_bv>0?_bv+'H':'&mdash;')+'</td>';
-      html+='<td>'+_pv+'H</td><td>'+_rv+'H</td>';
-      html+='<td style="font-weight:700;color:'+_cp+'">'+(_dp!==null?(_dp>0?'+':'')+_dp+'H':'&mdash;')+'</td>';
+      html+='<td>'+_rv+'H</td>'; /* (08/10/2026) plus de colonne « Prévu H » (anciennes heures prévues) */
       html+='<td style="font-weight:700;color:'+_cr+'">'+(_dr!==null?(_dr>0?'+':'')+_dr+'H':'&mdash;')+'</td>';
       html+='</tr>';
     });
@@ -20077,7 +20082,7 @@ function _recapBudgetSections(){
   var _hBudEns=D().some(function(r){return r.t==='ens'&&r.budgetH>0;})&&hasView('budget_recap');
   if(_hBudEns){
     var html='';
-    html+='<table class="rt"><thead><tr><th>Ensemble</th><th>Phase</th><th>Budget H</th><th>Pr&eacute;vu H</th><th>R&eacute;el H</th><th>Ecart Bud/Pr&eacute;vu</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
+    html+='<table class="rt"><thead><tr><th>Ensemble</th><th>Phase</th><th>Budget H</th><th>R&eacute;el H</th><th>Ecart Bud/R&eacute;el</th></tr></thead><tbody>';
     var _allRowsEns=D();
     _allRowsEns.filter(function(r){return r.t==='ens';}).forEach(function(ens_r){
       var _ensIdxB=_allRowsEns.indexOf(ens_r);
@@ -20098,8 +20103,7 @@ function _recapBudgetSections(){
       html+='<td style="font-weight:700">'+ens_r.lb+_subcoExp(ens_r)+'</td>';
       html+='<td style="color:var(--tx3)">'+ens_r.pk+'</td>';
       html+='<td style="font-weight:700">'+_bv+'H</td>';
-      html+='<td>'+_pv+'H</td><td>'+_rv+'H</td>';
-      html+='<td style="font-weight:700;color:'+_cp+'">'+(_dp>0?'+':'')+_dp+'H</td>';
+      html+='<td>'+_rv+'H</td>'; /* (08/10/2026) plus de colonne « Prévu H » (anciennes heures prévues) */
       html+='<td style="font-weight:700;color:'+_cr+'">'+(_dr>0?'+':'')+_dr+'H</td>';
       html+='</tr>';
     });
@@ -20212,6 +20216,16 @@ function _rcBar(pct,w){
 // affaire (toutes les lignes, avec ou sans sous-phase), où qu'elles soient
 // rangées — même règle que fhGeneralHoursForAff (l.affId, sinon l'affaire
 // qui contient la ligne).
+// ── Heures RÉELLES d'une ligne = feuilles d'heure uniquement (08/10/2026) ──
+// À utiliser partout à la place de r.hReel / r.p[].heures (anciennes copies qui gardaient des heures
+// fantômes). Résultat de _rcFhHours mis en cache 0,5 s (les écrans bouclent sur beaucoup de lignes).
+var _fhCacheAll={t:0,m:{}};
+function _fhOf(aff){var now=Date.now();if(now-_fhCacheAll.t>500)_fhCacheAll={t:now,m:{}};return _fhCacheAll.m[aff]||(_fhCacheAll.m[aff]=_rcFhHours(aff));}
+function _hReal(aff,r){return r?Math.round(((_fhOf(aff).byId[r.id])||0)*10)/10:0;}
+function _persReal(aff,r){
+  var bp=r?(_fhOf(aff).byPers[r.id]||{}):{},pp=((STORE.projects[aff]||{}).persons)||[];
+  return Object.keys(bp).map(function(n){var m=pp.find(function(x){return x.name===n;});return {name:n,ent:m?m.type||'':'',heures:Math.round(bp[n]*10)/10};});
+}
 function _rcFhHours(aff){
   var byId={},byPers={},general=0,total=0; // byPers[id][nom] = heures (08/10/2026 : source unique des heures du Bilan / GANTT)
   Object.keys(STORE.projects).forEach(function(bucketAff){
@@ -20260,7 +20274,7 @@ function _rcTaskHtml(r,level,counts){
     dateStr='S'+isoWeekOf(wS)+(wS!==wE?' → S'+isoWeekOf(wE):'');
   }else if(r.s>0)dateStr='S'+isoWeekOf(r.s)+(r.e&&r.e!==r.s?' → S'+isoWeekOf(r.e):'');
   else dateStr='—';
-  var chips=r.p.filter(function(p){return (p.name&&p.name.trim())||+p.heures;}).map(function(p){
+  var chips=_persReal(STORE.current,r).map(function(p){ // (08/10/2026) qui a pointé, d'après les feuilles d'heure
     var es=p.ent?ES[p.ent]:null;
     return '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:2px 9px;font-size:11px;font-weight:600;color:var(--tx)">'
       +escHtml(p.name||'—')
