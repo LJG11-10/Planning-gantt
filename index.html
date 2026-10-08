@@ -20207,9 +20207,10 @@ function _rcHoursBlock(){
   // ── Cartes : sous-ensembles (PAE 4…) et phases sans sous-ensemble ──
   var list=d.groups.slice();
   if(d.gen.totalH>0)list.push({key:'gen',title:'Heures générales',gen:true,ph:d.chPh,h:d.gen.totalH,bud:0,pers:d.gen.persons,sbs:[],over:0});
-  if(open){var oi=list.findIndex(function(g){return g.key===open;});if(oi>0)list.unshift(list.splice(oi,1)[0]);}
-  var cards=list.map(function(g){
-    var col=g.ph?(PH_get(g.ph.pk).h||'#4B3FC7'):'#4B3FC7',isOpen=g.key===open,pc=g.bud?Math.min(100,g.h*100/g.bud):0;
+  // (08/10/2026) Les cartes restent à leur place : la carte ouverte s'affiche dans la fenêtre
+  // qui grandit depuis elle (_hzShow, appelé à la fin de renderRecap avec window._rcHOpenHtml).
+  function cardOf(g,isOpen){
+    var col=g.ph?(PH_get(g.ph.pk).h||'#4B3FC7'):'#4B3FC7',pc=g.bud?Math.min(100,g.h*100/g.bud):0;
     var nP=Object.keys(g.pers).length;
     var sub=g.gen?'sans sous-phase précise · compté dans '+escHtml(g.ph?(g.ph.lb||g.ph.pk):'Chantier'):(g.ens?escHtml(g.ph?(g.ph.lb||g.ph.pk):''):'phase')+' · '+g.sbs.length+' sous-phase'+(g.sbs.length>1?'s':'');
     var head='<button type="button" class="hr-head" onclick="rcHoursToggle(\''+jsq(g.key)+'\')" aria-expanded="'+isOpen+'">'
@@ -20238,27 +20239,27 @@ function _rcHoursBlock(){
     return '<div class="hr-card hr-open" data-rch="'+escHtml(g.key)+'">'+head
       +'<div class="hr-detail"><div><div class="hr-sub">'+(g.gen?'QUI A POINTÉ':'PAR SOUS-PHASE')+'</div>'+budNote+(rows||'<div style="font-size:12px;color:#9A96B3">Aucune heure.</div>')+'</div>'
       +'<div><div class="hr-sub">PAR PERSONNE ('+pk.length+')</div><div style="display:flex;flex-direction:column;gap:6px">'+(persHtml||'<div style="font-size:12px;color:#9A96B3">Aucune heure.</div>')+'</div></div></div></div>';
-  }).join('');
+  }
+  var cards=list.map(function(g){return cardOf(g,false);}).join('');
+  var og=open?list.filter(function(g){return g.key===open;})[0]:null;
+  window._rcHOpenHtml=og?cardOf(og,true):'';
   return '<section class="rch-wrap"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px"><div><div style="font-size:16px;font-weight:800;color:#1C1A33">⏱ Heures et budget</div><div style="font-size:12.5px;color:#6B6790;margin-top:2px">Heures des feuilles d’heure comparées aux budgets saisis sur le planning · cliquez sur un sous-ensemble pour voir ses sous-phases et qui y a travaillé</div></div></div>'
     +(phT?'<div class="hr-sub" style="margin-bottom:8px">PAR PHASE</div><div class="rch-phs">'+phT+'</div>':'')
     +(cards?'<div class="hr-sub" style="margin:16px 0 8px">PAR SOUS-ENSEMBLE</div><div class="hr-grid">'+cards+'</div>':'')
     +'</section>';
 }
-// Clic sur une carte : elle s'ouvre en haut à gauche (les autres glissent à leur nouvelle place) ; re-clic = refermer
+// Clic sur une carte : son détail s'ouvre dans une fenêtre qui grandit depuis elle ; re-clic / ✕ / fond / Échap = refermer
 function rcHoursToggle(key){
-  var rw=document.getElementById('rw'),before={};
-  if(rw)rw.querySelectorAll('.hr-card[data-rch]').forEach(function(c){before[c.getAttribute('data-rch')]=c.getBoundingClientRect();});
-  window._rcHOpen=window._rcHOpen===key?null:key;
+  if(window._rcHOpen===key){_hzClose();return;}
+  window._rcHOpen=key;
+  window._rcHAnim=true;
   renderRecap();
-  rw=document.getElementById('rw');if(!rw)return;
-  rw.querySelectorAll('.hr-card[data-rch]').forEach(function(c){
-    var b=before[c.getAttribute('data-rch')];if(!b)return;
-    var a=c.getBoundingClientRect(),dx=b.left-a.left,dy=b.top-a.top;if(!dx&&!dy)return;
-    c.style.transition='none';c.style.transform='translate('+dx+'px,'+dy+'px)';
-    requestAnimationFrame(function(){requestAnimationFrame(function(){c.style.transition='transform .35s cubic-bezier(.2,.8,.2,1)';c.style.transform='';});});
-  });
-  var oc=rw.querySelector('.hr-card.hr-open[data-rch]'),sc=document.getElementById('tdb-recap-current');
-  if(oc&&sc){var top=oc.getBoundingClientRect().top-sc.getBoundingClientRect().top+sc.scrollTop-12;try{sc.scrollTo({top:Math.max(0,top),behavior:'smooth'});}catch(e){sc.scrollTop=Math.max(0,top);}}
+}
+// Appelé à la fin de renderRecap : ouvre / met à jour / retire la fenêtre du Récap
+function _rcHoursZoomSync(){
+  var anim=!!window._rcHAnim;window._rcHAnim=false;
+  if(window._rcHOpen&&window._rcHOpenHtml)_hzShow('rc',window._rcHOpen,window._rcHOpenHtml,anim);
+  else _hzDrop('rc');
 }
 function renderRecap(){
   var rw=document.getElementById('rw');
@@ -20335,10 +20336,12 @@ function renderRecap(){
     h+='</div>';
   }
   // Heures et budget : nouveau visuel en cartes (les anciens tableaux restent dans l'export HTML)
+  window._rcHOpenHtml='';
   h+=_rcHoursBlock();
   var nFt=((currP()&&currP().fortuites)||[]).length;
   h+=_rcSectionHtml('sec:fort','⚡ Fortuites','#DC2626',_rcPill(nFt),_recapFortuitesHtml);
   rw.innerHTML=h+'</div>';
+  _rcHoursZoomSync();
 }
 
 // ═══════════════════════════════
@@ -20391,8 +20394,8 @@ function renderHeures(){
   const sorted=Object.values(pm).sort((a,b)=>b.total-a.total);
   const open=window._hrOpen&&pm[window._hrOpen]?window._hrOpen:null;
   if(!open)window._hrOpen=null;
-  // la personne ouverte passe en premier (en haut à gauche), sur toute la largeur
-  const list=open?[pm[open]].concat(sorted.filter(p=>p.name!==open)):sorted;
+  // (08/10/2026) Les cartes ne bougent plus : la personne ouverte s'affiche dans une fenêtre
+  // qui grandit depuis sa carte (_hzShow), la grille reste dans le même ordre.
   const r1=v=>String(Math.round((+v||0)*10)/10).replace('.',',');
   const gp=STORE.globalPersons||{};
   const TYC={ELS:['#E3DFFB','#5447D6'],Interim:['#FDF0D6','#9A6410'],'S-T':['#FBDFE6','#C03060'],Alternant:['#DCFCE7','#15803D'],Stagiaire:['#E0F2FE','#0369A1']};
@@ -20401,12 +20404,11 @@ function renderHeures(){
   const dot=ph=>`<span style="width:7px;height:7px;border-radius:2px;flex-shrink:0;background:${ph?PH_get(ph).h:'#CBC7DE'}"></span>`;
   const ensTag=e=>e?`<span style="flex-shrink:0;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:7px;background:#F1EFF8;color:#4A4766">${escHtml(e)}</span>`:'';
   const js=s=>String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-  let cards=list.map(ps=>{
+  const cardHtml=(ps,isOpen)=>{
     const ents=[...ps.ents];
     const ty=ents[0]||((gp[ps.name]||{}).type)||'';
     const col=(TYC[ty]||['','#4B3FC7'])[1];
     const share=used?Math.round(ps.total*100/used):0;
-    const isOpen=ps.name===open;
     const head=`<button type="button" class="hr-head" onclick="hrToggle('${js(ps.name)}')" aria-expanded="${isOpen}" title="${isOpen?'Refermer':'Voir le détail des heures'}">
         <span style="width:${isOpen?44:34}px;height:${isOpen?44:34}px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:${col};color:#fff;font-size:${isOpen?16:13}px;font-weight:800;transition:all .25s">${escHtml(ini(ps.name))}</span>
         <span style="flex-grow:1;min-width:0;text-align:left"><span style="display:block;font-size:${isOpen?17:14}px;font-weight:800;color:#1C1A33;line-height:1.25;word-break:break-word">${escHtml(ps.name)}</span><span style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${(ents.length?ents:(ty?[ty]:[])).map(tyPill).join('')}</span></span>
@@ -20432,13 +20434,13 @@ function renderHeures(){
         <div><div class="hr-sub">PAR SOUS-ENSEMBLE ET SOUS-PHASE</div>${ens||'<div style="font-size:12px;color:#9A96B3">Aucune heure</div>'}</div>
         <div><div class="hr-sub">PAR SEMAINE (${wks.length})</div><div style="display:flex;flex-direction:column;gap:5px">${wkHtml}</div></div>
       </div></div>`;
-  }).join('');
+  };
+  let cards=sorted.map(ps=>cardHtml(ps,false)).join('');
+  const openHtml=open?cardHtml(pm[open],true):'';
   if(!sorted.length)cards='<div style="color:#9A96B3;font-size:13px">Aucune heure saisie.</div>';
   const kpi=(l,v,c,sub,extra)=>`<div style="flex:1 1 220px;background:#FBFAFF;border:1px solid #EFEDF7;border-radius:14px;padding:12px 14px"><div style="font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.5px">${l}</div><div style="font-size:22px;font-weight:800;margin-top:4px;color:${c}">${v}</div><div style="font-size:11.5px;color:#6B6790;margin-top:2px">${sub}</div>${extra||''}</div>`;
   const _inf=(currP().infos)||{};
   const hw=document.getElementById('hw');
-  // Animation : on note où était chaque carte avant de redessiner, puis on la fait glisser vers sa nouvelle place
-  const before={};if(window._hrAnim&&hw)hw.querySelectorAll('.hr-card').forEach(c=>{before[c.getAttribute('data-hr')]=c.getBoundingClientRect();});
   hw.innerHTML=`
     <div style="display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -20450,26 +20452,64 @@ function renderHeures(){
       <div class="hr-grid">${cards}</div>
     </section>
     </div>`;
-  if(window._hrAnim){
-    window._hrAnim=false;
-    hw.querySelectorAll('.hr-card').forEach(c=>{
-      const b=before[c.getAttribute('data-hr')];if(!b)return;
-      const a=c.getBoundingClientRect(),dx=b.left-a.left,dy=b.top-a.top;
-      if(!dx&&!dy)return;
-      c.style.transition='none';c.style.transform='translate('+dx+'px,'+dy+'px)';
-      requestAnimationFrame(()=>{requestAnimationFrame(()=>{c.style.transition='transform .35s cubic-bezier(.2,.8,.2,1)';c.style.transform='';});});
-    });
-    const oc=hw.querySelector('.hr-open');
-    const sc=document.getElementById('pers-heures');
-    if(oc&&sc){const top=oc.getBoundingClientRect().top-sc.getBoundingClientRect().top+sc.scrollTop-12;try{sc.scrollTo({top:Math.max(0,top),behavior:'smooth'});}catch(e){sc.scrollTop=Math.max(0,top);}}
-  }
+  const anim=window._hrAnim;window._hrAnim=false;
+  if(open)_hzShow('hr',open,openHtml,anim);
+  else _hzDrop('hr');
 }
-// Clic sur une personne : son détail s'ouvre en haut à gauche (avec une petite transition) ; re-clic = refermer
+// Clic sur une personne : son détail s'ouvre dans une fenêtre qui grandit depuis sa carte ; re-clic / ✕ / fond / Échap = refermer
 function hrToggle(nm){
-  window._hrOpen=window._hrOpen===nm?null:nm;
+  if(window._hrOpen===nm){_hzClose();return;}
+  window._hrOpen=nm;
   window._hrAnim=true;
   renderHeures();
 }
+
+// ── Fenêtre « qui vient vers soi » (Heures et Récap › Heures et budget, 08/10/2026) ──
+// La carte cliquée grandit depuis sa place jusqu'au centre de l'écran (fond assombri),
+// sans déplacer les autres cartes. Refermer = elle repart se poser sur sa carte.
+// kind 'hr' = onglet Heures (window._hrOpen), 'rc' = Récap (window._rcHOpen).
+function _hzSrc(kind,key){
+  var k=window.CSS&&CSS.escape?CSS.escape(key):String(key).replace(/"/g,'\\"');
+  return document.querySelector(kind==='hr'?'#hw .hr-card[data-hr="'+k+'"]':'#rw .hr-card[data-rch="'+k+'"]');
+}
+function _hzFrom(src,pan){ // transformation qui pose la fenêtre sur la carte (même centre, échelle de la carte)
+  var a=src.getBoundingClientRect(),b=pan.getBoundingClientRect();
+  var s=Math.max(0.2,Math.min(1,a.width/b.width));
+  return 'translate('+((a.left+a.width/2)-(b.left+b.width/2))+'px,'+((a.top+a.height/2)-(b.top+b.height/2))+'px) scale('+s+')';
+}
+function _hzShow(kind,key,html,anim){
+  var ov=document.getElementById('hz-ov');
+  if(ov&&ov.dataset.kind===kind&&ov.dataset.key===key&&!ov.dataset.closing){
+    // déjà ouverte (synchro, saisie d'un collègue) : contenu mis à jour, sans animation
+    var bd=ov.querySelector('.hz-body'),st=bd.scrollTop;bd.innerHTML=html;bd.scrollTop=st;return;
+  }
+  if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='hz-ov';ov.dataset.kind=kind;ov.dataset.key=key;
+  ov.innerHTML='<div class="hz-bg"></div><div class="hz-pan" role="dialog" aria-modal="true"><button type="button" class="hz-x" aria-label="Fermer" title="Fermer (Échap)">✕</button><div class="hz-body">'+html+'</div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('.hz-bg').onclick=function(){_hzClose();};
+  ov.querySelector('.hz-x').onclick=function(){_hzClose();};
+  var pan=ov.querySelector('.hz-pan'),src=anim?_hzSrc(kind,key):null;
+  if(!src){ov.classList.add('on');return;}
+  if(src)src.classList.add('hz-ghost');
+  pan.style.transition='none';pan.style.transform=_hzFrom(src,pan);pan.style.opacity='0';
+  requestAnimationFrame(function(){requestAnimationFrame(function(){
+    pan.style.transition='transform .42s cubic-bezier(.16,1,.3,1),opacity .22s ease';
+    pan.style.transform='';pan.style.opacity='1';ov.classList.add('on');
+  });});
+}
+function _hzClose(){
+  var ov=document.getElementById('hz-ov');if(!ov||ov.dataset.closing)return;
+  ov.dataset.closing='1';
+  var kind=ov.dataset.kind,key=ov.dataset.key,pan=ov.querySelector('.hz-pan'),src=_hzSrc(kind,key);
+  if(kind==='hr')window._hrOpen=null;else window._rcHOpen=null;
+  ov.classList.remove('on');
+  if(src){pan.style.transition='transform .32s cubic-bezier(.4,0,.2,1),opacity .28s ease';pan.style.transform=_hzFrom(src,pan);pan.style.opacity='0';}
+  else pan.style.opacity='0';
+  setTimeout(function(){if(ov.parentNode)ov.remove();if(src)src.classList.remove('hz-ghost');},330);
+}
+function _hzDrop(kind){var ov=document.getElementById('hz-ov');if(ov&&ov.dataset.kind===kind&&!ov.dataset.closing)ov.remove();}
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&document.getElementById('hz-ov'))_hzClose();});
 
 // ═══════════════════════════════
 // SKIDS
@@ -24734,6 +24774,17 @@ body[data-sec="affaire"].gc-pan #sec-affbar{margin-right:400px}
 .hr-card{background:#fff;border:1px solid #E4E1F0;border-radius:14px;padding:14px 16px;min-width:0;transition:border-color .15s,box-shadow .2s}
 .hr-card:hover{border-color:#C7C1F5}
 .hr-card.hr-open{grid-column:1/-1;border-color:#C7C1F5;box-shadow:0 10px 30px rgba(60,40,160,.10);position:relative;z-index:2}
+/* Fenêtre « qui vient vers soi » (Heures / Récap, 08/10/2026) — _hzShow / _hzClose */
+#hz-ov{position:fixed;inset:0;z-index:9500}
+#hz-ov .hz-bg{position:absolute;inset:0;background:rgba(20,16,50,0);transition:background .35s ease,backdrop-filter .35s ease}
+#hz-ov.on .hz-bg{background:rgba(20,16,50,.42);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+#hz-ov .hz-pan{position:absolute;left:0;right:0;top:5vh;margin:0 auto;width:min(980px,calc(100vw - 32px));background:#fff;border-radius:20px;box-shadow:0 30px 80px rgba(20,16,50,.35);will-change:transform,opacity;overflow:hidden}
+#hz-ov .hz-body{max-height:90vh;overflow:auto}
+#hz-ov .hz-body .hr-card{border:none;box-shadow:none;margin:0;padding:22px 64px 24px 26px}
+#hz-ov .hr-chev{display:none}
+#hz-ov .hz-x{position:absolute;top:14px;right:14px;z-index:3;width:36px;height:36px;border-radius:10px;border:1px solid #E4E1F0;background:#fff;color:#4A4766;font-size:16px;font-weight:700;cursor:pointer}
+#hz-ov .hz-x:hover{background:#F5F3FF}
+.hr-card.hz-ghost{opacity:.35;transition:opacity .25s ease}
 .hr-head{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-align:left;color:inherit}
 .hr-chev{flex-shrink:0;color:#6B6790;font-size:14px;transition:transform .25s;width:20px;text-align:center}
 .hr-detail{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:28px;margin-top:16px;padding-top:14px;border-top:1px solid #EFEDF7;animation:hrIn .35s ease both}
