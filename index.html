@@ -12696,6 +12696,83 @@ function sbSetBudget(sbId,current){
   if(r){r.budgetH=Math.max(0,parseFloat(val)||0);saveNow();renderGantt();}
 }
 
+// ── Sous-traité (08/10/2026, demande de l'utilisateur) ──
+// Un ensemble ou une sous-phase peut être marqué « sous-traité » depuis son menu ⋯ du GANTT.
+// Champ r.subco = {on:true, name:'nom du sous-traitant (facultatif)'} sur la ligne : il suit la
+// synchro comme le reste de la ligne. Affiché dans le GANTT et dans le Bilan (écran + export).
+function _subco(r){return r&&r.subco&&r.subco.on?r.subco:null;}
+function _subcoLbl(r){var s=_subco(r);return s?'🤝 Sous-traité'+(s.name?' par '+s.name:''):'';}
+// Entreprises sous-traitantes déjà saisies (toutes affaires), pour les proposer dans la fenêtre
+function _subcoNames(){
+  var m={};
+  Object.keys(STORE.projects||{}).forEach(function(a){((STORE.projects[a]||{}).data||[]).forEach(function(r){var s=_subco(r);if(s&&s.name)m[s.name.toLowerCase()]=s.name;});});
+  return Object.keys(m).map(function(k){return m[k];}).sort(function(a,b){return a.localeCompare(b,'fr');});
+}
+function _subcoTag(r){var s=_subco(r);return s?'<span title="Sous-traité'+(s.name?' : '+escHtml(s.name):'')+'" style="flex-shrink:0;display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:9px;white-space:nowrap;background:#E0F2FE;color:#0369A1;border:1px solid #BAE6FD;vertical-align:middle">'+escHtml(_subcoLbl(r))+'</span>':'';}
+// Résumé « Sous-traitance » du Bilan : entreprise → ensembles / sous-phases qu'elle réalise
+// (entreprise non précisée regroupée à part). Liste de {name, items:[{lb, where}]}.
+function _subcoSummary(){
+  var by={},order=[],ph=null,ens=null;
+  (D()||[]).forEach(function(r){
+    if(r.t==='ph'){ph=r;ens=null;return;}
+    if(r.t==='ensend'){ens=null;return;}
+    if(r.t==='ens')ens=r;
+    if(r.t!=='ens'&&r.t!=='sb')return;
+    var s=_subco(r);if(!s)return;
+    var k=(s.name||'').toLowerCase();
+    if(!by[k]){by[k]={name:s.name||'',items:[]};order.push(k);}
+    var where=[ph?(ph.lb||ph.pk):'',r.t==='sb'&&ens?ens.lb:''].filter(Boolean).join(' › ');
+    by[k].items.push({lb:r.lb||'',where:where,kind:r.t});
+  });
+  return order.sort(function(a,b){if(!a)return 1;if(!b)return -1;return by[a].name.localeCompare(by[b].name,'fr');}).map(function(k){return by[k];});
+}
+function _subcoSummaryHtml(exp){
+  var L=_subcoSummary();if(!L.length)return '';
+  var chip=function(it){return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border-radius:9px;background:'+(exp?'#F3F4F6':'#F5F3FF')+';color:#1C1A33;margin:0 6px 6px 0"><b>'+escHtml(it.lb)+'</b>'+(it.where?'<span style="color:#6B6790">· '+escHtml(it.where)+'</span>':'')+(it.kind==='ens'?'<span style="font-size:10px;color:#0369A1;font-weight:800">ENSEMBLE</span>':'')+'</span>';};
+  return L.map(function(g){
+    return '<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;padding:10px 0;border-top:1px solid #EFEDF7">'
+      +'<div style="flex:0 0 200px;min-width:0"><div style="font-size:14px;font-weight:800;color:'+(g.name?'#0369A1':'#6B6790')+'">🤝 '+escHtml(g.name||'Entreprise non précisée')+'</div>'
+      +'<div style="font-size:11.5px;color:#6B6790;margin-top:2px">'+g.items.length+' élément'+(g.items.length>1?'s':'')+' sous-traité'+(g.items.length>1?'s':'')+'</div></div>'
+      +'<div style="flex:1 1 300px;min-width:0">'+g.items.map(chip).join('')+'</div></div>';
+  }).join('');
+}
+// Pour l'export HTML du Bilan (anciens tableaux, couleurs écrites en dur)
+function _subcoExp(r){var s=_subco(r);return s?' <span style="font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:8px;background:#E0F2FE;color:#0369A1;white-space:nowrap">'+escHtml(_subcoLbl(r))+'</span>':'';}
+// Fenêtre « Sous-traité » : champ Entreprise sous-traitante, avec les entreprises déjà saisies proposées
+function gcSetSubco(id){
+  if(typeof hasEdit==='function'&&!hasEdit('planning'))return;
+  var r=D().find(function(x){return x.id===id;});if(!r)return;
+  var s=_subco(r),old=document.getElementById('subco-modal');if(old)old.remove();
+  var names=_subcoNames();
+  var m=document.createElement('div');m.id='subco-modal';
+  m.style.cssText='position:fixed;inset:0;z-index:99995;background:rgba(20,16,50,.45);display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px 16px';
+  m.innerHTML='<div role="dialog" aria-modal="true" style="width:min(460px,100%);background:#fff;border-radius:16px;padding:20px 22px;box-shadow:0 24px 70px rgba(20,16,50,.3);font-family:inherit">'
+    +'<div style="font-size:16px;font-weight:900;color:#1C1A33">🤝 Sous-traité</div>'
+    +'<div style="font-size:12.5px;color:#6B6790;margin:3px 0 14px">'+(r.t==='ens'?'Ensemble':'Sous-phase')+' « '+escHtml(r.lb||'')+' »</div>'
+    +'<label for="subco-name" style="display:block;font-size:11px;font-weight:800;color:#6B6790;letter-spacing:.4px;margin-bottom:5px">ENTREPRISE SOUS-TRAITANTE</label>'
+    +'<input id="subco-name" list="subco-names" autocomplete="off" value="'+escHtml(s?(s.name||''):'')+'" placeholder="Ex : Elec Sud" style="width:100%;box-sizing:border-box;height:40px;border:1.5px solid #E4E1F0;border-radius:10px;padding:0 12px;font-size:14px;font-family:inherit;color:#1C1A33;outline:none">'
+    +'<datalist id="subco-names">'+names.map(function(n){return '<option value="'+escHtml(n)+'">';}).join('')+'</datalist>'
+    +(names.length?'<div style="font-size:11.5px;color:#9A96B3;margin-top:5px">Les entreprises déjà saisies sont proposées pendant la frappe.</div>':'')
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'
+    +'<button type="button" id="subco-cancel" style="height:36px;padding:0 14px;border-radius:10px;border:1px solid #E4E1F0;background:#fff;color:#4A4766;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Annuler</button>'
+    +'<button type="button" id="subco-ok" style="height:36px;padding:0 16px;border-radius:10px;border:none;background:#4B3FC7;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">Enregistrer</button></div></div>';
+  document.body.appendChild(m);
+  var inp=document.getElementById('subco-name');
+  var close=function(){m.remove();};
+  var ok=function(){r.subco={on:true,name:String(inp.value||'').trim()};close();saveNow();renderGantt();};
+  document.getElementById('subco-cancel').onclick=close;
+  document.getElementById('subco-ok').onclick=ok;
+  m.onclick=function(e){if(e.target===m)close();};
+  inp.onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();ok();}else if(e.key==='Escape')close();};
+  setTimeout(function(){inp.focus();inp.select();},30);
+}
+function gcClearSubco(id){
+  if(typeof hasEdit==='function'&&!hasEdit('planning'))return;
+  var r=D().find(function(x){return x.id===id;});if(!r)return;
+  r.subco={on:false,name:''}; // (pas « delete » : la fusion de la synchro voit bien le changement)
+  saveNow();renderGantt();
+}
+
 function ensSetBudget(ensId,current){
   var val=prompt('Budget heures pour cet ensemble (0 = pas de budget) :',current||0);
   if(val===null)return;
@@ -14330,6 +14407,7 @@ function gcGroupRowHtml(e,DW,NC,acts){
     +(isPh?'<span style="width:10px;height:10px;border-radius:3px;flex-shrink:0;background:'+(ph.xd||phCol)+'"></span>':'')
     +gsNameHtml(r,'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:'+(isPh?14:13)+'px;font-weight:'+(t==='sb'?700:800)+';color:'+(isPh?phCol:(t==='sb'?'#4A4766':'#1C1A33'))+';'+(isPh?'letter-spacing:.4px;':''),gcEsc(r.lb||r.pk));
   if(r._orphan)lbl+=gcPill('⚠ À réparer','#FEF3C7','#92400E');
+  if((t==='ens'||t==='sb')&&_subco(r))lbl+=_subcoTag(r);
   if(isPh&&r.phStatus==='done')lbl+=gcPill('✓ Terminée','#DCFCE7','#15803D');
   else if(isPh&&r.phStatus==='inprogress')lbl+=gcPill('⚡ En cours','#FEF3C7','#B45309');
   if(window._gcShowH&&t==='sb'&&typeof hasView==='function'&&hasView('budget_gantt')){
@@ -14376,6 +14454,13 @@ function gcRowMenu(ev,id){
     it.push(['Statut de la phase : '+(r.phStatus==='done'?'✓ Terminée':r.phStatus==='inprogress'?'⚡ En cours':'○ à faire')+' → '+nx,"togglePhStatus('"+gcJs(r.id)+"')"]);
   }else if(r.t==='ens'){if(canB)it.push(['Budget heures'+(b?' ('+b+' h)':'')+'…',"ensSetBudget('"+gcJs(r.id)+"',"+b+")"]);}
   else if(r.t==='sb'){if(canB)it.push(['Budget heures'+(b?' ('+b+' h)':'')+'…',"sbSetBudget('"+gcJs(r.id)+"',"+b+")"]);}
+  // Sous-traité (ensemble / sous-phase)
+  if((r.t==='ens'||r.t==='sb')&&(typeof hasEdit!=='function'||hasEdit('planning'))){
+    if(_subco(r)){
+      it.push([_subcoLbl(r)+' — modifier l’entreprise…',"gcSetSubco('"+gcJs(r.id)+"')"]);
+      it.push(['Retirer « sous-traité »',"gcClearSubco('"+gcJs(r.id)+"')"]);
+    }else it.push(['🤝 Marquer comme sous-traité…',"gcSetSubco('"+gcJs(r.id)+"')"]);
+  }
   if(typeof gcStructMenuItems==='function')it=it.concat(gcStructMenuItems(r));
   if(!it.length)it.push(['Aucune action disponible ici','']);
   gcCloseRowMenu();
@@ -19916,7 +20001,7 @@ function _recapBudgetSections(){
       html+='</tr>';
     });
     html+='</tbody></table>';
-    _out.push({key:'budph',title:'&#128176; R&eacute;cap heures par phase',table:html});
+    _out.push({key:'budph',title:'&#128176; Bilan heures par phase',table:html});
   }
   // Heures générales / Affaire : ligne dédiée montrant qui a pointé sur
   // l'affaire sans préciser de sous-phase, et combien — ces heures sont
@@ -19929,7 +20014,7 @@ function _recapBudgetSections(){
     html+='<table class="rt"><thead><tr><th>Phase</th><th>R&eacute;el H</th><th>Qui a travaill&eacute; dessus</th></tr></thead><tbody>';
     html+='<tr><td style="font-weight:700">'+_chantierPh.lb+'</td><td style="font-weight:700">'+_genHoursAff.totalH+'H</td><td>'+_genPersDetail+'</td></tr>';
     html+='</tbody></table>';
-    _out.push({key:'gen',title:'&#128176; R&eacute;cap heures g&eacute;n&eacute;rales / Affaire (sans sous-phase pr&eacute;cise)',table:html});
+    _out.push({key:'gen',title:'&#128176; Bilan heures g&eacute;n&eacute;rales / Affaire (sans sous-phase pr&eacute;cise)',table:html});
   }
   // Budget par ensemble
   var _hBudEns=D().some(function(r){return r.t==='ens'&&r.budgetH>0;})&&hasView('budget_recap');
@@ -19953,7 +20038,7 @@ function _recapBudgetSections(){
       var _cp=_dp<0?'#DC2626':_dp>0?'#059669':'var(--tx2)';
       var _cr=_dr<0?'#DC2626':_dr>0?'#059669':'var(--tx2)';
       html+='<tr>';
-      html+='<td style="font-weight:700">'+ens_r.lb+'</td>';
+      html+='<td style="font-weight:700">'+ens_r.lb+_subcoExp(ens_r)+'</td>';
       html+='<td style="color:var(--tx3)">'+ens_r.pk+'</td>';
       html+='<td style="font-weight:700">'+_bv+'H</td>';
       html+='<td>'+_pv+'H</td><td>'+_rv+'H</td>';
@@ -19962,7 +20047,7 @@ function _recapBudgetSections(){
       html+='</tr>';
     });
     html+='</tbody></table>';
-    _out.push({key:'budens',title:'&#128176; R&eacute;cap heures par ensemble',table:html});
+    _out.push({key:'budens',title:'&#128176; Bilan heures par ensemble',table:html});
   }
   // Budget par sous-phase — avec détail des personnes (qui a travaillé dessus et combien d'heures)
   var _hBudSb=D().some(function(r){return r.t==='sb'&&r.budgetH>0;})&&hasView('budget_recap');
@@ -19990,7 +20075,7 @@ function _recapBudgetSections(){
       var _gdc=_gd<0?'#DC2626':_gd>0?'#059669':'#6B7280';
       html+='<tr><td colspan="5" style="padding:9px 12px;background:'+_gc+'14;border-left:4px solid '+_gc+';border-top:2px solid '+_gc+'55">'
         +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">'
-        +'<span style="font-size:13px;font-weight:800;color:'+_gc+'">'+(g.ens?g.ens.lb:(g.ph?g.ph.lb:''))
+        +'<span style="font-size:13px;font-weight:800;color:'+_gc+'">'+(g.ens?g.ens.lb+_subcoExp(g.ens):(g.ph?g.ph.lb:''))
         +(g.ens&&g.ph?'<span style="font-size:11px;font-weight:600;color:#6B7280;margin-left:8px">'+g.ph.lb+'</span>':'')+'</span>'
         +'<span style="font-size:11px;font-weight:700;color:#6B7280;white-space:nowrap">Budget <b style="color:#1F2937">'+_gb+'H</b> &nbsp;&middot;&nbsp; R&eacute;el <b style="color:#1F2937">'+_gr+'H</b> &nbsp;&middot;&nbsp; Ecart <b style="color:'+_gdc+'">'+(_gd>0?'+':'')+_gd+'H</b></span>'
         +'</div></td></tr>';
@@ -20004,7 +20089,7 @@ function _recapBudgetSections(){
         ?_persons.map(function(pp){return '<span style="display:inline-block;background:var(--bg3);border-radius:10px;padding:1px 8px;margin:1px 3px 1px 0;font-size:10px;font-weight:700">'+pp.name+' &middot; '+pp.heures+'H</span>';}).join('')
         :'<span style="color:var(--tx3);font-style:italic;font-size:10px">Personne encore renseign&eacute;</span>';
       html+='<tr>';
-      html+='<td style="font-weight:700;padding-left:20px;border-left:4px solid '+_gc+'33">'+sb_r.lb+'</td>';
+      html+='<td style="font-weight:700;padding-left:20px;border-left:4px solid '+_gc+'33">'+sb_r.lb+_subcoExp(sb_r)+'</td>';
       html+='<td style="font-weight:700">'+_bv+'H</td>';
       html+='<td>'+_rv+'H</td>';
       html+='<td style="font-weight:700;color:'+_cr+'">'+(_dr>0?'+':'')+_dr+'H</td>';
@@ -20013,8 +20098,11 @@ function _recapBudgetSections(){
       });
     });
     html+='</tbody></table>';
-    _out.push({key:'budsb',title:'&#128176; R&eacute;cap heures par sous-phase',table:html});
+    _out.push({key:'budsb',title:'&#128176; Bilan heures par sous-phase',table:html});
   }
+  // Sous-traitance (08/10/2026) : entreprise → ensembles / sous-phases
+  var _stH=_subcoSummaryHtml(true);
+  if(_stH)_out.push({key:'subco',title:'🤝 Sous-traitance',table:'<div style="font-family:inherit">'+_stH+'</div>'});
   return _out;
 }
 
@@ -20199,7 +20287,7 @@ function _rcR1(v){return (Math.round((+v||0)*10)/10).toLocaleString('fr-FR',{max
 function _rcHoursData(){
   var data=D(),groups=[],byKey={},curPh=null,curEns=null,curSb=null;
   function grp(key,title,ph,ens){
-    if(!byKey[key]){byKey[key]={key:key,title:title,ph:ph,ens:ens,bud:ens?(+ens.budgetH||0):0,sbs:[],sbMap:{},loose:{h:0,pers:{}}};groups.push(byKey[key]);}
+    if(!byKey[key]){byKey[key]={key:key,title:title,ph:ph,ens:ens,subco:ens?_subco(ens):null,bud:ens?(+ens.budgetH||0):0,sbs:[],sbMap:{},loose:{h:0,pers:{}}};groups.push(byKey[key]);}
     return byKey[key];
   }
   function addPers(target,p){(p||[]).forEach(function(pp){var n=pp&&pp.name&&pp.name.trim();var h=+pp.heures||0;if(!n||!h)return;target[n]=(target[n]||0)+h;});}
@@ -20209,7 +20297,7 @@ function _rcHoursData(){
     if(r.t==='ens'){curEns=r;curSb=null;grp('e:'+r.id,r.lb||'',curPh,r);return;}
     var g=curEns?grp('e:'+curEns.id,curEns.lb||'',curPh,curEns):(curPh?grp('p:'+curPh.pk,curPh.lb||curPh.pk,curPh,null):null);
     if(!g)return;
-    if(r.t==='sb'){curSb=r;var s={row:r,lb:r.lb||'',bud:+r.budgetH||0,h:+r.hReel||0,pers:{}};addPers(s.pers,r.p);g.sbs.push(s);g.sbMap[r.id]=s;return;}
+    if(r.t==='sb'){curSb=r;var s={row:r,lb:r.lb||'',subco:_subco(r),bud:+r.budgetH||0,h:+r.hReel||0,pers:{}};addPers(s.pers,r.p);g.sbs.push(s);g.sbMap[r.id]=s;return;}
     if(r.t==='act'){
       var h=+r.hReel||0;if(!h&&!(r.p||[]).some(function(pp){return +pp.heures;}))return;
       var t=curSb&&g.sbMap[curSb.id];
@@ -20233,7 +20321,9 @@ function _rcHoursData(){
     var pv=a.reduce(function(s,x){return s+(+x.hPrev||0);},0),rv=a.reduce(function(s,x){return s+(+x.hReel||0);},0)+(chPh&&ph.pk===chPh.pk?gen.totalH:0);
     return {row:ph,bud:+ph.budgetH||0,pv:Math.round(pv*10)/10,rv:Math.round(rv*10)/10};
   });
-  return {groups:groups.filter(function(g){return g.bud>0||g.h>0;}),phs:phs,gen:gen,chPh:chPh};
+  // un ensemble / une sous-phase sous-traité(e) apparaît même sans budget ni heures ELS (08/10/2026)
+  groups.forEach(function(g){g.nSub=g.sbs.filter(function(s){return s.subco;}).length;});
+  return {groups:groups.filter(function(g){return g.bud>0||g.h>0||g.subco||g.nSub;}),phs:phs,gen:gen,chPh:chPh};
 }
 function _rcBarCol(h,b){if(!b)return '#94A3B8';var p=h/b;return p>1?'#DC2626':p>.85?'#F59E0B':'#16A34A';}
 function _rcEcart(h,b){
@@ -20272,7 +20362,9 @@ function _rcHoursBlock(){
     var sub=g.gen?'sans sous-phase précise · compté dans '+escHtml(g.ph?(g.ph.lb||g.ph.pk):'Chantier'):(g.ens?escHtml(g.ph?(g.ph.lb||g.ph.pk):''):'phase')+' · '+g.sbs.length+' sous-phase'+(g.sbs.length>1?'s':'');
     var head='<button type="button" class="hr-head" onclick="rcHoursToggle(\''+jsq(g.key)+'\')" aria-expanded="'+isOpen+'">'
       +'<span style="width:'+(isOpen?12:10)+'px;height:'+(isOpen?44:36)+'px;border-radius:4px;flex-shrink:0;background:'+col+';transition:all .25s"></span>'
-      +'<span style="flex-grow:1;min-width:0"><span style="display:block;font-size:'+(isOpen?18:15)+'px;font-weight:800;color:#1C1A33;line-height:1.25;word-break:break-word">'+escHtml(g.title)+'</span><span style="display:block;font-size:11.5px;color:#6B6790;margin-top:2px">'+sub+'</span></span>'
+      +'<span style="flex-grow:1;min-width:0"><span style="display:block;font-size:'+(isOpen?18:15)+'px;font-weight:800;color:#1C1A33;line-height:1.25;word-break:break-word">'+escHtml(g.title)+'</span>'
+        +(g.subco?'<span style="display:block;margin-top:4px">'+_subcoTag(g.ens)+'</span>':'')
+        +'<span style="display:block;font-size:11.5px;color:#6B6790;margin-top:2px">'+sub+(!g.subco&&g.nSub?' · <b style="color:#0369A1">🤝 '+g.nSub+' sous-traitée'+(g.nSub>1?'s':'')+'</b>':'')+'</span></span>'
       +'<span style="text-align:right;flex-shrink:0"><span style="display:block;font-size:'+(isOpen?22:18)+'px;font-weight:900;color:#1C1A33">'+_rcR1(g.h)+' h</span><span style="font-size:11px;color:#6B6790">'+(g.bud?'sur '+_rcR1(g.bud)+' h':'réel')+'</span></span>'
       +'<span class="hr-chev" aria-hidden="true" style="transform:rotate('+(isOpen?180:0)+'deg)">▾</span></button>'
       +(g.bud?'<div class="rch-bar" style="margin-top:10px"><span style="width:'+pc+'%;background:'+_rcBarCol(g.h,g.bud)+'"></span></div>':'')
@@ -20280,9 +20372,9 @@ function _rcHoursBlock(){
       +'<span>'+nP+' personne'+(nP>1?'s':'')+(g.over?' · <b style="color:#DC2626">'+g.over+' sous-phase'+(g.over>1?'s':'')+' dépassée'+(g.over>1?'s':'')+'</b>':'')+'</span></div>';
     if(!isOpen)return '<div class="hr-card" data-rch="'+escHtml(g.key)+'">'+head+'</div>';
     // ── Détail : sous-phases (avec qui a travaillé et combien), puis total par personne ──
-    var rows=g.sbs.filter(function(s){return s.bud>0||s.h>0;}).map(function(s){
+    var rows=g.sbs.filter(function(s){return s.bud>0||s.h>0||s.subco;}).map(function(s){
       var spc=s.bud?Math.min(100,s.h*100/s.bud):0;
-      return '<div class="rch-sb"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="flex:1 1 200px;font-size:13.5px;color:#1C1A33">'+escHtml(s.lb)+'</b>'
+      return '<div class="rch-sb"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="flex:1 1 200px;font-size:13.5px;color:#1C1A33">'+escHtml(s.lb)+(s.subco?' '+_subcoTag(s.row):'')+'</b>'
         +'<span style="font-size:13px;color:#1C1A33;white-space:nowrap"><b>'+_rcR1(s.h)+' h</b>'+(s.bud?' <span style="color:#6B6790">/ '+_rcR1(s.bud)+' h</span>':'')+'</span>'
         +'<span style="font-size:12px;white-space:nowrap;min-width:130px;text-align:right">'+_rcEcart(s.h,s.bud)+'</span></div>'
         +(s.bud?'<div class="rch-bar" style="height:6px;margin:6px 0 8px"><span style="width:'+spc+'%;background:'+_rcBarCol(s.h,s.bud)+'"></span></div>':'<div style="height:6px"></div>')
@@ -20303,6 +20395,7 @@ function _rcHoursBlock(){
   return '<section class="rch-wrap"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px"><div><div style="font-size:16px;font-weight:800;color:#1C1A33">⏱ Heures et budget</div><div style="font-size:12.5px;color:#6B6790;margin-top:2px">Heures des feuilles d’heure comparées aux budgets saisis sur le planning · cliquez sur un sous-ensemble pour voir ses sous-phases et qui y a travaillé</div></div></div>'
     +(phT?'<div class="hr-sub" style="margin-bottom:8px">PAR PHASE</div><div class="rch-phs">'+phT+'</div>':'')
     +(cards?'<div class="hr-sub" style="margin:16px 0 8px">PAR SOUS-ENSEMBLE</div><div class="hr-grid">'+cards+'</div>':'')
+    +(function(){var st=_subcoSummaryHtml(false);return st?'<div class="hr-sub" style="margin:18px 0 4px">SOUS-TRAITANCE</div><div>'+st+'</div>':'';})()
     +'</section>';
 }
 // Clic sur une carte : son détail s'ouvre dans une fenêtre qui grandit depuis elle ; re-clic / ✕ / fond / Échap = refermer
