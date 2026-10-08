@@ -1878,7 +1878,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
         <div class="petro-tile-ico" style="background:#4B3FC7">📁</div>
         <div class="petro-tile-t">Affaires</div>
         <div class="petro-tile-s">Tout ce qui concerne une affaire, choisie dans le menu de gauche</div>
-        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Récap</span><span>Heures</span><span>Modifications</span><span id="petro-hub-chip-cmd">Commandes</span></div>
+        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Bilan</span><span>Heures</span><span>Modifications</span><span id="petro-hub-chip-cmd">Commandes</span></div>
       </div>
       <div id="petro-hub-tile-equipe" class="petro-tile" onclick="petroHubEnterEquipe()">
         <div class="petro-tile-ico" style="background:#0F766E">👥</div>
@@ -3180,7 +3180,7 @@ window.DroitsAcces = (function () {
     {key:'commandes_gestion', label:'Commandes — gestion (Modifier = créer, modifier et supprimer les commandes et leurs lignes, changer les délais, importer)'},
     {key:'budget_toolbar', label:'H vendues (barre d\'outils)', group:'Budget Heures'},
     {key:'budget_gantt',   label:'Budget heures dans le Gantt (par phase/ensemble/sous-phase)', group:'Budget Heures'},
-    {key:'budget_recap',   label:'Heures dans le récap & les rapports', group:'Budget Heures'}
+    {key:'budget_recap',   label:'Heures dans le bilan & les rapports', group:'Budget Heures'}
   ];
   var GROUPS = ['Budget Heures']; // groupes dépliables, dans l'ordre d'affichage
   var _openGroups = {}; // group name -> bool (déplié ou non), état local à l'écran
@@ -3527,8 +3527,8 @@ window.DroitsAcces = (function () {
 <div id="tab-recap" class="tab" style="flex-direction:column">
   <div id="tdb-subnav" style="display:flex;gap:4px;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--bd);flex-shrink:0">
     <button class="tdb-tab on" data-tt="overview" onclick="switchTdbTab('overview')" style="padding:5px 14px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">🏠 Vue d'ensemble</button>
-    <button class="tdb-tab" data-tt="recap-current" onclick="_rcResetView();switchTdbTab('recap-current')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📋 Récap — Affaire courante</button>
-    <button class="tdb-tab" data-tt="recap-all" onclick="switchTdbTab('recap-all')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">📊 Récap — Toutes affaires</button>
+    <button class="tdb-tab" data-tt="recap-current" onclick="_rcResetView();switchTdbTab('recap-current')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📋 Bilan — Affaire courante</button>
+    <button class="tdb-tab" data-tt="recap-all" onclick="switchTdbTab('recap-all')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">📊 Bilan — Toutes affaires</button>
     <button class="tdb-tab" data-tt="avancement" onclick="_avResetView();switchTdbTab('avancement')" style="padding:5px 12px;border-radius:var(--r);border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg3);color:var(--tx2)">📈 Avancement</button>
   </div>
   <div id="tdb-overview" class="tdb-pane"></div>
@@ -4813,7 +4813,7 @@ function deleteGlobalPerson(nm){
   // comptées dans le récap mais devenaient invisibles et impossibles à
   // effacer (la personne n'apparaît plus dans la feuille d'heure).
   var _phDel=(typeof fhPersonHours==='function')?fhPersonHours(nm):{total:0};
-  var _eraseHours=_phDel.total>0&&confirm(nm+' a '+_phDel.total+' H saisies dans les feuilles d’heure.\n\nOK = supprimer AUSSI ces heures (elles ne compteront plus dans le récap ni dans les sous-phases).\n\nAnnuler = garder ces heures (historique : elles restent comptées dans le récap).');
+  var _eraseHours=_phDel.total>0&&confirm(nm+' a '+_phDel.total+' H saisies dans les feuilles d’heure.\n\nOK = supprimer AUSSI ces heures (elles ne compteront plus dans le bilan ni dans les sous-phases).\n\nAnnuler = garder ces heures (historique : elles restent comptées dans le récap).');
   // 1. Supprimer de l'annuaire global
   var gp=_getGlobalPersons();
   delete gp[nm];
@@ -5384,7 +5384,7 @@ function renderDashboard(){
 
   var btnStyle=function(t){return 'border:none;border-radius:var(--r);padding:7px 16px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;'+(sub===t?'background:var(--ac);color:#fff;':'background:var(--bg3);color:var(--tx2);');};
   var tabs='<div style="display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid var(--bd);padding-bottom:10px;flex-wrap:wrap">'
-    +'<button style="'+btnStyle('recap')+'" onclick="dbTab(\'recap\')">📋 Récap par affaire</button>'
+    +'<button style="'+btnStyle('recap')+'" onclick="dbTab(\'recap\')">📋 Bilan par affaire</button>'
     +'<button style="'+btnStyle('fortuites')+'" onclick="dbTab(\'fortuites\')">⚡ Fortuites</button>'
     +'</div>';
 
@@ -5846,9 +5846,9 @@ function exportRecapCSV(){
 
 
 function exportRecapHTML(){
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Récap ${STORE.current}</title>
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bilan ${STORE.current}</title>
   <style>body{font-family:'Segoe UI',sans-serif;padding:20px;font-size:12px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:5px 8px;}th{background:#1F3864;color:#fff;}tr:nth-child(even)td{background:#f5f5f5;}h2{color:#1F3864;margin:16px 0 8px;}.pill{padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;}</style></head>
-  <body><h1>Récapitulatif — ${STORE.current}</h1>${_recapTableHtml().replace(/ onclick="_recToggle\(this\)"/g,'')}</body></html>`;
+  <body><h1>Bilan — ${STORE.current}</h1>${_recapTableHtml().replace(/ onclick="_recToggle\(this\)"/g,'')}</body></html>`;
   const blob=new Blob([html],{type:'text/html;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download=`Recapitulatif_${STORE.current.replace(/[^a-zA-Z0-9]/g,'_')}.html`;a.click();
@@ -6868,7 +6868,7 @@ function dbDownloadRecap(aff){
   });
   body+='</tbody></table>';
   if(forts.length){body+='<h2 style="font-size:14px;font-weight:800;margin:24px 0 10px;border-bottom:2px solid #E0DDD8;padding-bottom:6px">Fortuites ('+forts.length+')</h2><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr>';['Date','Phase','Activité','Objet','Durée','Impact H'].forEach(function(h){body+='<th style="background:#FFF7ED;padding:7px 10px;text-align:left;border-bottom:2px solid #FCD34D">'+h+'</th>';});body+='</tr></thead><tbody>';forts.forEach(function(f){body+='<tr style="border-bottom:1px solid #FEF3C7"><td style="padding:6px 10px">'+esc(f.date||'')+'</td><td>'+esc(f.pk)+'</td><td>'+esc(f.actLb)+'</td><td>'+esc(f.obj)+'</td><td>'+f.dur+' '+(f.unit==='hours'?'H':'j')+'</td><td style="font-weight:700;color:#DC2626">+'+Math.round((f.durDays||0)*8)+'H</td></tr>';});body+='</tbody></table>';}
-  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Récap '+esc(aff)+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;color:#1A1917;padding:24px;max-width:900px;margin:0 auto}@media print{body{padding:10px;max-width:100%}.no-print{display:none}}</style></head><body><div class="no-print" style="margin-bottom:20px"><button onclick="window.print()" style="padding:10px 20px;background:#2563EB;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">\uD83D\uDDA8 Imprimer / PDF</button></div>'+body+'</body></html>';
+  var html='<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bilan '+esc(aff)+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;color:#1A1917;padding:24px;max-width:900px;margin:0 auto}@media print{body{padding:10px;max-width:100%}.no-print{display:none}}</style></head><body><div class="no-print" style="margin-bottom:20px"><button onclick="window.print()" style="padding:10px 20px;background:#2563EB;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">\uD83D\uDDA8 Imprimer / PDF</button></div>'+body+'</body></html>';
   // Write to iframe to avoid popup blocker
   var blob=new Blob([html],{type:'text/html;charset=utf-8'});
   var url=URL.createObjectURL(blob);
@@ -6902,7 +6902,7 @@ function dbExportExcel(aff){
   var encoded=encodeURIComponent(csv);
   var a=document.createElement('a');
   a.href='data:text/csv;charset=utf-8,'+encoded;
-  a.download='Recap_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date+'.csv';
+  a.download='Bilan_'+aff.replace(/[^a-z0-9]/gi,'_')+'_'+date+'.csv';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -7281,7 +7281,7 @@ function downloadClientPlanning(opts){
     if(n.t==='act'){
       var np=!n.pv.length&&!n.rl.length;
       rows+='<div class="r t"'+ancA+'><div class="lc" style="padding-left:'+(18+level*18)+'px" title="'+esc(n.r.lb)+'"><span class="nm">'+esc(n.r.lb)+'</span>'
-        +(np?'<span class="np">Non planifiée</span>':(n.r.done&&!n.rl.length?'<span class="np ok">✓</span>':''))+'</div><div class="rc">'+bars(n,c)+'</div></div>';
+        +(np?'<span class="np">Non planifiée</span>':(n.r.done&&!n.rl.length?'<span class="np ok">✓</span>':'')+'<span class="prl" aria-hidden="true"><i title="Prévu">P</i><i title="Réel">R</i></span>')+'</div><div class="rc">'+bars(n,c)+'</div></div>';
       return;
     }
     var isPh=n.t==='ph',lbl=isPh?nice(n.r.lb||n.r.pk):n.r.lb;
@@ -7292,7 +7292,7 @@ function downloadClientPlanning(opts){
   }
   roots.forEach(function(n){walk(n,0,[]);});
   var dateStr=new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});
-  var title=inf.libelle?'Planning du projet — '+inf.libelle:'Planning du projet';
+  var title=inf.libelle?'Planning — '+inf.libelle:'Planning';
   var css=''
     +':root{--dw:28px;--lw:320px;--n:'+N+';--tx:#1B1A2E;--tx2:#55536E;--tx3:#8E8CA6;--bd:#E7E5F0;--red:#D9343F}'
     +'*{box-sizing:border-box;margin:0;padding:0}html,body{background:#F6F5FA}'
@@ -7317,6 +7317,9 @@ function downloadClientPlanning(opts){
     +'.dot{width:11px;height:11px;border-radius:4px;flex-shrink:0}'
     +'.br{position:absolute;height:12px;border-radius:6px;overflow:hidden;display:flex;align-items:center}.br i{font-style:normal;color:#fff;font-size:9.5px;font-weight:800;padding-left:6px}'
     +'.bp{top:7px;border:1.5px solid}.brl{top:21px}'
+    // P / R à droite du nom de la tâche, à la hauteur de la barre Prévu (haut) et Réel (bas) — demande du 08/10/2026
+    +'.prl{display:flex;flex-direction:column;flex-shrink:0;align-self:flex-start;padding-top:6px;margin-left:auto;margin-right:-4px}'
+    +'.prl i{font-style:normal;font-size:9px;font-weight:800;line-height:14px;width:12px;text-align:center;color:var(--tx3)}'
     +'.cm{position:absolute;z-index:1;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-style:italic;font-weight:500;line-height:13px;color:#4A4766;background:rgba(255,255,255,.88);border-radius:4px;padding:0 4px}'
     +'.cp{top:6px}.cr{top:20px}body.nocm .cm{display:none}.tools button.on{background:#EEF2FF;border-color:#C7D2FE;color:#3730A3}'
     +'.np{flex-shrink:0;font-size:10.5px;font-weight:700;color:#92400E;background:#FEF3C7;border-radius:8px;padding:2px 7px;white-space:nowrap}.np.ok{color:#15803D;background:#DCFCE7}'
@@ -8064,7 +8067,7 @@ function downloadPlanning(mode){
     +'<style id="_pc_page_size">@media print{@page{size:A4 portrait;margin:12mm}}</style>'
     +'</head><body>'
     +'<div class="no-print" style="margin-bottom:16px;padding:12px 20px;background:#EFF6FF;border-radius:10px;display:flex;gap:12px;align-items:center;border:1px solid #BFDBFE;flex-wrap:wrap">'
-    +(mode==='client'?'':'<button onclick="_pcPrintRecap()" style="padding:10px 22px;background:#1F4E79;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le récap (A4 portrait)</button>')
+    +(mode==='client'?'':'<button onclick="_pcPrintRecap()" style="padding:10px 22px;background:#1F4E79;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le bilan (A4 portrait)</button>')
     +(mode==='client'?'<button onclick="_pcPrintGantt()" style="padding:10px 22px;background:#7C3AED;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le GANTT (A3 paysage)</button>':'<button onclick="_pcPrintGantt()" style="padding:10px 22px;background:#7C3AED;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🖨 Imprimer le GANTT (A4 paysage)</button>')
     +'<span style="font-size:12px;color:#2563EB;font-weight:600">'+(mode==='client'?'Planning':'Rapport complet')+' · '+esc(aff)+' · '+dateStr+'</span>'
     +'</div>'
@@ -12069,7 +12072,7 @@ function avShowDownloadModal(){
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
   modal.innerHTML='<div style="background:var(--bg2);border-radius:16px;padding:28px;min-width:420px;max-width:90vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)">'
     +'<div style="font-size:16px;font-weight:900;color:var(--tx);margin-bottom:6px">📥 Télécharger l’avancement</div>'
-    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:16px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Le document contiendra ce qui est coché. Décocher un niveau décoche tout ce qu’il contient. Les pourcentages sont ceux du récap, calculés sur toute l’affaire.</div>'
+    +'<div style="font-size:11px;color:var(--tx3);margin-bottom:16px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--ac)">Le document contiendra ce qui est coché. Décocher un niveau décoche tout ce qu’il contient. Les pourcentages sont ceux du bilan, calculés sur toute l’affaire.</div>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:12px;font-weight:800;color:var(--tx)">À inclure</div>'
     +'<div style="display:flex;gap:6px"><button type="button" onclick="_avdlAll(true)" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg3);cursor:pointer;font-family:inherit">Tout cocher</button>'
     +'<button type="button" onclick="_avdlAll(false)" style="font-size:10px;padding:2px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg3);cursor:pointer;font-family:inherit">Tout décocher</button></div></div>'
@@ -17499,7 +17502,7 @@ function fhEraseDeletedPersonHours(nm){
   var ph=fhPersonHours(nm);
   if(!ph.total){renderRecap();return;}
   var detail=Object.keys(ph.byAff).sort().map(function(a){return '  • '+(STORE.projects[a]?getAffLabelShort(a):a)+' : '+ph.byAff[a]+' H';}).join('\n');
-  if(!confirm('Supprimer toutes les heures de '+nm+' dans les feuilles d’heure ?\n\n'+detail+'\n\nTotal : '+ph.total+' H.\nElles ne compteront plus dans le récap ni dans les sous-phases.'))return;
+  if(!confirm('Supprimer toutes les heures de '+nm+' dans les feuilles d’heure ?\n\n'+detail+'\n\nTotal : '+ph.total+' H.\nElles ne compteront plus dans le bilan ni dans les sous-phases.'))return;
   fhErasePersonHours(nm);
   if(typeof syncFichesToGantt==='function')syncFichesToGantt();
   saveNow();
@@ -20269,7 +20272,7 @@ function renderRecap(){
   function card(lbl,val,col,sub){return '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r2);padding:10px 14px"><div style="font-size:11px;color:var(--tx3);font-weight:700">'+lbl+'</div><div style="font-size:22px;font-weight:900;color:'+(col||'var(--tx)')+'">'+val+'</div>'+(sub?'<div style="font-size:11px;color:var(--tx3)">'+sub+'</div>':'')+'</div>';}
   var h='<div style="max-width:1000px;margin:0 auto;padding:16px">'
     +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">'
-    +'<div style="font-size:16px;font-weight:800;color:var(--tx);min-width:0">📋 Récap — <span style="color:var(--ac)">'+escHtml(STORE.current)+'</span></div>'
+    +'<div style="font-size:16px;font-weight:800;color:var(--tx);min-width:0">📋 Bilan — <span style="color:var(--ac)">'+escHtml(STORE.current)+'</span></div>'
     +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
     +'<button onclick="exportRecapCSV()" style="padding:6px 14px;border-radius:var(--r);border:1px solid var(--bd);background:var(--bg2);color:var(--tx2);font-size:12px;font-weight:700;font-family:inherit;cursor:pointer">↓ Export CSV</button>'
     +'<button onclick="exportRecapHTML()" style="padding:6px 14px;border-radius:var(--r);border:1px solid var(--ac);background:var(--ac);color:#fff;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer">↓ Export HTML</button>'
@@ -24895,7 +24898,7 @@ window.PetroNav=(function(){
       {k:'avancement',lbl:'Avancement',vis:function(){return secVis('.nb[data-tab="recap"]');},
         on:function(){return nbOn()==='recap'&&window._tdbTab==='avancement';},
         go:function(){window._tdbTab='avancement';switchTab('recap');}},
-      {k:'recap',lbl:'Récap',vis:function(){return secVis('.nb[data-tab="recap"]');},
+      {k:'recap',lbl:'Bilan',vis:function(){return secVis('.nb[data-tab="recap"]');},
         on:function(){return nbOn()==='recap'&&window._tdbTab==='recap-current';},
         go:function(){window._tdbTab='recap-current';switchTab('recap');}},
       {k:'heures',lbl:'Heures',vis:function(){return secVis('.nb[data-tab="personnel"]')&&secVis('[data-pt="heures"]');},
@@ -24915,7 +24918,7 @@ window.PetroNav=(function(){
       {k:'ov',lbl:'Tableau de bord',vis:function(){return secVis('.nb[data-tab="recap"]');},
         on:function(){return nbOn()==='recap'&&(window._tdbTab||'overview')==='overview';},
         go:function(){window._tdbTab='overview';switchTab('recap');}},
-      {k:'all',lbl:'Récap — toutes les affaires',vis:function(){return secVis('.nb[data-tab="recap"]');},
+      {k:'all',lbl:'Bilan — toutes les affaires',vis:function(){return secVis('.nb[data-tab="recap"]');},
         on:function(){return nbOn()==='recap'&&window._tdbTab==='recap-all';},
         go:function(){window._tdbTab='recap-all';switchTab('recap');}},
       {k:'glob',lbl:'Vue globale',vis:function(){return secVis('.nb[data-tab="gantt"]');},
