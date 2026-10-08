@@ -2046,6 +2046,9 @@ function petroHubBackToHub(){
   if(docs && docs.style.display!=='none'){ docs.style.display='none'; if(window.DocsChantier&&window.DocsChantier.leave) window.DocsChantier.leave(); if(window.PunchList&&window.PunchList.leave) window.PunchList.leave(); }
   // Commandes (onglet de l'affaire) : enregistre une saisie en cours et arrête le suivi
   if(window.Commandes&&window.Commandes.leave) window.Commandes.leave();
+  // Doc chantier de l'affaire (08/10/2026) : idem pour une fiche ou une punch list ouverte
+  var _onT=document.querySelector('.nb.on');
+  if(_onT&&_onT.dataset&&_onT.dataset.tab==='docch'&&typeof _leaveDocChTab==='function') _leaveDocChTab();
   var qrs = document.getElementById('petro-qr-shell');
   if(qrs) qrs.style.display='none';
   var hub = document.getElementById('petro-hub-screen');
@@ -3462,6 +3465,7 @@ window.DroitsAcces = (function () {
   <button class="nb" data-tab="personnel" onclick="switchPersonnelTab(window._personnelTab||'equipe')">👤 Personnel</button>
   <button class="nb" data-tab="modifications" onclick="switchTab('modifications')">📄 Modifications</button>
   <button class="nb" data-tab="commandes" onclick="switchTab('commandes')" style="display:none">📦 Commandes</button>
+  <button class="nb" data-tab="docch" onclick="switchTab('docch')" style="display:none">📋 Doc chantier</button>
   <div class="nav-r">
     <span id="sv" class="sv">✓ Sauvegardé</span>
     <button id="btn-undo" onclick="undoAction()" title="Annuler la dernière action (Ctrl+Z)" style="background:var(--bg3);color:var(--tx3);border:1px solid var(--bd);font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit;opacity:.4;pointer-events:none">↩ Annuler</button>
@@ -3542,6 +3546,11 @@ window.DroitsAcces = (function () {
 <!-- Commandes de l'affaire (module Commandes, bloc COMMANDES) : filtrées sur l'affaire choisie à gauche -->
 <div id="tab-commandes" class="tab" style="flex-direction:column">
   <div id="aff-cmd-w" style="flex:1;min-height:0;overflow:auto"></div>
+</div>
+<!-- Affaires › Doc chantier (08/10/2026) : choix Fiche de contrôle pétrochimie / Punch list, rangés par affaire -->
+<div id="tab-docch" class="tab" style="flex-direction:column">
+  <div id="aff-docch-pick" style="flex-shrink:0;padding:14px 22px 0"></div>
+  <div id="aff-docch-w" style="flex:1;min-height:0;overflow:auto"></div>
 </div>
 <div id="tab-personnel" class="tab" style="flex-direction:column">
   <!-- Sous-onglets Personnel -->
@@ -4588,6 +4597,41 @@ function renderCommandesTab(enter){
 function _leaveCommandesTab(t){
   var on=document.querySelector('.nb.on');
   if(on&&on.dataset&&on.dataset.tab==='commandes'&&t!=='commandes'&&window.Commandes&&window.Commandes.leave)window.Commandes.leave();
+  if(on&&on.dataset&&on.dataset.tab==='docch'&&t!=='docch')_leaveDocChTab();
+}
+// ── Affaires › Doc chantier (08/10/2026, demande de l'utilisateur) ──
+// Deux choix : Fiche de contrôle pétrochimie (DocsChantier) et Punch list (PunchList), affichés
+// SEULEMENT pour l'affaire choisie à gauche (render(...,{aff})) ; un nouveau document y est rangé.
+// Le choix est retenu sur le poste (docch_sub). L'écran Chantier garde aussi ses listes (toutes affaires).
+function _docchSubs(){
+  var l=[];
+  if(window.DocsChantier&&(!window.DocsChantier.canView||window.DocsChantier.canView()))l.push(['fc','📋 Fiche de contrôle pétrochimie']);
+  if(window.PunchList&&window.PunchList.canView())l.push(['pl','🔧 Punch list']);
+  return l;
+}
+function _docchCur(){
+  var l=_docchSubs(),c=null;try{c=localStorage.getItem('docch_sub');}catch(e){}
+  if(!l.some(function(x){return x[0]===c;}))c=l.length?l[0][0]:null;
+  return c;
+}
+function _leaveDocChTab(){
+  try{if(window.DocsChantier&&window.DocsChantier.leave)window.DocsChantier.leave();}catch(e){}
+  try{if(window.PunchList&&window.PunchList.leave)window.PunchList.leave();}catch(e){}
+}
+function renderDocChTab(enter){
+  var pick=document.getElementById('aff-docch-pick'),host=document.getElementById('aff-docch-w');if(!pick||!host)return;
+  var l=_docchSubs(),c=_docchCur();
+  pick.innerHTML=l.length>1?'<nav class="sec-pills" style="margin:0">'+l.map(function(x){return '<button type="button" class="sec-pill'+(x[0]===c?' on':'')+'" onclick="docchShow(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</nav>':'';
+  pick.style.display=l.length>1?'':'none';
+  if(!c){host.innerHTML='<div style="padding:40px;text-align:center;color:#9A96B3">Vous n’avez pas accès aux documents de chantier.</div>';return;}
+  var o={aff:STORE.current||'',enter:!!enter};
+  if(c==='fc')window.DocsChantier.render('aff-docch-w',o);else window.PunchList.render('aff-docch-w',o);
+}
+function docchShow(k){
+  if(k===_docchCur()){renderDocChTab(true);return;}
+  _leaveDocChTab();
+  try{localStorage.setItem('docch_sub',k);}catch(e){}
+  renderDocChTab(true);
 }
 function switchTab(t){
   window._userTabClicked=true;
@@ -4610,6 +4654,7 @@ function switchTab(t){
   else if(t==='recap'){if(typeof _avResetView==='function')_avResetView();if(typeof _rcResetView==='function')_rcResetView();switchTdbTab(window._tdbTab||'overview');}
   else if(t==='modifications'){renderModificationsTab();}
   else if(t==='commandes'){renderCommandesTab(true);}
+  else if(t==='docch'){renderDocChTab(true);}
   // Masquer/afficher les boutons Vue+Zoom selon onglet
   var _gvb=document.getElementById('gantt-view-btns');
   var _gvs=document.getElementById('gantt-view-sep');
@@ -5148,12 +5193,10 @@ function renderOverview(){
   var todayMs=new Date().setHours(0,0,0,0);
   affaires.forEach(function(aff){
     (STORE.projects[aff].data||[]).filter(function(r){return r.t==='act'&&!r.done;}).forEach(function(a){
-      var days=a.reelDays&&a.reelDays.length?a.reelDays:(a.prevDays||[]);
-      if(!days||!days.length)return;
-      var lastDay=Math.max.apply(null,days);
-      if(typeof weekDayToDate==='function'){
-        try{var d=weekDayToDate(lastDay);if(d&&d.getTime()<todayMs)retard.push({aff:aff,act:a});}catch(e){}
-      }
+      // Même règle que le GANTT (_taskLateRef : fin du Réel, à défaut du Prévu).
+      // Corrigé le 08/10/2026 : weekDayToDate recevait le n° de JOUR comme n° de semaine → date fausse.
+      var ref=_taskLateRef(a);if(ref.d5<0)return;
+      try{var d=weekDayToDate(Math.floor(ref.d5/5)+1,ref.d5%5);if(d&&d.getTime()<todayMs)retard.push({aff:aff,act:a});}catch(e){}
     });
   });
 
@@ -11359,6 +11402,7 @@ function refreshAllTabs(){
 
     else if(t==='personnel')switchPersonnelTab(window._personnelTab||'equipe');
     else if(t==='commandes')renderCommandesTab(false); // ne redessine que si l'affaire a changé
+    else if(t==='docch')renderDocChTab(false); // idem (Doc chantier de l'affaire)
     else if(t==='modifications'&&!_modsBusy())renderModificationsTab(); // version ajoutée par un collègue
     // gantt déjà rendu ci-dessus si c'est l'onglet actif
   }
@@ -12842,6 +12886,7 @@ function switchProjet(k){
     else if(t==='fiche')renderFiche();
     else if(t==='dashboard')renderDashboard();
     else if(t==='commandes')renderCommandesTab(false); // nouvelle affaire → ses commandes
+    else if(t==='docch')renderDocChTab(false); // nouvelle affaire → ses documents de chantier
     else if(t==='modifications')renderModificationsTab(); // nouvelle affaire → ses documents
   }
 }
@@ -14150,14 +14195,23 @@ function gcJs(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,
 function gcDayLbl(d5){var dt=weekDayToDate(Math.floor(d5/5)+1,d5%5);return ['lun','mar','mer','jeu','ven'][d5%5]+' '+String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0');}
 function gcSegs(days){var a=(days||[]).slice().sort(function(x,y){return x-y;}),out=[];a.forEach(function(x){var l=out[out.length-1];if(l&&x===l[1]+1)l[1]=x;else if(!l||x>l[1])out.push([x,x]);});return out;}
 var GC_ST={todo:{dot:'#94A3B8',bg:'#E2E8F0',c:'#334155',lbl:'À venir'},prog:{dot:'#F59E0B',bg:'#FEF3C7',c:'#B45309',lbl:'En cours'},done:{dot:'#15803D',bg:'#DCFCE7',c:'#15803D',lbl:'Terminé'},late:{dot:'#EF4444',bg:'#FEE2E2',c:'#B91C1C',lbl:'En retard'}};
-// État d'une tâche pour l'affichage : en retard = pas terminée et sa barre Prévu est dépassée
+// Jour de référence du retard (08/10/2026, demande de l'utilisateur) : la fin de la barre
+// RÉEL ; seulement si la tâche n'a pas encore de barre Réel, la fin de la barre Prévu.
+// (Pas getTaskDays5 'reel' pour une tâche à reelDays vide : il reprendrait le Prévu.)
+function _taskLateRef(row){
+  var rl=Array.isArray(row.reelDays)?row.reelDays:(row.sReel?getTaskDays5(row,'reel'):[]);
+  if(rl&&rl.length)return {d5:Math.max.apply(null,rl),kind:'reel'};
+  var pv=getTaskDays5(row,'prev');
+  return pv.length?{d5:Math.max.apply(null,pv),kind:'prev'}:{d5:-1,kind:''};
+}
+// État d'une tâche pour l'affichage : en retard = pas terminée et sa barre Réel (à défaut Prévu) est dépassée
 function gcActState(row){
-  var prev=getTaskDays5(row,'prev'),done=!!row.done;
+  var done=!!row.done;
   var pct=done?100:Math.max(0,Math.min(100,Math.floor(+row.progress||0)));
-  var lastP=prev.length?Math.max.apply(null,prev):-1;
+  var ref=_taskLateRef(row),lastP=ref.d5;
   var late=!done&&lastP>=0&&gcTodayD5()>lastP;
   var st=done?'done':(late?'late':((row.inProgress||pct>0)?'prog':'todo'));
-  return {st:st,pct:pct,late:late,lastP:lastP};
+  return {st:st,pct:pct,late:late,lastP:lastP,lateKind:ref.kind};
 }
 // Arborescence : niveau et parents de chaque ligne (phase › ensemble › sous-phase › tâche)
 function gcTree(data){
@@ -14568,7 +14622,7 @@ function gcRenderPanel(force){
   var avBtn='<button type="button" onclick="gcGoAvancement()" style="height:30px;padding:0 10px;border-radius:8px;border:1px solid #C7C1F5;background:#F5F3FF;color:#3A2EAE;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Modifier dans Avancement →</button>';
   var h='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div style="min-width:0"><div style="font-size:11px;font-weight:700;color:#6B6790">'+gcEsc(path.join(' › '))+'</div><h2 style="margin:4px 0 0;font-size:18px;font-weight:800;color:#1C1A33;line-height:1.25">'+gcEsc(row.lb)+'</h2></div>'
     +'<button type="button" onclick="gcClosePanel()" aria-label="Fermer le détail" style="width:34px;height:34px;flex-shrink:0;border-radius:9px;border:1px solid #E4E1F0;background:#fff;color:#4A4766;cursor:pointer;font-size:18px;line-height:1">×</button></div>';
-  if(st.late)h+='<div style="font-size:13px;font-weight:700;color:#991B1B;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:8px 12px">En retard : la barre Prévu se terminait '+gcDayLbl(st.lastP)+'.</div>';
+  if(st.late)h+='<div style="font-size:13px;font-weight:700;color:#991B1B;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:8px 12px">En retard : la barre '+(st.lateKind==='reel'?'Réel':'Prévu (pas encore de Réel)')+' se terminait '+gcDayLbl(st.lastP)+'.</div>';
   if(!_isProgressExcludedPhase(row.pk)){
     h+='<div style="'+box+'"><div style="display:flex;justify-content:space-between;align-items:center"><div style="'+lbl+'">AVANCEMENT</div>'+(row.excludeProgress?gcPill('Ø Hors avancement','#F1EFF8','#6B6790'):gcPill(C.lbl,C.bg,C.c))+'</div>'
       +'<div style="display:flex;align-items:center;gap:10px;margin-top:8px"><div style="flex-grow:1;height:10px;border-radius:5px;background:#EFEDF7;overflow:hidden"><div style="height:100%;width:'+st.pct+'%;background:'+(st.pct>=100?'#15803D':'#F59E0B')+'"></div></div><div style="font-size:18px;font-weight:800">'+st.pct+' %</div></div>'
@@ -22336,7 +22390,9 @@ window.DocsChantier = (function(){
   // ────────────────────────────────────────────────────────────────
   // 5) Écran : liste des fiches
   // ────────────────────────────────────────────────────────────────
-  var S={host:null,list:[],filterAff:'',filterSt:'',q:'',cur:null,base:{},dirty:{},saving:false,saveT:null,pollT:null,err:'',offline:false};
+  // ctxAff (08/10/2026) : non null = affiché dans Affaires › Doc chantier → seulement les fiches de
+  // cette affaire, et une nouvelle fiche y est rangée directement. null = écran Chantier (toutes).
+  var S={host:null,list:[],filterAff:'',ctxAff:null,filterSt:'',q:'',cur:null,base:{},dirty:{},saving:false,saveT:null,pollT:null,err:'',offline:false};
 
   function stBadge(st){
     return st==='locked'
@@ -22355,22 +22411,23 @@ window.DocsChantier = (function(){
       if(S.q){ var t=(r.title+' '+affLabel(r.aff)+' '+((r.meta||{}).affno||'')).toLowerCase(); if(t.indexOf(S.q.toLowerCase())<0) return false; }
       return true;
     });
+    var ctx=S.ctxAff!==null;
     var h='<div class="dcu"><div class="dcu-wrap">';
     h+='<div class="dcu-card" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'+
-       '<div style="flex:1;min-width:220px"><div style="font-size:18px;font-weight:900">Docs chantier</div>'+
-       '<div style="font-size:12.5px;color:#6B6790;margin-top:3px">Documents à remplir sur place, signer, puis imprimer ou enregistrer en PDF.</div></div>'+
+       '<div style="flex:1;min-width:220px"><div style="font-size:18px;font-weight:900">'+(ctx?'Fiches de contrôle pétrochimie':'Docs chantier')+'</div>'+
+       '<div style="font-size:12.5px;color:#6B6790;margin-top:3px">'+(ctx?'Affaire <b style="color:#1C1A33">'+esc(affLabel(S.ctxAff))+'</b> · à remplir sur place, signer, puis imprimer ou enregistrer en PDF.':'Documents à remplir sur place, signer, puis imprimer ou enregistrer en PDF.')+'</div></div>'+
        (canEdit?'<button class="dcu-btn" onclick="DocsChantier.newDoc()">＋ Nouvelle fiche de contrôle pétrochimie</button>':'')+'</div>';
     if(S.err) h+='<div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Impossible de lire les fiches : '+esc(S.err)+(/docs_chantier/.test(S.err)||/relation|does not exist|schema cache/i.test(S.err)?'<br>➜ Le script <b>docs_chantier_supabase.sql</b> n’a sans doute pas encore été lancé dans Supabase.':'')+'</div>';
     h+='<div class="dcu-card">'+
        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
-       '<select class="dcu-in" onchange="DocsChantier._f(\'filterAff\',this.value)"><option value="">Toutes les affaires</option>'+
-         affs.map(function(a){ return '<option value="'+esc(a.id)+'"'+(S.filterAff===a.id?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>'+
+       (ctx?'':'<select class="dcu-in" onchange="DocsChantier._f(\'filterAff\',this.value)"><option value="">Toutes les affaires</option>'+
+         affs.map(function(a){ return '<option value="'+esc(a.id)+'"'+(S.filterAff===a.id?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>')+
        '<select class="dcu-in" onchange="DocsChantier._f(\'filterSt\',this.value)"><option value="">Tous les statuts</option>'+
          '<option value="draft"'+(S.filterSt==='draft'?' selected':'')+'>En cours</option><option value="locked"'+(S.filterSt==='locked'?' selected':'')+'>Signées</option></select>'+
        '<input class="dcu-in" style="flex:1;min-width:160px" placeholder="Rechercher (skid, date, affaire…)" value="'+esc(S.q)+'" oninput="DocsChantier._q(this.value)">'+
        '<button class="dcu-btn2" onclick="DocsChantier.refresh()">⟳ Actualiser</button></div>';
     if(!rows.length){
-      h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?'Aucune fiche ne correspond au filtre.':'Aucune fiche pour l’instant.')+'</div>';
+      h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(ctx&&!S.q&&!S.filterSt?'Aucune fiche de contrôle pour cette affaire.'+(canEdit?' Cliquez sur « ＋ Nouvelle fiche de contrôle pétrochimie ».':''):(S.list.length?'Aucune fiche ne correspond au filtre.':'Aucune fiche pour l’instant.'))+'</div>';
     }else{
       h+='<div style="overflow:auto"><table class="dcu-tbl"><tr><th>Document</th><th>Affaire</th><th>Skid / date du contrôle</th><th>Statut</th><th class="dcu-hide-sm">Dernière modification</th><th></th></tr>';
       rows.forEach(function(r){
@@ -22395,7 +22452,7 @@ window.DocsChantier = (function(){
   function listSig(){ return S.list.map(function(r){ return r.id+':'+r.rev+':'+r.status; }).join('|'); }
   async function listTick(){
     if(S.cur||!S.host||S._listBusy||document.hidden) return;
-    var sh=$('petro-docs-shell'); if(sh&&sh.style.display==='none') return;
+    if(S.host.offsetParent===null) return; // liste cachée (écran Chantier fermé, ou autre onglet de l'affaire)
     S._listBusy=true;
     try{
       var before=listSig(), hadErr=!!S.err;
@@ -22410,11 +22467,19 @@ window.DocsChantier = (function(){
   function stopListPoll(){ if(S.listT){ clearInterval(S.listT); S.listT=null; } }
   document.addEventListener('visibilitychange',function(){ if(!document.hidden&&S.listT) listTick(); });
 
-  async function render(hostId){
-    S.host=$(hostId)||S.host;
+  // opt.aff (Affaires › Doc chantier) : n'affiche que les fiches de cette affaire. opt.enter = on arrive
+  // sur l'onglet. Sans enter et même affaire (synchro du site) : rien n'est redessiné (saisie en cours).
+  async function render(hostId,opt){
+    opt=opt||{};
+    var host=$(hostId)||S.host,ctx=opt.aff!==undefined?(opt.aff||''):null;
+    if(ctx!==null&&!opt.enter&&ctx===S.ctxAff&&host===S.host) return;
+    if(ctx!==S.ctxAff) S.filterAff=ctx!==null?ctx:'';
+    S.ctxAff=ctx;
+    S.host=host;
+    if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); } // fiche ouverte : on enregistre avant de la quitter
     stopPoll();
     startListPoll();
-    S.cur=null;
+    S.cur=null; D={};
     if(!ENV.canView()){ S.host.innerHTML='<div class="dcu"><div class="dcu-wrap"><div class="dcu-card">Vous n’avez pas accès aux Docs chantier.</div></div></div>'; return; }
     S.host.innerHTML='<div class="dcu"><div class="dcu-wrap"><div class="dcu-card" style="color:#6B6790">Chargement…</div></div></div>';
     await loadList();
@@ -22426,6 +22491,7 @@ window.DocsChantier = (function(){
 
   function newDoc(){
     if(!ENV.canEdit()) return;
+    if(S.ctxAff){ _create(S.ctxAff); return; } // dans l'affaire : la fiche y est rangée directement
     var affs=ENV.affaires().filter(function(a){return !a.closed;});
     modal('<div class="dcu" style="max-width:460px;margin:8vh auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)">'+
       '<div style="font-size:16px;font-weight:900;margin-bottom:4px">Nouvelle fiche de contrôle pétrochimie</div>'+
@@ -22435,9 +22501,9 @@ window.DocsChantier = (function(){
       '<div style="display:flex;gap:8px;justify-content:flex-end"><button class="dcu-btn2" onclick="DocsChantier._closeModal()">Annuler</button>'+
       '<button class="dcu-btn" id="dcf-new-go" onclick="DocsChantier._create()">Créer la fiche</button></div></div>');
   }
-  async function _create(){
+  async function _create(affDirect){
     var b=$('dcf-new-go'); if(b){ b.disabled=true; b.textContent='Création…'; }
-    var aff=($('dcf-new-aff')||{}).value||'';
+    var aff=typeof affDirect==='string'?affDirect:(($('dcf-new-aff')||{}).value||'');
     var me=ENV.who();
     try{
       var row=await DB.create({doc_type:TYPE_FC,aff:aff||null,title:'Sans titre',meta:{},data:{},status:'draft',rev:1,created_by:me,updated_by:me,history:[{at:new Date().toISOString(),by:me,what:'created'}]});
@@ -22839,7 +22905,8 @@ window.DocsChantier = (function(){
   }
 
   return {
-    render:render, refresh:function(){ render(); },
+    render:render, refresh:function(){ render(null,S.ctxAff!==null?{aff:S.ctxAff,enter:true}:undefined); },
+    canView:function(){ return ENV.canView(); },
     // on quitte l'onglet (retour à l'accueil) : on envoie ce qui reste et on arrête le suivi
     leave:function(){ if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); saveNow(); } stopPoll(); stopListPoll(); }, open:open, newDoc:newDoc, del:del, back:back,
     lock:function(){ lock(false); }, reopen:reopen, print:print, pdf:pdf,
@@ -24005,7 +24072,8 @@ window.PunchList=(function(){
   function stPill(st){ return '<span class="plx-st '+(st==='N/A'?'NA':st)+'">'+st+'</span>'; }
 
   // ── État de l'écran ──
-  var S={host:null,list:[],filterAff:'',q:'',f:'all',disc:'',cur:null,base:{},dirty:{},saving:false,saveT:null,pollT:null,listT:null,err:'',offline:false,needDraw:false,thumbs:{},queue:[]};
+  // ctxAff (08/10/2026) : non null = affiché dans Affaires › Doc chantier (seulement cette affaire, import rangé dedans)
+  var S={host:null,list:[],filterAff:'',ctxAff:null,q:'',f:'all',disc:'',cur:null,base:{},dirty:{},saving:false,saveT:null,pollT:null,listT:null,err:'',offline:false,needDraw:false,thumbs:{},queue:[]};
   var D={};
 
   // ═════════ LISTE DES PUNCH LISTS ═════════
@@ -24014,15 +24082,16 @@ window.PunchList=(function(){
     var ed=ENV.canEdit(),adm=ENV.isAdmin();
     var affs={}; S.list.forEach(function(r){ var a=r.aff||''; affs[a]=(affs[a]||0)+1; });
     var rows=S.list.filter(function(r){ return !S.filterAff||(r.aff||'')===S.filterAff; });
+    var ctx=S.ctxAff!==null;
     var h='<div class="dcu"><div class="plx-wrap">';
     h+='<div class="dcu-card"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'
       +'<div style="flex:1;min-width:240px"><div style="font-size:18px;font-weight:900">🔧 Punch lists</div>'
-      +'<div style="font-size:12.5px;color:#6B6790;margin-top:3px">Importez l’Excel envoyé par le client, puis répondez ligne par ligne : statut (Closed / Open / N/A), réponse et photos prises au téléphone.</div></div>'
+      +'<div style="font-size:12.5px;color:#6B6790;margin-top:3px">'+(ctx?'Affaire <b style="color:#1C1A33">'+esc(affLabel(S.ctxAff))+'</b> · ':'')+'Importez l’Excel envoyé par le client, puis répondez ligne par ligne : statut (Closed / Open / N/A), réponse et photos prises au téléphone.</div></div>'
       +(ed?'<button class="dcu-btn" onclick="PunchList.importer()">⬆ Importer une punch list (Excel)</button>':'')
       +'</div></div>';
     if(S.err) h+='<div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Impossible de lire les punch lists : '+esc(S.err)+(/punch_lists|relation|does not exist|schema cache/i.test(S.err)?'<br>➜ Le script <b>punch_list_supabase.sql</b> n’a sans doute pas encore été lancé dans Supabase.':'')+'</div>';
     h+='<div class="dcu-card">';
-    if(Object.keys(affs).length>1) h+='<div style="margin-bottom:10px"><select class="dcu-in" aria-label="Affaire" style="min-width:260px;font-weight:700" onchange="PunchList._f(\'filterAff\',this.value)"><option value="">Toutes les affaires — '+S.list.length+'</option>'
+    if(!ctx&&Object.keys(affs).length>1) h+='<div style="margin-bottom:10px"><select class="dcu-in" aria-label="Affaire" style="min-width:260px;font-weight:700" onchange="PunchList._f(\'filterAff\',this.value)"><option value="">Toutes les affaires — '+S.list.length+'</option>'
       +Object.keys(affs).sort().map(function(a){ return '<option value="'+esc(a)+'"'+(S.filterAff===a?' selected':'')+'>'+esc(a?affLabel(a):'(sans affaire)')+' — '+affs[a]+'</option>'; }).join('')+'</select></div>';
     if(!rows.length){
       h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?'Aucune punch list pour cette affaire.':'Aucune punch list pour l’instant.'+(ed?' Cliquez sur « ⬆ Importer une punch list ».':''))+'</div>';
@@ -24055,9 +24124,18 @@ window.PunchList=(function(){
   }
   function startListPoll(){ stopListPoll(); S.listT=setInterval(listTick,5000); }
   function stopListPoll(){ if(S.listT){ clearInterval(S.listT); S.listT=null; } }
-  async function render(hostId){
-    S.host=$(hostId)||S.host;
+  // opt.aff (Affaires › Doc chantier) : seulement les punch lists de cette affaire. opt.enter = on arrive
+  // sur l'onglet. Sans enter et même affaire (synchro du site) : rien n'est redessiné (saisie en cours).
+  async function render(hostId,opt){
+    opt=opt||{};
+    var host=$(hostId)||S.host,ctx=opt.aff!==undefined?(opt.aff||''):null;
+    if(ctx!==null&&!opt.enter&&ctx===S.ctxAff&&host===S.host) return;
+    var changed=ctx!==S.ctxAff;
+    if(changed) S.filterAff=ctx!==null?ctx:'';
+    S.ctxAff=ctx;
+    S.host=host;
     if(!S.host) return;
+    if(S.cur&&changed){ back(); return; } // autre affaire : la punch list ouverte est enregistrée puis refermée
     if(S.cur){ drawDetail(); startPoll(); return; }
     stopPoll();
     if(!ENV.canView()){ S.host.innerHTML='<div class="dcu"><div class="plx-wrap"><div class="dcu-card">Vous n’avez pas accès aux punch lists.</div></div></div>'; return; }
@@ -24223,7 +24301,7 @@ window.PunchList=(function(){
     try{
       var res=file.__parsed||await readExcel(file); // __parsed : banc de test uniquement
       if(!res.lines.length){ modal('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Import d’une punch list</div><div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">Aucune ligne trouvée dans ce fichier.'+(res.warn&&res.warn.length?'<br>'+res.warn.map(esc).join('<br>'):'')+'</div><div style="text-align:right"><button class="dcu-btn2" onclick="PunchList._closeModal()">Fermer</button></div>'); return; }
-      var cv=res.cover||{},aff=guessAff(cv,file.name);
+      var cv=res.cover||{},guess=guessAff(cv,file.name),aff=S.ctxAff||guess; // dans une affaire : rangée dedans par défaut
       var title=(cv.docNo||String(file.name).replace(/\.[^.]+$/,'')).trim();
       var tmp={order:[]};res.lines.forEach(function(l,ix){ tmp['i:'+ix]=Object.assign({},l); tmp.order.push(String(ix)); });
       var st=stats(tmp);
@@ -24234,8 +24312,9 @@ window.PunchList=(function(){
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><span class="plx-tag" style="font-size:12.5px">'+st.n+' lignes</span><span class="plx-tag" style="font-size:12.5px;background:#FEF3C7;color:#92400E">'+st.open+' ouvertes</span><span class="plx-tag" style="font-size:12.5px">'+st.ours+' à nous (ELS)</span><span class="plx-tag" style="font-size:12.5px;background:#DCFCE7;color:#15803D">'+st.closed+' fermées</span></div>'
         +'<label class="cmu-lbl">TITRE</label><input id="pl-i-title" class="dcu-in cmu-fld" value="'+esc(title)+'">'
         +'<label class="cmu-lbl">AFFAIRE *</label><select id="pl-i-aff" class="dcu-in cmu-fld"><option value="">— Choisir l’affaire —</option>'
-        +A.filter(function(a){ return !a.closed||a.id===aff; }).map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===aff?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>'
-        +(aff?'<div style="font-size:11.5px;color:#15803D;margin-top:4px">✓ Affaire trouvée d’après le n° de projet du client.</div>':'')
+        +A.filter(function(a){ return !a.closed||a.id===aff||a.id===guess; }).map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===aff?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>'
+        +(S.ctxAff&&guess&&guess!==S.ctxAff?'<div style="font-size:11.5px;color:#B45309;margin-top:4px">⚠ D’après son n° de projet, ce fichier semble plutôt appartenir à '+esc(affLabel(guess))+'. Vérifiez l’affaire choisie.</div>'
+          :(S.ctxAff?'':(aff?'<div style="font-size:11.5px;color:#15803D;margin-top:4px">✓ Affaire trouvée d’après le n° de projet du client.</div>':'')))
         +(res.warn&&res.warn.length?'<div class="dcu-msg" style="background:#FFFBEB;border:1px solid #FCD34D;color:#92400E;max-width:none;margin:12px 0 0">'+res.warn.map(esc).join('<br>')+'</div>':'')
         +'<div style="font-size:11.5px;color:#9A96B3;margin-top:10px">Colonnes reconnues : '+esc((res.cols||[]).map(function(c){ return {n:'Item',cls:'Classification',phase:'Phase',disc:'Discipline',by:'Émis par',dt:'Date',des:'Description',eq:'Équipement',prop:'Action proposée',pic:'PIC',cst:'Status',tgt:'Date cible',ccom:'Commentaires'}[c]||c; }).join(', '))+'. Le fichier est lu sur cet appareil et n’est pas gardé.</div>'
         +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="dcu-btn2" onclick="PunchList._closeModal()">Annuler</button><button id="pl-i-go" class="dcu-btn" onclick="PunchList._impCreate()">Créer la punch list</button></div>');
@@ -24912,7 +24991,11 @@ window.PetroNav=(function(){
         go:function(){switchTab('modifications');}},
       {k:'commandes',lbl:'Commandes',vis:function(){return !!(window.Commandes&&window.Commandes.canView());},
         on:function(){return nbOn()==='commandes';},
-        go:function(){switchTab('commandes');}}
+        go:function(){switchTab('commandes');}},
+      // Doc chantier de l'affaire (08/10/2026) : fiches de contrôle pétrochimie + punch lists de cette affaire
+      {k:'docch',lbl:'Doc chantier',vis:function(){return typeof _docchSubs==='function'&&_docchSubs().length>0;},
+        on:function(){return nbOn()==='docch';},
+        go:function(){switchTab('docch');}}
     ],
     overview:[
       {k:'ov',lbl:'Tableau de bord',vis:function(){return secVis('.nb[data-tab="recap"]');},
@@ -25173,6 +25256,7 @@ window.PetroNav=(function(){
       S.over=false;
       if(!TABS.affaire.some(function(x){return x.vis()&&x.on();})){var f=TABS.affaire.filter(function(x){return x.vis();})[0];if(f)f.go();}
       else if(nbOn()==='commandes'&&can('renderCommandesTab'))renderCommandesTab(true); // retour de l'accueil : relance la liste
+      else if(nbOn()==='docch'&&can('renderDocChTab'))renderDocChTab(true);
     }
     renderAll();
   }
