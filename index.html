@@ -3731,7 +3731,15 @@ function hasView(mod){
   if(CURRENT_ROLE==='admin') return true;
   return !!(CURRENT_PERMISSIONS[mod] && CURRENT_PERMISSIONS[mod].can_view);
 }
+// (09/10/2026, demande de l'utilisateur) Affaire ARCHIVÉE = lecture seule pour tout le monde, admin compris,
+// jusqu'à ce qu'un admin la désarchive. Les droits « modifier » des modules propres à une affaire
+// renvoient faux quand l'affaire affichée est archivée (le GANTT, l'Avancement, les Modifications,
+// Commandes, Doc chantier… passent tous par hasEdit / _peutChangerStatut / leur ENV.canEdit).
+var _AFF_EDIT_MODS={planning:1,budget_gantt:1,budget_toolbar:1,gantt_statut_toutes:1,modifications:1,commandes:1,commandes_gestion:1,docs_chantier:1,punch_list:1};
+function _affRO(aff){try{var p=STORE.projects[aff||STORE.current];return !!(p&&p.closed);}catch(e){return false;}}
+function _roDenied(){alert('🗄 Cette affaire est archivée : elle est en lecture seule.\nSeul un admin peut la désarchiver (menu ⋯ de l’affaire).');}
 function hasEdit(mod){
+  if(_AFF_EDIT_MODS[mod]&&_affRO()) return false;
   if(CURRENT_ROLE==='admin') return true;
   return !!(CURRENT_PERMISSIONS[mod] && CURRENT_PERMISSIONS[mod].can_edit);
 }
@@ -3744,6 +3752,7 @@ function _peutStatutToutesActivites(){
   return hasEdit('gantt_statut_toutes');
 }
 function _peutChangerStatut(r){
+  if(_affRO())return false; // affaire archivée : lecture seule
   if(_peutStatutToutesActivites())return true;
   return !!(r&&r.pk&&r.pk.indexOf('CHANTIER')===0);
 }
@@ -6323,7 +6332,10 @@ function dbUpdateActHours(inp){
 function navDesarchiver(){
   var aff=STORE.current;
   if(!STORE.projects[aff])return;
+  if(CURRENT_ROLE!=='admin'){alert('Seul un admin peut désarchiver une affaire.');return;} // (09/10/2026)
+  if(!confirm('Désarchiver l’affaire « '+getAffLabel(aff)+' » ?\nElle redevient modifiable par tout le monde.'))return;
   STORE.projects[aff].closed=false;
+  STORE.projects[aff].archivedAt=null;STORE.projects[aff].archivedBy='';
   localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
   // Update selector
   // Rebuild selector properly (handles affaire names with special characters)
@@ -6353,7 +6365,211 @@ function navRefreshArchBtn(){
   var btn=document.getElementById('nav-desarch-btn');
   if(!btn)return;
   var isArch=!!(STORE.projects[STORE.current]&&STORE.projects[STORE.current].closed);
-  btn.style.display=isArch?'inline-block':'none';
+  btn.style.display=isArch&&CURRENT_ROLE==='admin'?'inline-block':'none'; // désarchiver : admin seulement (09/10/2026)
+}
+
+// ══ Archivage d'une affaire (09/10/2026, demande de l'utilisateur) ══
+// 1) « Archiver » montre d'abord ce qui n'est pas terminé ; on peut archiver quand même.
+// 2) Archivée = lecture seule pour tout le monde, admin compris (voir _affRO / hasEdit).
+// 3) Seul un admin peut désarchiver (navDesarchiver).
+async function _affArchChecks(k){
+  var p=STORE.projects[k]||{},out=[];
+  var acts=(p.data||[]).filter(function(r){return r.t==='act'&&!r.done;});
+  out.push({ico:'📋',lbl:'Tâches pas terminées',n:acts.length,det:acts.map(function(r){return (r.lb||'—')+' · '+(r.pk||'');})});
+  var mods=[];(p.documents||[]).forEach(function(d){(d.mods||[]).forEach(function(m){if(m&&m.status!=='fait')mods.push((d.nom||'Document')+(m.detail?' — '+String(m.detail).slice(0,60):''));});});
+  out.push({ico:'✏️',lbl:'Modifications encore à faire',n:mods.length,det:mods});
+  async function q(mod,table,cols,keep,lbl,ico,fmt){
+    if(typeof hasView==='function'&&!hasView(mod))return;
+    try{
+      var r=await window.supa.from(table).select(cols).eq('aff',k);
+      if(r.error)throw r.error;
+      var rows=(r.data||[]).filter(keep);
+      out.push({ico:ico,lbl:lbl,n:rows.length,det:rows.map(fmt)});
+    }catch(e){out.push({ico:ico,lbl:lbl,n:null});}
+  }
+  await q('docs_chantier','docs_chantier','title,status,meta',function(x){return x.status!=='locked';},'Fiches de contrôle pas signées','🔏',function(x){var m=x.meta||{};return [m.skid,m.date].filter(Boolean).join(' — ')||x.title||'Fiche';});
+  await q('punch_list','punch_lists','title,meta',function(x){return +((x.meta||{}).open)>0;},'Punch lists avec des lignes encore ouvertes','🔧',function(x){return (x.title||'Punch list')+' : '+x.meta.open+' ligne(s) ouverte(s)';});
+  await q('commandes','commandes','num,meta',function(x){var m=x.meta||{};return +m.rest>0&&!m._gone;},'Commandes pas entièrement reçues','📦',function(x){return x.num+' : '+x.meta.rest+' ligne(s) à recevoir';});
+  return out;
+}
+function _affArchModal(html){
+  var ov=document.getElementById('aff-arch-modal');
+  if(!ov){ov=document.createElement('div');ov.id='aff-arch-modal';ov.style.cssText='position:fixed;inset:0;z-index:9600;background:rgba(20,16,50,.45);display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow:auto';document.body.appendChild(ov);ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});}
+  ov.innerHTML='<div role="dialog" aria-modal="true" style="background:#fff;border-radius:18px;max-width:620px;width:100%;padding:22px 24px;box-shadow:0 30px 80px rgba(20,16,50,.35);font-family:inherit;color:#1C1A33">'+html+'</div>';
+  return ov;
+}
+async function affArchiveAsk(k){
+  k=k||STORE.current;var p=STORE.projects[k];if(!p||p.closed)return;
+  var esc=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  var title='<div style="font-size:18px;font-weight:900">🗄 Archiver l’affaire</div><div style="font-size:13px;color:#6B6790;margin:4px 0 16px">'+esc(getAffLabel(k))+'</div>';
+  _affArchModal(title+'<div style="color:#6B6790;font-size:13px;padding:10px 0">Vérification de ce qui reste à terminer…</div>');
+  var items=await _affArchChecks(k);
+  if(!document.getElementById('aff-arch-modal'))return; // fenêtre fermée entre-temps
+  var todo=items.filter(function(x){return x.n;}).length;
+  var rows=items.map(function(x){
+    var st=x.n===null?'<span style="color:#9A96B3;font-weight:700">non vérifié</span>':x.n?'<b style="color:#B45309">'+x.n+'</b>':'<b style="color:#15803D">✓ rien</b>';
+    var det=x.n?'<details style="margin:4px 0 0 30px;font-size:12px;color:#4A4766"><summary style="cursor:pointer;color:#6B6790">voir la liste</summary><div style="max-height:160px;overflow:auto;padding:4px 0">'+x.det.slice(0,80).map(function(t){return '<div style="padding:2px 0">• '+esc(t)+'</div>';}).join('')+(x.det.length>80?'<div>… et '+(x.det.length-80)+' autre(s)</div>':'')+'</div></details>':'';
+    return '<div style="padding:9px 0;border-top:1px solid #EFEDF7"><div style="display:flex;align-items:center;gap:10px;font-size:13.5px"><span style="width:20px;text-align:center">'+x.ico+'</span><span style="flex:1">'+esc(x.lbl)+'</span>'+st+'</div>'+det+'</div>';
+  }).join('');
+  _affArchModal(title
+    +(todo?'<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:10px 12px;font-size:13px;color:#92400E;margin-bottom:10px">⚠ Il reste des choses pas terminées. Vous pouvez quand même archiver.</div>'
+          :'<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:10px 12px;font-size:13px;color:#166534;margin-bottom:10px">✓ Tout est terminé.</div>')
+    +'<div>'+rows+'</div>'
+    +'<div style="font-size:12.5px;color:#4A4766;background:#F6F5FB;border-radius:12px;padding:10px 12px;margin-top:14px;line-height:1.5">Une fois archivée, l’affaire passe en <b>lecture seule pour tout le monde</b> : on peut la consulter et télécharger ses documents, mais plus rien modifier. Elle n’apparaît plus dans les feuilles d’heure ni dans le planning réunion. <b>Seul un admin peut la désarchiver.</b></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px">'
+    +'<button type="button" onclick="affDossierAsk(\''+String(k).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')" style="height:38px;padding:0 16px;border-radius:10px;border:1px solid #C7C1F5;background:#F5F3FF;color:#3A2EAE;font-weight:800;font-family:inherit;cursor:pointer;margin-right:auto">📦 Dossier de fin d’affaire…</button>'
+    +'<button type="button" onclick="document.getElementById(\'aff-arch-modal\').remove()" style="height:38px;padding:0 16px;border-radius:10px;border:1px solid #E4E1F0;background:#fff;color:#4A4766;font-weight:700;font-family:inherit;cursor:pointer">Annuler</button>'
+    +'<button type="button" id="aff-arch-go" style="height:38px;padding:0 16px;border-radius:10px;border:none;background:'+(todo?'#B45309':'#4B3FC7')+';color:#fff;font-weight:800;font-family:inherit;cursor:pointer">🗄 '+(todo?'Archiver quand même':'Archiver')+'</button></div>');
+  document.getElementById('aff-arch-go').onclick=function(){affDoArchive(k);};
+}
+function affDoArchive(k){
+  var p=STORE.projects[k];if(!p)return;
+  p.closed=true;
+  p.archivedAt=Date.now();
+  p.archivedBy=window.CURRENT_USER_NOM||((typeof CURRENT_USER!=='undefined'&&CURRENT_USER&&CURRENT_USER.email)||'');
+  window._gcPaint=false;window._gcStruct=false; // plus de peinture ni de modification de structure
+  localStorage.setItem(SK,JSON.stringify(STORE));scheduleSupa();
+  var ov=document.getElementById('aff-arch-modal');if(ov)ov.remove();
+  navRefreshArchBtn();
+  try{refreshAllTabs();}catch(e){}
+  if(window.PetroNav)window.PetroNav.render();
+}
+
+// ══ Dossier de fin d'affaire (09/10/2026 ; simplifié le même jour à la demande de l'utilisateur) ══
+// Un .zip avec SEULEMENT :
+//  · le récap : 00_Recap_client.html OU 00_Recap_interne.html, même visuel (logo, chiffres clés, tableaux), s'ouvre sans le site ;
+//  · 01_Documents_derniere_version/ : le fichier de la dernière version de chaque document (onglet Modifications).
+// Récap client : documents, fiches de contrôle (signées ?), punch lists (lignes ouvertes). Ni heures, ni budget, ni noms.
+// Récap interne (droit budget_recap) : la même chose + heures et budget par phase, heures par personne, fin prévue / réelle,
+// et ce qui reste (demandes de modification à faire, commandes pas entièrement reçues).
+function affDossierAsk(k){
+  k=k||STORE.current;if(!STORE.projects[k])return;
+  if(typeof JSZip==='undefined'){alert('Bibliothèque de compression non chargée — vérifiez votre connexion internet.');return;}
+  var canInt=hasView('budget_recap');
+  var esc=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  var opt=function(v,ico,t,sub,on,dis){return '<label style="display:flex;gap:12px;align-items:flex-start;border:2px solid '+(on?'#4B3FC7':'#E4E1F0')+';border-radius:14px;padding:12px 14px;cursor:'+(dis?'not-allowed':'pointer')+';opacity:'+(dis?.5:1)+'" data-dosopt><input type="radio" name="dos-kind" value="'+v+'"'+(on?' checked':'')+(dis?' disabled':'')+' style="margin-top:3px"><span><b style="font-size:14px">'+ico+' '+t+'</b><span style="display:block;font-size:12.5px;color:#6B6790;margin-top:3px;line-height:1.45">'+sub+'</span></span></label>';};
+  _affArchModal('<div style="font-size:18px;font-weight:900">📦 Dossier de fin d’affaire</div><div style="font-size:13px;color:#6B6790;margin:4px 0 16px">'+esc(getAffLabel(k))+'</div>'
+    +'<div style="display:grid;gap:10px">'
+    +opt('client','📦','Récap client','Le récap (documents, fiches de contrôle, punch lists) + la dernière version de chaque document. Sans heures, budget ni noms.',true,false)
+    +opt('interne','🗄','Récap interne (ELS)',canInt?'Le même récap + heures et budget, heures par personne, dates, ce qui reste à faire, + la dernière version de chaque document.':'Réservé aux personnes qui ont le droit « Bilan / budget ».',false,!canInt)
+    +'</div>'
+    +'<div id="dos-st" style="font-size:13px;color:#4A4766;margin-top:14px;min-height:20px"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px">'
+    +'<button type="button" onclick="document.getElementById(\'aff-arch-modal\').remove()" style="height:38px;padding:0 16px;border-radius:10px;border:1px solid #E4E1F0;background:#fff;color:#4A4766;font-weight:700;font-family:inherit;cursor:pointer">Fermer</button>'
+    +'<button type="button" id="dos-go" style="height:38px;padding:0 16px;border-radius:10px;border:none;background:#4B3FC7;color:#fff;font-weight:800;font-family:inherit;cursor:pointer">⬇ Télécharger le .zip</button></div>');
+  var md=document.getElementById('aff-arch-modal');
+  md.querySelectorAll('input[name=dos-kind]').forEach(function(r){r.onchange=function(){md.querySelectorAll('[data-dosopt]').forEach(function(l){l.style.borderColor=l.querySelector('input').checked?'#4B3FC7':'#E4E1F0';});};});
+  document.getElementById('dos-go').onclick=async function(){
+    var kind=(md.querySelector('input[name=dos-kind]:checked')||{}).value||'client';
+    var b=this;b.disabled=true;b.textContent='Préparation…';
+    var st=function(t){var e=document.getElementById('dos-st');if(e)e.textContent=t;};
+    try{
+      var res=await affBuildDossier(k,kind,st);
+      st('✓ '+res.name+' — '+res.files+' fichier(s), '+(Math.round(res.size/104857.6)/10).toString().replace('.',',')+' Mo'+(res.warn.length?' · ⚠ '+res.warn.length+' élément(s) non inclus (voir le récap)':''));
+    }catch(e){console.error('Dossier',e);st('❌ Impossible de préparer le dossier : '+(e&&e.message||e));}
+    b.disabled=false;b.textContent='⬇ Télécharger le .zip';
+  };
+}
+async function affBuildDossier(k,kind,st){
+  st=st||function(){};
+  var P=STORE.projects[k];if(!P)throw new Error('affaire introuvable');
+  var INT=kind==='interne'&&hasView('budget_recap');
+  var esc=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
+  var safe=function(s){return String(s||'fichier').replace(/[\\\/:*?"<>|\r\n]+/g,'_').replace(/\s+/g,' ').trim().slice(0,110)||'fichier';};
+  var frD=function(d){return d?d.toLocaleDateString('fr-FR'):'';};
+  var n1=function(x){return (Math.round((+x||0)*10)/10).toLocaleString('fr-FR');};
+  var d5Date=function(d5){return weekDayToDate(Math.floor(d5/5)+1,d5%5);};
+  var inf=P.infos||{},today=new Date(),iso=today.toISOString().slice(0,10);
+  var zip=new JSZip(),used={},nFiles=0,warn=[];
+  function put(path,data){ // nom unique dans le .zip
+    var p=path,i=2,m=path.match(/^(.*?)(\.[^.\/]+)?$/);
+    while(used[p.toLowerCase()]){p=m[1]+' ('+(i++)+')'+(m[2]||'');}
+    used[p.toLowerCase()]=1;zip.file(p,data);nFiles++;return p;
+  }
+  var href=function(p){return p.split('/').map(encodeURIComponent).join('/');};
+  var BKT=typeof BUCKET!=='undefined'?BUCKET:'planning';
+  async function dl(path){var r=await supa.storage.from(BKT).download(path);if(r.error||!r.data)throw new Error((r.error&&r.error.message)||'introuvable');return r.data;}
+  async function rows(mod,table,cols){
+    if(!hasView(mod))return null;
+    try{var r=await supa.from(table).select(cols).eq('aff',k);if(r.error)throw r.error;return r.data||[];}
+    catch(e){warn.push(table+' : '+(e.message||e));return null;}
+  }
+  // dates de l'affaire, d'après les barres
+  var acts=(P.data||[]).filter(function(r){return r.t==='act';});
+  var rl=[],pv=[];acts.forEach(function(r){rl=rl.concat(getTaskDays5(r,'reel')||[]);pv=pv.concat(getTaskDays5(r,'prev')||[]);});
+  var rS=rl.length?d5Date(Math.min.apply(null,rl)):null,rE=rl.length?d5Date(Math.max.apply(null,rl)):null,pE=pv.length?d5Date(Math.max.apply(null,pv)):null;
+
+  // ── Dernière version de chaque document ──
+  st('Documents…');
+  var docs=[];
+  for(var di=0;di<(P.documents||[]).length;di++){
+    var doc=P.documents[di],vs=(doc.versions||[]).slice().sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);}),last=vs[0];if(!last)continue;
+    var withF=vs.filter(function(v){return v.attachmentPath;})[0],e={nom:doc.nom,ver:last,fileVer:withF,file:null,pend:(doc.mods||[]).filter(function(m){return m&&m.status!=='fait';})};
+    if(withF){try{e.file=put('01_Documents_derniere_version/'+safe(withF.attachmentName||doc.nom),await dl(withF.attachmentPath));}catch(err){warn.push('Fichier de « '+doc.nom+' » : '+err.message);}}
+    docs.push(e);
+  }
+  // ── État des fiches, punch lists, commandes (lecture seule, pas de fichier) ──
+  st('Fiches et punch lists…');
+  var fiches=await rows('docs_chantier','docs_chantier','status,meta,title')||[];
+  var pls=await rows('punch_list','punch_lists','title,meta')||[];
+  var cmds=INT?(await rows('commandes','commandes','num,meta')||[]):[];
+  var cmdRest=cmds.filter(function(x){var m=x.meta||{};return +m.rest>0&&!m._gone;});
+
+  // ── Récap ──
+  st('Récap…');
+  var CSS='body{font-family:"Segoe UI",system-ui,Arial,sans-serif;color:#1C1A33;margin:0;background:#F6F5FB}main{max-width:1000px;margin:0 auto;padding:24px 20px 40px}'
+    +'.hd{background:#fff;border-bottom:3px solid #4B3FC7;padding:20px 24px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}.hd img{height:54px}.hd h1{margin:0;font-size:22px}.hd .s{color:#6B6790;font-size:13px;margin-top:3px}.hd .m{margin-left:auto;text-align:right;font-size:12px;color:#6B6790}'
+    +'h2{font-size:16px;margin:26px 0 10px}table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #E4E1F0;font-size:12.5px}th{text-align:left;font-size:11px;color:#6B6790;padding:7px 9px;border-bottom:1px solid #E4E1F0;background:#FBFAFF}td{padding:7px 9px;border-bottom:1px solid #F1EFF8;vertical-align:top}'
+    +'.k{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:18px 0}.k div{background:#fff;border:1px solid #E4E1F0;border-radius:12px;padding:10px 12px}.k b{display:block;font-size:20px}.k span{font-size:11.5px;color:#6B6790}'
+    +'.warn{background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:8px 12px;color:#92400E;font-size:13px}a{color:#4B3FC7;font-weight:700}.ok{color:#15803D;font-weight:800}.no{color:#B45309;font-weight:800}.mut{color:#6B6790;font-size:12px}'
+    +'@media print{body{background:#fff}}';
+  var nF=fiches.length,nFs=fiches.filter(function(f){return f.status==='locked';}).length;
+  var plOpen=pls.reduce(function(s,x){return s+(+((x.meta||{}).open)||0);},0),plN=pls.reduce(function(s,x){return s+(+((x.meta||{}).n)||0);},0);
+  var FH=null,phs=[],persT={},budPh=0;
+  if(INT){
+    FH=_rcFhHours(k);
+    budPh=(P.data||[]).reduce(function(s,r){return s+(r.t==='ph'&&+r.budgetH>0?+r.budgetH:0);},0);
+    try{if(STORE.current===k)phs=_rcHoursData().phs;}catch(err){phs=[];}
+    Object.keys(P.fh||{}).forEach(function(nm){Object.keys(P.fh[nm]||{}).forEach(function(wk){Object.keys(P.fh[nm][wk]||{}).forEach(function(dI){
+      var L=P.fh[nm][wk][dI];if(Array.isArray(L))L.forEach(function(l){var h=+(l&&(l.hours||l.h))||0;if(h)persT[nm]=(persT[nm]||0)+h;});});});});
+  }
+  var link=function(p){return p?'<a href="'+href(p)+'">'+esc(p.split('/').pop())+'</a>':'';};
+  var h='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Récap de fin d’affaire — '+esc(inf.numero||k)+'</title><style>'+CSS+'</style></head><body>'
+    +'<div class="hd">'+(typeof LOGO_ELS_B64!=='undefined'?'<img src="'+LOGO_ELS_B64+'" alt="ELS">':'')+'<div><h1>Récap de fin d’affaire</h1><div class="s"><b>'+esc((inf.numero||k)+(inf.libelle?' · '+inf.libelle:''))+'</b>'+(inf.numeroClient?' — N° client '+esc(inf.numeroClient):'')+'</div>'
+    +(rS?'<div class="s">Réalisation du '+frD(rS)+' au '+frD(rE)+'</div>':'')+'</div><div class="m">Édité le <b>'+frD(today)+'</b><br>'+(INT?'Version <b>interne</b> — ne pas transmettre':'Pour le client')+'</div></div><main>';
+  h+='<div class="k"><div><span>Documents</span><b>'+docs.length+'</b><span>dernière version de chacun</span></div>'
+    +(nF?'<div><span>Fiches de contrôle</span><b class="'+(nFs===nF?'ok':'no')+'">'+nFs+' / '+nF+'</b><span>signées</span></div>':'')
+    +(pls.length?'<div><span>Punch list</span><b class="'+(plOpen?'no':'ok')+'">'+(plN-plOpen)+' / '+plN+'</b><span>fermées ou N/A</span></div>':'')
+    +(INT?'<div><span>Heures pointées</span><b>'+n1(FH.total)+' h</b><span>'+(budPh?'sur '+n1(budPh)+' h de budget ('+(FH.total>budPh?'+':'')+Math.round((FH.total-budPh)*100/budPh)+' %)':'pas de budget saisi')+'</span></div>'
+      +(rE&&pE?'<div><span>Fin réelle</span><b class="'+(rE>pE?'no':'ok')+'">'+frD(rE)+'</b><span>prévue le '+frD(pE)+'</span></div>':''):'')+'</div>';
+  var sec=0;
+  h+='<h2>'+(++sec)+' · Documents — dernière version</h2>'+(docs.length?'<table><tr><th>Document</th><th>Version</th><th>Date</th><th>Dernière modification</th><th>Fichier</th></tr>'
+    +docs.map(function(d){return '<tr><td><b>'+esc(d.nom)+'</b></td><td>'+esc(_modsVerLbl(d.ver.version))+'</td><td>'+esc(d.ver.date||'')+'</td><td style="white-space:pre-wrap">'+esc(d.ver.note||'')+'</td><td>'
+      +(d.file?link(d.file)+(d.fileVer!==d.ver?'<div class="mut">fichier de la version '+esc(_modsVerLbl(d.fileVer.version))+'</div>':''):'<span class="mut">fichier pas sur le site</span>')+'</td></tr>';}).join('')+'</table>'
+    :'<p class="mut">Aucun document dans l’onglet Modifications.</p>');
+  if(nF)h+='<h2>'+(++sec)+' · Fiches de contrôle pétrochimie</h2><table><tr><th>Skid</th><th>Date du contrôle</th><th>Statut</th></tr>'
+    +fiches.map(function(f){var m=f.meta||{};return '<tr><td>'+esc(m.skid||f.title||'—')+'</td><td>'+esc(m.date||'')+'</td><td>'+(f.status==='locked'?'<span class="ok">✓ signée</span>':'<span class="no">non signée</span>')+'</td></tr>';}).join('')+'</table>';
+  if(pls.length)h+='<h2>'+(++sec)+' · Punch list du client — état final</h2><table><tr><th>Punch list</th><th>Lignes</th><th>Ouvertes</th><th>Fermées / N/A</th></tr>'
+    +pls.map(function(x){var m=x.meta||{};return '<tr><td>'+esc(x.title||m.title||'Punch list')+(m.rev?' — Rév. '+esc(m.rev):'')+'</td><td>'+(+m.n||0)+'</td><td class="'+(+m.open?'no':'ok')+'">'+(+m.open||0)+'</td><td>'+((+m.closed||0)+(+m.na||0))+'</td></tr>';}).join('')+'</table>';
+  if(INT){
+    h+='<h2>'+(++sec)+' · Heures et budget</h2>';
+    if(phs.length)h+='<table><tr><th>Phase</th><th>Budget</th><th>Heures pointées</th><th>Écart</th></tr>'+phs.map(function(p){var e=p.bud?p.rv-p.bud:null;return '<tr><td><b>'+esc(p.row.lb||p.row.pk)+'</b></td><td>'+(p.bud?n1(p.bud)+' h':'—')+'</td><td>'+n1(p.rv)+' h</td><td>'+(e==null?'—':'<span class="'+(e>0?'no':'ok')+'">'+(e>0?'+':'')+n1(e)+' h</span>')+'</td></tr>';}).join('')+'</table>';
+    var pk=Object.keys(persT).sort(function(a,b){return persT[b]-persT[a];});
+    h+=pk.length?'<table style="margin-top:10px"><tr><th>Personne</th><th>Heures pointées</th></tr>'+pk.map(function(n){return '<tr><td>'+esc(n)+'</td><td>'+n1(persT[n])+' h</td></tr>';}).join('')+'</table>':'<p class="mut">Aucune heure pointée.</p>';
+    var pend=[];docs.forEach(function(d){d.pend.forEach(function(m){pend.push(esc(d.nom)+(m.detail?' — '+esc(String(m.detail).slice(0,120)):''));});});
+    if(pend.length||cmdRest.length)h+='<h2>'+(++sec)+' · Ce qui reste</h2><div class="warn">'
+      +(pend.length?'<b>Modifications encore à faire :</b><br>'+pend.join('<br>'):'')
+      +(cmdRest.length?(pend.length?'<br><br>':'')+'<b>Commandes pas entièrement reçues :</b><br>'+cmdRest.map(function(x){return esc(x.num)+' — '+(+x.meta.rest)+' ligne(s)';}).join('<br>'):'')+'</div>';
+  }
+  if(warn.length)h+='<h2>⚠ Non inclus</h2><div class="warn">'+warn.map(esc).join('<br>')+'</div>';
+  h+='<p class="mut" style="margin-top:30px">Récap fabriqué par Pétrosphère le '+frD(today)+' à '+today.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+'.</p></main></body></html>';
+  zip.file('00_Recap_'+(INT?'interne':'client')+'.html',h);nFiles++;
+  st('Compression…');
+  var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+  var name=safe((inf.numero||k)+'_Recap_'+(INT?'interne':'client')+'_'+iso)+'.zip';
+  var url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url);},20000);
+  return {name:name,files:nFiles,size:blob.size,warn:warn,blob:blob};
 }
 
 
@@ -10307,7 +10523,7 @@ var _MODS_MAX_ATT=20*1024*1024; // au-delà, la plupart des messageries refusent
 })();
 
 // ── Outils ──
-function _modsCanEdit(){try{return CURRENT_ROLE==='admin'||hasEdit('modifications');}catch(e){return false;}}
+function _modsCanEdit(){try{return !_affRO()&&(CURRENT_ROLE==='admin'||hasEdit('modifications'));}catch(e){return false;}} // affaire archivée : lecture seule (09/10/2026)
 function _modsJs(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 function _modsVerLbl(v){v=String(v==null?'':v).trim();return /^\d+$/.test(v)?'v'+v:(v||'—');}
 function _modsNowFr(){return new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});}
@@ -10400,6 +10616,7 @@ function renderModificationsTab(){
     +(nPeople||!ed?'':'<div class="mdx-warn">Aucune personne avec un email dans les infos de l’affaire. <button type="button" class="mdx-lnk" onclick="openAffaireInfos()">ℹ️ Ajouter des personnes</button></div>')
     +'</div><div class="mdx-acts">'
     +(docs.length?'<button type="button" class="mdx-btn2" onclick="modsExportAll()">⬇ Exporter (.zip)</button>':'')
+    +(ed&&docs.some(function(d){return _modsOldFiles(d).length;})?'<button type="button" class="mdx-btn2" onclick="modsDropAllOldFiles()" title="Seul le fichier de la dernière version de chaque document reste sur le site ; l’historique est gardé">🧹 Retirer les anciens fichiers</button>':'')
     +(hasAtt&&ed?'<button type="button" class="mdx-btn2 red" onclick="modsPurgeAttachments()">🗑 Purger les fichiers</button>':'')
     +(ed?'<button type="button" class="mdx-btn2" onclick="modShowAddDocForm()">＋ Ajouter un document</button>'
       +'<button type="button" class="mdx-btn" onclick="modShowReqForm(\'\')">＋ Nouvelle modification</button>':'')
@@ -10680,6 +10897,52 @@ function modShowAddDocForm(){
     +'<label class="mdx-fl">PERSONNES À PRÉVENIR</label>'+_modsPeopleHtml({},[])
     +_modsFormButtons('modConfirmVer.bind(null,\'\',\'\')','Enregistrer et préparer l’email'));
 }
+// ── Seul le fichier de la DERNIÈRE version reste sur le site (09/10/2026, demande de l'utilisateur) ──
+// Les fichiers des versions remplacées sont supprimés du stockage : l'entreprise les range sur son propre serveur.
+// L'historique reste entier (indice, date, détail de la modification, personnes prévenues) ; le fichier est
+// noté « retiré du site ». On garde le fichier de la version la plus récente QUI A un fichier (si la toute
+// dernière n'en a pas, celui d'avant reste). Les fichiers joints aux demandes (mods[].files) ne sont pas touchés.
+function _modsOldFiles(doc){
+  var vs=_modsVersSorted(doc),i=-1;
+  for(var k=0;k<vs.length;k++){if(vs[k].attachmentPath){i=k;break;}}
+  if(i<0)return [];
+  return vs.slice(i+1).filter(function(v){return v.attachmentPath;}).map(function(v){return {v:v.id,path:v.attachmentPath};});
+}
+async function _modsDropOldFiles(aff,docIds,silent){
+  var P=STORE.projects[aff],docs=(P&&P.documents)||[],items=[];
+  docs.forEach(function(d){if(docIds.indexOf(d.id)>=0)_modsOldFiles(d).forEach(function(x){items.push({doc:d.id,v:x.v,path:x.path});});});
+  if(!items.length||!supa)return 0;
+  var r;
+  try{r=await supa.storage.from(BUCKET).remove(items.map(function(x){return x.path;}));}catch(e){r={error:e};}
+  // remove renvoie les fichiers vraiment supprimés : aucun = droit de suppression refusé → on ne touche à rien
+  if(r.error||!(r.data||[]).length){
+    console.warn('Modifications : anciens fichiers non supprimés',r.error||'aucun fichier supprimé (droit de suppression du stockage ?)');
+    if(!silent)alert('Le serveur n’a pas supprimé les anciens fichiers'+(r.error?' ('+(r.error.message||r.error)+')':' (droit de suppression du stockage refusé ?)')+'.\nRien n’a été changé.');
+    return 0;
+  }
+  var n=0;
+  items.forEach(function(it){
+    var d=((STORE.projects[aff]||{}).documents||[]).find(function(x){return x.id===it.doc;});
+    var v=d&&(d.versions||[]).find(function(x){return x.id===it.v;});
+    if(!v||v.attachmentPath!==it.path)return;
+    v.attachmentPath=null;
+    v.attachmentName=(v.attachmentName||'fichier')+' — retiré du site (rangé sur votre serveur)';
+    v.fileRemovedAt=Date.now();
+    n++;
+  });
+  if(n){saveNow();if(STORE.current===aff&&typeof renderModificationsTab==='function')renderModificationsTab();}
+  return n;
+}
+// Bouton « Retirer les anciens fichiers » : pour les versions remplacées enregistrées avant cette règle
+async function modsDropAllOldFiles(){
+  if(!_modsCanEdit())return;
+  var aff=STORE.current,docs=_modsGetDocs(),nb=0;
+  docs.forEach(function(d){nb+=_modsOldFiles(d).length;});
+  if(!nb){alert('Aucun ancien fichier à retirer.');return;}
+  if(!confirm('Retirer du site les fichiers des '+nb+' version(s) remplacée(s) de cette affaire ?\n\nSeul le fichier de la dernière version de chaque document reste sur le site. L’historique (versions, dates, détail des modifications, personnes prévenues) est gardé.\n\nVérifiez que ces anciens fichiers sont bien sur votre serveur : cette suppression est définitive.'))return;
+  var n=await _modsDropOldFiles(aff,docs.map(function(d){return d.id;}));
+  if(n)alert(n+' ancien(s) fichier(s) retiré(s) du site.');
+}
 // docId '' = nouveau document ; modId = demande qui devient « faite » (sinon version directe)
 async function modConfirmVer(docId,modId,withMail){
   var val=function(id){var e=document.getElementById(id);return e?String(e.value||'').trim():'';};
@@ -10713,6 +10976,8 @@ async function modConfirmVer(docId,modId,withMail){
   modCloseForm();
   renderModificationsTab();
   if(withMail)modsPrepareEmail(doc.id,v.id,file);
+  // nouveau fichier bien enregistré : celui de la version d'avant est retiré du site (09/10/2026)
+  if(!isNew&&up&&up.path)_modsDropOldFiles(aff,[doc.id],true);
 }
 // Préparer (ou refaire) l'email d'une version : vérifier les personnes d'abord
 function modEditDest(docId,verId){
@@ -10930,7 +11195,10 @@ function modDeleteVersion(docId,verId){
   var doc=_modsDoc(docId);
   if(!doc)return;
   if((doc.versions||[]).length<=1&&!(doc.mods||[]).length){modDeleteDoc(docId);return;}
-  if(!confirm('Supprimer cette version ?'))return;
+  // (09/10/2026) le fichier de la version d'avant a pu être retiré du site : le dire avant de supprimer la dernière
+  var _vs=_modsVersSorted(doc),_prev=_vs[0]&&_vs[0].id===verId?_vs[1]:null;
+  var _warn=_prev&&!_prev.attachmentPath&&_prev.fileRemovedAt?'\n\nAttention : la version '+_modsVerLbl(_prev.version)+' redeviendra la dernière, mais son fichier n’est plus sur le site (il est sur votre serveur). Il faudra le rajouter.':'';
+  if(!confirm('Supprimer cette version ?'+_warn))return;
   doc.versions=(doc.versions||[]).filter(function(v){return v.id!==verId;});
   // la demande qui avait donné cette version redevient « à faire »
   (doc.mods||[]).forEach(function(m){if(m.verId===verId){m.status='afaire';delete m.verId;delete m.doneAt;delete m.doneBy;}});
@@ -12694,6 +12962,7 @@ function personInitials(name){
 function _isChantierPhase(pk){return pk&&pk.toUpperCase().indexOf('CHANTIER')>=0;}
 // Effectif saisi manuellement sur une sous-phase, pour une semaine donnée
 function sbSetHeadcount(sbId,week,value){
+  if(_affRO()){renderGantt();return;} // affaire archivée : lecture seule (09/10/2026)
   var r=D().find(function(x){return x.id===sbId;});
   if(!r)return;
   if(!r.headcount)r.headcount={};
@@ -12704,6 +12973,7 @@ function sbSetHeadcount(sbId,week,value){
 }
 
 function sbSetBudget(sbId,current){
+  if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   var r=D().find(function(x){return x.id===sbId;});
   // (09/10/2026) sous-phase d'une phase Automatisme : budget calculé par le barème, sauf saisie à la main
   var ph=r&&D().find(function(x){return x.t==='ph'&&x.pk===r.pk;}),auto=ph&&_isAutomPhaseRow(ph);
@@ -12760,6 +13030,7 @@ function _subcoSummaryHtml(exp){
 function _subcoExp(r){var s=_subco(r);return s?' <span style="font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:8px;background:#E0F2FE;color:#0369A1;white-space:nowrap">'+escHtml(_subcoLbl(r))+'</span>':'';}
 // Fenêtre « Sous-traité » : champ Entreprise sous-traitante, avec les entreprises déjà saisies proposées
 function gcSetSubco(id){
+  if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   if(typeof hasEdit==='function'&&!hasEdit('planning'))return;
   var r=D().find(function(x){return x.id===id;});if(!r)return;
   var s=_subco(r),old=document.getElementById('subco-modal');if(old)old.remove();
@@ -12787,6 +13058,7 @@ function gcSetSubco(id){
   setTimeout(function(){inp.focus();inp.select();},30);
 }
 function gcClearSubco(id){
+  if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   if(typeof hasEdit==='function'&&!hasEdit('planning'))return;
   var r=D().find(function(x){return x.id===id;});if(!r)return;
   r.subco={on:false,name:''}; // (pas « delete » : la fusion de la synchro voit bien le changement)
@@ -12794,6 +13066,7 @@ function gcClearSubco(id){
 }
 
 function ensSetBudget(ensId,current){
+  if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   var val=prompt('Budget heures pour cet ensemble (0 = pas de budget) :',current||0);
   if(val===null)return;
   var r=D().find(function(x){return x.id===ensId;});
@@ -12809,6 +13082,7 @@ function toggleEnsCollapse(ensId){
 }
 
 function phSetNotifResps(pk){
+  if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   var phRow=D().find(function(x){return x.pk===pk&&x.t==='ph';});
   if(!phRow)return;
   var p=currP(),infos=p.infos||{},resps=infos.responsables||{};
@@ -12864,6 +13138,7 @@ function phSetNotifResps(pk){
 }
 
 function phSetBudget(pk, current){
+  if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   var val=prompt('Budget heures pour cette phase (0 = pas de budget) :', current||0);
   if(val===null)return;
   var r=D().find(function(x){return x.pk===pk&&x.t==='ph';});
@@ -12913,6 +13188,7 @@ function updBudget(){
 // PROJETS
 // ═══════════════════════════════
 function toggleAffaireClosed(val){
+  if(!val&&currP().closed&&CURRENT_ROLE!=='admin'){alert('Seul un admin peut désarchiver une affaire.');return;} // (09/10/2026)
   var p=currP();
   p.closed=!!val;
   // Save directly to localStorage without triggering renderProjSel
@@ -13204,6 +13480,7 @@ var BAREME_AUTO = {
 };
 
 function openBaremeAuto(forcePk){
+  if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   var ex=document.getElementById('_baremeModal');if(ex)ex.remove();
   // Vérifier qu'il y a une phase AUTOMATISME dans le projet courant
   var data=D();
@@ -13460,6 +13737,7 @@ function aifAddEmail(resp){
 }
 
 function saveAffaireInfos(){
+  if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   var p=currP();if(!p)return;
   var num=((document.getElementById('aif-num')||{}).value||'').trim();
   var lib=((document.getElementById('aif-lib')||{}).value||'').trim();
@@ -14519,7 +14797,7 @@ function gcGroupRowHtml(e,DW,NC,acts){
     var cells='';
     for(var w=1;w<=GANTT_WIDE_WEEKS;w++){
       var hc=(r.headcount&&r.headcount[w])||'';
-      cells+='<td colspan="7" class="ghc"><input type="number" min="0" max="99" value="'+hc+'" placeholder="·" title="Effectif prévu semaine '+isoWeekOf(w)+'" oninput="sbSetHeadcount(\''+r.id+'\','+w+',this.value)" onclick="event.stopPropagation()" class="ghci" style="color:'+phCol+'"></td>';
+      cells+='<td colspan="7" class="ghc"><input type="number" min="0" max="99" value="'+hc+'" placeholder="·" title="Effectif prévu semaine '+isoWeekOf(w)+'" oninput="sbSetHeadcount(\''+r.id+'\','+w+',this.value)" onclick="event.stopPropagation()" class="ghci"'+(_affRO()?' disabled':'')+' style="color:'+phCol+'"></td>';
     }
     return '<tr class="gc-row" data-gid="'+r.id+'">'+lbl+cells+'</tr>';
   }
@@ -15597,6 +15875,7 @@ function closePlanEditor(){
 // Éditeur fermé uniquement via la croix (pas au clic extérieur)
 
 function pedToggleArchive(aff, archive){
+  if(!archive&&CURRENT_ROLE!=='admin'){alert('Seul un admin peut désarchiver une affaire.');return;} // (09/10/2026)
   // Use STORE.current as fallback in case aff has special chars
   var realAff=STORE.projects[aff]?aff:STORE.current;
   if(!STORE.projects[realAff])return;
@@ -18686,6 +18965,7 @@ window._ganttBarMode = 'prev';
 
 // ── Statut des phases (terminé/en cours) ─────────────────────────────
 function togglePhStatus(rowId){
+  if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   var r=D().find(function(x){return x.id===rowId;});
   if(!r||r.t!=='ph')return;
   var cur=r.phStatus||'';
@@ -20607,7 +20887,7 @@ function renderRecap(){
   // donc impossibles à effacer ailleurs — on les signale avec un bouton.
   var _delPers=STORE._deletedPersons||{};
   window._rcOrph=Object.keys(_delPers).map(function(nm){return {nm:nm,h:fhPersonHours(nm).byAff[STORE.current]||0};}).filter(function(o){return o.h>0;});
-  if(window._rcOrph.length){
+  if(window._rcOrph.length&&!_affRO()){ // affaire archivée : lecture seule
     h+='<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:var(--r2);padding:12px 14px;margin-bottom:16px">'
       +'<div style="font-size:13px;font-weight:800;color:#92400E;margin-bottom:4px">⚠️ Heures de personnes supprimées de l’annuaire, encore comptées dans cette affaire</div>'
       +'<div style="font-size:11px;color:#92400E;margin-bottom:8px">Elles n’apparaissent plus dans la feuille d’heure. S’il s’agit d’un salarié parti, vous pouvez les garder (historique) ; sinon (test, erreur), supprimez-les.</div>'
@@ -22480,8 +22760,8 @@ window.DocsChantier = (function(){
   // ────────────────────────────────────────────────────────────────
   var ENV={
     canView:function(){ try{ return CURRENT_ROLE==='admin'||hasView('docs_chantier'); }catch(e){ return false; } },
-    canEdit:function(){ try{ return CURRENT_ROLE==='admin'||hasEdit('docs_chantier'); }catch(e){ return false; } },
-    canReopen:function(){ try{ return CURRENT_ROLE==='admin'||CURRENT_ROLE==='chef_chantier'; }catch(e){ return false; } },
+    canEdit:function(){ try{ return !_affRO()&&(CURRENT_ROLE==='admin'||hasEdit('docs_chantier')); }catch(e){ return false; } }, // affaire archivée : lecture seule
+    canReopen:function(){ try{ return !_affRO()&&(CURRENT_ROLE==='admin'||CURRENT_ROLE==='chef_chantier'); }catch(e){ return false; } },
     isAdmin:function(){ try{ return CURRENT_ROLE==='admin'; }catch(e){ return false; } },
     who:function(){ try{ return (CURRENT_USER&&CURRENT_USER.email)||''; }catch(e){ return ''; } },
     affaires:function(){
@@ -23119,6 +23399,25 @@ window.DocsChantier = (function(){
   }
   function staticHtml(){
     var doc=$('dcf-doc'); if(!doc) return '';
+    return staticFrom(doc);
+  }
+  // (09/10/2026) Dossier de fin d'affaire : une fiche figée en HTML (comme « Imprimer »), sans l'ouvrir à l'écran.
+  // La fiche est dessinée hors écran avec ses propres données (D temporaire), puis D est remis tel quel.
+  async function exportHtml(id){
+    var row=await DB.get(id); if(!row) return null;
+    var keep=D; D=JSON.parse(JSON.stringify(row.data||{}));
+    var tmp=document.createElement('div');
+    try{
+      tmp.style.cssText='position:fixed;left:-20000px;top:0;width:900px;visibility:hidden';
+      tmp.innerHTML='<div class="dcf dcf-ro">'+buildDoc()+'</div>';
+      document.body.appendChild(tmp);
+      var body=staticFrom(tmp.firstChild);
+      var html='<!doctype html><html><head><meta charset="utf-8"><title>'+esc(fileBase())+'</title><style>'+cssText()+
+        '@page{size:A4;margin:0}html,body{margin:0;padding:0;background:#fff}.dcf-page{margin:0 auto 8mm!important;page-break-after:always;break-after:page}.dcf-page:last-child{page-break-after:auto;break-after:auto}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}@media print{.dcf-page{margin:0!important;box-shadow:none!important}}</style></head><body>'+body+'</body></html>';
+      return {name:fileBase(),html:html,status:row.status,meta:metaOf(D)};
+    }finally{ D=keep; if(tmp.parentNode) tmp.remove(); }
+  }
+  function staticFrom(doc){
     var cl=doc.cloneNode(true);
     cl.querySelectorAll('.dcf-noprint').forEach(function(el){ el.remove(); });
     cl.querySelectorAll('input,textarea').forEach(function(el){
@@ -23191,7 +23490,7 @@ window.DocsChantier = (function(){
   }
 
   return {
-    render:render, refresh:function(){ render(null,S.ctxAff!==null?{aff:S.ctxAff,enter:true}:undefined); },
+    render:render, refresh:function(){ render(null,S.ctxAff!==null?{aff:S.ctxAff,enter:true}:undefined); }, exportHtml:exportHtml,
     canView:function(){ return ENV.canView(); },
     // on quitte l'onglet (retour à l'accueil) : on envoie ce qui reste et on arrête le suivi
     leave:function(){ if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); saveNow(); } stopPoll(); stopListPoll(); }, open:open, newDoc:newDoc, del:del, back:back,
@@ -23249,8 +23548,8 @@ window.Commandes=(function(){
   // ── Environnement (droits, utilisateur, affaires) ──
   var ENV={
     canView:function(){ try{ return CURRENT_ROLE==='admin'||hasView('commandes'); }catch(e){ return false; } },
-    canEdit:function(){ try{ return CURRENT_ROLE==='admin'||hasEdit('commandes'); }catch(e){ return false; } },          // réception + bons de livraison
-    canManage:function(){ try{ return CURRENT_ROLE==='admin'||hasEdit('commandes_gestion'); }catch(e){ return false; } }, // créer / modifier / supprimer
+    canEdit:function(){ try{ return !_affRO()&&(CURRENT_ROLE==='admin'||hasEdit('commandes')); }catch(e){ return false; } },          // réception + bons de livraison
+    canManage:function(){ try{ return !_affRO()&&(CURRENT_ROLE==='admin'||hasEdit('commandes_gestion')); }catch(e){ return false; } }, // créer / modifier / supprimer
     who:function(){ try{ return (CURRENT_USER&&CURRENT_USER.email)||''; }catch(e){ return ''; } },
     affaires:function(){
       try{ return Object.keys(STORE.projects||{}).sort().map(function(k){
@@ -24180,6 +24479,16 @@ window.Commandes=(function(){
   }
 
   return {
+    // (09/10/2026) Dossier de fin d'affaire : les lignes de toutes les commandes d'une affaire (aucun prix)
+    exportAff:async function(aff){
+      var r=await DB._c().select('*').eq('aff',aff); if(r.error) throw r.error;
+      var out=[];
+      (r.data||[]).forEach(function(row){ var d=row.data||{},L=lines(d);
+        L.forEach(function(l){ out.push({num:row.num||d._num||'',four:d._four||'',date:d._date||'',ref:l.ref,des:l.des,unit:l.unit,qc:l.qc,qr:l.qr,del:l.del,old:l.old,
+          etat:l.qr>=l.qc?'Reçue':(l.qr>0?'Partielle':'En attente')}); });
+      });
+      return {orders:(r.data||[]).length,lines:out};
+    },
     render:render, refresh:function(){ S.cur=null; render(); }, open:open, newCmd:newCmd, del:del, back:back, leave:leave,
     canView:function(){ return ENV.canView(); },
     pending:function(){ return !!(S.cur&&Object.keys(S.dirty).length); },
@@ -24292,7 +24601,7 @@ window.PunchList=(function(){
   // ── Environnement (droits, utilisateur, affaires) ──
   var ENV={
     canView:function(){ try{ return CURRENT_ROLE==='admin'||hasView('punch_list'); }catch(e){ return false; } },
-    canEdit:function(){ try{ return CURRENT_ROLE==='admin'||hasEdit('punch_list'); }catch(e){ return false; } },
+    canEdit:function(){ try{ return !_affRO()&&(CURRENT_ROLE==='admin'||hasEdit('punch_list')); }catch(e){ return false; } }, // affaire archivée : lecture seule
     isAdmin:function(){ try{ return CURRENT_ROLE==='admin'; }catch(e){ return false; } },
     who:function(){ try{ return (CURRENT_USER&&CURRENT_USER.email)||''; }catch(e){ return ''; } },
     affaires:function(){
@@ -24898,14 +25207,17 @@ window.PunchList=(function(){
       return {data:cv.toDataURL('image/jpeg',0.8),w:cv.width,h:cv.height};
     }finally{ URL.revokeObjectURL(url); }
   }
-  async function exportXlsx(){
-    if(!S.cur) return;
-    if(Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); }
-    var btn=$('pl-xls'),lbl=function(t){ if(btn){ btn.textContent=t; } };
+  // row (09/10/2026, dossier de fin d'affaire) : fabrique le fichier d'une punch list donnée et le RENVOIE
+  // ({fn, blob, missing}) au lieu de le télécharger ; sans row = la punch list ouverte, comme avant.
+  async function exportXlsx(row){
+    if(row&&!row.data) row=null;
+    if(!row&&!S.cur) return;
+    if(!row&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); }
+    var btn=row?null:$('pl-xls'),lbl=function(t){ if(btn){ btn.textContent=t; } };
     if(btn) btn.disabled=true; lbl('Préparation…');
     try{
       var X=await loadExcelJs();
-      var d=D,K=keys(d),cv=d._cover||{},st=stats(d);
+      var d=row?row.data:D,K=keys(d),cv=d._cover||{},st=stats(d);
       var wb=new X.Workbook(); wb.creator='Pétrosphère — ELS'; wb.created=new Date();
       var ws=wb.addWorksheet('Punch list',{pageSetup:{orientation:'landscape',paperSize:9,fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}}});
       // Mêmes colonnes et même ordre que le fichier du client (07/10/2026), puis nos colonnes
@@ -24973,12 +25285,19 @@ window.PunchList=(function(){
       var buf=await wb.xlsx.writeBuffer();
       var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
       var fn=String((d._title||'Punch list')+(cv.rev?' Rev '+cv.rev:'')+' - ELS '+fr(todayIso()).replace(/\//g,'-')).replace(/[\\\/:*?"<>|\r\n]+/g,'_').slice(0,120)+'.xlsx';
+      if(row) return {fn:fn,blob:blob,missing:missing,stats:st};
       var url=URL.createObjectURL(blob),a=document.createElement('a'); a.href=url; a.download=fn; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){ URL.revokeObjectURL(url); },15000);
       if(missing) alert(missing+' photo(s) n’ont pas pu être récupérées : elles sont indiquées « photo indisponible » dans le fichier.');
       return {fn:fn,size:blob.size,rows:K.length,photos:doneP-missing};
-    }catch(e){ alert('Export Excel impossible : '+(e&&e.message||e)); }
+    }catch(e){ if(row) throw e; alert('Export Excel impossible : '+(e&&e.message||e)); }
     finally{ if(btn){ btn.disabled=false; btn.textContent='⬇ Excel'; } }
+  }
+  // Dossier de fin d'affaire : toutes les punch lists d'une affaire, en .xlsx avec photos
+  async function exportAff(aff){
+    var r=await DB._c().select('*').eq('aff',aff); if(r.error) throw r.error;
+    var out=[]; for(var i=0;i<(r.data||[]).length;i++) out.push(await exportXlsx(r.data[i]));
+    return out;
   }
 
   // ── Enregistrement (même principe que Commandes / Docs chantier) ──
@@ -25073,7 +25392,7 @@ window.PunchList=(function(){
   window.addEventListener('pagehide',function(){ if(S.cur&&Object.keys(S.dirty).length) keepLocal(); });
 
   return {
-    render:render, open:open, back:back, leave:leave, del:del, importer:importer, exportXlsx:exportXlsx,
+    render:render, open:open, back:back, leave:leave, del:del, importer:importer, exportXlsx:exportXlsx, exportAff:exportAff,
     canView:function(){ return ENV.canView(); },
     pending:function(){ return !!(S.cur&&Object.keys(S.dirty).length)||S.queue.length>0; },
     _f:function(k,v){ S[k]=v; if(S.cur) drawDetail(); else drawList(); },
@@ -25443,12 +25762,16 @@ window.PetroNav=(function(){
     if(secVis('#sbar .btn-da[onclick*="openAffaireInfos"]'))more.push(['openAffaireInfos()','ℹ️ Infos affaire (libellé, n° client, responsables)']);
     if(secVis('#nav [onclick*="openRappelsSettings"]'))more.push(['openRappelsSettings()','🔔 Rappels automatiques']);
     if(secVis('#nav [onclick*="exportData"]'))more.push(['exportData()','💾 Sauvegarde complète (.json)']);
-    if(secVis('#sbar .btn-da[onclick*="openModal(\'del\')"]')||secVis('#sbar .btn-da[onclick*="openModal("]')){
-      more.push([closed?'PetroNav.unarchive()':'PetroNav.archive()',closed?'✓ Désarchiver l’affaire':'🗄 Archiver l’affaire']);
-      more.push(['openModal(\'del\')','🗑 Supprimer l’affaire',1]);
-    }
-    var canEdit=secVis('#nav [onclick="openPlanEditor()"]');
-    var h=(closed?'<div style="display:flex;align-items:center;gap:10px;justify-content:space-between;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:13px;font-weight:700;color:#334155"><span>🗄 Affaire archivée : elle n’apparaît plus dans les listes de choix (feuilles d’heure, planning réunion).</span>'+(secVis('#sbar .btn-da[onclick*="openModal("]')?'<button type="button" class="sec-btn" style="height:30px" data-secact="PetroNav.unarchive()">✓ Désarchiver</button>':'')+'</div>':'')
+    // (09/10/2026) Archiver : ceux qui peuvent supprimer l'affaire ; désarchiver : admin seulement
+    var isAdm=role()==='admin';
+    more.push(['affDossierAsk()','📦 Dossier de fin d’affaire (.zip)…']);
+    if(!closed&&(secVis('#sbar .btn-da[onclick*="openModal(\'del\')"]')||secVis('#sbar .btn-da[onclick*="openModal("]')))more.push(['PetroNav.archive()','🗄 Archiver l’affaire…']);
+    if(closed&&isAdm)more.push(['PetroNav.unarchive()','✓ Désarchiver l’affaire']);
+    if(secVis('#sbar .btn-da[onclick*="openModal(\'del\')"]')||secVis('#sbar .btn-da[onclick*="openModal("]'))more.push(['openModal(\'del\')','🗑 Supprimer l’affaire',1]);
+    var canEdit=secVis('#nav [onclick="openPlanEditor()"]')&&!closed;
+    var bi=document.getElementById('inp-bud');if(bi)bi.disabled=!hasEdit('budget_toolbar'); // H vendues : grisé si archivée
+    var _arcWhen=p.archivedAt?' le '+new Date(p.archivedAt).toLocaleDateString('fr-FR')+(p.archivedBy?' par '+esc(p.archivedBy):''):'';
+    var h=(closed?'<div style="display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:13px;font-weight:700;color:#334155"><span>🗄 Affaire archivée'+_arcWhen+' · <b>lecture seule</b> : consultation et téléchargements uniquement.'+(isAdm?'':' Seul un admin peut la désarchiver.')+'</span>'+(isAdm?'<button type="button" class="sec-btn" style="height:30px" data-secact="PetroNav.unarchive()">✓ Désarchiver</button>':'')+'</div>':'')
       +'<div class="sec-hd" style="align-items:center"><div style="min-width:0;flex:1 1 320px"><div class="sec-ttl" title="Affaire">'+esc(typeof getAffLabel==='function'?getAffLabel(k):k)+'</div></div>'
       +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
     if(canEdit&&nbOn()==='gantt'){var _st=!!window._gcStruct;h+='<button type="button" class="sec-btn '+(_st?'pri':'soft')+'" data-secact="openPlanEditor()" title="Ajouter, renommer, déplacer ou supprimer phases, ensembles, sous-phases et tâches">✏️ '+(_st?'Terminer la modification':'Modifier la structure')+'</button>';}
@@ -25473,17 +25796,15 @@ window.PetroNav=(function(){
     'exportData()':function(){exportData();},
     "openModal('del')":function(){openModal('del');},
     'PetroNav.archive()':function(){archive();},
+    'affDossierAsk()':function(){if(can('affDossierAsk'))affDossierAsk();},
     'PetroNav.unarchive()':function(){unarchive();},
     "openModal('new')":function(){openModal('new');}
   };
   function callAct(code){var f=ACTS[code];if(!f)return;try{f();}catch(e){console.error('Action :',e);}setTimeout(renderAll,50);}
+  // (09/10/2026) d'abord la liste de ce qui n'est pas terminé, puis archivage (affArchiveAsk / affDoArchive)
   function archive(){
     var k=curAff();if(!k)return;
-    if(!confirm('Archiver cette affaire ? Elle n’apparaîtra plus dans les listes de choix (feuilles d’heure, planning réunion). Vous pourrez la désarchiver.'))return;
-    if(can('pedToggleArchive'))pedToggleArchive(k,true);
-    if(can('scheduleSupa'))scheduleSupa();
-    if(can('navRefreshArchBtn'))navRefreshArchBtn();
-    renderAll();
+    if(can('affArchiveAsk'))affArchiveAsk(k);
   }
   function unarchive(){if(can('navDesarchiver'))navDesarchiver();renderAll();}
 
