@@ -6515,14 +6515,43 @@ async function affBuildDossier(k,kind,st){
   var cmds=INT?(await rows('commandes','commandes','num,meta')||[]):[];
   var cmdRest=cmds.filter(function(x){var m=x.meta||{};return +m.rest>0&&!m._gone;});
 
-  // ── Récap ──
+  // ── Récap (09/10/2026 : même visuel que la maquette maquette_dossier_fin_affaire.html, demande de l'utilisateur) ──
   st('Récap…');
-  var CSS='body{font-family:"Segoe UI",system-ui,Arial,sans-serif;color:#1C1A33;margin:0;background:#F6F5FB}main{max-width:1000px;margin:0 auto;padding:24px 20px 40px}'
-    +'.hd{background:#fff;border-bottom:3px solid #4B3FC7;padding:20px 24px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}.hd img{height:54px}.hd h1{margin:0;font-size:22px}.hd .s{color:#6B6790;font-size:13px;margin-top:3px}.hd .m{margin-left:auto;text-align:right;font-size:12px;color:#6B6790}'
-    +'h2{font-size:16px;margin:26px 0 10px}table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #E4E1F0;font-size:12.5px}th{text-align:left;font-size:11px;color:#6B6790;padding:7px 9px;border-bottom:1px solid #E4E1F0;background:#FBFAFF}td{padding:7px 9px;border-bottom:1px solid #F1EFF8;vertical-align:top}'
-    +'.k{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:18px 0}.k div{background:#fff;border:1px solid #E4E1F0;border-radius:12px;padding:10px 12px}.k b{display:block;font-size:20px}.k span{font-size:11.5px;color:#6B6790}'
-    +'.warn{background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:8px 12px;color:#92400E;font-size:13px}a{color:#4B3FC7;font-weight:700}.ok{color:#15803D;font-weight:800}.no{color:#B45309;font-weight:800}.mut{color:#6B6790;font-size:12px}'
-    +'@media print{body{background:#fff}}';
+  var CSS=':root{--bg:#F6F5FB;--bd:#E4E1F0;--tx:#1C1A33;--tx2:#4A4766;--tx3:#6B6790;--ac:#4B3FC7;--ac2:#F1EFFC;--gn:#15803D;--gnb:#DCFCE7;--or:#B45309;--orb:#FEF3C7;--rd:#B91C1C;--rdb:#FEE2E2;--au:#BE123C}'
+    +'*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 "Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif}'
+    +'.page{max-width:960px;margin:0 auto;padding:22px 16px 40px}'
+    +'.doc{background:#fff;border:1px solid var(--bd);border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(60,40,160,.06)}'
+    +'.doc-h{padding:22px 26px 18px;border-bottom:3px solid var(--ac);display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}'
+    +'.logo{width:64px;height:64px;border-radius:14px;background:#fff;border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden}.logo img{max-width:56px;max-height:56px}'
+    +'.logo.txt{background:var(--ac);color:#fff;font-weight:900;font-size:20px;border:none}'
+    +'.doc-h h2{margin:0;font-size:22px;font-weight:900}.doc-h .sub{color:var(--tx3);font-size:13px;margin-top:4px}.doc-h .sub b{color:var(--tx)}'
+    +'.doc-h .meta{margin-left:auto;text-align:right;font-size:12px;color:var(--tx3)}.doc-h .meta b{color:var(--tx)}'
+    +'.doc-b{padding:20px 26px 26px}'
+    +'.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:22px}'
+    +'.kpi{background:#FBFAFF;border:1px solid #EFEDF7;border-radius:12px;padding:10px 12px}.kpi .k{font-size:11px;font-weight:700;color:var(--tx3)}.kpi .v{font-size:20px;font-weight:900}.kpi .s{font-size:11.5px;color:var(--tx3)}'
+    +'.sec{margin-top:22px}.sec-t{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:800;margin-bottom:10px}'
+    +'.sec-t .n{width:28px;height:28px;border-radius:8px;background:var(--ac2);color:var(--ac);font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0}'
+    +'.sec-t .badge{margin-left:auto;font-size:11px;font-weight:800;padding:3px 8px;border-radius:8px;white-space:nowrap}'
+    +'.ok{background:var(--gnb);color:var(--gn)}.warn{background:var(--orb);color:var(--or)}.bad{background:var(--rdb);color:var(--rd)}.int-b{background:#FFE4E6;color:var(--au)}'
+    +'table{width:100%;border-collapse:collapse;font-size:12.5px}th{text-align:left;font-size:11px;color:var(--tx3);font-weight:800;padding:6px 8px;border-bottom:1px solid var(--bd);white-space:nowrap}'
+    +'td{padding:7px 8px;border-bottom:1px solid #F1EFF8;vertical-align:top}td.r,th.r{text-align:right;white-space:nowrap}'
+    +'.ver{display:inline-block;font-weight:800;color:var(--ac);background:var(--ac2);border-radius:6px;padding:1px 7px;font-size:11.5px;white-space:nowrap}'
+    +'a.file{color:var(--ac);font-weight:700;text-decoration:none;border-bottom:1px dashed #C7C1F5;word-break:break-word}a.file:hover{border-bottom-style:solid}'
+    +'.muted{color:var(--tx3);font-size:11.5px}.old{color:var(--tx3);text-decoration:line-through;margin-right:4px}.scroll{overflow-x:auto}'
+    +'.vg{color:var(--gn);font-weight:800}.vo{color:var(--or);font-weight:800}.vr{color:var(--rd);font-weight:800}'
+    +'.bars{display:flex;flex-direction:column;gap:12px}.bar-row{display:grid;grid-template-columns:120px 1fr 140px;gap:10px;align-items:center;font-size:12.5px}'
+    +'.bar{position:relative;height:22px;background:#F4F3FA;border-radius:6px}.bar .b{position:absolute;left:0;top:3px;height:16px;border-radius:4px;opacity:.28}.bar .r{position:absolute;left:0;top:7px;height:8px;border-radius:4px}'
+    +'.legend{display:flex;gap:14px;font-size:11.5px;color:var(--tx3);margin:4px 0 12px;flex-wrap:wrap}.legend i{display:inline-block;width:14px;height:8px;border-radius:3px;margin-right:5px;vertical-align:middle}'
+    +'.up{color:var(--rd);font-weight:800}.dn{color:var(--gn);font-weight:800}'
+    +'.rest{background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:10px 14px;font-size:12.5px;color:#78350F;line-height:1.6}'
+    +'.axis{position:relative;height:16px;font-size:10.5px;color:var(--tx3)}.axis span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}.axis span:first-child{transform:none}.axis span:last-child{transform:translateX(-100%)}'
+    +'.bar.gt{background:repeating-linear-gradient(90deg,#F4F3FA 0,#F4F3FA calc(25% - 1px),#E4E1F0 calc(25% - 1px),#E4E1F0 25%)}'
+    +'.avg{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}.avt{display:flex;gap:14px;align-items:center;min-width:240px}'
+    +'.rings{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;min-width:260px}.rg{display:flex;gap:10px;align-items:center;background:#FBFAFF;border:1px solid #EFEDF7;border-radius:12px;padding:8px 10px}'
+    +'.rex{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.box{border:1px solid #EFEDF7;border-radius:12px;padding:12px 14px;background:#FBFAFF}.box h4{margin:0 0 8px;font-size:13px}'
+    +'.cmp{display:grid;grid-template-columns:1fr 54px 54px 60px;gap:4px 8px;font-size:12px;align-items:center}.cmp.c3{grid-template-columns:1fr 92px 56px}.cmp .h{font-size:10.5px;font-weight:800;color:var(--tx3)}'
+    +'@media(max-width:600px){.bar-row{grid-template-columns:90px 1fr 110px}.doc-h,.doc-b{padding-left:16px;padding-right:16px}}'
+    +'@media print{body{background:#fff}.page{padding:0}.doc{border:none;box-shadow:none}}';
   var nF=fiches.length,nFs=fiches.filter(function(f){return f.status==='locked';}).length;
   var plOpen=pls.reduce(function(s,x){return s+(+((x.meta||{}).open)||0);},0),plN=pls.reduce(function(s,x){return s+(+((x.meta||{}).n)||0);},0);
   var FH=null,phs=[],persT={},budPh=0;
@@ -6533,36 +6562,147 @@ async function affBuildDossier(k,kind,st){
     Object.keys(P.fh||{}).forEach(function(nm){Object.keys(P.fh[nm]||{}).forEach(function(wk){Object.keys(P.fh[nm][wk]||{}).forEach(function(dI){
       var L=P.fh[nm][wk][dI];if(Array.isArray(L))L.forEach(function(l){var h=+(l&&(l.hours||l.h))||0;if(h)persT[nm]=(persT[nm]||0)+h;});});});});
   }
-  var link=function(p){return p?'<a href="'+href(p)+'">'+esc(p.split('/').pop())+'</a>':'';};
-  var h='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Récap de fin d’affaire — '+esc(inf.numero||k)+'</title><style>'+CSS+'</style></head><body>'
-    +'<div class="hd">'+(typeof LOGO_ELS_B64!=='undefined'?'<img src="'+LOGO_ELS_B64+'" alt="ELS">':'')+'<div><h1>Récap de fin d’affaire</h1><div class="s"><b>'+esc((inf.numero||k)+(inf.libelle?' · '+inf.libelle:''))+'</b>'+(inf.numeroClient?' — N° client '+esc(inf.numeroClient):'')+'</div>'
-    +(rS?'<div class="s">Réalisation du '+frD(rS)+' au '+frD(rE)+'</div>':'')+'</div><div class="m">Édité le <b>'+frD(today)+'</b><br>'+(INT?'Version <b>interne</b> — ne pas transmettre':'Pour le client')+'</div></div><main>';
-  h+='<div class="k"><div><span>Documents</span><b>'+docs.length+'</b><span>dernière version de chacun</span></div>'
-    +(nF?'<div><span>Fiches de contrôle</span><b class="'+(nFs===nF?'ok':'no')+'">'+nFs+' / '+nF+'</b><span>signées</span></div>':'')
-    +(pls.length?'<div><span>Punch list</span><b class="'+(plOpen?'no':'ok')+'">'+(plN-plOpen)+' / '+plN+'</b><span>fermées ou N/A</span></div>':'')
-    +(INT?'<div><span>Heures pointées</span><b>'+n1(FH.total)+' h</b><span>'+(budPh?'sur '+n1(budPh)+' h de budget ('+(FH.total>budPh?'+':'')+Math.round((FH.total-budPh)*100/budPh)+' %)':'pas de budget saisi')+'</span></div>'
-      +(rE&&pE?'<div><span>Fin réelle</span><b class="'+(rE>pE?'no':'ok')+'">'+frD(rE)+'</b><span>prévue le '+frD(pE)+'</span></div>':''):'')+'</div>';
-  var sec=0;
-  h+='<h2>'+(++sec)+' · Documents — dernière version</h2>'+(docs.length?'<table><tr><th>Document</th><th>Version</th><th>Date</th><th>Dernière modification</th><th>Fichier</th></tr>'
-    +docs.map(function(d){return '<tr><td><b>'+esc(d.nom)+'</b></td><td>'+esc(_modsVerLbl(d.ver.version))+'</td><td>'+esc(d.ver.date||'')+'</td><td style="white-space:pre-wrap">'+esc(d.ver.note||'')+'</td><td>'
-      +(d.file?link(d.file)+(d.fileVer!==d.ver?'<div class="mut">fichier de la version '+esc(_modsVerLbl(d.fileVer.version))+'</div>':''):'<span class="mut">fichier pas sur le site</span>')+'</td></tr>';}).join('')+'</table>'
-    :'<p class="mut">Aucun document dans l’onglet Modifications.</p>');
-  if(nF)h+='<h2>'+(++sec)+' · Fiches de contrôle pétrochimie</h2><table><tr><th>Skid</th><th>Date du contrôle</th><th>Statut</th></tr>'
-    +fiches.map(function(f){var m=f.meta||{};return '<tr><td>'+esc(m.skid||f.title||'—')+'</td><td>'+esc(m.date||'')+'</td><td>'+(f.status==='locked'?'<span class="ok">✓ signée</span>':'<span class="no">non signée</span>')+'</td></tr>';}).join('')+'</table>';
-  if(pls.length)h+='<h2>'+(++sec)+' · Punch list du client — état final</h2><table><tr><th>Punch list</th><th>Lignes</th><th>Ouvertes</th><th>Fermées / N/A</th></tr>'
-    +pls.map(function(x){var m=x.meta||{};return '<tr><td>'+esc(x.title||m.title||'Punch list')+(m.rev?' — Rév. '+esc(m.rev):'')+'</td><td>'+(+m.n||0)+'</td><td class="'+(+m.open?'no':'ok')+'">'+(+m.open||0)+'</td><td>'+((+m.closed||0)+(+m.na||0))+'</td></tr>';}).join('')+'</table>';
+  var link=function(p){return p?'<a class="file" href="'+href(p)+'">'+esc(p.split('/').pop())+'</a>':'';};
+  var badge=function(cls,t){return '<span class="badge '+cls+'">'+t+'</span>';};
+  var nice=function(s){s=String(s||'');return s===s.toUpperCase()&&/[A-ZÉÈ]{3}/.test(s)?s.charAt(0)+s.slice(1).toLowerCase():s;}; // « CHANTIER » → « Chantier »
+  var sec=0,secT=function(t,b){return '<div class="sec-t"><span class="n">'+(++sec)+'</span>'+t+(b||'')+'</div>';};
+  var logo=typeof LOGO_ELS_B64!=='undefined'?'<div class="logo"><img src="'+LOGO_ELS_B64+'" alt="ELS"></div>':'<div class="logo txt">ELS</div>';
+  var h='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dossier de fin d’affaire — '+esc(inf.numero||k)+'</title><style>'+CSS+'</style></head><body><div class="page"><div class="doc">'
+    +'<div class="doc-h">'+logo+'<div><h2>Dossier de fin d’affaire</h2><div class="sub"><b>'+esc((inf.numero||k)+(inf.libelle?' · '+inf.libelle:''))+'</b>'+(inf.numeroClient?' — N° client '+esc(inf.numeroClient):'')+'</div>'
+    +(rS?'<div class="sub">Réalisation du '+frD(rS)+' au '+frD(rE)+'</div>':'')+'</div>'
+    +'<div class="meta">Remis le <b>'+frD(today)+'</b><br>'+(INT?'Version <b>interne</b> — ne pas transmettre':'Pour le client')+'</div></div><div class="doc-b">';
+  // chiffres clés
+  var kpi=function(k2,v,cls,s){return '<div class="kpi"><div class="k">'+k2+'</div><div class="v'+(cls?' '+cls:'')+'">'+v+'</div><div class="s">'+s+'</div></div>';};
+  h+='<div class="kpis">'+kpi('Documents remis',docs.length,'','dernière version de chacun')
+    +(nF?kpi('Fiches de contrôle',nFs+' / '+nF,nFs===nF?'':'vo','signées'):'')
+    +(pls.length?kpi('Punch list',(plN-plOpen)+' / '+plN,plOpen?'vo':'','fermées ou N/A'):'');
   if(INT){
-    h+='<h2>'+(++sec)+' · Heures et budget</h2>';
-    if(phs.length)h+='<table><tr><th>Phase</th><th>Budget</th><th>Heures pointées</th><th>Écart</th></tr>'+phs.map(function(p){var e=p.bud?p.rv-p.bud:null;return '<tr><td><b>'+esc(p.row.lb||p.row.pk)+'</b></td><td>'+(p.bud?n1(p.bud)+' h':'—')+'</td><td>'+n1(p.rv)+' h</td><td>'+(e==null?'—':'<span class="'+(e>0?'no':'ok')+'">'+(e>0?'+':'')+n1(e)+' h</span>')+'</td></tr>';}).join('')+'</table>';
-    var pk=Object.keys(persT).sort(function(a,b){return persT[b]-persT[a];});
-    h+=pk.length?'<table style="margin-top:10px"><tr><th>Personne</th><th>Heures pointées</th></tr>'+pk.map(function(n){return '<tr><td>'+esc(n)+'</td><td>'+n1(persT[n])+' h</td></tr>';}).join('')+'</table>':'<p class="mut">Aucune heure pointée.</p>';
-    var pend=[];docs.forEach(function(d){d.pend.forEach(function(m){pend.push(esc(d.nom)+(m.detail?' — '+esc(String(m.detail).slice(0,120)):''));});});
-    if(pend.length||cmdRest.length)h+='<h2>'+(++sec)+' · Ce qui reste</h2><div class="warn">'
-      +(pend.length?'<b>Modifications encore à faire :</b><br>'+pend.join('<br>'):'')
-      +(cmdRest.length?(pend.length?'<br><br>':'')+'<b>Commandes pas entièrement reçues :</b><br>'+cmdRest.map(function(x){return esc(x.num)+' — '+(+x.meta.rest)+' ligne(s)';}).join('<br>'):'')+'</div>';
+    var over=budPh&&FH.total>budPh;
+    h+=kpi('Heures',n1(FH.total)+' h',over?'vr':'',budPh?'sur '+n1(budPh)+' h de budget ('+(FH.total>budPh?'+':'')+(Math.round((FH.total-budPh)*1000/budPh)/10).toLocaleString('fr-FR')+' %)':'pas de budget saisi');
+    if(rE&&pE){var dw=Math.round((rE-pE)/(7*864e5));h+=kpi('Fin réelle',dw>0?'+'+dw+' sem.':dw<0?dw+' sem.':'à l’heure',dw>0?'vo':'vg','prévue le '+frD(pE));}
   }
-  if(warn.length)h+='<h2>⚠ Non inclus</h2><div class="warn">'+warn.map(esc).join('<br>')+'</div>';
-  h+='<p class="mut" style="margin-top:30px">Récap fabriqué par Pétrosphère le '+frD(today)+' à '+today.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+'.</p></main></body></html>';
+  h+='</div>';
+  // 1 · Documents
+  h+='<div class="sec">'+secT('Documents — dernière version',badge('ok',docs.length+' document'+(docs.length>1?'s':'')));
+  h+=docs.length?'<div class="scroll"><table><tr><th>Document</th><th>Version</th><th>Date</th><th>Dernière modification</th><th>Fichier</th></tr>'
+    +docs.map(function(d){return '<tr><td>'+esc(d.nom)+'</td><td><span class="ver">'+esc(_modsVerLbl(d.ver.version))+'</span></td><td>'+esc(d.ver.date||'')+'</td><td class="muted" style="white-space:pre-wrap">'+esc(d.ver.note||'')+'</td><td>'
+      +(d.file?link(d.file)+(d.fileVer!==d.ver?'<div class="muted">fichier de la version '+esc(_modsVerLbl(d.fileVer.version))+'</div>':''):'<span class="muted">fichier pas sur le site</span>')+'</td></tr>';}).join('')+'</table></div>'
+    +(INT?'<div class="muted" style="margin-top:6px">Vient directement de l’onglet <b>Modifications</b> : pour chaque document, seule la dernière version est prise.</div>':'')
+    :'<p class="muted">Aucun document.</p>';
+  h+='</div>';
+  // 2 · Fiches de contrôle
+  if(nF)h+='<div class="sec">'+secT('Fiches de contrôle pétrochimie',badge(nFs===nF?'ok':'warn',nFs+' / '+nF+' signée'+(nFs>1?'s':'')))
+    +'<div class="scroll"><table><tr><th>Skid</th><th>Date du contrôle</th><th>Statut</th></tr>'
+    +fiches.map(function(f){var m=f.meta||{};return '<tr><td>'+esc(m.skid||f.title||'—')+'</td><td>'+esc(m.date||'')+'</td><td>'+(f.status==='locked'?'<span class="vg">✓ signée</span>':'<span class="vo">non signée</span>')+'</td></tr>';}).join('')+'</table></div></div>';
+  // 3 · Punch list
+  if(pls.length)h+='<div class="sec">'+secT('Punch list du client — état final',badge(plOpen?'warn':'ok',plOpen+' ouverte'+(plOpen>1?'s':'')))
+    +pls.map(function(x){var m=x.meta||{};return '<div style="font-size:13px;margin-bottom:4px">'+esc(x.title||m.title||'Punch list')+(m.rev?' · Rév. '+esc(m.rev):'')+' · <b>'+(+m.n||0)+' ligne'+((+m.n||0)>1?'s':'')+'</b> : '+(+m.closed||0)+' Closed · '+(+m.na||0)+' N/A'+(+m.open?' · <span class="vo">'+(+m.open)+' Open</span>':'')+(+m.photos?' · '+(+m.photos)+' photos':'')+'</div>';}).join('')+'</div>';
+  // (09/10/2026) Couleur d'une phase : la variable CSS du site est remplacée par sa valeur (le fichier n'a pas ces variables)
+  var phCol=function(pk){var c=(PH_get(pk)||{}).h||'#4B3FC7',vm=String(c).match(/^var\((--[^),]+)/);if(vm)c=getComputedStyle(document.documentElement).getPropertyValue(vm[1]).trim()||'#4B3FC7';return c;};
+  // 4 · Planning réalisé : une ligne par phase, Prévu (clair) et Réel (plein) sur la même échelle de temps
+  var phR=(P.data||[]).filter(function(r){return r.t==='ph';}).map(function(ph){
+    var p5=[],r5=[];acts.forEach(function(a){if(a.pk!==ph.pk)return;p5=p5.concat((getTaskDays5(a,'prev')||[]).filter(function(x){return x>=0;}));r5=r5.concat((getTaskDays5(a,'reel')||[]).filter(function(x){return x>=0;}));});
+    return {row:ph,p:p5.length?[Math.min.apply(null,p5),Math.max.apply(null,p5)]:null,r:r5.length?[Math.min.apply(null,r5),Math.max.apply(null,r5)]:null};
+  }).filter(function(x){return x.p||x.r;});
+  if(phR.length){
+    var all5=[];phR.forEach(function(x){if(x.p)all5.push(x.p[0],x.p[1]);if(x.r)all5.push(x.r[0],x.r[1]);});
+    var t0=Math.min.apply(null,all5),t1=Math.max.apply(null,all5),span=Math.max(1,t1-t0+1);
+    var pos=function(a,b){return 'left:'+((a-t0)*100/span).toFixed(2)+'%;width:'+Math.max(0.8,(b-a+1)*100/span).toFixed(2)+'%';};
+    var late=phR.filter(function(x){return x.p&&x.r&&x.r[1]>x.p[1];}).length;
+    var fd=function(d5){var d=d5Date(d5);return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2);};
+    h+='<div class="sec">'+secT('Planning réalisé',badge(late?'warn':'ok',late?late+' phase'+(late>1?'s':'')+' finie'+(late>1?'s':'')+' après le prévu':'dans les temps'))
+      +'<div class="legend"><span><i style="background:#94A3B8;opacity:.35"></i>Prévu</span><span><i style="background:#1C1A33"></i>Réel</span></div><div class="bars">'
+      +phR.map(function(x){var c=phCol(x.row.pk);
+        return '<div class="bar-row g"><b>'+esc(nice(x.row.lb||x.row.pk))+'</b><div class="bar gt">'+(x.p?'<span class="b" style="'+pos(x.p[0],x.p[1])+';background:'+c+'"></span>':'')+(x.r?'<span class="r" style="'+pos(x.r[0],x.r[1])+';background:'+c+'"></span>':'')+'</div>'
+          +'<span class="r" style="text-align:right;font-size:11.5px">'+(x.r?'<b>'+fd(x.r[0])+' → '+fd(x.r[1])+'</b>':'<span class="muted">pas de réel</span>')+(x.p?'<br><span class="muted">prévu '+fd(x.p[0])+' → '+fd(x.p[1])+'</span>':'')+'</span></div>';}).join('')
+      +'<div class="bar-row"><span></span><div class="axis">'+[0,.25,.5,.75,1].map(function(f){return '<span style="left:'+(f*100)+'%">'+frD(d5Date(t0+Math.round((span-1)*f)))+'</span>';}).join('')+'</div><span></span></div></div></div>';
+  }
+  // 5 · Avancement : global + un anneau par phase / sous-ensemble (comme l'onglet Avancement)
+  var avItems=[],affPct=null,nDone=acts.filter(function(a){return a.done;}).length;
+  try{if(STORE.current===k){affPct=Math.round(+calcHierProgress(D(),{})||0);
+    avItems=_avcEnsList().map(function(e){return {lb:e.kind==='ens'?e.row.lb:(e.kind==='hors'?nice(e.ph)+' — hors sous-ensemble':nice(e.ph)),cap:e.kind==='ens'?nice(e.ph):'',pk:e.ph,pct:Math.max(0,Math.min(100,Math.round(+e.pct()||0)))};});}}catch(err){warn.push('Avancement : '+(err.message||err));}
+  var ring=function(p,col,sz,fs){var r=sz/2-6,C=2*Math.PI*r;return '<svg width="'+sz+'" height="'+sz+'" viewBox="0 0 '+sz+' '+sz+'" style="flex-shrink:0"><circle cx="'+sz/2+'" cy="'+sz/2+'" r="'+r+'" fill="none" stroke="#EFEDF7" stroke-width="8"/>'
+    +'<circle cx="'+sz/2+'" cy="'+sz/2+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="8" stroke-linecap="round" stroke-dasharray="'+(C*p/100).toFixed(1)+' '+C.toFixed(1)+'" transform="rotate(-90 '+sz/2+' '+sz/2+')"/>'
+    +'<text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="'+fs+'" font-weight="900" fill="#1C1A33">'+p+'%</text></svg>';};
+  if(affPct!=null&&acts.length){
+    h+='<div class="sec">'+secT('Avancement',badge(affPct>=100?'ok':'warn',affPct>=100?'terminé':affPct+' %'))
+      +'<div class="avg"><div class="avt">'+ring(affPct,'#4B3FC7',96,20)+'<div><div style="font-size:15px;font-weight:800">Avancement de l’affaire</div><div class="muted" style="font-size:12.5px">'+nDone+' / '+acts.length+' tâches terminées</div></div></div>'
+      +(avItems.length>1?'<div class="rings">'+avItems.map(function(e){return '<div class="rg">'+ring(e.pct,phCol(e.pk),58,13)+'<div style="min-width:0">'+(e.cap?'<div class="muted" style="font-size:10.5px">'+esc(e.cap)+'</div>':'')+'<div style="font-size:12.5px;font-weight:700;word-break:break-word">'+esc(e.lb)+'</div></div></div>';}).join('')+'</div>':'')
+      +'</div></div>';
+  }
+  // 6 · Historique des modifications (versions remplacées barrées, demandes du client)
+  var hd=(P.documents||[]).filter(function(d){return (d.versions||[]).length;});
+  if(hd.length)h+='<div class="sec">'+secT('Historique des modifications')+'<div class="scroll"><table><tr><th>Document</th><th>Versions</th><th class="r">Demandes</th></tr>'
+    +hd.map(function(d){var vs=(d.versions||[]).slice().sort(function(a,b){return (a._createdAt||0)-(b._createdAt||0);});
+      return '<tr><td>'+esc(d.nom)+'</td><td>'+vs.map(function(v,i){return i<vs.length-1?'<span class="old">'+esc(_modsVerLbl(v.version))+'</span>':'<span class="ver">'+esc(_modsVerLbl(v.version))+'</span>';}).join('')+'</td><td class="r">'+(d.mods||[]).length+'</td></tr>';}).join('')+'</table></div></div>';
+  if(INT){
+    // 5 · Heures et budget : barres budget (clair) / heures réelles (foncé), par phase
+    h+='<div class="sec">'+secT('Heures et budget',badge('int-b','interne'));
+    if(phs.length){
+      var mx=Math.max.apply(null,phs.map(function(p){return Math.max(p.bud||0,p.rv||0);}).concat([1]));
+      h+='<div class="legend"><span><i style="background:#94A3B8;opacity:.35"></i>Budget</span><span><i style="background:#1C1A33"></i>Heures réelles (feuilles d’heure)</span></div><div class="bars">'
+        +phs.map(function(p){var col=(PH_get(p.row.pk)||{}).h||'#4B3FC7';
+          // couleur de la phase : une variable CSS du site est remplacée par sa valeur (le fichier n'a pas ces variables)
+          var vm=String(col).match(/^var\((--[^),]+)/);if(vm)col=getComputedStyle(document.documentElement).getPropertyValue(vm[1]).trim()||'#4B3FC7';
+          var e=p.bud?Math.round((p.rv-p.bud)*100/p.bud):null;
+          return '<div class="bar-row"><b>'+esc(nice(p.row.lb||p.row.pk))+'</b><div class="bar">'+(p.bud?'<span class="b" style="width:'+(p.bud*100/mx)+'%;background:'+col+'"></span>':'')+'<span class="r" style="width:'+(p.rv*100/mx)+'%;background:'+col+'"></span></div>'
+            +'<span class="r" style="text-align:right">'+n1(p.rv)+(p.bud?' / '+n1(p.bud):'')+' h'+(e!=null?' <span class="'+(e>0?'up':'dn')+'">'+(e>0?'+':'')+e+' %</span>':'')+'</span></div>';}).join('')+'</div>';
+    }
+    var pk=Object.keys(persT).sort(function(a,b){return persT[b]-persT[a];});
+    if(pk.length){
+      // « surtout sur » : là où la personne a pointé le plus (phase › sous-ensemble ou sous-phase)
+      var lab={},cph=null,cen=null,csb=null;(P.data||[]).forEach(function(r){if(r.t==='ph'){cph=r;cen=null;csb=null;}else if(r.t==='ens'){cen=r;csb=null;}else if(r.t==='ensend'){cen=null;csb=null;}else if(r.t==='sb')csb=r;
+        // phase › sous-ensemble (s'il y en a un), sinon phase › sous-phase
+        var pth=[nice((cph&&(cph.lb||cph.pk))||r.pk||'')];if(r.t==='ens')pth.push(r.lb);else if(cen)pth.push(cen.lb);else if(r.t==='sb')pth.push(r.lb);else if(csb)pth.push(csb.lb);lab[r.id]=pth.filter(Boolean).join(' › ');});
+      var where={};Object.keys(FH.byPers||{}).forEach(function(id){var bp=FH.byPers[id]||{};Object.keys(bp).forEach(function(nm){var L=lab[id]||'';if(!L)return;var w=where[nm]||(where[nm]={});w[L]=(w[L]||0)+bp[nm];});});
+      h+='<div class="scroll" style="margin-top:14px"><table><tr><th>Par personne</th><th class="r">Heures</th><th>Surtout sur</th></tr>'
+        +pk.map(function(n){var w=where[n]||{},top=Object.keys(w).sort(function(a,b){return w[b]-w[a];})[0]||'';return '<tr><td>'+esc(n)+'</td><td class="r">'+n1(persT[n])+' h</td><td class="muted">'+esc(top)+'</td></tr>';}).join('')+'</table></div>';
+    }else h+='<p class="muted">Aucune heure pointée.</p>';
+    h+='</div>';
+    // 8 · Retour d'expérience (09/10/2026) : seulement ce qui se calcule avec les données du site
+    var rx=[],G=[];try{if(STORE.current===k)G=_rcHoursData().groups;}catch(err){}
+    // barème Automatisme contre la réalité : part des heures pointées sur chaque tâche du barème
+    (P.data||[]).filter(function(r){return r.t==='ph'&&_isAutomPhaseRow(r);}).forEach(function(ph){
+      var tot=+ph.budgetH||0,tr=_getBaremeTranche(tot),hb={},sum=0;
+      acts.forEach(function(a){if(a.pk!==ph.pk)return;var kk=_barNorm(a.lb);hb[kk]=(hb[kk]||0)+(FH.byId[a.id]||0);});
+      var L=BAREME_AUTO.phases.map(function(b){var hh=hb[_barNorm(b.lb)]||0;sum+=hh;return {lb:b.lb,bar:b.pct[tr],h:hh};});
+      var body;
+      if(sum>0){L.forEach(function(x){x.re=Math.round(x.h*100/sum);x.d=x.re-x.bar;});
+        L=L.slice().sort(function(a,b){return Math.abs(b.d)-Math.abs(a.d)||b.bar-a.bar;}).slice(0,6);
+        body='<div class="cmp"><span class="h">TÂCHE</span><span class="h">BARÈME</span><span class="h">RÉEL</span><span class="h">ÉCART</span>'
+          +L.map(function(x){return '<span>'+esc(x.lb)+'</span><span>'+x.bar+' %</span><span>'+x.re+' %</span><span class="'+(x.d>0?'up':x.d<0?'dn':'')+'">'+(x.d>0?'+':'')+(x.d?x.d+' pt'+(Math.abs(x.d)>1?'s':''):'=')+'</span>';}).join('')+'</div>'
+          +'<div class="muted" style="margin-top:8px">Part des '+n1(sum)+' h pointées sur les tâches du barème (colonne '+(tr===0?'< 75 h':tr===1?'75–150 h':'> 150 h')+'). Les 6 plus gros écarts.</div>';
+      }else body='<div class="muted">Pas encore d’heures pointées sur les tâches du barème.</div>';
+      rx.push('<div class="box"><h4>'+esc(nice(ph.lb||ph.pk))+' : barème contre réalité</h4>'+body+'</div>');
+    });
+    // ce qui a dépassé : sous-ensembles et sous-phases au-delà de leur budget
+    var ov=[];G.forEach(function(g){if(g.ens&&g.bud>0&&g.h>g.bud)ov.push({lb:g.title,h:g.h,b:g.bud});g.sbs.forEach(function(s){if(s.bud>0&&s.h>s.bud)ov.push({lb:(g.ens?g.title:nice(g.title))+' › '+s.lb,h:s.h,b:s.bud});});});
+    ov.sort(function(a,b){return b.h/b.b-a.h/a.b;});
+    rx.push('<div class="box"><h4>Ce qui a dépassé</h4>'+(ov.length?'<div class="cmp c3"><span class="h">SOUS-PHASE</span><span class="h">RÉEL / BUD.</span><span class="h">ÉCART</span>'
+      +ov.slice(0,6).map(function(x){return '<span>'+esc(x.lb)+'</span><span>'+n1(x.h)+' / '+n1(x.b)+' h</span><span class="up">+'+Math.round((x.h-x.b)*100/x.b)+' %</span>';}).join('')+'</div>'+(ov.length>6?'<div class="muted" style="margin-top:6px">… et '+(ov.length-6)+' autre(s)</div>':'')
+      :'<div class="muted">Aucune sous-phase n’a dépassé son budget.</div>')+'</div>');
+    // délais
+    var doneL=acts.filter(function(a){if(!a.done)return false;var p5=getTaskDays5(a,'prev')||[],r5=getTaskDays5(a,'reel')||[];return p5.length&&r5.length&&Math.max.apply(null,r5)>Math.max.apply(null,p5);}).length;
+    var dw2=rE&&pE?Math.round((rE-pE)/(7*864e5)):null,nChg=cmds.filter(function(x){return (x.meta||{}).changed;}).length;
+    var nDem=(P.documents||[]).reduce(function(s,d){return s+(d.mods||[]).length;},0),nVer=(P.documents||[]).reduce(function(s,d){return s+(d.versions||[]).length;},0);
+    rx.push('<div class="box"><h4>Délais</h4><div style="font-size:12.5px;line-height:1.75">'
+      +(rE&&pE?'Fin prévue <b>'+frD(pE)+'</b> → réelle <b>'+frD(rE)+'</b> (<span class="'+(dw2>0?'up':'dn')+'">'+(dw2>0?'+'+dw2+' semaine'+(dw2>1?'s':''):dw2<0?dw2+' semaine'+(dw2<-1?'s':''):'à l’heure')+'</span>)<br>':'')
+      +'Tâches finies après le prévu : <b>'+doneL+' / '+nDone+'</b><br>'
+      +(hasView('commandes')?'Commandes : <b>'+cmds.length+'</b>, dont <b>'+nChg+'</b> avec un délai décalé<br>':'')
+      +'Modifications : <b>'+nDem+'</b> demande'+(nDem>1?'s':'')+', <b>'+nVer+'</b> version'+(nVer>1?'s':'')+'</div></div>');
+    // ratios calculables : heures par sous-ensemble dans chaque phase qui en a
+    var ra=[];phs.forEach(function(p){var ne=G.filter(function(g){return g.ens&&g.ph&&g.ph.pk===p.row.pk;}).length;if(ne&&p.rv>0)ra.push(esc(nice(p.row.lb||p.row.pk))+' : <b>'+n1(p.rv/ne)+' h par sous-ensemble</b> ('+ne+')'+(p.bud?' — budget '+n1(p.bud/ne)+' h':''));});
+    if(budPh&&FH.total)ra.push('Ensemble de l’affaire : <b>'+n1(FH.total)+' h</b> pour <b>'+n1(budPh)+' h</b> de budget');
+    rx.push('<div class="box"><h4>Ratios pour le prochain chiffrage</h4><div style="font-size:12.5px;line-height:1.75">'+(ra.length?ra.join('<br>'):'<span class="muted">Pas encore assez d’heures pointées.</span>')+'</div><div class="muted" style="margin-top:6px">Les ratios par E/S ou par folio demanderont de saisir ces quantités à la clôture (plus tard).</div></div>');
+    h+='<div class="sec">'+secT('Retour d’expérience — pour chiffrer les prochaines affaires',badge('int-b','interne'))+'<div class="rex">'+rx.join('')+'</div></div>';
+    // 9 · Ce qui reste
+    var pend=[];docs.forEach(function(d){d.pend.forEach(function(m){pend.push(esc(d.nom)+(m.detail?' — '+esc(String(m.detail).slice(0,120)):''));});});
+    if(pend.length||cmdRest.length)h+='<div class="sec">'+secT('Ce qui reste',badge('warn',(pend.length+cmdRest.length)+' point'+(pend.length+cmdRest.length>1?'s':'')))+'<div class="rest">'
+      +(pend.length?'<b>Modifications encore à faire :</b><br>'+pend.join('<br>'):'')
+      +(cmdRest.length?(pend.length?'<br>':'')+'<b>Commandes pas entièrement reçues :</b><br>'+cmdRest.map(function(x){return esc(x.num)+' — '+(+x.meta.rest)+' ligne'+(+x.meta.rest>1?'s':'')+' à recevoir';}).join('<br>'):'')+'</div></div>';
+  }
+  if(warn.length)h+='<div class="sec">'+secT('Non inclus',badge('warn','⚠'))+'<div class="rest">'+warn.map(esc).join('<br>')+'</div></div>';
+  h+='<div class="muted" style="margin-top:26px">Dossier fabriqué par Pétrosphère le '+frD(today)+' à '+today.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+'.</div></div></div></div></body></html>';
   zip.file('00_Recap_'+(INT?'interne':'client')+'.html',h);nFiles++;
   st('Compression…');
   var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
