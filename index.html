@@ -1878,7 +1878,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
         <div class="petro-tile-ico" style="background:#4B3FC7">📁</div>
         <div class="petro-tile-t">Affaires</div>
         <div class="petro-tile-s">Tout ce qui concerne une affaire, choisie dans le menu de gauche</div>
-        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Bilan</span><span>Heures</span><span>Modifications</span><span id="petro-hub-chip-cmd">Commandes</span></div>
+        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Bilan</span><span>Heures</span><span>Modifications</span><span id="petro-hub-chip-cmd">Commandes</span><span id="petro-hub-chip-docch">Doc chantier</span></div>
       </div>
       <div id="petro-hub-tile-equipe" class="petro-tile" onclick="petroHubEnterEquipe()">
         <div class="petro-tile-ico" style="background:#0F766E">👥</div>
@@ -3845,7 +3845,10 @@ function applyRoleRestrictions() {
   var docsTile = document.getElementById('petro-hub-tile-docs');
   // Chantier = Docs chantier (les Commandes sont dans Affaires › Commandes depuis le 06/10/2026)
   // Chantier = Docs chantier + Punch lists (06/10/2026) : visible si l'un des deux est accessible
-  if (docsTile) docsTile.style.display = (CURRENT_ROLE === 'admin' || hasView('docs_chantier') || hasView('punch_list')) ? '' : 'none';
+  // (09/10/2026, demande de l'utilisateur) tuile retirée : les docs sont dans Affaires › Doc chantier (doublon)
+  if (docsTile) docsTile.style.display = 'none';
+  var docchChip = document.getElementById('petro-hub-chip-docch');
+  if (docchChip) docchChip.style.display = (CURRENT_ROLE === 'admin' || hasView('docs_chantier') || hasView('punch_list')) ? '' : 'none';
   var cmdChip = document.getElementById('petro-hub-chip-cmd');
   if (cmdChip) cmdChip.style.display = (CURRENT_ROLE === 'admin' || hasView('commandes')) ? '' : 'none';
   if (CURRENT_ROLE === 'chef_chantier') {
@@ -22695,8 +22698,39 @@ window.DocsChantier = (function(){
       });
       h+='</table></div>';
     }
-    h+='</div></div></div>';
+    h+='</div>';
+    // (09/10/2026) L'écran Chantier (toutes les affaires) est retiré de l'accueil : les fiches sans affaire, ou
+    // d'une affaire qui n'existe plus sur le site, sont proposées ici pour être rangées (sinon introuvables).
+    if(ctx&&canEdit){
+      var _ids={}; affs.forEach(function(a){ _ids[a.id]=1; });
+      var orph=S.list.filter(function(r){ return !r.aff||!_ids[r.aff]; });
+      if(orph.length){
+        h+='<div class="dcu-card" style="border:1px dashed #F59E0B;background:#FFFBEB"><div style="font-size:14px;font-weight:800;color:#92400E;margin-bottom:4px">Fiches sans affaire ('+orph.length+')</div>'
+          +'<div style="font-size:12px;color:#92400E;margin-bottom:10px">Elles ne sont rangées dans aucune affaire du site. Rangez celles qui appartiennent à <b>'+esc(affLabel(S.ctxAff))+'</b>.</div>'
+          +'<div style="overflow:auto"><table class="dcu-tbl"><tr><th>Document</th><th>Affaire notée</th><th>Skid / date du contrôle</th><th>Statut</th><th></th></tr>';
+        orph.forEach(function(r){ var m=r.meta||{};
+          h+='<tr class="dcu-row" onclick="DocsChantier.open(\''+r.id+'\')"><td><b>'+esc((TYPES[r.doc_type]||{}).label||r.doc_type)+'</b></td>'
+            +'<td>'+(r.aff?esc(r.aff):'<i style="color:#9A96B3">aucune</i>')+(m.affno?'<div style="font-size:11px;color:#6B6790">N° '+esc(m.affno)+'</div>':'')+'</td>'
+            +'<td>'+esc(m.skid||'—')+'<div style="font-size:11px;color:#6B6790">'+esc(m.date||'')+'</div></td><td>'+stBadge(r.status)+'</td>'
+            +'<td style="text-align:right;white-space:nowrap"><button class="dcu-btn2" onclick="event.stopPropagation();DocsChantier._attach(\''+r.id+'\')">↘ Ranger dans cette affaire</button></td></tr>';
+        });
+        h+='</table></div></div>';
+      }
+    }
+    h+='</div></div>';
     return h;
+  }
+  async function attach(id){
+    if(!S.ctxAff||!ENV.canEdit()) return;
+    if(!confirm('Ranger cette fiche dans l’affaire « '+affLabel(S.ctxAff)+' » ?')) return;
+    try{
+      for(var i=0;i<4;i++){ // écriture conditionnelle (rev) : si un collègue enregistre en même temps, on relit et on recommence
+        var row=await DB.get(id); if(!row) throw new Error('fiche introuvable (supprimée ?)');
+        var saved=await DB.update(id,row.rev,{aff:S.ctxAff,rev:row.rev+1,updated_by:ENV.who()});
+        if(saved){ await loadList(); drawList(); return; }
+      }
+      throw new Error('la fiche est modifiée en ce moment, réessayez');
+    }catch(e){ alert('Impossible de ranger la fiche : '+(e&&e.message||e)); }
   }
   function drawList(){ if(S.host) S.host.innerHTML=listHtml(); }
   // Liste affichée : on regarde toutes les 5 s si un collègue a créé, modifié,
@@ -23162,7 +23196,7 @@ window.DocsChantier = (function(){
     // on quitte l'onglet (retour à l'accueil) : on envoie ce qui reste et on arrête le suivi
     leave:function(){ if(S.cur&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); saveNow(); } stopPoll(); stopListPoll(); }, open:open, newDoc:newDoc, del:del, back:back,
     lock:function(){ lock(false); }, reopen:reopen, print:print, pdf:pdf,
-    _create:_create, _closeModal:closeModal, _sigReset:_sigReset, _sigOk:_sigOk, _sigClear:_sigClear,
+    _create:_create, _attach:attach, _closeModal:closeModal, _sigReset:_sigReset, _sigOk:_sigOk, _sigClear:_sigClear,
     _f:function(k,val){ S[k]=val; drawList(); },
     _q:function(val){ S.q=val; clearTimeout(S._qT); S._qT=setTimeout(function(){ var a=document.activeElement, pos=a&&a.selectionStart; drawList(); var i=S.host.querySelector('input[placeholder^="Rechercher"]'); if(i){ i.focus(); try{i.setSelectionRange(pos,pos);}catch(e){} } },250); },
     _static:function(){ return staticHtml(); }, _setEnv:function(e){ Object.assign(ENV,e); }, _setStore:function(s){ DB=s; }, _state:function(){ return {S:S,D:D}; }
@@ -24362,8 +24396,39 @@ window.PunchList=(function(){
       });
       h+='</table></div>';
     }
-    h+='</div></div></div>';
+    h+='</div>';
+    // (09/10/2026) L'écran Chantier (toutes les affaires) est retiré de l'accueil : les punch lists d'une
+    // affaire qui n'existe plus sur le site (ou sans affaire) sont proposées ici pour être rangées.
+    if(ctx&&ed){
+      var _ids={}; ENV.affaires().forEach(function(a){ _ids[a.id]=1; });
+      var orph=S.list.filter(function(r){ return !r.aff||!_ids[r.aff]; });
+      if(orph.length){
+        h+='<div class="dcu-card" style="border:1px dashed #F59E0B;background:#FFFBEB"><div style="font-size:14px;font-weight:800;color:#92400E;margin-bottom:4px">Punch lists sans affaire ('+orph.length+')</div>'
+          +'<div style="font-size:12px;color:#92400E;margin-bottom:10px">Elles ne sont rangées dans aucune affaire du site. Rangez celles qui appartiennent à <b>'+esc(affLabel(S.ctxAff))+'</b>.</div>'
+          +'<div style="overflow:auto"><table class="dcu-tbl"><tr><th>Punch list</th><th>Affaire notée</th><th>Ouvertes</th><th></th></tr>';
+        orph.forEach(function(r){ var m=r.meta||{};
+          h+='<tr class="dcu-row" onclick="PunchList.open(\''+js(r.id)+'\')"><td><b>'+esc(r.title||m.title||'Punch list')+'</b></td>'
+            +'<td>'+(r.aff?esc(r.aff):'<i style="color:#9A96B3">aucune</i>')+'</td><td>'+(m.open||0)+' / '+(m.n||0)+'</td>'
+            +'<td style="text-align:right;white-space:nowrap"><button class="dcu-btn2" onclick="event.stopPropagation();PunchList._attach(\''+js(r.id)+'\')">↘ Ranger dans cette affaire</button></td></tr>';
+        });
+        h+='</table></div></div>';
+      }
+    }
+    h+='</div></div>';
     return h;
+  }
+  async function attach(id){
+    if(!S.ctxAff||!ENV.canEdit()) return;
+    if(!confirm('Ranger cette punch list dans l’affaire « '+affLabel(S.ctxAff)+' » ?')) return;
+    try{
+      for(var i=0;i<4;i++){ // écriture conditionnelle (rev) : si un collègue enregistre en même temps, on relit et on recommence
+        var row=await DB.get(id); if(!row) throw new Error('punch list introuvable (supprimée ?)');
+        var data=Object.assign({},row.data||{},{_aff:S.ctxAff});
+        var saved=await DB.update(id,row.rev,{aff:S.ctxAff,data:data,rev:row.rev+1,updated_by:ENV.who()});
+        if(saved){ await loadList(); drawList(); return; }
+      }
+      throw new Error('la punch list est modifiée en ce moment, réessayez');
+    }catch(e){ alert('Impossible de ranger la punch list : '+(e&&e.message||e)); }
   }
   function drawList(){ if(S.host&&!S.cur) S.host.innerHTML=listHtml(); }
   function visible(){ var h=S.host; return !!(h&&h.offsetParent!==null); }
@@ -25013,7 +25078,7 @@ window.PunchList=(function(){
     pending:function(){ return !!(S.cur&&Object.keys(S.dirty).length)||S.queue.length>0; },
     _f:function(k,v){ S[k]=v; if(S.cur) drawDetail(); else drawList(); },
     _q:function(v){ S.q=v; var pos=null,a=document.activeElement; if(a&&a.selectionStart!=null) pos=a.selectionStart; drawDetail(); var i=S.host&&S.host.querySelector('input[aria-label="Rechercher"]'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
-    _closeModal:closeModal, _impCreate:impCreate, _impRead:impRead, _read:readExcel,
+    _closeModal:closeModal, _impCreate:impCreate, _impRead:impRead, _read:readExcel, _attach:attach,
     _st:_st, _txt:_txt, _phAdd:_phAdd, _phOpen:_phOpen, _phDel:_phDel,
     _state:function(){ return {S:S,D:D}; }, _stats:stats
   };
