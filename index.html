@@ -13543,6 +13543,7 @@ function toggleEnsCollapse(ensId){
 }
 
 function phSetNotifResps(pk){
+  if(typeof hasEdit==='function'&&!hasEdit('planning'))return; // (12/10/2026) seulement avec « Planning » Modifier
   if(_phGuardPk(pk))return;  // phases du rôle (12/10/2026)
   if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   var phRow=D().find(function(x){return x.pk===pk&&x.t==='ph';});
@@ -15288,10 +15289,13 @@ function gcRowMenu(ev,id){
   var canB=typeof hasEdit==='function'&&hasEdit('budget_gantt'),b=+r.budgetH||0;
   if(r.t==='ph'){
     if(canB)it.push(['Budget heures'+(b?' ('+b+' h)':'')+'…',"phSetBudget('"+gcJs(r.pk)+"',"+b+")"]);
-    it.push(['🔔 Alertes de retard'+(r.notifResps&&r.notifResps.length?' ('+r.notifResps.length+' resp.)':'')+'…',"phSetNotifResps('"+gcJs(r.pk)+"')"]);
-    // même cycle que le bouton d'avant (togglePhStatus) : à faire → Terminée → En cours → à faire
-    var nx=r.phStatus==='done'?'⚡ En cours':r.phStatus==='inprogress'?'○ à faire':'✓ Terminée';
-    it.push(['Statut de la phase : '+(r.phStatus==='done'?'✓ Terminée':r.phStatus==='inprogress'?'⚡ En cours':'○ à faire')+' → '+nx,"togglePhStatus('"+gcJs(r.id)+"')"]);
+    // (12/10/2026) alertes et statut de la phase : seulement avec « Planning » Modifier (avant : tout le monde)
+    if(typeof hasEdit!=='function'||hasEdit('planning')){
+      it.push(['🔔 Alertes de retard'+(r.notifResps&&r.notifResps.length?' ('+r.notifResps.length+' resp.)':'')+'…',"phSetNotifResps('"+gcJs(r.pk)+"')"]);
+      // même cycle que le bouton d'avant (togglePhStatus) : à faire → Terminée → En cours → à faire
+      var nx=r.phStatus==='done'?'⚡ En cours':r.phStatus==='inprogress'?'○ à faire':'✓ Terminée';
+      it.push(['Statut de la phase : '+(r.phStatus==='done'?'✓ Terminée':r.phStatus==='inprogress'?'⚡ En cours':'○ à faire')+' → '+nx,"togglePhStatus('"+gcJs(r.id)+"')"]);
+    }
   }else if(r.t==='ens'){if(canB)it.push(['Budget heures'+(b?' ('+b+' h)':'')+'…',"ensSetBudget('"+gcJs(r.id)+"',"+b+")"]);}
   else if(r.t==='sb'){if(canB)it.push(['Budget heures'+(b?' ('+b+' h)':'')+'…',"sbSetBudget('"+gcJs(r.id)+"',"+b+")"]);}
   // Sous-traité (ensemble / sous-phase)
@@ -19438,6 +19442,7 @@ window._ganttBarMode = 'prev';
 
 // ── Statut des phases (terminé/en cours) ─────────────────────────────
 function togglePhStatus(rowId){
+  if(typeof hasEdit==='function'&&!hasEdit('planning'))return; // (12/10/2026) seulement avec « Planning » Modifier
   if(_phGuardId(rowId))return;  // phases du rôle (12/10/2026)
   if(_affRO()){_roDenied();return;} // affaire archivée : lecture seule (09/10/2026)
   var r=D().find(function(x){return x.id===rowId;});
@@ -21083,7 +21088,7 @@ function _rcTaskHtml(r,level,counts){
     return '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:2px 9px;font-size:11px;font-weight:600;color:var(--tx)">'
       +escHtml(p.name||'—')
       +(es?'<span class="pill" style="background:'+es.bg+';color:'+es.tc+'">'+escHtml(p.ent)+'</span>':'')
-      +(+p.heures&&_phOK(r.pk)?'<span style="font-weight:800;color:var(--ac)">'+(+p.heures)+'H</span>':'') // phases du rôle : pas les heures des autres phases
+      +(+p.heures&&_phOK(r.pk)&&hasView('budget_recap')?'<span style="font-weight:800;color:var(--ac)">'+(+p.heures)+'H</span>':'') // phases du rôle : pas les heures des autres phases
       +'</span>';
   }).join('');
   var bg=_isOverdue?'rgba(254,226,226,.35)':r.done?'rgba(209,250,229,.25)':'var(--bg2)';
@@ -21360,9 +21365,10 @@ function renderRecap(){
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">'
     +card('Avancement',t.affPct+'%','var(--ac)',t.affDone+'/'+t.allActs.length+' terminées')
     +(_canBud?card('H prévues',budTot+'H','var(--or)','budget des phases'):'')
-    +(_lim?'':card('H consommées',fhH.total+'H','var(--gn)','feuilles d’heure'))
+    // (12/10/2026) heures consommées / affectées : seulement avec « Heures dans le bilan » (avant : tout le monde)
+    +(_canBud?card('H consommées',fhH.total+'H','var(--gn)','feuilles d’heure'):'')
     +(_canBud?card('Écart',(ecart>0?'+':'')+ecart+'H',ecart<0?'var(--rd)':'var(--gn)',ecart<0?'budget dépassé':'reste du budget'):'')
-    +(_lim?'':card('H affectées',Math.round(t.affTotH)+'H','var(--ac)'))
+    +(_canBud?card('H affectées',Math.round(t.affTotH)+'H','var(--ac)'):'')
     +'</div>';
   // Heures de personnes supprimées de l'annuaire encore comptées ici :
   // invisibles dans la feuille d'heure (la personne n'y apparaît plus),
@@ -21398,7 +21404,7 @@ function renderRecap(){
       var right='<span style="display:flex;gap:10px;font-size:11px;font-weight:600;color:var(--tx3);flex-shrink:0;white-space:nowrap">'
         // phases du rôle (12/10/2026) : budget et consommé seulement sur ses phases
         +(hasView('budget_recap')&&_phOK(pk)&&phBud>0?'<span>Budget <b style="color:var(--or)">'+phBud+'H</b></span>':'')
-        +(_phOK(pk)?'<span>Consommé <b style="color:var(--gn)">'+phCons+'H</b></span>':'')+'</span>'
+        +(hasView('budget_recap')&&_phOK(pk)?'<span>Consommé <b style="color:var(--gn)">'+phCons+'H</b></span>':'')+'</span>'
         +(_countsInProgress(pk)?_rcBar(calcHierProgress(D(),{filterPk:pk})):'');
       var hdr=_rcHdrHtml(key,escHtml(pk),0,PH_get(pk).h||'var(--ac)',right);
       if(i===0)hdr=hdr.replace('border-top:1px solid var(--bd);','');
@@ -21428,7 +21434,9 @@ function renderHeures(){
   // dans celle-ci, et détail = champ p.heures des tâches, que les feuilles d'heure (par sous-phase) ne remplissent pas.
   // (12/10/2026) phases du rôle : seulement les heures de ses phases, et pas les H vendues de l'affaire
   const _lim=typeof _phLimited==='function'&&_phLimited();
-  const aff=STORE.current,bud=_lim?0:(currP().budget||0);
+  // (12/10/2026) heures vendues / restantes : seulement avec la case « H vendues » (Gestion des droits › Budget Heures)
+  const _noBud=typeof hasView==='function'&&!hasView('budget_toolbar');
+  const aff=STORE.current,bud=(_lim||_noBud)?0:(currP().budget||0);
   const pm={},rows={},where={};
   // Où est rangée chaque ligne du planning : ensemble (PAE 4…) et sous-phase, pour afficher « PAE 5 › Skid 6 »
   (function(){var ens=null,sb=null;(currP().data||[]).forEach(r=>{rows[r.id]=r;
@@ -21522,8 +21530,8 @@ function renderHeures(){
   hw.innerHTML=`
     <div style="display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;gap:12px;flex-wrap:wrap">
-      ${kpi('HEURES UTILISÉES',r1(used)+' h','#1C1A33',_lim?'Saisies dans les feuilles d’heure, sur vos phases':'Saisies dans les feuilles d’heure',`<div style="height:8px;background:#EFEDF7;border-radius:4px;overflow:hidden;margin-top:8px"><div style="height:100%;border-radius:4px;background:${bc};width:${pct}%"></div></div><div style="font-size:11px;color:#6B6790;margin-top:4px">${bud?(used/bud*100).toFixed(1).replace('.',',')+' % des '+r1(bud)+' h vendues':(_lim?'Heures de vos phases seulement':'Aucune heure vendue saisie')}</div>`)}
-      ${_lim?'':kpi('HEURES RESTANTES',r1(Math.max(0,rem))+' h',rem<0?'#B91C1C':rem<bud*.1?'#B45309':'#15803D','Sur '+r1(bud)+' h vendues',rem<0?`<div style="display:inline-block;margin-top:8px;padding:4px 10px;background:#FEF2F2;color:#B91C1C;border:1px solid #FECACA;border-radius:9px;font-size:12px;font-weight:800">⚠ Dépassement : +${r1(Math.abs(rem))} h</div>`:'')}
+      ${kpi('HEURES UTILISÉES',r1(used)+' h','#1C1A33',_lim?'Saisies dans les feuilles d’heure, sur vos phases':'Saisies dans les feuilles d’heure',`<div style="height:8px;background:#EFEDF7;border-radius:4px;overflow:hidden;margin-top:8px"><div style="height:100%;border-radius:4px;background:${bc};width:${pct}%"></div></div><div style="font-size:11px;color:#6B6790;margin-top:4px">${bud?(used/bud*100).toFixed(1).replace('.',',')+' % des '+r1(bud)+' h vendues':(_lim?'Heures de vos phases seulement':_noBud?'':'Aucune heure vendue saisie')}</div>`)}
+      ${(_lim||_noBud)?'':kpi('HEURES RESTANTES',r1(Math.max(0,rem))+' h',rem<0?'#B91C1C':rem<bud*.1?'#B45309':'#15803D','Sur '+r1(bud)+' h vendues',rem<0?`<div style="display:inline-block;margin-top:8px;padding:4px 10px;background:#FEF2F2;color:#B91C1C;border:1px solid #FECACA;border-radius:9px;font-size:12px;font-weight:800">⚠ Dépassement : +${r1(Math.abs(rem))} h</div>`:'')}
     </div>
     <section style="background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:18px 20px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px"><div><div style="font-size:16px;font-weight:800;color:#1C1A33">⏱ Heures par personne — ${escHtml(_inf.numero||STORE.current)}</div><div style="font-size:12.5px;color:#6B6790;margin-top:2px">${sorted.length} personne${sorted.length>1?'s':''} · heures reprises des feuilles d’heure · cliquez sur une personne pour le détail</div></div></div>
