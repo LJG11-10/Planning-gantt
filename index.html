@@ -6360,6 +6360,7 @@ function deleteDuplicateAffaire(key){
 }
 
 function dbRecap(){
+  // (12/10/2026) la colonne « BUDGET » ci-dessous = heures VENDUES (p.budget) : case « H vendues » (budget_toolbar), réservée aux ELS projet
   // (12/10/2026) rôle limité à certaines phases : ce bilan additionne les heures de TOUTES les phases → pas affiché
   if(typeof _phLimited==='function'&&_phLimited())return '<div style="max-width:560px;margin:40px auto;text-align:center;background:#fff;border:1px solid #E4E1F0;border-radius:14px;padding:26px;color:#4A4766;font-size:13px">🔒 Le bilan de toutes les affaires additionne les heures de toutes les phases : il n’est pas visible avec un rôle limité à certaines phases.<br><br>Les heures de vos phases sont dans chaque affaire, onglets <b>Bilan</b> et <b>Heures</b>.</div>';
   var affs=Object.keys(STORE.projects).sort();
@@ -6384,7 +6385,7 @@ function dbRecap(){
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--or)">'+gPrev+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET PHASES</div></div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--gn)">'+gReel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:'+(gPrev-gReel<0?'var(--rd)':gPrev-gReel>0?'var(--gn)':'var(--tx3)')+'">'+(gPrev-gReel===0?'—':(gPrev-gReel>0?'+':'')+(gPrev-gReel)+'H')+'</div><div style="font-size:8px;color:var(--tx3)">Δ</div></div>'
-    +(hasView('budget_recap')?'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gBud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
+    +(hasView('budget_toolbar')?'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gBud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gDone+'/'+gActs+'</div><div style="font-size:8px;color:var(--tx3)">TERMINÉES</div></div>'
     +'</div>';
 
@@ -6431,7 +6432,7 @@ function dbRecap(){
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--or)">'+prev+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET PHASES</div></div>'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--gn)">'+reel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:'+(delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--tx3)')+'">'+(delta===0?'—':(delta>0?'+':'')+delta+'H')+'</div><div style="font-size:8px;color:var(--tx3)">DELTA</div></div>'
-      +(hasView('budget_recap')?'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+bud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
+      +(hasView('budget_toolbar')?'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+bud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+done+'/'+acts.length+'</div><div style="font-size:8px;color:var(--tx3)">TERMIN.</div></div>'
       +'</div></div>'
       // Progress bars
@@ -8177,7 +8178,7 @@ function downloadPlanning(mode){
   body+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:28px">';
   [
     {v:pct+'%',l:'Avancement',sub:done+'/'+acts.length+' activités terminées',c:'#2563EB',bg:'#EFF6FF'},
-    {v:mode!=='client'?Math.round(totP)+'H':'—',l:'H Prévues',sub:hasView('budget_recap')?('Budget : '+(bud||'—')+'H'):'',c:'#D97706',bg:'#FFF7ED',hide:mode==='client'},
+    {v:mode!=='client'?Math.round(totP)+'H':'—',l:'H Prévues',sub:hasView('budget_toolbar')?('Budget : '+(bud||'—')+'H'):'',c:'#D97706',bg:'#FFF7ED',hide:mode==='client'},
     {v:mode!=='client'?Math.round(totR)+'H':'—',l:'H Réelles',sub:'Écart : '+(ecart>=0?'+':'')+ecart+'H',c:ecart<0?'#DC2626':'#059669',bg:ecart<0?'#FEF2F2':'#F0FDF4',hide:mode==='client'},
   ].filter(function(x){return !x.hide;}).forEach(function(x){
     body+='<div style="background:'+x.bg+';border-radius:12px;padding:20px;border-top:4px solid '+x.c+'">'
@@ -21530,8 +21531,8 @@ function renderHeures(){
   hw.innerHTML=`
     <div style="display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;gap:12px;flex-wrap:wrap">
-      ${kpi('HEURES UTILISÉES',r1(used)+' h','#1C1A33',_lim?'Saisies dans les feuilles d’heure, sur vos phases':'Saisies dans les feuilles d’heure',`<div style="height:8px;background:#EFEDF7;border-radius:4px;overflow:hidden;margin-top:8px"><div style="height:100%;border-radius:4px;background:${bc};width:${pct}%"></div></div><div style="font-size:11px;color:#6B6790;margin-top:4px">${bud?(used/bud*100).toFixed(1).replace('.',',')+' % des '+r1(bud)+' h vendues':(_lim?'Heures de vos phases seulement':_noBud?'':'Aucune heure vendue saisie')}</div>`)}
-      ${(_lim||_noBud)?'':kpi('HEURES RESTANTES',r1(Math.max(0,rem))+' h',rem<0?'#B91C1C':rem<bud*.1?'#B45309':'#15803D','Sur '+r1(bud)+' h vendues',rem<0?`<div style="display:inline-block;margin-top:8px;padding:4px 10px;background:#FEF2F2;color:#B91C1C;border:1px solid #FECACA;border-radius:9px;font-size:12px;font-weight:800">⚠ Dépassement : +${r1(Math.abs(rem))} h</div>`:'')}
+      <!-- (12/10/2026, demande de l'utilisateur) « heures vendues » n'est écrit que dans l'en-tête de l'affaire (case H VENDUES) : plus de « % des h vendues » ni de case « Heures restantes » ici -->
+      ${kpi('HEURES UTILISÉES',r1(used)+' h','#1C1A33',_lim?'Saisies dans les feuilles d’heure, sur vos phases':'Saisies dans les feuilles d’heure','')}
     </div>
     <section style="background:#fff;border:1px solid #E4E1F0;border-radius:16px;padding:18px 20px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px"><div><div style="font-size:16px;font-weight:800;color:#1C1A33">⏱ Heures par personne — ${escHtml(_inf.numero||STORE.current)}</div><div style="font-size:12.5px;color:#6B6790;margin-top:2px">${sorted.length} personne${sorted.length>1?'s':''} · heures reprises des feuilles d’heure · cliquez sur une personne pour le détail</div></div></div>
