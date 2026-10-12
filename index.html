@@ -642,7 +642,7 @@
     bd=bd||{};var out={};
     _keysOf(bd,ld,rd).forEach(function(k){
       // versions ET demandes de modification : élément par élément
-      var v=(k==='versions'||k==='mods')?_m3list(bd[k],ld[k],rd[k]):_pick3(bd[k],ld[k],rd[k]);
+      var v=(k==='versions'||k==='mods'||k==='hours')?_m3list(bd[k],ld[k],rd[k]):_pick3(bd[k],ld[k],rd[k]); // hours : heures autom saisies (12/10/2026)
       if(v!==undefined)out[k]=v;
     });
     return out;
@@ -10995,6 +10995,52 @@ var _MODS_MAX_ATT=20*1024*1024; // au-delà, la plupart des messageries refusent
     +'.mdx-tile.wait{border-color:#FDBA74;background:#FFFBF5}'
     +'.mdx-grp{font-size:12px;color:#9A3412;margin-top:2px}.mdx-grp b{font-weight:800}'
     +'.mdx-ren{border:none;background:none;color:#9A96B3;cursor:pointer;font-size:13px;padding:0 4px;vertical-align:2px}.mdx-ren:hover{color:#4B3FC7}'
+    // (12/10/2026, 2e passe) 4 colonnes par phase, fiche « dernière version à jour » + historique grisé
+    +'.mdx.mdx-wide{max-width:none;padding:14px 16px 60px}'
+    +'.mdx-cols{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}'
+    +'@media (max-width:1100px){.mdx-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:640px){.mdx-cols{grid-template-columns:1fr}}'
+    +'.mdx-col{background:var(--pcl);background:color-mix(in srgb,var(--pcl) 45%,#fff);border:1.5px solid var(--pcl);border-top:5px solid var(--pc);border-radius:16px;padding:10px;min-width:0}'
+    +'.mdx-colh{display:flex;gap:8px;align-items:center;margin:2px 2px 10px}'
+    +'.mdx-colt{font-size:15px;font-weight:900;color:var(--pcd);letter-spacing:.2px}.mdx-cols2{font-size:11.5px;color:#6B6790}.mdx-cols2 b{color:#C2410C}'
+    +'.mdx-coladd{width:30px;height:30px;border-radius:9px;border:1.5px solid var(--pc);background:#fff;color:var(--pcd);font-size:17px;font-weight:900;cursor:pointer;flex-shrink:0}.mdx-coladd:hover{background:var(--pcl)}'
+    +'.mdx-colempty{text-align:center;color:#9A96B3;font-size:12.5px;padding:18px 8px;border:1.5px dashed var(--pcl);border-radius:12px;background:#fff}'
+    +'.mdx-dc{background:#fff;border:1px solid #E4E1F0;border-radius:14px;padding:10px 11px;margin-bottom:10px;box-shadow:0 1px 2px rgba(28,26,51,.05);min-width:0;overflow-wrap:anywhere}'
+    +'.mdx-dc.wait{border-color:#FDBA74}.mdx-dc.new{box-shadow:0 0 0 3px #EEF2FF;border-color:#A5B4FC}'
+    +'.mdx-dch{display:flex;gap:6px;align-items:flex-start;margin-bottom:6px}.mdx-dcn{flex:1;min-width:0;font-size:14px;font-weight:900;color:#1C1A33;line-height:1.3}'
+    +'.mdx-dc .mdx-req{margin-top:6px;padding:9px 10px;border-radius:11px}.mdx-dc .mdx-rtt{font-size:12px;min-width:0;margin-bottom:3px}'
+    +'.mdx-rd{font-size:13px;font-weight:700;color:#1C1A33;white-space:pre-wrap;margin-bottom:2px}'
+    +'.mdx-ra{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}'
+    +'.mdx-btn.sm,.mdx-btn2.sm{height:30px;padding:0 10px;font-size:12px;border-radius:9px}.mdx-ico.sm{width:30px;height:30px}'
+    +'.mdx-mut{font-size:11.5px;color:#8B86B0}.mdx-sm{font-size:12px;margin-top:4px}.mdx-k{font-size:9.5px;font-weight:800;color:#9A96B3;letter-spacing:.4px;margin-right:4px}'
+    +'.mdx-req .mdx-k{color:#C2410C}'
+    +'.mdx-last{margin-top:8px;border:2px solid #16A34A;background:#F0FDF4;border-radius:12px;padding:9px 10px}'
+    +'.mdx-lasth{display:flex;gap:8px;align-items:center;flex-wrap:wrap}'
+    +'.mdx-up{font-size:10.5px;font-weight:900;letter-spacing:.5px;color:#fff;background:#16A34A;border-radius:7px;padding:3px 8px}'
+    +'.mdx-vbig{font-size:18px;font-weight:900;color:#14532D}.mdx-ld{font-size:12.5px;color:#1C1A33;white-space:pre-wrap;margin-top:4px}'
+    +'.mdx-nover{margin-top:8px;font-size:12.5px;color:#9A96B3;text-align:center;border:1.5px dashed #E4E1F0;border-radius:12px;padding:10px}'
+    +'.mdx-dca{margin-top:8px}'
+    +'.mdx-incl{margin-top:6px;font-size:12px;background:#fff;border-radius:9px;padding:6px 8px}'
+    +'.mdx-tag{font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;background:#ECFDF5;color:#047857}'
+    +'.mdx-hist{margin-top:10px;border-top:1px dashed #E4E1F0;padding-top:6px;opacity:.6;filter:grayscale(1)}.mdx-hist:hover{opacity:.85}'
+    +'.mdx-histt{font-size:10.5px;font-weight:800;color:#6B6790;letter-spacing:.4px;margin-bottom:4px}'
+    +'.mdx-hv{font-size:12px;color:#4A4766;padding:6px 0;border-bottom:1px solid #F1EFF8}.mdx-hv:last-of-type{border-bottom:none}'
+    +'.mdx-hist:not(.all) .mdx-hv.x{display:none}'
+    +'.mdx-hvh{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:2px}.mdx-hv .mdx-incl{background:transparent;padding:2px 0}'
+    +'.mdx-x{margin-left:auto;border:none;background:none;color:#9A96B3;cursor:pointer;font-size:11px}.mdx-x:hover{color:#B91C1C}'
+    +'.mdx-more{position:relative;flex-shrink:0}.mdx-more>summary{list-style:none;width:28px;height:28px;border-radius:8px;border:1px solid #E4E1F0;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#6B6790;font-weight:900}'
+    +'.mdx-more>summary::-webkit-details-marker{display:none}.mdx-more[open]>summary{background:#F1EFF8}'
+    +'.mdx-menu{position:absolute;right:0;top:32px;z-index:50;background:#fff;border:1px solid #E4E1F0;border-radius:12px;box-shadow:0 12px 32px rgba(28,26,51,.18);padding:6px;min-width:230px;display:grid}'
+    +'.mdx-menu button{border:none;background:none;text-align:left;padding:8px 10px;border-radius:8px;font-size:12.5px;font-weight:700;color:#1C1A33;cursor:pointer;font-family:inherit}'
+    +'.mdx-menu button:hover{background:#F5F3FF}.mdx-menu button.red{color:#B91C1C}'
+    +'.mdx-dkg{margin-bottom:8px}.mdx-dkgt{font-size:10.5px;font-weight:900;letter-spacing:.4px;color:var(--pcd);border-left:4px solid var(--pc);padding-left:6px;margin-bottom:5px}'
+    +'.mdx-sgrid{margin-top:4px}.mdx-ss{border:1.5px solid var(--pcl);border-top:5px solid var(--pc);border-radius:14px;padding:10px;background:#fff;min-width:0}'
+    +'.mdx-sst{font-size:14px;font-weight:900;color:var(--pcd);margin-bottom:4px}'
+    +'.mdx-ss .mdx-sl{gap:6px}.mdx-ss .mdx-sl .mdx-snm{flex:1;min-width:0;max-width:none}.mdx-ss .mdx-sl .mdx-sv{width:76px;flex-shrink:0;max-width:76px}'
+    +'.mdx-sln{flex:1;font-size:13px;font-weight:800}'
+    +'.mdx-hrs{margin-top:6px;background:#FFFBEB;border:1px solid #FCD34D;border-radius:9px;padding:6px 8px}'
+    +'.mdx-hrst{font-size:12px;font-weight:800;color:#92400E}.mdx-hrst b{color:#78350F;margin-left:4px}'
+    +'.mdx-hrsl{margin-top:4px}.mdx-hrsl .mdx-chip{background:#FEF3C7;color:#78350F}'
+    +'.mdx-hrsi{display:flex;gap:5px;margin-top:5px}.mdx-hrsi .mdx-in{height:30px;padding:4px 8px;width:80px;flex:0 0 80px}'
     +'.sec-badge{display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:#DC2626;color:#fff;font-size:10.5px;font-weight:800;text-align:center;vertical-align:1px}';
   document.head.appendChild(st);
 })();
@@ -11027,11 +11073,21 @@ function _modsUid(p){return p+Date.now()+'_'+Math.random().toString(36).slice(2,
 // ou déjà tenues par une autre demande). Quand TOUS les documents de la demande sont faits (ou annulés),
 // ces tâches repassent « terminées », sauf si une autre demande à faire les tient encore.
 var _MODS_DOC_MODELS=['Schéma électrique','SLD','BOQ','Cables list','Note de calcul'];
-function _modsModels(){var s=STORE.settings&&STORE.settings.modsDocModels;return (Array.isArray(s)&&s.length)?s.slice():_MODS_DOC_MODELS.slice();}
+// (12/10/2026, 2e passe) l'onglet est en 4 COLONNES, une par phase (avec sa couleur) ; chaque document a sa phase (doc.phase,
+// Études par défaut pour les anciens). Chaque phase a sa liste de documents type (Études = la liste ci-dessus).
+var _MODS_PH=[{k:'ETUDE',l:'Études'},{k:'TABLEAUTERIE',l:'Tableauterie'},{k:'AUTOMATISME',l:'Automatisme'},{k:'CHANTIER',l:'Chantier'}];
+function _modsPhOf(d){var p=d&&d.phase;return _MODS_PH.some(function(x){return x.k===p;})?p:'ETUDE';}
+function _modsPhLbl(k){var x=_MODS_PH.find(function(p){return p.k===k;});return x?x.l:k;}
+function _modsPhCol(k){var c=(typeof PH_BASE!=='undefined'&&PH_BASE[k])||{};return {x:c.x||'#7C6FF0',xl:c.xl||'#E4E1F0',xd:c.xd||'#4A3FC0'};}
+function _modsModelsKey(k){return k==='ETUDE'?'modsDocModels':'modsDocModels_'+k;}
+function _modsModels(k){k=k||'ETUDE';var s=STORE.settings&&STORE.settings[_modsModelsKey(k)];return (Array.isArray(s)&&s.length)?s.slice():(k==='ETUDE'?_MODS_DOC_MODELS.slice():[]);}
 function _modsGrp(m){return (m&&(m.grp||m.id))||'';}
 function _modsGroupItems(grp){var out=[];_modsGetDocs().forEach(function(d){(d.mods||[]).forEach(function(m){if(m&&_modsGrp(m)===grp)out.push({doc:d,m:m});});});return out;}
 function _modsNormNom(s){return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();}
-function _modsDocByName(nom){var k=_modsNormNom(nom);return _modsGetDocs().find(function(d){return _modsNormNom(d.nom)===k;})||null;}
+// ph facultatif : cherche seulement dans cette colonne (un même nom peut exister dans deux phases)
+function _modsDocByName(nom,ph){var k=_modsNormNom(nom);return _modsGetDocs().find(function(d){return _modsNormNom(d.nom)===k&&(!ph||_modsPhOf(d)===ph);})||null;}
+// Tâches qu'une modification peut faire reprendre : phases Études ET Automatisme (12/10/2026, 2e passe)
+var _MODS_TASK_PH=['ETUDE','AUTOMATISME'];
 function _modsEtudeTasks(){
   var out=[],ens=null,sb=null;
   (D()||[]).forEach(function(r){
@@ -11039,7 +11095,8 @@ function _modsEtudeTasks(){
     if(r.t==='ens'){ens=r;sb=null;return;}
     if(r.t==='ensend'){ens=null;sb=null;return;}
     if(r.t==='sb'){sb=r;return;}
-    if(r.t==='act'&&_phCat(r.pk)==='ETUDE')out.push({r:r,where:[ens&&ens.lb,sb&&sb.lb].filter(Boolean).join(' › ')});
+    var c=r.t==='act'?_phCat(r.pk):'';
+    if(c&&_MODS_TASK_PH.indexOf(c)>=0)out.push({r:r,ph:c,where:[_modsPhLbl(c)].concat([ens&&ens.lb,sb&&sb.lb].filter(Boolean)).join(' › ')});
   });
   return out;
 }
@@ -11084,7 +11141,7 @@ function _modsTasksHtml(sel){
   sel=sel||{};
   var by={};ts.forEach(function(t){(by[t.where]=by[t.where]||[]).push(t);});
   var nSel=ts.filter(function(t){return sel[t.r.id];}).length;
-  return '<details class="mdx-tk"'+(nSel?' open':'')+'><summary>📅 Tâches du planning (phase Études) touchées par cette modification <span style="font-weight:600;color:#9A96B3">— facultatif</span></summary>'
+  return '<details class="mdx-tk"'+(nSel?' open':'')+'><summary>📅 Tâches du planning à reprendre (Études, Automatisme) <span style="font-weight:600;color:#9A96B3">— facultatif</span></summary>'
     +'<div style="font-size:11.5px;color:#6B6790;margin:6px 0 4px">Une tâche terminée repasse « en cours » ; elle redevient « terminée » quand la modification est faite sur tous ses documents.</div>'
     +'<div class="mdx-pp">'+Object.keys(by).map(function(w){
       return (w?'<div class="mdx-pg">'+esc2(w.toUpperCase())+'</div>':'')+by[w].map(function(t){
@@ -11096,11 +11153,18 @@ function _modsCheckedTasks(){return Array.prototype.map.call(document.querySelec
 // Cases « documents » : ceux de l'affaire + un champ pour un autre document
 function _modsDocsPickHtml(sel,exclude,cls,withNew){
   var docs=_modsGetDocs().filter(function(d){return !exclude||!exclude[d.id];});
-  var h='<div class="mdx-dk">'+docs.map(function(d){
-    var l=_modsLatest(d),p=_modsPending(d).length;
-    return '<label class="mdx-dkc"><input type="checkbox" class="'+cls+'" value="'+escHtml(d.id)+'"'+(sel&&sel[d.id]?' checked':'')+'><span>'+esc2(d.nom)+'<small>'+(l?esc2(_modsVerLbl(l.version)):'pas de version')+(p?' · '+p+' à faire':'')+'</small></span></label>';
-  }).join('')+'</div>';
-  if(withNew)h+='<input type="text" id="mf-doc-new" class="mdx-in" style="margin-top:6px" placeholder="Autre document (nouveau) : tapez son nom, il sera créé">';
+  // (12/10/2026, 2e passe) rangés par phase, avec sa couleur
+  var h='';
+  _MODS_PH.forEach(function(ph){
+    var ds=docs.filter(function(d){return _modsPhOf(d)===ph.k;});if(!ds.length)return;
+    var c=_modsPhCol(ph.k);
+    h+='<div class="mdx-dkg" style="--pc:'+c.x+';--pcl:'+c.xl+';--pcd:'+c.xd+'"><div class="mdx-dkgt">'+esc2(ph.l)+'</div><div class="mdx-dk">'+ds.map(function(d){
+      var l=_modsLatest(d),p=_modsPending(d).length;
+      return '<label class="mdx-dkc"><input type="checkbox" class="'+cls+'" value="'+escHtml(d.id)+'"'+(sel&&sel[d.id]?' checked':'')+'><span>'+esc2(d.nom)+'<small>'+(l?esc2(_modsVerLbl(l.version)):'pas de version')+(p?' · '+p+' à faire':'')+'</small></span></label>';
+    }).join('')+'</div></div>';
+  });
+  if(withNew)h+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><input type="text" id="mf-doc-new" class="mdx-in" style="flex:1;min-width:200px" placeholder="Autre document (nouveau) : tapez son nom, il sera créé">'
+    +'<select id="mf-doc-new-ph" class="mdx-in" style="width:auto" aria-label="Colonne du nouveau document">'+_MODS_PH.map(function(p){return '<option value="'+p.k+'">'+esc2(p.l)+'</option>';}).join('')+'</select></div>';
   return h;
 }
 function _modsChecked(cls){return Array.prototype.map.call(document.querySelectorAll('#mods-form-area .'+cls+':checked'),function(c){return c.value;});}
@@ -11188,35 +11252,39 @@ function renderModificationsTab(){
   var nPeople=_modsPeople().length;
   var hasAtt=docs.some(function(d){return (d.versions||[]).some(function(v){return _modsVerHasFile(v);})||(d.mods||[]).some(function(m){return (m.files||[]).some(function(f){return f.path;});});});
   var nTodo=docs.reduce(function(n,d){return n+_modsPending(d).length;},0);
-  var h='<div class="mdx">'
+  // (12/10/2026, 2e passe) 4 colonnes sur toute la largeur, une par phase avec sa couleur
+  var h='<div class="mdx mdx-wide">'
     +'<div class="mdx-card mdx-top"><div style="flex:1;min-width:260px"><div class="mdx-h">📄 Documents et modifications'+(nTodo?' <span class="mdx-new org" style="font-size:12px">'+nTodo+' à faire</span>':'')+'</div>'
-    +'<div class="mdx-sub">1) « ＋ Nouvelle modification » : cochez <b>tous les documents</b> qu’elle touche (et les tâches Études du planning), le détail et qui doit la faire → un email tout prêt s’ouvre dans Outlook.<br>2) Sur chaque document : « ✓ Marquer comme faite », avec une nouvelle version (email avec le document) ou sans changer de version.</div>'
+    +'<div class="mdx-sub">Chaque colonne = une phase et ses documents. En haut de chaque document : sa <b>dernière version (à jour)</b> ; les versions remplacées restent en dessous, en gris.<br>« ＋ Nouvelle modification » : cochez tous les documents qu’elle touche (et les tâches à reprendre) → email tout prêt. Une fois faite : « ✓ Faite » sur chaque document.</div>'
     +(nPeople||!ed?'':'<div class="mdx-warn">Aucune personne avec un email dans les infos de l’affaire. <button type="button" class="mdx-lnk" onclick="openAffaireInfos()">ℹ️ Ajouter des personnes</button></div>')
     +'</div><div class="mdx-acts">'
     +(docs.length?'<button type="button" class="mdx-btn2" onclick="modsExportAll()">⬇ Exporter (.zip)</button>':'')
     +(ed&&docs.some(function(d){return _modsOldFiles(d).length;})?'<button type="button" class="mdx-btn2" onclick="modsDropAllOldFiles()" title="Seul le fichier de la dernière version de chaque document reste sur le site ; l’historique est gardé">🧹 Retirer les anciens fichiers</button>':'')
     +(hasAtt&&ed?'<button type="button" class="mdx-btn2 red" onclick="modsPurgeAttachments()">🗑 Purger les fichiers</button>':'')
-    +(ed&&docs.length?'<button type="button" class="mdx-btn2" onclick="modShowSetupForm()">＋ Ajouter des documents</button>'
-      +'<button type="button" class="mdx-btn" onclick="modShowReqForm(\'\')">＋ Nouvelle modification</button>':'')
+    +(ed&&docs.length?'<button type="button" class="mdx-btn" onclick="modShowReqForm(\'\')">＋ Nouvelle modification</button>':'')
     +'</div></div>'
     +'<div id="mods-form-area"></div>';
   if(!docs.length){
-    // (12/10/2026) 1re arrivée sur l'onglet : on coche les documents de l'affaire → leurs fiches sont créées
+    // 1re arrivée sur l'onglet : on coche les documents de chaque phase → leurs fiches sont créées
     h+=ed?'<div class="mdx-card mdx-setup" id="mdx-setup">'+_modsSetupHtml(true)+'</div>'
       :'<div class="mdx-card" style="text-align:center;color:#9A96B3;padding:30px">Aucun document pour cette affaire.</div>';
   }else{
-    // Vue d'ensemble : un coup d'œil sur l'état de chaque document (clic = aller à sa fiche)
-    h+='<div class="mdx-ov2">'+docs.map(function(d){
-      var l=_modsLatest(d),p=_modsPending(d).length;
-      var st=p?'<span class="mdx-st wait">⏳ '+p+' modification'+(p>1?'s':'')+' à faire</span>':(l?'<span class="mdx-st ok">✓ À jour · '+esc2(_modsVerLbl(l.version))+'</span>':'<span class="mdx-st none">Pas encore de version</span>');
-      return '<button type="button" class="mdx-tile'+(p?' wait':'')+'" onclick="_modsGoDoc(\''+_modsJs(d.id)+'\')"><b>'+esc2(d.nom)+'</b>'+st+'</button>';
+    h+='<div class="mdx-cols">'+_MODS_PH.map(function(ph){
+      var c=_modsPhCol(ph.k);
+      // documents avec une modification à faire en haut, puis dans l'ordre de création
+      var list=docs.filter(function(d){return _modsPhOf(d)===ph.k;}).sort(function(a,b){
+        var pa=_modsPending(a).length?1:0,pb=_modsPending(b).length?1:0;
+        return (pb-pa)||((a._createdAt||0)-(b._createdAt||0));
+      });
+      var nT=list.reduce(function(n,d){return n+_modsPending(d).length;},0);
+      return '<section class="mdx-col" style="--pc:'+c.x+';--pcl:'+c.xl+';--pcd:'+c.xd+'">'
+        +'<div class="mdx-colh"><div style="flex:1;min-width:0"><div class="mdx-colt">'+esc2(ph.l)+'</div>'
+        +'<div class="mdx-cols2">'+list.length+' document'+(list.length>1?'s':'')+(nT?' · <b>'+nT+' à faire</b>':'')+'</div></div>'
+        +(ed?'<button type="button" class="mdx-coladd" onclick="modShowSetupForm(\''+ph.k+'\')" title="Ajouter des documents dans '+escHtml(ph.l)+'" aria-label="Ajouter des documents dans '+escHtml(ph.l)+'">＋</button>':'')+'</div>'
+        +(list.length?list.map(function(d){return _modsBuildDocCard(d,ed);}).join('')
+          :'<div class="mdx-colempty">Aucun document'+(ed?'<br><button type="button" class="mdx-lnk" onclick="modShowSetupForm(\''+ph.k+'\')">＋ Ajouter des documents</button>':'')+'</div>')
+        +'</section>';
     }).join('')+'</div>';
-    // les documents avec une modification à faire en haut, puis les plus récents
-    var rk=function(d){var l=_modsLatest(d),m=(d.mods||[]).reduce(function(x,y){return Math.max(x,y._createdAt||0);},0);return Math.max((l&&l._createdAt)||0,m,d._createdAt||0);};
-    docs.slice().sort(function(a,b){
-      var pa=_modsPending(a).length?1:0,pb=_modsPending(b).length?1:0;
-      return (pb-pa)||(rk(b)-rk(a));
-    }).forEach(function(doc){h+=_modsBuildDocCard(doc,ed);});
   }
   h+='</div>';
   w.innerHTML=h;
@@ -11252,143 +11320,279 @@ function _modsChips(list,empty){
 function _modsMailState(x){
   return x.mailAt?'<span class="mdx-ok">✓ Préparé'+(x.mailBy?' par '+esc2(x.mailBy):'')+' le '+_modsFmtDT(x.mailAt)+'</span>':'<span class="mdx-todo">Pas encore préparé</span>';
 }
+// (12/10/2026, 2e passe) Fiche d'un document dans sa colonne : demandes à faire (orange) → DERNIÈRE VERSION (verte,
+// « À JOUR ») → versions remplacées en dessous, en gris, avec le détail de leurs modifications. Actions rares dans ⋯.
+function _modsInclHtml(doc,v){
+  var incl=(doc.mods||[]).filter(function(x){return x&&x.status==='fait'&&x.verId===v.id;});
+  var multi=incl.length>1||incl.some(function(x){return x.noNewVer;});
+  if(!multi)return '';
+  return '<div class="mdx-incl"><div class="mdx-k">MODIFICATIONS INCLUSES</div>'+incl.map(function(x){
+    return '<div>• '+esc2(x.detail||'—')+' <span class="mdx-mut">· '+(x.direct?'faite directement':'demandée')+(x.byName?' par '+esc2(x.byName):'')+' le '+esc2(x.date||'')+'</span>'
+      +(x.noNewVer?' <span class="mdx-tag">sans nouvelle version</span>':'')+((x.files||[]).length?' · '+_modsFilesHtml(x.files):'')+_modsHoursSum(x)+'</div>';
+  }).join('')+'</div>';
+}
+// total des heures Automatisme d'une demande (étiquette) et heures par personne d'une version
+function _modsHoursSum(m){
+  var g=_modsGrp(m),t=0;
+  _modsGetDocs().forEach(function(d){(d.hours||[]).forEach(function(x){if(x&&x.grp===g)t+=+x.h||0;});});
+  return t?' <span class="mdx-tag" style="background:#FEF3C7;color:#92400E">⏱ '+_modsFmtH(t)+'</span>':'';
+}
+function _modsVerHoursHtml(doc,v){
+  var gs={};(doc.mods||[]).forEach(function(x){if(x&&x.status==='fait'&&x.verId===v.id)gs[_modsGrp(x)]=1;});
+  var by={},tot=0;
+  _modsGetDocs().forEach(function(d){(d.hours||[]).forEach(function(x){if(x&&gs[x.grp]){var k=x.by||x.email||'?';by[k]=(by[k]||0)+(+x.h||0);tot+=+x.h||0;}});});
+  if(!tot)return '';
+  return '<div class="mdx-sm"><span class="mdx-k">HEURES AUTOM</span> <b>'+_modsFmtH(tot)+'</b> '+Object.keys(by).map(function(k){return '<span class="mdx-chip">'+esc2(k)+' · '+_modsFmtH(by[k])+'</span>';}).join('')+'</div>';
+}
+function _modsMoreMenu(doc,last){
+  var id=_modsJs(doc.id);
+  var b=function(lbl,on,cls){return '<button type="button"'+(cls?' class="'+cls+'"':'')+' onclick="this.closest(\'details\').open=false;'+on+'">'+lbl+'</button>';};
+  return '<details class="mdx-more"><summary title="Plus d’actions" aria-label="Plus d’actions sur '+escHtml(doc.nom)+'">⋯</summary><div class="mdx-menu">'
+    +(last?b('✉ Prévenir de la dernière version','modEditDest(\''+id+'\',\''+_modsJs(last.id)+'\')')
+      +b('＋ Modif directe (sans demande)','modShowAddVersionForm(\''+id+'\')')
+      :b('⬆ Déposer la 1re version','modShowAddVersionForm(\''+id+'\')'))
+    +b('✎ Renommer','modRenameDoc(\''+id+'\')')
+    +b('⇄ Changer de colonne','modMoveDoc(\''+id+'\')')
+    +(last?b('Supprimer la dernière version','modDeleteVersion(\''+id+'\',\''+_modsJs(last.id)+'\')','red'):'')
+    +b('✕ Supprimer le document','modDeleteDoc(\''+id+'\')','red')
+    +'</div></details>';
+}
 function _modsBuildDocCard(doc,ed){
   var vs=_modsVersSorted(doc),last=vs[0]||null,old=vs.slice(1),pend=_modsPending(doc);
   var nw=window._modsNew||{},isNew=!!(last&&nw[last.id])||pend.some(function(m){return nw[m.id];});
-  var h='<div class="mdx-card mdx-doc'+(isNew?' new':'')+'" id="mdx-doc-'+escHtml(doc.id)+'">'
-    +'<div class="mdx-dh"><div style="min-width:0;flex:1 1 300px">'
-    +'<div class="mdx-dn">'+esc2(doc.nom)+(ed?'<button type="button" class="mdx-ren" onclick="modRenameDoc(\''+doc.id+'\')" title="Renommer le document" aria-label="Renommer le document">✎</button>':'')+(last&&nw[last.id]?'<span class="mdx-new">Nouvelle version</span>':'')+(pend.length?'<span class="mdx-new org">'+pend.length+' modification'+(pend.length>1?'s':'')+' à faire</span>':'')+'</div>'
-    +'<div class="mdx-dv">'+(last?'Dernière version : <b>'+esc2(_modsVerLbl(last.version))+'</b> du '+esc2(last.date||'—')+(last.byName?' · ajoutée par '+esc2(last.byName):'')
-      +(ed?' · <button type="button" class="mdx-lnk" style="font-size:11.5px;color:#9A96B3" onclick="modDeleteVersion(\''+doc.id+'\',\''+last.id+'\')">supprimer cette version</button>':''):'Pas encore de version')+'</div>'
-    +'</div><div class="mdx-acts">'
-    +(ed&&last?'<button type="button" class="mdx-btn2" onclick="modEditDest(\''+doc.id+'\',\''+last.id+'\')" title="Ouvre Outlook avec les personnes à prévenir, le message et le fichier de la dernière version">✉ Prévenir de cette version</button>':'')
-    +(ed?'<button type="button" class="mdx-btn2" onclick="modShowReqForm(\''+doc.id+'\')">＋ Modification</button>'
-      +(last?'<button type="button" class="mdx-btn2" onclick="modShowAddVersionForm(\''+doc.id+'\')" title="Modification faite directement, sans demande avant : nouvelle version (fichier + email) ou sans changer de version">＋ Modif directe (sans demande)</button>'
-        :'<button type="button" class="mdx-btn2" onclick="modShowAddVersionForm(\''+doc.id+'\')" title="Déposer le fichier de la première version de ce document">⬆ Déposer la 1re version</button>')
-      +'<button type="button" class="mdx-ico" onclick="modDeleteDoc(\''+doc.id+'\')" title="Supprimer le document" aria-label="Supprimer le document">✕</button>':'')
-    +'</div></div>';
+  var id=_modsJs(doc.id);
+  var h='<div class="mdx-dc'+(isNew?' new':'')+(pend.length?' wait':'')+'" id="mdx-doc-'+escHtml(doc.id)+'">'
+    +'<div class="mdx-dch"><div class="mdx-dcn">'+esc2(doc.nom)+'</div>'+(ed?_modsMoreMenu(doc,last):'')+'</div>';
   // Modifications à faire
   pend.forEach(function(m){
+    var mid=_modsJs(m.id);
     h+='<div class="mdx-req" id="mdx-req-'+escHtml(m.id)+'">'
-      +'<div class="mdx-rt"><div class="mdx-rtt">🛠 Modification à faire'+(nw[m.id]?' <span class="mdx-new org">Nouvelle</span>':'')+' <span>· demandée'+(m.byName?' par '+esc2(m.byName):'')+' le '+esc2(m.date||'')+'</span></div>'
-      +(ed?'<button type="button" class="mdx-btn grn" onclick="modShowDoneForm(\''+doc.id+'\',\''+m.id+'\')">✓ Marquer comme faite</button>'
-        +'<button type="button" class="mdx-btn2" onclick="modEditReqDest(\''+doc.id+'\',\''+m.id+'\')">✉ Préparer l’email</button>'
-        +'<button type="button" class="mdx-btn2" onclick="modShowReqForm(\''+doc.id+'\')" title="Le client demande autre chose sur ce document : ajouter une demande de plus (elle pourra être faite dans la même version)">＋ Autre modification</button>'
-        +'<button type="button" class="mdx-ico" onclick="modDeleteReq(\''+doc.id+'\',\''+m.id+'\')" title="Annuler cette demande" aria-label="Annuler cette demande">✕</button>':'')
-      +'</div><div style="display:grid;gap:7px">'
-      +'<div class="mdx-row"><span class="mdx-l">DÉTAIL MODIFICATION</span><span style="flex:1;min-width:200px;white-space:pre-wrap">'+esc2(m.detail||'—')+'</span></div>'
-      +((m.files||[]).length?'<div class="mdx-row"><span class="mdx-l">FICHIERS</span><span style="flex:1;min-width:200px">'+_modsFilesHtml(m.files)+'</span></div>':'')
-      +_modsGroupRowHtml(m,doc)
-      +'<div class="mdx-row"><span class="mdx-l">À FAIRE PAR</span><span style="flex:1;min-width:200px">'+_modsChips(m.to,'personne n’est coché')+'</span></div>'
-      +'<div class="mdx-row"><span class="mdx-l">EMAIL</span>'+_modsMailState(m)+'</div>'
-      +'</div></div>';
+      +'<div class="mdx-rtt">🛠 Modification à faire'+(nw[m.id]?' <span class="mdx-new org">Nouvelle</span>':'')+'</div>'
+      +'<div class="mdx-rd">'+esc2(m.detail||'—')+'</div>'
+      +'<div class="mdx-mut">demandée'+(m.byName?' par '+esc2(m.byName):'')+' le '+esc2(m.date||'')+'</div>'
+      +((m.files||[]).length?'<div class="mdx-sm">'+_modsFilesHtml(m.files)+'</div>':'')
+      +(_modsHoursHost(m,doc)?_modsGroupRowHtml(m,doc,true)+_modsHoursHtml(m,doc,ed):_modsGroupRowHtml(m,doc))
+      +'<div class="mdx-sm"><span class="mdx-k">À FAIRE PAR</span> '+_modsChips(m.to,'personne n’est coché')+'</div>'
+      +'<div class="mdx-sm"><span class="mdx-k">EMAIL</span> '+_modsMailState(m)+'</div>'
+      +(ed?'<div class="mdx-ra">'
+        +'<button type="button" class="mdx-btn grn sm" onclick="modShowDoneForm(\''+id+'\',\''+mid+'\')">✓ Faite</button>'
+        +'<button type="button" class="mdx-btn2 sm" onclick="modEditReqDest(\''+id+'\',\''+mid+'\')" title="Préparer l’email « modification à faire »">✉ Email</button>'
+        +'<button type="button" class="mdx-btn2 sm" onclick="modShowReqForm(\''+id+'\')" title="Le client demande autre chose sur ce document : une demande de plus (elle pourra être faite dans la même version)">＋ Autre</button>'
+        +'<button type="button" class="mdx-ico sm" onclick="modDeleteReq(\''+id+'\',\''+mid+'\')" title="Annuler cette demande" aria-label="Annuler cette demande">✕</button>'
+        +'</div>':'')
+      +'</div>';
   });
-  // Dernière version
-  // (12/10/2026) modifications faites SANS nouvelle version alors qu'il n'y avait encore aucune version
+  // modifications faites SANS nouvelle version alors qu'il n'y avait encore aucune version
   var doneNoVer=(doc.mods||[]).filter(function(x){return x&&x.status==='fait'&&x.noNewVer&&!x.verId;});
-  if(doneNoVer.length)h+='<div class="mdx-body" style="background:#F0FDF4"><div class="mdx-row"><span class="mdx-l">FAITES, SANS VERSION</span><span style="flex:1;min-width:200px">'
-    +doneNoVer.map(function(x){return '✓ '+esc2(x.detail||'—')+' <span style="color:#6B6790">· faite'+(x.doneBy?' par '+esc2(x.doneBy):'')+'</span>';}).join('<br>')+'</span></div></div>';
+  if(doneNoVer.length)h+='<div class="mdx-incl" style="background:#F0FDF4"><div class="mdx-k">FAITES, SANS VERSION</div>'
+    +doneNoVer.map(function(x){return '<div>✓ '+esc2(x.detail||'—')+' <span class="mdx-mut">· faite'+(x.doneBy?' par '+esc2(x.doneBy):'')+'</span></div>';}).join('')+'</div>';
+  // Dernière version : bien visible, « À JOUR »
   if(last){
     var lm=last.modId?(doc.mods||[]).find(function(x){return x.id===last.modId;}):null;
-    // toutes les demandes rattachées à cette version : faites avec elle, ou faites ensuite « sans changer de version »
-    var incl=(doc.mods||[]).filter(function(x){return x&&x.status==='fait'&&x.verId===last.id;});
-    var multi=incl.length>1||incl.some(function(x){return x.noNewVer;});
-    h+='<div class="mdx-body">'
-      +(last.note?'<div class="mdx-row"><span class="mdx-l">DÉTAIL MODIFICATION</span><span style="flex:1;min-width:200px;white-space:pre-wrap">'+esc2(last.note)+'</span></div>':'')
-      +(multi?'<div class="mdx-row"><span class="mdx-l">MODIFICATIONS INCLUSES</span><span style="flex:1;min-width:200px">'
-          +incl.map(function(x){return '• '+esc2(x.detail||'—')+' <span style="color:#6B6790">· '+(x.direct?'faite directement':'demandée')+(x.byName?' par '+esc2(x.byName):'')+' le '+esc2(x.date||'')+'</span>'+(x.noNewVer?' <span class="mdx-new" style="background:#ECFDF5;color:#047857">faite sans nouvelle version</span>':'')+((x.files||[]).length?' · '+_modsFilesHtml(x.files):'');}).join('<br>')+'</span></div>'
-        :(last.reqDate||lm?'<div class="mdx-row"><span class="mdx-l">DEMANDÉE</span><span>'+(last.reqBy?'par '+esc2(last.reqBy)+' ':'')+'le '+esc2(last.reqDate||(lm&&lm.date)||'')+(lm&&lm.files&&lm.files.length?' · '+_modsFilesHtml(lm.files):'')+'</span></div>':''))
-      +'<div class="mdx-row"><span class="mdx-l">FICHIER'+(_modsVerFiles(last).length>1?'S':'')+'</span>'+_modsFileLink(last)+'</div>'
-      +'<div class="mdx-row"><span class="mdx-l">PRÉVENUS</span><span style="flex:1;min-width:200px">'+_modsChips(last.dest,'personne n’est coché')+'</span></div>'
-      +'<div class="mdx-row"><span class="mdx-l">EMAIL</span>'+_modsMailState(last)+'</div>'
+    var incl=_modsInclHtml(doc,last);
+    h+='<div class="mdx-last">'
+      +'<div class="mdx-lasth"><span class="mdx-up">✓ À JOUR</span><span class="mdx-vbig">'+esc2(_modsVerLbl(last.version))+'</span>'+(last&&nw[last.id]?'<span class="mdx-new">Nouvelle</span>':'')+'</div>'
+      +'<div class="mdx-mut">'+esc2(last.date||'—')+(last.byName?' · '+esc2(last.byName):'')+'</div>'
+      +(last.note?'<div class="mdx-ld">'+esc2(last.note)+'</div>':'')
+      +(incl||(!incl&&(last.reqDate||lm)?'<div class="mdx-mut">Demandée '+(last.reqBy?'par '+esc2(last.reqBy)+' ':'')+'le '+esc2(last.reqDate||(lm&&lm.date)||'')+(lm&&lm.files&&lm.files.length?' · '+_modsFilesHtml(lm.files):'')+'</div>':''))
+      +_modsVerHoursHtml(doc,last)
+      +'<div class="mdx-sm">'+_modsFileLink(last)+'</div>'
+      +(last.initial?'':'<div class="mdx-sm"><span class="mdx-k">PRÉVENUS</span> '+_modsChips(last.dest,'personne')+'</div>'
+        +'<div class="mdx-sm"><span class="mdx-k">EMAIL</span> '+_modsMailState(last)+'</div>')
       +'</div>';
+  }else{
+    h+='<div class="mdx-nover">Pas encore de version'+(ed?'<br><button type="button" class="mdx-lnk" onclick="modShowAddVersionForm(\''+id+'\')">⬆ Déposer la 1re version</button>':'')+'</div>';
   }
+  if(ed)h+='<div class="mdx-dca"><button type="button" class="mdx-btn2 sm" onclick="modShowReqForm(\''+id+'\')">＋ Modification</button></div>';
+  // Versions remplacées : en dessous, en gris, avec le détail des anciennes modifications
   if(old.length){
-    h+='<details class="mdx-old"><summary>Versions remplacées ('+old.length+')</summary>'
-      +old.map(function(v){
-        return '<div class="mdx-ov"><span class="mdx-vtag">'+esc2(_modsVerLbl(v.version))+'</span><span>'+esc2(v.date)+'</span><span class="mdx-rep">remplacée</span>'
-          +(v.note?'<span style="flex:1 1 200px;min-width:0">'+esc2(v.note)+'</span>':'<span style="flex:1"></span>')
-          +_modsFileLink(v)
-          +(ed?'<button type="button" class="mdx-ico" style="width:26px;height:26px;font-size:11px" onclick="modDeleteVersion(\''+doc.id+'\',\''+v.id+'\')" title="Supprimer cette version" aria-label="Supprimer cette version">✕</button>':'')+'</div>';
-      }).join('')+'</details>';
+    var more=old.length>3;
+    h+='<div class="mdx-hist'+(more?'':' all')+'"><div class="mdx-histt">Versions remplacées ('+old.length+')</div>'
+      +old.map(function(v,i){
+        return '<div class="mdx-hv'+(i>=3?' x':'')+'">'
+          +'<div class="mdx-hvh"><span class="mdx-vtag">'+esc2(_modsVerLbl(v.version))+'</span><span>'+esc2(v.date||'')+(v.byName?' · '+esc2(v.byName):'')+'</span>'
+          +(ed?'<button type="button" class="mdx-x" onclick="modDeleteVersion(\''+id+'\',\''+_modsJs(v.id)+'\')" title="Supprimer cette version" aria-label="Supprimer cette version">✕</button>':'')+'</div>'
+          +(v.note?'<div>'+esc2(v.note)+'</div>':'')
+          +_modsInclHtml(doc,v)+_modsVerHoursHtml(doc,v)
+          +(_modsVerFiles(v).length?'<div>'+_modsFileLink(v)+'</div>':'')
+          +'</div>';
+      }).join('')
+      +(more?'<button type="button" class="mdx-lnk" style="font-size:11.5px;margin-top:4px" onclick="this.parentNode.classList.add(\'all\');this.remove()">Voir les '+(old.length-3)+' autres</button>':'')
+      +'</div>';
   }
   return h+'</div>';
 }
 
 // Dans une demande : les AUTRES documents de la même demande et les tâches du planning qu'elle tient
-function _modsGroupRowHtml(m,doc){
+function _modsGroupRowHtml(m,doc,noAut){ // noAut : tâches Automatisme montrées à part, avec leurs heures
   var grp=_modsGrp(m),others=_modsGroupItems(grp).filter(function(x){return x.m!==m;}),h='';
-  if(others.length)h+='<div class="mdx-row"><span class="mdx-l">MÊME DEMANDE SUR</span><span style="flex:1;min-width:200px">'
-    +others.map(function(x){return '<button type="button" class="mdx-lnk" style="text-decoration:none" onclick="_modsGoDoc(\''+_modsJs(x.doc.id)+'\')">'+esc2(x.doc.nom)+'</button> '+(x.m.status==='fait'?'<span class="mdx-ok">✓ faite</span>':'<span class="mdx-todo">⏳ à faire</span>');}).join(' &nbsp;·&nbsp; ')+'</span></div>';
-  var tk=(m.tasks||[]).map(_modsTaskRow).filter(Boolean);
-  if(tk.length)h+='<div class="mdx-row"><span class="mdx-l">PLANNING (ÉTUDES)</span><span style="flex:1;min-width:200px">'
-    +tk.map(function(r){return esc2(r.lb||'tâche')+' <span style="color:#6B6790">('+_modsTaskSt(r)+')</span>';}).join(' · ')+'</span></div>';
+  if(others.length)h+='<div class="mdx-sm"><span class="mdx-k">MÊME DEMANDE SUR</span> '
+    +others.map(function(x){return '<button type="button" class="mdx-lnk" style="text-decoration:none;font-size:12px" onclick="_modsGoDoc(\''+_modsJs(x.doc.id)+'\')">'+esc2(x.doc.nom)+'</button> '+(x.m.status==='fait'?'<span class="mdx-ok">✓</span>':'<span class="mdx-todo">⏳</span>');}).join(' · ')+'</div>';
+  var tk=(m.tasks||[]).map(_modsTaskRow).filter(function(r){return r&&!(noAut&&_modsIsAutTask(r));});
+  if(tk.length)h+='<div class="mdx-sm"><span class="mdx-k">PLANNING</span> '
+    +tk.map(function(r){return esc2(r.lb||'tâche')+' <span class="mdx-mut">('+_modsTaskSt(r)+')</span>';}).join(' · ')+'</div>';
   return h;
+}
+// ── Heures Automatisme (12/10/2026, demande de l'utilisateur) : les automaticiens ne font pas de feuille d'heure ;
+// ils saisissent ici les heures passées sur une tâche Automatisme liée à la demande. Chaque saisie garde le nom
+// et l'email du compte. Rangées dans doc.hours [{id, grp, modId, task, h, by, email, at}] (fusion élément par élément).
+function _modsIsAutTask(r){return !!r&&_phCat(r.pk)==='AUTOMATISME';}
+function _modsHoursOf(grp,taskId){
+  var out=[];_modsGetDocs().forEach(function(d){(d.hours||[]).forEach(function(x){if(x&&x.grp===grp&&x.task===taskId)out.push({doc:d,x:x});});});
+  return out.sort(function(a,b){return (a.x.at||0)-(b.x.at||0);});
+}
+function _modsFmtH(h){return String(Math.round((+h||0)*100)/100).replace('.',',')+' h';}
+function _modsParseH(s){var v=parseFloat(String(s||'').replace(',','.').replace(/[^0-9.]/g,''));return isFinite(v)?v:0;}
+// Une ligne par tâche Automatisme de la demande : total, détail par personne, et saisie (si on peut modifier)
+function _modsHoursHtml(m,doc,ed){
+  var grp=_modsGrp(m),me=_modsMe(),adm=(typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin');
+  var tk=(m.tasks||[]).map(_modsTaskRow).filter(_modsIsAutTask);
+  if(!tk.length)return '';
+  return tk.map(function(r){
+    var it=_modsHoursOf(grp,r.id),tot=it.reduce(function(s,y){return s+(+y.x.h||0);},0);
+    var fid='mh-'+m.id+'-'+r.id;
+    return '<div class="mdx-hrs"><div class="mdx-hrst">⏱ '+esc2(r.lb||'tâche')+' <b>'+_modsFmtH(tot)+'</b></div>'
+      +(it.length?'<div class="mdx-hrsl">'+it.map(function(y){
+        var mine=String(y.x.email||'').toLowerCase()===me;
+        return '<span class="mdx-chip" title="'+escHtml((y.x.email||'')+' · '+_modsFmtDT(y.x.at))+'">'+esc2(y.x.by||y.x.email||'?')+' · '+_modsFmtH(y.x.h)
+          +(ed&&(mine||adm)?' <button type="button" class="mdx-x" style="margin:0" onclick="modDelHours(\''+_modsJs(y.doc.id)+'\',\''+_modsJs(y.x.id)+'\')" title="Retirer cette saisie" aria-label="Retirer cette saisie">✕</button>':'')+'</span>';
+      }).join('')+'</div>':'')
+      +(ed?'<div class="mdx-hrsi"><input type="text" inputmode="decimal" id="'+escHtml(fid)+'" class="mdx-in" placeholder="Heures" aria-label="Heures passées sur '+escHtml(r.lb||'la tâche')+'" onkeydown="if(event.key===\'Enter\')modAddHours(\''+_modsJs(doc.id)+'\',\''+_modsJs(m.id)+'\',\''+_modsJs(r.id)+'\')">'
+        +'<button type="button" class="mdx-btn2 sm" onclick="modAddHours(\''+_modsJs(doc.id)+'\',\''+_modsJs(m.id)+'\',\''+_modsJs(r.id)+'\')">＋ Mes heures</button></div>':'')
+      +'</div>';
+  }).join('');
+}
+// Fiche qui porte la saisie des heures d'une demande : celle de la colonne Automatisme (sinon la 1re de la demande)
+function _modsHoursHost(m,doc){
+  var it=_modsGroupItems(_modsGrp(m)).filter(function(x){return x.m.status!=='fait';});
+  var aut=it.filter(function(x){return _modsPhOf(x.doc)==='AUTOMATISME';});
+  if(aut.length)return aut[0].doc===doc;
+  return !!it[0]&&it[0].doc===doc;
+}
+function _modsPushHours(doc,m,taskId,h){
+  doc.hours=doc.hours||[];
+  doc.hours.push({id:_modsUid('h_'),grp:_modsGrp(m),modId:m.id,task:taskId,h:h,by:_modsMyName(),email:_modsMe(),at:Date.now()});
+}
+function modAddHours(docId,modId,taskId){
+  if(!_modsCanEdit())return;
+  var doc=_modsDoc(docId);if(!doc)return;
+  var m=(doc.mods||[]).find(function(x){return x.id===modId;});if(!m)return;
+  var e=document.getElementById('mh-'+modId+'-'+taskId),h=_modsParseH(e&&e.value);
+  if(!(h>0)||h>500){alert('Indiquez un nombre d’heures (ex : 3,5).');if(e)e.focus();return;}
+  _modsPushHours(doc,m,taskId,h);
+  saveNow();renderModificationsTab();
+  _modsToast('⏱ '+_modsFmtH(h)+' enregistrée'+(h>1?'s':'')+' au nom de '+esc2(_modsMyName()||_modsMe())+'.',4000);
+}
+// heures saisies dans « ✓ Faite » : ajoutées une fois la modification enregistrée
+function _modsApplyPendingHours(doc){
+  var P=window._mfPendingHours;window._mfPendingHours=null;
+  if(!P||!doc||P.docId!==doc.id)return;
+  var m=(doc.mods||[]).find(function(x){return x.id===P.modId;});if(!m)return;
+  P.list.forEach(function(x){_modsPushHours(doc,m,x.task,x.h);});
+}
+function modDelHours(docId,hid){
+  var doc=_modsDoc(docId);if(!doc)return;
+  var x=(doc.hours||[]).find(function(y){return y.id===hid;});if(!x)return;
+  var adm=(typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin');
+  if(String(x.email||'').toLowerCase()!==_modsMe()&&!adm){alert('Seule la personne qui a saisi ces heures (ou un administrateur) peut les retirer.');return;}
+  if(!confirm('Retirer '+_modsFmtH(x.h)+' saisie'+(x.h>1?'s':'')+' par '+(x.by||x.email)+' ?'))return;
+  doc.hours=(doc.hours||[]).filter(function(y){return y.id!==hid;});
+  saveNow();renderModificationsTab();
 }
 function _modsGoDoc(id){
   var el=document.getElementById('mdx-doc-'+id);if(!el)return;
   el.scrollIntoView({behavior:'smooth',block:'start'});el.classList.add('mdx-flash');setTimeout(function(){el.classList.remove('mdx-flash');},3400);
 }
-// ── Liste des documents de l'affaire (1re arrivée, ou « ＋ Ajouter des documents ») ──
-function _modsSetupHtml(first){
-  var have={};_modsGetDocs().forEach(function(d){have[_modsNormNom(d.nom)]=1;});
-  var line=function(nm,isHave){
-    return isHave?'<div class="mdx-sl" data-have="'+escHtml(nm)+'"><input type="checkbox" checked disabled><span style="font-size:13px;font-weight:800;flex:1">'+esc2(nm)+'</span><span class="mdx-have">✓ déjà dans l’affaire</span></div>'
-      :'<div class="mdx-sl" data-new="1"><input type="checkbox" checked onchange="window._modsSetupTouched=1" aria-label="Créer ce document"><input type="text" class="mdx-in" value="'+escHtml(nm)+'" oninput="window._modsSetupTouched=1" aria-label="Nom du document">'+_modsSetupVerIn()+'</div>';
-  };
-  return '<div class="mdx-ft">'+(first?'📋 Quels documents pour cette affaire ?':'＋ Ajouter des documents')+'</div>'
-    +'<div class="mdx-sub" style="margin-bottom:8px">'+(first?'Cochez les documents de l’affaire : une fiche est créée pour chacun. Vous pouvez les renommer ici ou plus tard (✎).':'Cochez les documents à ajouter, ou tapez le nom d’un autre document.')+'</div>'
-    +'<div id="mf-setup-list">'+_modsModels().map(function(nm){return line(nm,!!have[_modsNormNom(nm)]);}).join('')+'</div>'
-    +'<button type="button" class="mdx-lnk" style="margin-top:8px" onclick="modSetupAddLine()">＋ Autre document</button>'
-    +'<label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#6B6790;margin-top:12px;cursor:pointer"><input type="checkbox" id="mf-setup-def" style="accent-color:#4B3FC7"> Retenir cette liste (noms et ordre) pour les prochaines affaires</label>'
+// un seul menu ⋯ ouvert à la fois ; un clic ailleurs le ferme
+document.addEventListener('click',function(e){
+  document.querySelectorAll('details.mdx-more[open]').forEach(function(d){if(!d.contains(e.target))d.open=false;});
+});
+// ── Changer un document de colonne ──
+function modMoveDoc(docId){
+  if(!_modsCanEdit())return;
+  var doc=_modsDoc(docId);if(!doc)return;
+  var cur=_modsPhOf(doc);
+  _modsShowForm('<div class="mdx-ft">⇄ Colonne de « '+esc2(doc.nom)+' »</div><div class="mdx-dk" style="margin-top:8px">'
+    +_MODS_PH.map(function(p){var c=_modsPhCol(p.k);return '<button type="button" class="mdx-btn2" style="border-color:'+c.x+';color:'+c.xd+(p.k===cur?';background:'+c.xl:'')+'" onclick="modMoveDocTo(\''+_modsJs(docId)+'\',\''+p.k+'\')">'+(p.k===cur?'✓ ':'')+esc2(p.l)+'</button>';}).join('')
+    +'</div><div style="margin-top:12px"><button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button></div>');
+}
+function modMoveDocTo(docId,ph){
+  var doc=_modsDoc(docId);if(!doc){modCloseForm();return;}
+  var o=_modsDocByName(doc.nom,ph);if(o&&o!==doc){alert('La colonne '+_modsPhLbl(ph)+' a déjà un document « '+o.nom+' ».');return;}
+  doc.phase=ph;saveNow();modCloseForm();renderModificationsTab();_modsGoDoc(docId);
+}
+// ── Liste des documents (1re arrivée : les 4 phases ; « ＋ » d'une colonne : cette phase seulement) ──
+// Case « VERSION » à droite : le document existe parfois déjà dans une version avancée → la fiche commence à cette version.
+function _modsSetupVerIn(){
+  return '<input type="text" class="mdx-in mdx-sv" placeholder="Version" oninput="window._modsSetupTouched=1" aria-label="Version de départ (facultatif)" title="Facultatif : si ce document existe déjà dans une version (ex : C), tapez-la — la fiche commencera à cette version">';
+}
+function _modsSetupLine(nm,isHave){
+  return isHave?'<div class="mdx-sl" data-have="'+escHtml(nm)+'"><input type="checkbox" checked disabled><span class="mdx-sln">'+esc2(nm)+'</span><span class="mdx-have">✓ déjà là</span></div>'
+    :'<div class="mdx-sl" data-new="1"><input type="checkbox" checked onchange="window._modsSetupTouched=1" aria-label="Créer ce document"><input type="text" class="mdx-in mdx-snm" value="'+escHtml(nm)+'" placeholder="Nom du document" oninput="window._modsSetupTouched=1" aria-label="Nom du document">'+_modsSetupVerIn()+'</div>';
+}
+function _modsSetupHtml(first,only){
+  var phs=only?_MODS_PH.filter(function(p){return p.k===only;}):_MODS_PH;
+  var sec=phs.map(function(p){
+    var c=_modsPhCol(p.k),have={};
+    _modsGetDocs().forEach(function(d){if(_modsPhOf(d)===p.k)have[_modsNormNom(d.nom)]=1;});
+    var ms=_modsModels(p.k),lines=ms.map(function(nm){return _modsSetupLine(nm,!!have[_modsNormNom(nm)]);}).join('');
+    if(!ms.length)lines=_modsSetupLine('',false);
+    return '<div class="mdx-ss" data-ph="'+p.k+'" style="--pc:'+c.x+';--pcl:'+c.xl+';--pcd:'+c.xd+'"><div class="mdx-sst">'+esc2(p.l)+'</div>'
+      +'<div class="mdx-ssl">'+lines+'</div>'
+      +'<button type="button" class="mdx-lnk" style="margin-top:6px" onclick="modSetupAddLine(\''+p.k+'\')">＋ Autre document</button></div>';
+  }).join('');
+  return '<div class="mdx-ft">'+(first?'📋 Quels documents pour cette affaire ?':'＋ Ajouter des documents — '+esc2(_modsPhLbl(only)))+'</div>'
+    +'<div class="mdx-sub" style="margin-bottom:10px">Cochez les documents'+(first?' de chaque phase':'')+' : une fiche est créée pour chacun. Nom modifiable ; <b>VERSION</b> facultative (si le document existe déjà dans une version, ex : C).'+(first?' Une colonne peut rester vide.':'')+'</div>'
+    +'<div class="'+(only?'':'mdx-cols ')+'mdx-sgrid">'+sec+'</div>'
+    +'<label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#6B6790;margin-top:12px;cursor:pointer"><input type="checkbox" id="mf-setup-def" style="accent-color:#4B3FC7"> Retenir '+(only?'cette liste':'ces listes')+' (noms et ordre) pour les prochaines affaires</label>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">'
     +'<button type="button" class="mdx-btn" onclick="modSetupCreate()">✓ Créer les fiches</button>'
     +(first?'':'<button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button>')+'</div>';
 }
-// (12/10/2026, demande de l'utilisateur) case « version » à droite : le document existe parfois déjà dans une
-// version avancée (même schéma qu'une autre affaire) → la fiche est créée directement avec cette version (sans fichier ni email)
-function _modsSetupVerIn(){
-  return '<span style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto"><span style="font-size:10.5px;font-weight:800;color:#9A96B3;letter-spacing:.3px">VERSION</span>'
-    +'<input type="text" class="mdx-in mdx-sv" style="width:110px" placeholder="facultatif" oninput="window._modsSetupTouched=1" aria-label="Version de départ (facultatif)" title="Si ce document existe déjà dans une version (ex : C), tapez-la : la fiche commencera à cette version"></span>';
-}
-function modShowSetupForm(){
+function modShowSetupForm(ph){
   if(!_modsCanEdit())return;
-  _modsShowForm('<div id="mdx-setup">'+_modsSetupHtml(false)+'</div>');
+  _modsShowForm('<div id="mdx-setup">'+_modsSetupHtml(false,ph||'ETUDE')+'</div>');
 }
-function modSetupAddLine(){
-  var l=document.getElementById('mf-setup-list');if(!l)return;
+function modSetupAddLine(ph){
+  var s=document.querySelector('#mdx-setup .mdx-ss[data-ph="'+(ph||'ETUDE')+'"] .mdx-ssl');if(!s)return;
   window._modsSetupTouched=1;
-  l.insertAdjacentHTML('beforeend','<div class="mdx-sl" data-new="1"><input type="checkbox" checked aria-label="Créer ce document"><input type="text" class="mdx-in" value="" placeholder="Nom du document" aria-label="Nom du document">'+_modsSetupVerIn()+'</div>');
-  var ins=l.querySelectorAll('.mdx-in');if(ins.length)ins[ins.length-1].focus();
+  s.insertAdjacentHTML('beforeend',_modsSetupLine('',false));
+  var ins=s.querySelectorAll('.mdx-snm');if(ins.length)ins[ins.length-1].focus();
 }
 function modSetupCreate(){
   if(!_modsCanEdit())return;
   var box=document.getElementById('mdx-setup');if(!box)return;
-  var names=[],all=[];
-  box.querySelectorAll('.mdx-sl').forEach(function(l){
-    if(l.dataset.have){all.push(l.dataset.have);return;}
-    var cb=l.querySelector('input[type=checkbox]'),inp=l.querySelector('.mdx-in:not(.mdx-sv)'),vi=l.querySelector('.mdx-sv'),nm=inp?inp.value.trim():'';
-    if(!nm)return;all.push(nm);if(cb&&cb.checked)names.push({nm:nm,ver:vi?vi.value.trim():''});
+  var names=[],all={},me=_modsMyName(),t=Date.now(),made=[];
+  box.querySelectorAll('.mdx-ss').forEach(function(s){
+    var ph=s.dataset.ph||'ETUDE';all[ph]=[];
+    s.querySelectorAll('.mdx-sl').forEach(function(l){
+      if(l.dataset.have){all[ph].push(l.dataset.have);return;}
+      var cb=l.querySelector('input[type=checkbox]'),inp=l.querySelector('.mdx-snm'),vi=l.querySelector('.mdx-sv'),nm=inp?inp.value.trim():'';
+      if(!nm)return;all[ph].push(nm);if(cb&&cb.checked)names.push({nm:nm,ph:ph,ver:vi?vi.value.trim():''});
+    });
   });
   if(!names.length){alert('Cochez au moins un document (ou tapez le nom d’un autre document).');return;}
-  var made=[],t=Date.now(),me=_modsMyName(),byK={};
-  // même nom sur deux lignes : une seule fiche, avec la version tapée s'il y en a une
-  names=names.filter(function(x){var k=_modsNormNom(x.nm);if(byK[k]){if(!byK[k].ver&&x.ver)byK[k].ver=x.ver;return false;}byK[k]=x;return true;});
+  // même nom deux fois dans une colonne : une seule fiche, avec la version tapée s'il y en a une
+  var byK={};
+  names=names.filter(function(x){var k=x.ph+'|'+_modsNormNom(x.nm);if(byK[k]){if(!byK[k].ver&&x.ver)byK[k].ver=x.ver;return false;}byK[k]=x;return true;});
   names.forEach(function(x){
-    var nm=x.nm;
-    if(_modsDocByName(nm)||made.some(function(y){return _modsNormNom(y)===_modsNormNom(nm);}))return;
+    if(_modsDocByName(x.nm,x.ph))return;
     var vs=x.ver?[{id:_modsUid('v_'),version:x.ver,date:_modsNowFr(),note:'Version de départ (existait déjà avant le site)',dest:[],
       byEmail:_modsMe(),byName:me,attachmentPath:null,attachmentName:null,initial:true,_createdAt:t+made.length}]:[];
-    _modsGetDocs().push({id:_modsUid('doc_'),nom:nm,_createdAt:t+made.length,versions:vs,mods:[]});made.push(nm+(x.ver?' ('+_modsVerLbl(x.ver)+')':''));
+    _modsGetDocs().push({id:_modsUid('doc_'),nom:x.nm,phase:x.ph,_createdAt:t+made.length,versions:vs,mods:[]});
+    made.push(x.nm+(x.ver?' ('+_modsVerLbl(x.ver)+')':''));
   });
   var def=document.getElementById('mf-setup-def');
   if(def&&def.checked){
-    var seen={},lst=all.filter(function(n){var k=_modsNormNom(n);if(seen[k])return false;seen[k]=1;return true;});
-    STORE.settings=STORE.settings||{};STORE.settings.modsDocModels=lst;
+    STORE.settings=STORE.settings||{};
+    Object.keys(all).forEach(function(ph){
+      var seen={},lst=all[ph].filter(function(n){var k=_modsNormNom(n);if(seen[k])return false;seen[k]=1;return true;});
+      STORE.settings[_modsModelsKey(ph)]=lst;
+    });
   }
   window._modsSetupTouched=0;
   saveNow();modCloseForm();renderModificationsTab();
-  _modsToast(made.length?'✓ '+made.length+' fiche'+(made.length>1?'s':'')+' créée'+(made.length>1?'s':'')+' : '+made.map(esc2).join(', ')+'.':'Ces documents existent déjà dans l’affaire.',6000);
+  _modsToast(made.length?'✓ '+made.length+' fiche'+(made.length>1?'s':'')+' créée'+(made.length>1?'s':'')+' : '+made.map(esc2).join(', ')+'.':'Ces documents existent déjà.',6000);
 }
 // ── Renommer un document ──
 function modRenameDoc(docId){
@@ -11403,7 +11607,7 @@ function modRenameConfirm(docId){
   var doc=_modsDoc(docId);if(!doc){modCloseForm();return;}
   var e=document.getElementById('mf-ren'),nm=e?e.value.trim():'';
   if(!nm){alert('Indiquez le nom du document.');return;}
-  var o=_modsDocByName(nm);if(o&&o!==doc){alert('Un document « '+o.nom+' » existe déjà dans cette affaire.');return;}
+  var o=_modsDocByName(nm,_modsPhOf(doc));if(o&&o!==doc){alert('Un document « '+o.nom+' » existe déjà dans cette colonne.');return;}
   doc.nom=nm;saveNow();modCloseForm();renderModificationsTab();
 }
 
@@ -11433,7 +11637,7 @@ function _modsCheckedDest(){
 function _modsSelOf(list){var s={};(list||[]).forEach(function(d){if(d&&d.email)s[String(d.email).toLowerCase()]=1;});return s;}
 function _modsShowForm(html,cls){
   var fa=document.getElementById('mods-form-area');if(!fa)return;
-  window._mfFiles=[];
+  window._mfFiles=[];window._mfPendingHours=null;
   fa.innerHTML='<div class="mdx-card mdx-form'+(cls?' '+cls:'')+'">'+html+'</div>';
   fa.scrollIntoView({behavior:'smooth',block:'nearest'});
   var f=fa.querySelector('input[type=text]:not([readonly]),textarea');if(f)setTimeout(function(){try{f.focus();}catch(e){}},50);
@@ -11499,8 +11703,8 @@ function modShowReqForm(docId){
 async function modConfirmReq(docId,withMail){
   var val=function(id){var e=document.getElementById(id);return e?String(e.value||'').trim():'';};
   // (12/10/2026) plusieurs documents cochés : une demande par document, toutes dans le même groupe (grp)
-  var ids=_modsChecked('mf-doc'),nom=val('mf-doc-new');
-  if(nom){var ex=_modsDocByName(nom);if(ex){if(ids.indexOf(ex.id)<0)ids.push(ex.id);nom='';}}
+  var ids=_modsChecked('mf-doc'),nom=val('mf-doc-new'),newPh=val('mf-doc-new-ph')||'ETUDE';
+  if(nom){var ex=_modsDocByName(nom,newPh);if(ex){if(ids.indexOf(ex.id)<0)ids.push(ex.id);nom='';}}
   if(!ids.length&&!nom){alert('Cochez au moins un document concerné (ou tapez le nom d’un nouveau document).');return;}
   var detail=val('mf-note');
   if(!detail){alert('Indiquez le détail de la modification.');return;}
@@ -11515,7 +11719,7 @@ async function modConfirmReq(docId,withMail){
     if(bad.length)alert(bad.length+' fichier(s) n’ont pas pu être enregistrés sur le serveur ('+bad[0].err+').'+(withMail?'\nIls seront quand même joints à l’email.':''));
   }
   if(STORE.current!==aff){alert('L’affaire a changé pendant l’enregistrement : la modification n’a pas été ajoutée.');return;}
-  if(newId)_modsGetDocs().push({id:newId,nom:nom,_createdAt:Date.now(),versions:[],mods:[]});
+  if(newId)_modsGetDocs().push({id:newId,nom:nom,phase:newPh,_createdAt:Date.now(),versions:[],mods:[]});
   var fl=up.map(function(u){return {path:u.path,name:u.name+(u.path?'':' (non enregistré sur le serveur)')};});
   var held=_modsHoldTasks(tasks),made=[],t=Date.now();
   (newId?ids.concat([newId]):ids).forEach(function(id,k){
@@ -11581,6 +11785,15 @@ function modShowDoneForm(docId,modId){
     +'<div id="mf-reqs">'+reqLine(m,true,!others.length)+others.map(function(x){return reqLine(x,false,false);}).join('')+'</div>'
     +(others.length?'<div style="font-size:11.5px;color:#6B6790;margin-top:2px">Cochez aussi les autres demandes faites en même temps : elles seront toutes dans la même version.</div>':'')
     +(function(){var g=_modsGroupRowHtml(m,doc);return g?'<div style="display:grid;gap:6px;margin-top:10px;background:#FFF7ED;border-radius:10px;padding:8px 12px">'+g+'</div>':'';})()
+    // (12/10/2026) heures Automatisme : saisies au moment de dire « faite » (au nom du compte connecté)
+    +(function(){
+      var tk=(m.tasks||[]).map(_modsTaskRow).filter(_modsIsAutTask);if(!tk.length)return '';
+      return '<label class="mdx-fl">⏱ HEURES SUR LES TÂCHES AUTOMATISME <span style="font-weight:600;color:#9A96B3">(facultatif — au nom de '+esc2(_modsMyName()||_modsMe())+')</span></label>'
+        +tk.map(function(r){var t=_modsHoursOf(_modsGrp(m),r.id).reduce(function(s,y){return s+(+y.x.h||0);},0);
+          return '<div class="mdx-sl" style="border-bottom:none;padding:3px 0"><span class="mdx-sln" style="font-weight:700">'+esc2(r.lb||'tâche')+(t?' <small style="color:#9A96B3;font-weight:600">· déjà '+_modsFmtH(t)+'</small>':'')+'</span>'
+            +'<input type="text" inputmode="decimal" class="mdx-in mf-hours" data-task="'+escHtml(r.id)+'" style="width:100px;flex-shrink:0" placeholder="Heures" aria-label="Heures sur '+escHtml(r.lb||'la tâche')+'"></div>';
+        }).join('');
+    })()
     +'<label class="mdx-fl">VERSION</label>'
     +'<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;font-weight:700;color:#1C1A33">'
     +'<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="radio" name="mf-mode" value="ver" checked onchange="_modsDoneMode()"> Nouvelle version</label>'
@@ -11620,8 +11833,13 @@ async function modConfirmDone(docId,modId,withMail){
   var ids=[].slice.call(document.querySelectorAll('#mf-reqs .mf-req:checked')).map(function(c){return c.value;});
   if(ids.indexOf(modId)<0)ids.unshift(modId);
   var same=(document.querySelector('input[name=mf-mode]:checked')||{}).value==='same';
+  // heures Automatisme saisies dans le formulaire (enregistrées seulement si la modification l'est)
+  var hrs=[].slice.call(document.querySelectorAll('#mods-form-area .mf-hours')).map(function(i){return {task:i.dataset.task,h:_modsParseH(i.value),raw:i.value.trim()};}).filter(function(x){return x.raw;});
+  if(hrs.some(function(x){return !(x.h>0)||x.h>500;})){alert('Heures : indiquez un nombre (ex : 3,5), ou laissez vide.');return;}
+  window._mfPendingHours=hrs.length?{docId:docId,modId:modId,list:hrs}:null;
   if(!same)return modConfirmVer(docId,modId,withMail,ids);
   // Sans changer de version : demandes faites, rattachées à la version actuelle (s'il y en a une)
+  _modsApplyPendingHours(doc);
   var imp=_modsChecked('mf-imp');
   var last=_modsLatest(doc),me=_modsMyName(),n=0,grps={};
   (doc.mods||[]).forEach(function(m){
@@ -11786,6 +12004,7 @@ async function modConfirmVer(docId,modId,withMail,modIds){
     if(done.length>1)v.modIds=done.map(function(x){return x.id;});
     doc.versions=doc.versions||[];doc.versions.push(v);
   }
+  if(!isNew)_modsApplyPendingHours(doc); // heures Automatisme saisies dans « ✓ Faite »
   // (12/10/2026) autres documents touchés → « à faire » (même demande) ; demande finie partout → tâches Études terminées
   var added=[],closed=[];
   if(imp.length)added=_modsAddImpacted(imp,m0||null,m0?null:'Suite à '+doc.nom+' '+_modsVerLbl(version)+(note?' : '+note:''));
