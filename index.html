@@ -1266,6 +1266,8 @@
   function applySync(){
     try{
       renderProjSel();updBudget();
+      // (12/10/2026) rôle créé dans Gestion des droits : son nom arrive avec les données du serveur → badge à jour
+      if(typeof _isCustomRole==='function'&&_isCustomRole()){var _bd=document.querySelector('[data-user-badge]');if(_bd&&_bd.textContent.indexOf(_roleLabel(CURRENT_ROLE))<0&&typeof addUserBadge==='function')addUserBadge();}
       var _expId=(typeof EXP!=='undefined')?EXP:null;
       var _expNode=_expId?document.getElementById('exp-panel-row'):null;
       var _syncActiveTab=document.querySelector('.nb.on');
@@ -3169,6 +3171,7 @@ function downloadDXF(text, filename) {
    "permissions" (voir 01_creer_table_permissions.sql).
    ══════════════════════════════════════════════════════════════════ */
 window.DroitsAcces = (function () {
+  var SCR_G = 'Écrans visibles (rôles créés ici)';
   var MODULES = [
     {key:'planning', label:'Planning (Gantt, tâches, dates)'},
     {key:'gantt_statut_toutes', label:'Marquer terminé / % avancement même hors Chantier (sinon limité aux activités Chantier)'},
@@ -3183,9 +3186,24 @@ window.DroitsAcces = (function () {
     {key:'commandes_gestion', label:'Commandes — gestion (Modifier = créer, modifier et supprimer les commandes et leurs lignes, changer les délais, importer)'},
     {key:'budget_toolbar', label:'H vendues (barre d\'outils)', group:'Budget Heures'},
     {key:'budget_gantt',   label:'Budget heures dans le Gantt (par phase/ensemble/sous-phase)', group:'Budget Heures'},
-    {key:'budget_recap',   label:'Heures dans le bilan & les rapports', group:'Budget Heures'}
+    {key:'budget_recap',   label:'Heures dans le bilan & les rapports', group:'Budget Heures'},
+    // (12/10/2026) Écrans visibles : ne comptent QUE pour les rôles créés ici (Gestion des droits › Rôles).
+    // Admin, Chef de chantier et Automatisme gardent exactement leurs règles d'avant (applyRoleRestrictions).
+    // Le Planning (GANTT) d'un rôle créé ici = case « Voir » de la ligne « Planning » ci-dessus.
+    {key:'scr_avancement', label:'Affaire › Avancement', group:SCR_G, viewOnly:true},
+    {key:'scr_bilan',      label:'Affaire › Bilan', group:SCR_G, viewOnly:true},
+    {key:'scr_heures',     label:'Affaire › Heures', group:SCR_G, viewOnly:true},
+    {key:'scr_dl',         label:'Affaire › Télécharger / imprimer le planning', group:SCR_G, viewOnly:true},
+    {key:'scr_affaires',   label:'Créer, supprimer, archiver une affaire et modifier ses infos', group:SCR_G, viewOnly:true},
+    {key:'scr_tdb',        label:'Vue d’ensemble › Tableau de bord', group:SCR_G, viewOnly:true},
+    {key:'scr_bilan_all',  label:'Vue d’ensemble › Bilan — toutes les affaires', group:SCR_G, viewOnly:true},
+    {key:'scr_globale',    label:'Vue d’ensemble › Vue globale', group:SCR_G, viewOnly:true},
+    {key:'scr_reunion',    label:'Équipe › Planning réunion', group:SCR_G, viewOnly:true},
+    {key:'scr_fiche',      label:'Équipe › Feuilles d’heure', group:SCR_G, viewOnly:true},
+    {key:'scr_equipe',     label:'Équipe › Vue équipe', group:SCR_G, viewOnly:true},
+    {key:'scr_absences',   label:'Équipe › Absences', group:SCR_G, viewOnly:true}
   ];
-  var GROUPS = ['Budget Heures']; // groupes dépliables, dans l'ordre d'affichage
+  var GROUPS = ['Budget Heures', SCR_G]; // groupes dépliables, dans l'ordre d'affichage
   var _openGroups = {}; // group name -> bool (déplié ou non), état local à l'écran
   var _cache = {};       // email -> { moduleKey: {can_view, can_edit} }
   var _selected = null;  // email actuellement ouvert dans le panneau
@@ -3212,6 +3230,47 @@ window.DroitsAcces = (function () {
     }catch(e){ console.error(e); return {}; }
   }
 
+  // ── Rôles (12/10/2026, demande de l'utilisateur) ──
+  // _roles = table Supabase « roles » (email → {role, nom}) : avoir une ligne = pouvoir se connecter.
+  // Rôles créés ici : définition dans STORE.settings['roleDef_<id>'] = {label, perms:{module:{can_view,can_edit}}, at}.
+  // Donner un rôle créé ici à une personne recopie ses cases dans les droits de la personne (table permissions).
+  var _roles = {};        // email -> {role, nom}
+  var _rolesErr = '';
+  var _view = 'persons';  // 'persons' | 'roles'
+  var _pendingRole;       // rôle choisi dans le panneau d'une personne, pas encore enregistré (undefined = inchangé)
+  var _editRole = null;   // id du rôle ouvert dans l'onglet Rôles ('' = nouveau)
+  var _draft = null;      // {label, perms} du rôle ouvert
+
+  async function _loadRoles(){
+    _rolesErr='';
+    if(!window.supa) return {};
+    try{
+      var res = await window.supa.from('roles').select('email,role,nom');
+      if(res.error){ _rolesErr = res.error.message||'lecture impossible'; return {}; }
+      var o = {};
+      (res.data||[]).forEach(function(r){ if(r&&r.email) o[String(r.email).toLowerCase()] = {role:r.role, nom:r.nom||''}; });
+      return o;
+    }catch(e){ _rolesErr = (e&&e.message)||'erreur réseau'; return {}; }
+  }
+  function _defs(){ return (typeof _customRoleDefs==='function') ? _customRoleDefs() : {}; }
+  function _builtins(){ return (typeof _BUILTIN_ROLES!=='undefined') ? _BUILTIN_ROLES : {admin:'👑 Admin'}; }
+  function _isCustom(r){ return !!r && !_builtins()[r]; }
+  function _lbl(r){ return (typeof _roleLabel==='function') ? _roleLabel(r) : r; }
+  function _roleOptions(sel, withNone){
+    var b=_builtins(), d=_defs(), h='';
+    if(withNone) h+='<option value=""'+(!sel?' selected':'')+'>— Pas d’accès au site —</option>';
+    h+='<optgroup label="Rôles d’origine">'+Object.keys(b).map(function(k){ return '<option value="'+esc(k)+'"'+(sel===k?' selected':'')+'>'+esc(b[k])+'</option>'; }).join('')+'</optgroup>';
+    var ks=Object.keys(d).sort(function(x,y){ return d[x].label.localeCompare(d[y].label); });
+    if(ks.length) h+='<optgroup label="Rôles créés ici">'+ks.map(function(k){ return '<option value="'+esc(k)+'"'+(sel===k?' selected':'')+'>🧩 '+esc(d[k].label)+'</option>'; }).join('')+'</optgroup>';
+    if(sel && !b[sel] && !d[sel]) h+='<option value="'+esc(sel)+'" selected>'+esc(sel)+' (rôle inconnu)</option>';
+    return h;
+  }
+  function _copyPerms(perms){ var o={}; MODULES.forEach(function(m){ var p=(perms||{})[m.key]||{}; o[m.key]={can_view:!!p.can_view, can_edit:!!p.can_edit}; }); return o; }
+  function _permRows(email, perms){
+    return MODULES.map(function(m){ var p=(perms||{})[m.key]||{}; return { email: email, module: m.key, can_view: !!p.can_view, can_edit: !!p.can_edit, updated_at: new Date().toISOString() }; });
+  }
+  function _saveStore(){ try{ localStorage.setItem(SK, JSON.stringify(STORE)); if(typeof scheduleSupa==='function') scheduleSupa(); }catch(e){ console.error(e); } }
+
   function _personsList(){
     // Puise dans l'annuaire du Planning Pétrole (personnes ayant un email renseigné)
     var gp = (typeof _getGlobalPersons === 'function') ? _getGlobalPersons() : {};
@@ -3223,9 +3282,9 @@ window.DroitsAcces = (function () {
         if(em && !seen[em]){ seen[em]=true; list.push({name:name, email:em}); }
       }
     });
-    // Ajoute aussi les emails qui ont déjà des droits mais ne sont plus/pas dans l'annuaire
-    Object.keys(_cache).forEach(function(em){
-      if(!seen[em]){ seen[em]=true; list.push({name:_manualNames[em]||'(hors annuaire)', email:em}); }
+    // Ajoute aussi les emails qui ont un accès (table roles) ou des droits, mais ne sont plus/pas dans l'annuaire
+    Object.keys(_roles).concat(Object.keys(_cache)).forEach(function(em){
+      if(!seen[em]){ seen[em]=true; list.push({name:_manualNames[em]||(_roles[em]&&_roles[em].nom)||'(hors annuaire)', email:em}); }
     });
     list.sort(function(a,b){ return a.name.localeCompare(b.name); });
     return list;
@@ -3233,11 +3292,12 @@ window.DroitsAcces = (function () {
 
   function _rowHtml(m, perm){
     perm = perm || {can_view:false, can_edit:false};
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #EEECF7">'
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #EEECF7;gap:10px">'
       + '<div style="font-size:13px;font-weight:700;color:#1C1A33">'+esc(m.label)+'</div>'
       + '<div style="display:flex;gap:20px;flex-shrink:0">'
       + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#5A5674;cursor:pointer"><input type="checkbox" data-mod="'+m.key+'" data-field="can_view" '+(perm.can_view?'checked':'')+' onchange="DroitsAcces._onToggle(this)"> Voir</label>'
-      + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#5A5674;cursor:pointer"><input type="checkbox" data-mod="'+m.key+'" data-field="can_edit" '+(perm.can_edit?'checked':'')+' onchange="DroitsAcces._onToggle(this)"> Modifier</label>'
+      + (m.viewOnly ? '<span style="width:78px"></span>'
+         : '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#5A5674;cursor:pointer"><input type="checkbox" data-mod="'+m.key+'" data-field="can_edit" '+(perm.can_edit?'checked':'')+' onchange="DroitsAcces._onToggle(this)"> Modifier</label>')
       + '</div></div>';
   }
 
@@ -3247,53 +3307,88 @@ window.DroitsAcces = (function () {
       + '<span style="color:#6457F4;font-size:11px;font-weight:700">'+(isOpen?'▾ Réduire':'▸ Déplier')+'</span>'
       + '</div>';
   }
-
-  function _openPerson(email, name){
-    _selected = email;
-    _selectedName = name;
-    var panel = document.getElementById('_droitsPanel');
-    if(!panel) return;
-    var perms = _cache[email] || {};
-    var html = '<div style="background:#fff;border-radius:14px;padding:20px 22px;box-shadow:0 4px 18px rgba(60,40,160,.08)">'
-      + '<div style="font-size:15px;font-weight:800;color:#1C1A33;margin-bottom:2px">'+esc(name)+'</div>'
-      + '<div style="font-size:11px;color:#9A96B3;margin-bottom:14px">'+esc(email)+'</div>';
-    // Modules sans groupe : affichés directement
+  // Les cases de modules (personne ou rôle) : modules sans groupe, puis groupes dépliables
+  function _modulesHtml(perms, scrNote){
+    var html='';
     MODULES.filter(function(m){ return !m.group; }).forEach(function(m){ html += _rowHtml(m, perms[m.key]); });
-    // Modules groupés : en-tête dépliable, puis les lignes si le groupe est ouvert
     GROUPS.forEach(function(g){
       var isOpen = !!_openGroups[g];
       html += _groupHeaderHtml(g, isOpen);
       if(isOpen){
+        if(g===SCR_G) html += '<div style="padding:8px 16px;font-size:11px;color:#6B6790;background:#FBFAFF;border-bottom:1px solid #EEECF7">'+scrNote+'</div>';
         MODULES.filter(function(m){ return m.group===g; }).forEach(function(m){ html += _rowHtml(m, perms[m.key]); });
       }
     });
+    return html;
+  }
+
+  function _openPerson(email, name, keepPending){
+    _selected = email;
+    _selectedName = name;
+    if(!keepPending) _pendingRole = undefined;
+    var panel = document.getElementById('_droitsPanel');
+    if(!panel) return;
+    var perms = _cache[email] || {};
+    var cur = (_roles[email]||{}).role || '';
+    var shown = _pendingRole!==undefined ? _pendingRole : cur;
+    var html = '<div style="background:#fff;border-radius:14px;padding:20px 22px;box-shadow:0 4px 18px rgba(60,40,160,.08)">'
+      + '<div style="font-size:15px;font-weight:800;color:#1C1A33;margin-bottom:2px">'+esc(name)+'</div>'
+      + '<div style="font-size:11px;color:#9A96B3;margin-bottom:14px">'+esc(email)+'</div>'
+      // Rôle = accès au site
+      + '<div style="background:#F6F5FB;border-radius:10px;padding:12px 14px;margin-bottom:14px">'
+      + '<label style="font-size:10px;font-weight:800;color:#6B6790;text-transform:uppercase;display:block;margin-bottom:5px">Rôle (accès au site)</label>'
+      + (_rolesErr ? '<div style="font-size:12px;color:#B91C1C">Impossible de lire les rôles : '+esc(_rolesErr)+'</div>'
+        : '<select id="_dRole" onchange="DroitsAcces._onRole(this.value)" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit;background:#fff">'+_roleOptions(shown,true)+'</select>')
+      + '<div style="font-size:11px;color:#6B6790;margin-top:6px;line-height:1.45">'
+      + (shown==='admin' ? 'Admin : voit et modifie tout, quelles que soient les cases.'
+        : _isCustom(shown) ? 'Rôle créé ici : ce que la personne voit = ses cases ci-dessous (écrans compris). Choisir le rôle remplit les cases ; vous pouvez ensuite les ajuster pour elle seule.'
+        : shown ? 'Rôle d’origine : ses règles habituelles s’appliquent, puis les cases ci-dessous (les « Écrans visibles » ne comptent pas pour lui).'
+        : 'Sans rôle, la personne ne peut pas se connecter au site.')
+      + (_pendingRole!==undefined && _pendingRole!==cur ? '<div style="color:#B45309;font-weight:700;margin-top:4px">Changement de rôle pas encore enregistré.</div>' : '')
+      + '</div></div>';
+    html += _modulesHtml(perms, 'Ces cases ne comptent que pour un rôle créé ici (pas pour Admin, Chef de chantier ni Automatisme). Le Planning (GANTT) = case « Voir » de la ligne Planning.');
     html += '<div style="margin-top:16px;display:flex;align-items:center;justify-content:flex-end;gap:12px">'
       + '<span id="_droitsSaveMsg" style="font-size:11px"></span>'
       + '<button onclick="DroitsAcces._save()" style="background:#6457F4;color:#fff;border:none;border-radius:9px;padding:9px 18px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Enregistrer</button>'
       + '</div></div>';
     panel.innerHTML = html;
   }
+  // Choix d'un rôle pour la personne ouverte : un rôle créé ici remplit ses cases (copie)
+  function _onRole(r){
+    if(!_selected) return;
+    _pendingRole = r;
+    var d=_defs()[r];
+    if(d){ _cache[_selected] = _copyPerms(d.perms); }
+    _openPerson(_selected, _selectedName, true);
+  }
 
   function _toggleGroup(groupName){
     _openGroups[groupName] = !_openGroups[groupName];
+    if(_view==='roles'){ _drawRoleEditor(); return; }
     if(_selected){
-      _openPerson(_selected, _selectedName);
+      _openPerson(_selected, _selectedName, true);
     }
   }
 
   function _onToggle(input){
-    var email = _selected;
-    if(!email) return;
-    if(!_cache[email]) _cache[email] = {};
     var mod = input.getAttribute('data-mod');
     var field = input.getAttribute('data-field');
-    if(!_cache[email][mod]) _cache[email][mod] = {can_view:false, can_edit:false};
-    _cache[email][mod][field] = input.checked;
+    var target;
+    if(_view==='roles'){ if(!_draft) return; target=_draft.perms; }
+    else { var email = _selected; if(!email) return; if(!_cache[email]) _cache[email] = {}; target=_cache[email]; }
+    if(!target[mod]) target[mod] = {can_view:false, can_edit:false};
+    target[mod][field] = input.checked;
     // Cocher "Modifier" implique forcément "Voir" (on ne peut pas modifier ce qu'on ne voit pas)
     if(field==='can_edit' && input.checked){
-      _cache[email][mod].can_view = true;
-      var viewBox = document.querySelector('#_droitsPanel input[data-field="can_view"][data-mod="'+mod+'"]');
+      target[mod].can_view = true;
+      var viewBox = input.closest('[data-droits-box]') ? input.closest('[data-droits-box]').querySelector('input[data-field="can_view"][data-mod="'+mod+'"]') : document.querySelector('#_droitsPanel input[data-field="can_view"][data-mod="'+mod+'"]');
       if(viewBox) viewBox.checked = true;
+    }
+    // Décocher "Voir" retire aussi "Modifier"
+    if(field==='can_view' && !input.checked && target[mod].can_edit){
+      target[mod].can_edit = false;
+      var editBox = document.querySelector('#_droitsPanel input[data-field="can_edit"][data-mod="'+mod+'"]');
+      if(editBox) editBox.checked = false;
     }
   }
 
@@ -3308,17 +3403,33 @@ window.DroitsAcces = (function () {
       if(msg){ msg.style.color='#DC2626'; msg.textContent='Erreur : pas de connexion au serveur.'; }
       return;
     }
+    var cur = (_roles[email]||{}).role || '';
+    var roleChange = _pendingRole!==undefined && _pendingRole!==cur;
+    if(roleChange && !_pendingRole && !confirm('Retirer l’accès au site à '+_selectedName+' ?\nLa personne ne pourra plus se connecter (ses droits sont gardés si on lui redonne un rôle).')) return;
+    if(roleChange && _pendingRole==='admin' && !confirm('Donner le rôle Admin à '+_selectedName+' ?\nUn admin voit et modifie TOUT, y compris la Gestion des droits.')) return;
     if(msg){ msg.style.color='#6457F4'; msg.textContent='Enregistrement…'; }
-    var rows = MODULES.map(function(m){
-      var p = (_cache[email] && _cache[email][m.key]) || {can_view:false, can_edit:false};
-      return { email: email, module: m.key, can_view: !!p.can_view, can_edit: !!p.can_edit, updated_at: new Date().toISOString() };
-    });
     try{
-      var res = await window.supa.from('permissions').upsert(rows, {onConflict:'email,module'});
+      if(roleChange){
+        var rr;
+        if(_pendingRole) rr = await window.supa.from('roles').upsert([{ email: email, role: _pendingRole, nom: (_roles[email]&&_roles[email].nom)||(_selectedName&&_selectedName.charAt(0)!=='('?_selectedName:'') }], {onConflict:'email'});
+        else rr = await window.supa.from('roles').delete().eq('email', email);
+        if(rr.error){
+          if(msg){ msg.style.color='#DC2626'; msg.textContent='Rôle non enregistré : '+rr.error.message+(/check|constraint|violat/i.test(rr.error.message)?' (la table « roles » n’accepte que certains rôles : demandez le script SQL qui l’ouvre)':''); }
+          return;
+        }
+        if(_pendingRole) _roles[email] = {role:_pendingRole, nom:(_roles[email]&&_roles[email].nom)||_selectedName};
+        else delete _roles[email];
+        _pendingRole = undefined;
+      }
+      var res = await window.supa.from('permissions').upsert(_permRows(email, _cache[email]), {onConflict:'email,module'});
       if(res.error){
         if(msg){ msg.style.color='#DC2626'; msg.textContent='Erreur : '+res.error.message; }
       } else {
-        if(msg){ msg.style.color='#16A34A'; msg.textContent='Enregistré ✓'; }
+        _openPerson(email, _selectedName);
+        var m2=document.getElementById('_droitsSaveMsg');
+        if(m2){ m2.style.color='#16A34A'; m2.textContent='Enregistré ✓'; }
+        var searchBox = document.getElementById('_droitsSearch');
+        _filterList(searchBox ? searchBox.value : '');
       }
     }catch(e){
       if(msg){ msg.style.color='#DC2626'; msg.textContent='Erreur réseau : '+(e&&e.message?e.message:'inconnue'); }
@@ -3332,9 +3443,12 @@ window.DroitsAcces = (function () {
     return persons.map(function(p){
       var safeE = p.email.replace(/'/g,"\\'");
       var safeN = p.name.replace(/'/g,"\\'");
-      return '<div onclick="DroitsAcces._openPerson(\''+safeE+'\',\''+safeN+'\')" style="cursor:pointer;padding:11px 14px;border-radius:9px;margin-bottom:4px;background:#fff;border:1px solid #EEECF7;display:flex;justify-content:space-between;align-items:center" onmouseover="this.style.borderColor=\'#6457F4\'" onmouseout="this.style.borderColor=\'#EEECF7\'">'
-        + '<div><div style="font-size:12px;font-weight:700;color:#1C1A33">'+esc(p.name)+'</div><div style="font-size:10px;color:#9A96B3">'+esc(p.email)+'</div></div>'
-        + '<span style="color:#C4C0DC;font-size:14px">›</span>'
+      var r = (_roles[p.email]||{}).role;
+      var chip = r ? '<span style="font-size:10px;font-weight:700;color:#3A2EAE;background:#F1EFFC;border-radius:8px;padding:2px 7px;white-space:nowrap">'+esc(_lbl(r))+'</span>'
+        : '<span style="font-size:10px;font-weight:700;color:#9A96B3;white-space:nowrap">pas d’accès</span>';
+      return '<div onclick="DroitsAcces._openPerson(\''+safeE+'\',\''+safeN+'\')" style="cursor:pointer;padding:11px 14px;border-radius:9px;margin-bottom:4px;background:'+(_selected===p.email?'#F5F3FF':'#fff')+';border:1px solid #EEECF7;display:flex;justify-content:space-between;align-items:center;gap:8px">'
+        + '<div style="min-width:0"><div style="font-size:12px;font-weight:700;color:#1C1A33">'+esc(p.name)+'</div><div style="font-size:10px;color:#9A96B3;word-break:break-all">'+esc(p.email)+'</div></div>'
+        + chip
         + '</div>';
     }).join('');
   }
@@ -3342,7 +3456,7 @@ window.DroitsAcces = (function () {
   function _listHtml(){
     var persons = _personsList();
     if(!persons.length){
-      return '<div style="font-size:12px;color:#9A96B3;padding:16px;text-align:center;border:2px dashed #E4E1F0;border-radius:14px">Aucune personne avec un email dans l\'annuaire pour l\'instant.<br>Ajoutez un email dans sa fiche (Planning Pétrole → Personnel), ou clique sur « + Ajouter un accès » ci-dessus.</div>';
+      return '<div style="font-size:12px;color:#9A96B3;padding:16px;text-align:center;border:2px dashed #E4E1F0;border-radius:14px">Aucune personne avec un email dans l\'annuaire pour l\'instant.<br>Ajoutez un email dans sa fiche (Planning Pétrole › Personnel › Annuaire), ou utilisez « + Ajouter un accès ».</div>';
     }
     return _listHtmlFor(persons);
   }
@@ -3364,18 +3478,13 @@ window.DroitsAcces = (function () {
     _selected = null;
     var panel = document.getElementById('_droitsPanel');
     if(!panel) return;
+    var inp = function(id,lbl,type,ph){ return '<div style="margin-bottom:12px"><label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">'+lbl+'</label><input id="'+id+'" type="'+type+'"'+(ph?' placeholder="'+ph+'"':'')+' style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit"></div>'; };
     panel.innerHTML = '<div style="background:#fff;border-radius:14px;padding:20px 22px;box-shadow:0 4px 18px rgba(60,40,160,.08)">'
       + '<div style="font-size:15px;font-weight:800;color:#1C1A33;margin-bottom:14px">Ajouter un accès</div>'
-      + '<div style="margin-bottom:12px"><label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">Prénom</label><input id="_addPrenom" type="text" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit"></div>'
-      + '<div style="margin-bottom:12px"><label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">Nom</label><input id="_addNom" type="text" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit"></div>'
-      + '<div style="margin-bottom:12px"><label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">Email</label><input id="_addEmail" type="email" placeholder="prenom.nom@entreprise.fr" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit"></div>'
+      + inp('_addPrenom','Prénom','text') + inp('_addNom','Nom','text') + inp('_addEmail','Email','email','prenom.nom@entreprise.fr')
       + '<div style="margin-bottom:14px"><label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">Rôle</label>'
-      + '<select id="_addRole" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit">'
-      + '<option value="chef_chantier">Chef de chantier</option>'
-      + '<option value="automatisme">Automatisme</option>'
-      + '<option value="admin">Admin</option>'
-      + '</select>'
-      + '<div style="font-size:10px;color:#9A96B3;margin-top:5px">Détermine ce qu\'elle voit par défaut ; tu affineras ensuite module par module ci-contre.</div></div>'
+      + '<select id="_addRole" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit">'+_roleOptions('chef_chantier',false)+'</select>'
+      + '<div style="font-size:10px;color:#9A96B3;margin-top:5px">Un rôle créé ici (🧩) donne directement ses cases à la personne ; tu pourras ensuite les affiner pour elle.</div></div>'
       + '<div style="font-size:10px;color:#9A96B3;margin-bottom:14px">Une fois ajoutée, la personne pourra créer elle-même son mot de passe depuis l\'écran de connexion, avec cet email.</div>'
       + '<div style="display:flex;align-items:center;justify-content:flex-end;gap:12px">'
       + '<span id="_droitsAddMsg" style="font-size:11px"></span>'
@@ -3396,15 +3505,24 @@ window.DroitsAcces = (function () {
     var nomComplet = (prenom+' '+nom).trim();
     if(!email || email.indexOf('@')<0){ if(msg){msg.style.color='#DC2626';msg.textContent='Email invalide.';} return; }
     if(!window.supa){ if(msg){msg.style.color='#DC2626';msg.textContent='Erreur serveur.';} return; }
+    if(role==='admin' && !confirm('Donner le rôle Admin à '+(nomComplet||email)+' ?\nUn admin voit et modifie TOUT.')) return;
     if(msg){ msg.style.color='#6457F4'; msg.textContent='Ajout…'; }
     try{
       var res = await window.supa.from('roles').upsert([{ email: email, role: role, nom: nomComplet }], {onConflict:'email'});
       if(res.error){
-        if(msg){ msg.style.color='#DC2626'; msg.textContent='Erreur : '+res.error.message; }
+        if(msg){ msg.style.color='#DC2626'; msg.textContent='Erreur : '+res.error.message+(/check|constraint|violat/i.test(res.error.message)?' (la table « roles » n’accepte que certains rôles : demandez le script SQL qui l’ouvre)':''); }
         return;
       }
+      _roles[email] = {role:role, nom:nomComplet};
       _manualNames[email] = nomComplet || email;
       if(!_cache[email]) _cache[email] = {};
+      // rôle créé ici : ses cases deviennent les droits de la personne
+      var d=_defs()[role];
+      if(d){
+        _cache[email] = _copyPerms(d.perms);
+        var rp = await window.supa.from('permissions').upsert(_permRows(email, _cache[email]), {onConflict:'email,module'});
+        if(rp.error){ if(msg){ msg.style.color='#DC2626'; msg.textContent='Accès créé, mais droits non enregistrés : '+rp.error.message; } return; }
+      }
       var searchBox = document.getElementById('_droitsSearch');
       _filterList(searchBox ? searchBox.value : '');
       if(msg){ msg.style.color='#16A34A'; msg.textContent='Accès créé ✓'; }
@@ -3414,36 +3532,146 @@ window.DroitsAcces = (function () {
     }
   }
 
-  async function render(containerId){
-    var el = document.getElementById(containerId);
-    if(!el) return;
-    el.innerHTML = '<div style="text-align:center;padding:30px;color:#9A96B3;font-size:12px">Chargement des droits…</div>';
-    _cache = await _loadAllPermissions();
-    _selected = null;
-    el.innerHTML = '<div style="max-width:760px;margin:0 auto;display:flex;gap:24px;flex-wrap:wrap">'
+  // ═════════ Onglet « Rôles » : créer / modifier / supprimer un rôle ═════════
+  function _countRole(r){ return Object.keys(_roles).filter(function(em){ return _roles[em].role===r; }).length; }
+  function _rolesListHtml(){
+    var b=_builtins(), d=_defs();
+    var card=function(id,title,sub,n,click,on){ return '<div '+(click?'onclick="'+click+'" ':'')+'style="'+(click?'cursor:pointer;':'')+'padding:11px 14px;border-radius:9px;margin-bottom:4px;background:'+(on?'#F5F3FF':'#fff')+';border:1px solid #EEECF7;display:flex;justify-content:space-between;align-items:center;gap:8px">'
+      +'<div style="min-width:0"><div style="font-size:12px;font-weight:700;color:#1C1A33">'+title+'</div><div style="font-size:10px;color:#9A96B3">'+sub+'</div></div>'
+      +'<span style="font-size:10px;font-weight:700;color:#6B6790;white-space:nowrap">'+n+' pers.</span></div>'; };
+    var ks=Object.keys(d).sort(function(x,y){ return d[x].label.localeCompare(d[y].label); });
+    return '<div style="font-size:10px;font-weight:800;color:#9A96B3;margin:4px 0 6px">RÔLES CRÉÉS ICI</div>'
+      + (ks.length ? ks.map(function(k){ return card(k,'🧩 '+esc(d[k].label),'ses cases décident de tout ce que la personne voit',_countRole(k),"DroitsAcces._openRole('"+k+"')",_editRole===k); }).join('')
+        : '<div style="font-size:12px;color:#9A96B3;padding:12px;text-align:center;border:2px dashed #E4E1F0;border-radius:12px;margin-bottom:6px">Aucun rôle créé pour l’instant.</div>')
+      + '<div style="font-size:10px;font-weight:800;color:#9A96B3;margin:14px 0 6px">RÔLES D’ORIGINE (règles fixes)</div>'
+      + Object.keys(b).map(function(k){ return card(k,esc(b[k]),k==='admin'?'voit et modifie tout':'onglets fixés par le site, puis les cases de chaque personne',_countRole(k),'',false); }).join('');
+  }
+  function _openRole(id){
+    _editRole = id;
+    var d = id ? _defs()[id] : null;
+    _draft = {label: d ? d.label : '', perms: _copyPerms(d ? d.perms : {})};
+    if(!id){ // nouveau rôle : écrans de base cochés, à ajuster
+      ['planning','scr_avancement','scr_bilan','scr_reunion','scr_fiche','scr_absences'].forEach(function(k){ _draft.perms[k]={can_view:true,can_edit:false}; });
+      _openGroups[SCR_G]=true;
+    }
+    _drawRoles();
+  }
+  function _drawRoleEditor(){
+    var panel = document.getElementById('_droitsPanel');
+    if(!panel) return;
+    if(_editRole===null || !_draft){ panel.innerHTML='<div style="padding:30px;text-align:center;color:#C4C0DC;font-size:12px;border:2px dashed #E4E1F0;border-radius:14px">← Choisissez un rôle créé ici, ou créez-en un</div>'; return; }
+    var n = _editRole ? _countRole(_editRole) : 0;
+    panel.innerHTML = '<div data-droits-box style="background:#fff;border-radius:14px;padding:20px 22px;box-shadow:0 4px 18px rgba(60,40,160,.08)">'
+      + '<div style="font-size:15px;font-weight:800;color:#1C1A33;margin-bottom:12px">'+(_editRole?'Modifier le rôle':'Nouveau rôle')+'</div>'
+      + '<label style="font-size:10px;font-weight:700;color:#9A96B3;text-transform:uppercase;display:block;margin-bottom:4px">Nom du rôle</label>'
+      + '<input id="_rName" type="text" value="'+esc(_draft.label)+'" placeholder="Ex : Bureau d’études" oninput="DroitsAcces._rName(this.value)" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid #E4E1F0;font-size:13px;font-family:inherit;margin-bottom:14px">'
+      + _modulesHtml(_draft.perms, 'Ce que voient les personnes qui ont ce rôle. Le Planning (GANTT) = case « Voir » de la ligne Planning.')
+      + '<div style="margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      + (_editRole ? '<button onclick="DroitsAcces._deleteRole()" style="background:#fff;color:#B91C1C;border:1px solid #FECACA;border-radius:9px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Supprimer le rôle</button>' : '<span></span>')
+      + '<span style="display:flex;align-items:center;gap:12px"><span id="_roleSaveMsg" style="font-size:11px"></span>'
+      + '<button onclick="DroitsAcces._saveRole()" style="background:#6457F4;color:#fff;border:none;border-radius:9px;padding:9px 18px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Enregistrer'+(n?' et appliquer aux '+n+' personne'+(n>1?'s':''):'')+'</button></span>'
+      + '</div></div>';
+  }
+  function _drawRoles(){
+    var l=document.getElementById('_rolesList'); if(l) l.innerHTML=_rolesListHtml();
+    _drawRoleEditor();
+  }
+  function _rName(v){ if(_draft) _draft.label=v; }
+  async function _saveRole(){
+    var msg=document.getElementById('_roleSaveMsg');
+    var label=String((_draft&&_draft.label)||'').trim();
+    if(!label){ if(msg){ msg.style.color='#DC2626'; msg.textContent='Donnez un nom au rôle.'; } return; }
+    var d=_defs(), b=_builtins();
+    var clash=Object.keys(d).filter(function(k){ return k!==_editRole && d[k].label.trim().toLowerCase()===label.toLowerCase(); }).length
+      || Object.keys(b).some(function(k){ return b[k].replace(/^\S+\s/,'').toLowerCase()===label.toLowerCase(); });
+    if(clash){ if(msg){ msg.style.color='#DC2626'; msg.textContent='Un rôle porte déjà ce nom.'; } return; }
+    var id=_editRole;
+    if(!id){
+      id='r_'+label.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,24)+'_'+Math.random().toString(36).slice(2,6);
+    }
+    var who=Object.keys(_roles).filter(function(em){ return _roles[em].role===id; });
+    if(who.length && !confirm('Appliquer ces cases aux '+who.length+' personne(s) qui ont ce rôle ?\nLeurs réglages personnels seront remplacés par ceux du rôle.')) return;
+    if(!STORE.settings) STORE.settings={};
+    STORE.settings['roleDef_'+id]={label:label, perms:_copyPerms(_draft.perms), at:Date.now()};
+    _saveStore();
+    _editRole=id;
+    if(msg){ msg.style.color='#6457F4'; msg.textContent='Enregistrement…'; }
+    var err='';
+    for(var i=0;i<who.length;i++){
+      _cache[who[i]]=_copyPerms(_draft.perms);
+      try{ var r=await window.supa.from('permissions').upsert(_permRows(who[i], _cache[who[i]]), {onConflict:'email,module'}); if(r.error) err=r.error.message; }catch(e){ err=(e&&e.message)||'erreur réseau'; }
+    }
+    _drawRoles();
+    var m2=document.getElementById('_roleSaveMsg');
+    if(m2){ m2.style.color=err?'#DC2626':'#16A34A'; m2.textContent=err?'Rôle enregistré, mais pas appliqué à tout le monde : '+err:'Enregistré ✓'+(who.length?' — appliqué à '+who.length+' personne(s)':''); }
+  }
+  function _deleteRole(){
+    if(!_editRole) return;
+    var who=Object.keys(_roles).filter(function(em){ return _roles[em].role===_editRole; });
+    if(who.length){ alert('Ce rôle est encore donné à '+who.length+' personne(s) :\n\n'+who.map(function(em){ return '• '+((_roles[em].nom)||em); }).join('\n')+'\n\nDonnez-leur d’abord un autre rôle (onglet Personnes).'); return; }
+    var d=_defs()[_editRole];
+    if(!confirm('Supprimer le rôle « '+(d?d.label:_editRole)+' » ?')) return;
+    STORE.settings['roleDef_'+_editRole]={deleted:true, at:Date.now()};
+    _saveStore();
+    _editRole=null; _draft=null;
+    _drawRoles();
+  }
+  function _setView(v){
+    _view=v; _selected=null; _pendingRole=undefined;
+    var root=document.getElementById('_droitsRoot'); if(root) root.innerHTML=_bodyHtml();
+    if(v==='roles') _drawRoles();
+  }
+  function _bodyHtml(){
+    var tab=function(v,t){ return '<button onclick="DroitsAcces._setView(\''+v+'\')" style="border:0;font:inherit;font-weight:800;font-size:12.5px;padding:8px 14px;border-radius:9px;cursor:pointer;background:'+(_view===v?'#fff':'transparent')+';color:'+(_view===v?'#4B3FC7':'#4A4766')+';box-shadow:'+(_view===v?'0 2px 8px rgba(60,40,160,.12)':'none')+'">'+t+'</button>'; };
+    var h='<div style="display:inline-flex;background:#F1EFFC;border-radius:12px;padding:3px;margin-bottom:16px">'+tab('persons','👤 Personnes')+tab('roles','🧩 Rôles')+'</div>';
+    if(_view==='roles'){
+      return h+'<div style="display:flex;gap:24px;flex-wrap:wrap">'
+        + '<div style="flex:1;min-width:260px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px"><div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px">Rôles</div>'
+        + '<button onclick="DroitsAcces._openRole(\'\')" style="background:#6457F4;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">+ Créer un rôle</button></div>'
+        + '<div id="_rolesList">'+_rolesListHtml()+'</div></div>'
+        + '<div style="flex:1;min-width:300px"><div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Cases du rôle</div><div id="_droitsPanel"></div></div></div>';
+    }
+    return h+'<div style="display:flex;gap:24px;flex-wrap:wrap">'
       + '<div style="flex:1;min-width:260px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px">'
       + '<div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px">Personnes</div>'
       + '<button onclick="DroitsAcces._openAddForm()" style="background:#6457F4;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">+ Ajouter un accès</button>'
       + '</div>'
-      + '<input id="_droitsSearch" type="text" placeholder="Rechercher un nom ou un email…" oninput="DroitsAcces._filterList(this.value)" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:9px;border:1px solid #E4E1F0;font-size:12px;font-family:inherit;margin-bottom:10px;outline:none">'
+      + '<input id="_droitsSearch" type="text" placeholder="Rechercher un nom ou un email…" oninput="DroitsAcces._filterList(this.value)" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:9px;border:1px solid #E4E1F0;font-size:12px;font-family:inherit;margin-bottom:10px">'
       + '<div id="_droitsList">'+_listHtml()+'</div>'
       + '</div>'
       + '<div style="flex:1;min-width:300px">'
-      + '<div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Droits par module</div>'
+      + '<div style="font-size:11px;font-weight:700;color:#9A96B3;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Rôle et droits</div>'
       + '<div id="_droitsPanel"><div style="padding:30px;text-align:center;color:#C4C0DC;font-size:12px;border:2px dashed #E4E1F0;border-radius:14px">← Sélectionnez une personne, ou ajoutez un accès</div></div>'
       + '</div></div>';
+  }
+
+  async function render(containerId){
+    var el = document.getElementById(containerId);
+    if(!el) return;
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:#9A96B3;font-size:12px">Chargement des droits…</div>';
+    _cache = await _loadAllPermissions();
+    _roles = await _loadRoles();
+    _selected = null; _pendingRole = undefined; _editRole = null; _draft = null;
+    el.innerHTML = '<div id="_droitsRoot" style="max-width:860px;margin:0 auto">'+_bodyHtml()+'</div>';
+    if(_view==='roles') _drawRoles();
   }
 
   return {
     render: render,
     _openPerson: _openPerson,
     _onToggle: _onToggle,
+    _onRole: _onRole,
     _save: _save,
     _filterList: _filterList,
     _openAddForm: _openAddForm,
     _submitAddForm: _submitAddForm,
-    _toggleGroup: _toggleGroup
+    _toggleGroup: _toggleGroup,
+    _setView: _setView,
+    _openRole: _openRole,
+    _rName: _rName,
+    _saveRole: _saveRole,
+    _deleteRole: _deleteRole
   };
 })();
 
@@ -3756,6 +3984,19 @@ function _peutChangerStatut(r){
   if(_peutStatutToutesActivites())return true;
   return !!(r&&r.pk&&r.pk.indexOf('CHANTIER')===0);
 }
+// ══ Rôles créés dans Gestion des droits (12/10/2026, demande de l'utilisateur) ══
+// Les 3 rôles d'origine gardent EXACTEMENT leur comportement (restrictions écrites dans applyRoleRestrictions).
+// Un rôle créé sur le site = un nom + un jeu de cases (définition dans STORE.settings['roleDef_<id>'], fusionnée
+// clé par clé par la synchro). Donner ce rôle à quelqu'un (table roles) lui ouvre le site, et ses cases sont recopiées
+// dans SES droits (table permissions) : ce qu'il voit = ses cases, y compris les écrans (modules scr_*).
+var _BUILTIN_ROLES={admin:'👑 Admin',chef_chantier:'👷 Chef de chantier',automatisme:'⚙️ Automatisme'};
+function _customRoleDefs(){
+  var s=(typeof STORE!=='undefined'&&STORE&&STORE.settings)||{},o={};
+  Object.keys(s).forEach(function(k){if(k.indexOf('roleDef_')===0&&s[k]&&!s[k].deleted&&s[k].label)o[k.slice(8)]=s[k];});
+  return o;
+}
+function _isCustomRole(r){if(r===undefined)r=(typeof CURRENT_ROLE!=='undefined')?CURRENT_ROLE:null;return !!r&&!_BUILTIN_ROLES[r];}
+function _roleLabel(r){if(_BUILTIN_ROLES[r])return _BUILTIN_ROLES[r];var d=_customRoleDefs()[r];return '🧩 '+((d&&d.label)||r||'—');}
 
 async function loadRoleAndStart() {
   window._appBootstrapped = true;
@@ -3911,6 +4152,36 @@ function applyRoleRestrictions() {
     addUserBadge();
   } else if (CURRENT_ROLE === 'admin') {
     addUserBadge();
+  } else if (_isCustomRole()) {
+    // (12/10/2026) Rôle créé dans Gestion des droits : ce que la personne voit = ses cases « Voir ».
+    // On cache les mêmes anciens boutons que pour les autres rôles : PetroNav (secVis) en déduit les onglets.
+    var hide=function(sel,ok){if(!ok)document.querySelectorAll(sel).forEach(function(b){b.style.display='none';});};
+    var v=function(m){return hasView(m);};
+    hide('.nb[data-tab="gantt"]',v('planning'));
+    hide('#gv-global',v('planning')&&v('scr_globale'));
+    hide('.tdb-tab[data-tt="overview"]',v('scr_tdb'));
+    hide('.tdb-tab[data-tt="recap-current"]',v('scr_bilan'));
+    hide('.tdb-tab[data-tt="recap-all"]',v('scr_bilan_all'));
+    hide('.tdb-tab[data-tt="avancement"]',v('scr_avancement'));
+    hide('.nb[data-tab="recap"]',v('scr_tdb')||v('scr_bilan')||v('scr_bilan_all')||v('scr_avancement'));
+    hide('.nb[data-tab="planning-reunion"]',v('scr_reunion'));
+    hide('[data-pt="fiche"]',v('scr_fiche'));
+    hide('[data-pt="equipe"]',v('scr_equipe'));
+    hide('[data-pt="absences"]',v('scr_absences'));
+    hide('[data-pt="heures"]',v('scr_heures'));
+    hide('.nb[data-tab="personnel"]',v('scr_fiche')||v('scr_equipe')||v('scr_absences')||v('scr_heures')||v('annuaire'));
+    hide('.nb[data-tab="modifications"]',v('modifications'));
+    hide('[onclick*="downloadPlanning"],[onclick*="showClientDownload"]',v('scr_dl'));
+    hide('.btn-np,.btn-da,[onclick*="openModal"],[onclick="openRenameModal()"]',v('scr_affaires'));
+    hide('[onclick*="exportData"]',false); // sauvegarde complète de toutes les affaires : admin seulement
+    hide('#inp-bud,label[for="inp-bud"]',v('budget_toolbar')); // case « H vendues » de l'en-tête de l'affaire
+    // tuiles de l'accueil sans aucun écran derrière
+    var eqT=document.getElementById('petro-hub-tile-equipe');
+    if(eqT&&!(v('scr_reunion')||v('scr_fiche')||v('scr_equipe')||v('scr_absences')||v('annuaire')||v('qr_feuille')))eqT.style.display='none';
+    var afT=document.getElementById('petro-hub-tile-planning');
+    if(afT&&!(v('planning')||v('scr_avancement')||v('scr_bilan')||v('scr_heures')||v('modifications')||v('commandes')||v('docs_chantier')||v('punch_list')||v('scr_tdb')||v('scr_bilan_all')))afT.style.display='none';
+    addUserBadge();
+    setTimeout(addUserBadge,4000); // le nom du rôle arrive avec les données du serveur
   }
 }
 
@@ -3923,9 +4194,7 @@ function addUserBadge() {
   var badge = document.createElement('div');
   badge.setAttribute('data-user-badge', '1');
   badge.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 10px;background:var(--bg3);border-radius:20px;border:1px solid var(--bd);font-size:10px;font-weight:600;color:var(--tx2)';
-  var roleLabel = CURRENT_ROLE === 'admin' ? '👑 Admin' 
-    : CURRENT_ROLE === 'automatisme' ? '⚙️ Automatisme'
-    : '👷 Chef de chantier';
+  var roleLabel = _roleLabel(CURRENT_ROLE); // (12/10/2026) aussi le nom d'un rôle créé dans Gestion des droits
   badge.innerHTML = '<span>' + CURRENT_USER.email.split('@')[0] + '</span>'
     + '<span style="color:var(--tx3)">|</span>'
     + '<span>' + roleLabel + '</span>'
@@ -25753,10 +26022,10 @@ window.PetroNav=(function(){
       {k:'planning',lbl:'Planning',vis:function(){return secVis('.nb[data-tab="gantt"]');},
         on:function(){return nbOn()==='gantt'&&(typeof GANTT_VIEW==='undefined'||GANTT_VIEW!=='global');},
         go:function(){if(typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='global'){switchTab('gantt');setGanttView('week');}else switchTab('gantt');}},
-      {k:'avancement',lbl:'Avancement',vis:function(){return secVis('.nb[data-tab="recap"]');},
+      {k:'avancement',lbl:'Avancement',vis:function(){return secVis('.nb[data-tab="recap"]')&&secVis('.tdb-tab[data-tt="avancement"]');},
         on:function(){return nbOn()==='recap'&&window._tdbTab==='avancement';},
         go:function(){window._tdbTab='avancement';switchTab('recap');}},
-      {k:'recap',lbl:'Bilan',vis:function(){return secVis('.nb[data-tab="recap"]');},
+      {k:'recap',lbl:'Bilan',vis:function(){return secVis('.nb[data-tab="recap"]')&&secVis('.tdb-tab[data-tt="recap-current"]');},
         on:function(){return nbOn()==='recap'&&window._tdbTab==='recap-current';},
         go:function(){window._tdbTab='recap-current';switchTab('recap');}},
       {k:'heures',lbl:'Heures',vis:function(){return secVis('.nb[data-tab="personnel"]')&&secVis('[data-pt="heures"]');},
@@ -25777,13 +26046,13 @@ window.PetroNav=(function(){
         go:function(){switchTab('docch');}}
     ],
     overview:[
-      {k:'ov',lbl:'Tableau de bord',vis:function(){return secVis('.nb[data-tab="recap"]');},
+      {k:'ov',lbl:'Tableau de bord',vis:function(){return secVis('.nb[data-tab="recap"]')&&secVis('.tdb-tab[data-tt="overview"]');},
         on:function(){return nbOn()==='recap'&&(window._tdbTab||'overview')==='overview';},
         go:function(){window._tdbTab='overview';switchTab('recap');}},
-      {k:'all',lbl:'Bilan — toutes les affaires',vis:function(){return secVis('.nb[data-tab="recap"]');},
+      {k:'all',lbl:'Bilan — toutes les affaires',vis:function(){return secVis('.nb[data-tab="recap"]')&&secVis('.tdb-tab[data-tt="recap-all"]');},
         on:function(){return nbOn()==='recap'&&window._tdbTab==='recap-all';},
         go:function(){window._tdbTab='recap-all';switchTab('recap');}},
-      {k:'glob',lbl:'Vue globale',vis:function(){return secVis('.nb[data-tab="gantt"]');},
+      {k:'glob',lbl:'Vue globale',vis:function(){return secVis('.nb[data-tab="gantt"]')&&secVis('#gv-global');},
         on:function(){return nbOn()==='gantt'&&typeof GANTT_VIEW!=='undefined'&&GANTT_VIEW==='global';},
         go:function(){switchTab('gantt');setGanttView('global');}}
     ],
@@ -25904,7 +26173,7 @@ window.PetroNav=(function(){
     if(secVis('#nav [onclick*="exportData"]'))more.push(['exportData()','💾 Sauvegarde complète (.json)']);
     // (09/10/2026) Archiver : ceux qui peuvent supprimer l'affaire ; désarchiver : admin seulement
     var isAdm=role()==='admin';
-    more.push(['affDossierAsk()','📦 Dossier de fin d’affaire (.zip)…']);
+    if(!(typeof _isCustomRole==='function'&&_isCustomRole())||hasView('scr_dl'))more.push(['affDossierAsk()','📦 Dossier de fin d’affaire (.zip)…']); // rôle créé ici : seulement avec « Télécharger »
     if(!closed&&(secVis('#sbar .btn-da[onclick*="openModal(\'del\')"]')||secVis('#sbar .btn-da[onclick*="openModal("]')))more.push(['PetroNav.archive()','🗄 Archiver l’affaire…']);
     if(closed&&isAdm)more.push(['PetroNav.unarchive()','✓ Désarchiver l’affaire']);
     if(secVis('#sbar .btn-da[onclick*="openModal(\'del\')"]')||secVis('#sbar .btn-da[onclick*="openModal("]'))more.push(['openModal(\'del\')','🗑 Supprimer l’affaire',1]);
