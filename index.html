@@ -6820,8 +6820,9 @@ async function affBuildDossier(k,kind,st){
   var docs=[];
   for(var di=0;di<(P.documents||[]).length;di++){
     var doc=P.documents[di],vs=(doc.versions||[]).slice().sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);}),last=vs[0];if(!last)continue;
-    var withF=vs.filter(function(v){return v.attachmentPath;})[0],e={nom:doc.nom,ver:last,fileVer:withF,file:null,pend:(doc.mods||[]).filter(function(m){return m&&m.status!=='fait';})};
-    if(withF){try{e.file=put('01_Documents_derniere_version/'+safe(withF.attachmentName||doc.nom),await dl(withF.attachmentPath));}catch(err){warn.push('Fichier de « '+doc.nom+' » : '+err.message);}}
+    var withF=vs.filter(function(v){return _modsVerHasFile(v);})[0],e={nom:doc.nom,ver:last,fileVer:withF,file:null,files:[],pend:(doc.mods||[]).filter(function(m){return m&&m.status!=='fait';})};
+    // (12/10/2026) une version peut avoir plusieurs fichiers : tous dans le dossier
+    if(withF){for(var fk=0,fl=_modsVerFiles(withF);fk<fl.length;fk++){if(!fl[fk].path)continue;try{e.files.push(put('01_Documents_derniere_version/'+safe(fl[fk].name||doc.nom),await dl(fl[fk].path)));}catch(err){warn.push('Fichier « '+fl[fk].name+' » de « '+doc.nom+' » : '+err.message);}}e.file=e.files[0]||null;}
     docs.push(e);
   }
   // ── État des fiches, punch lists, commandes (lecture seule, pas de fichier) ──
@@ -6902,7 +6903,7 @@ async function affBuildDossier(k,kind,st){
   h+='<div class="sec">'+secT('Documents — dernière version',badge('ok',docs.length+' document'+(docs.length>1?'s':'')));
   h+=docs.length?'<div class="scroll"><table><tr><th>Document</th><th>Version</th><th>Date</th><th>Dernière modification</th><th>Fichier</th></tr>'
     +docs.map(function(d){return '<tr><td>'+esc(d.nom)+'</td><td><span class="ver">'+esc(_modsVerLbl(d.ver.version))+'</span></td><td>'+esc(d.ver.date||'')+'</td><td class="muted" style="white-space:pre-wrap">'+esc(d.ver.note||'')+'</td><td>'
-      +(d.file?link(d.file)+(d.fileVer!==d.ver?'<div class="muted">fichier de la version '+esc(_modsVerLbl(d.fileVer.version))+'</div>':''):'<span class="muted">fichier pas sur le site</span>')+'</td></tr>';}).join('')+'</table></div>'
+      +(d.file?d.files.map(link).join('<br>')+(d.fileVer!==d.ver?'<div class="muted">fichier de la version '+esc(_modsVerLbl(d.fileVer.version))+'</div>':''):'<span class="muted">fichier pas sur le site</span>')+'</td></tr>';}).join('')+'</table></div>'
     +(INT?'<div class="muted" style="margin-top:6px">Vient directement de l’onglet <b>Modifications</b> : pour chaque document, seule la dernière version est prise.</div>':'')
     :'<p class="muted">Aucun document.</p>';
   h+='</div>';
@@ -11065,7 +11066,7 @@ function renderModificationsTab(){
   if(window._modsNewAff!==aff){window._modsNewAff=aff;window._modsNew={};}
   var un=modsUnseen(aff);un.forEach(function(v){window._modsNew[v.id]=1;});_modsMarkSeen(un);
   var nPeople=_modsPeople().length;
-  var hasAtt=docs.some(function(d){return (d.versions||[]).some(function(v){return v.attachmentPath;})||(d.mods||[]).some(function(m){return (m.files||[]).some(function(f){return f.path;});});});
+  var hasAtt=docs.some(function(d){return (d.versions||[]).some(function(v){return _modsVerHasFile(v);})||(d.mods||[]).some(function(m){return (m.files||[]).some(function(f){return f.path;});});});
   var nTodo=docs.reduce(function(n,d){return n+_modsPending(d).length;},0);
   var h='<div class="mdx">'
     +'<div class="mdx-card mdx-top"><div style="flex:1;min-width:260px"><div class="mdx-h">📄 Modifications et documents'+(nTodo?' <span class="mdx-new org" style="font-size:12px">'+nTodo+' à faire</span>':'')+'</div>'
@@ -11097,10 +11098,19 @@ function esc2(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function _modsFileA(path,name){
   return '<a class="mdx-file" href="#" onclick="modDownloadAttachment(\''+_modsJs(path)+'\',\''+_modsJs(name||'document')+'\');return false;">📎 '+esc2(name||'fichier')+'</a>';
 }
+// (12/10/2026, demande de l'utilisateur) Une version peut avoir PLUSIEURS fichiers : le 1er reste dans
+// attachmentPath / attachmentName (compatibilité avec tout le code existant), les suivants dans extraFiles [{path,name}].
+function _modsVerFiles(v){
+  var o=[];if(!v)return o;
+  if(v.attachmentPath||v.attachmentName)o.push({path:v.attachmentPath||null,name:v.attachmentName||'fichier',main:true});
+  (v.extraFiles||[]).forEach(function(f,i){if(f&&(f.path||f.name))o.push({path:f.path||null,name:f.name||'fichier',i:i});});
+  return o;
+}
+function _modsVerHasFile(v){return _modsVerFiles(v).some(function(f){return !!f.path;});}
 function _modsFileLink(v){
-  if(v.attachmentPath)return _modsFileA(v.attachmentPath,v.attachmentName);
-  if(v.attachmentName)return '<span style="font-style:italic;color:#9A96B3">'+esc2(v.attachmentName)+'</span>';
-  return '<span style="font-style:italic;color:#9A96B3">Pas de fichier</span>';
+  var fs=_modsVerFiles(v);
+  if(!fs.length)return '<span style="font-style:italic;color:#9A96B3">Pas de fichier</span>';
+  return '<span style="display:inline-flex;flex-wrap:wrap;gap:4px 12px">'+fs.map(function(f){return f.path?_modsFileA(f.path,f.name):'<span style="font-style:italic;color:#9A96B3">'+esc2(f.name)+'</span>';}).join('')+'</span>';
 }
 function _modsFilesHtml(files){
   files=(files||[]).filter(function(f){return f&&(f.path||f.name);});
@@ -11134,6 +11144,7 @@ function _modsBuildDocCard(doc,ed){
       +'<div class="mdx-rt"><div class="mdx-rtt">🛠 Modification à faire'+(nw[m.id]?' <span class="mdx-new org">Nouvelle</span>':'')+' <span>· demandée'+(m.byName?' par '+esc2(m.byName):'')+' le '+esc2(m.date||'')+'</span></div>'
       +(ed?'<button type="button" class="mdx-btn grn" onclick="modShowDoneForm(\''+doc.id+'\',\''+m.id+'\')">✓ Marquer comme faite</button>'
         +'<button type="button" class="mdx-btn2" onclick="modEditReqDest(\''+doc.id+'\',\''+m.id+'\')">✉ Préparer l’email</button>'
+        +'<button type="button" class="mdx-btn2" onclick="modShowReqForm(\''+doc.id+'\')" title="Le client demande autre chose sur ce document : ajouter une demande de plus (elle pourra être faite dans la même version)">＋ Autre modification</button>'
         +'<button type="button" class="mdx-ico" onclick="modDeleteReq(\''+doc.id+'\',\''+m.id+'\')" title="Annuler cette demande" aria-label="Annuler cette demande">✕</button>':'')
       +'</div><div style="display:grid;gap:7px">'
       +'<div class="mdx-row"><span class="mdx-l">DÉTAIL MODIFICATION</span><span style="flex:1;min-width:200px;white-space:pre-wrap">'+esc2(m.detail||'—')+'</span></div>'
@@ -11143,12 +11154,21 @@ function _modsBuildDocCard(doc,ed){
       +'</div></div>';
   });
   // Dernière version
+  // (12/10/2026) modifications faites SANS nouvelle version alors qu'il n'y avait encore aucune version
+  var doneNoVer=(doc.mods||[]).filter(function(x){return x&&x.status==='fait'&&x.noNewVer&&!x.verId;});
+  if(doneNoVer.length)h+='<div class="mdx-body" style="background:#F0FDF4"><div class="mdx-row"><span class="mdx-l">FAITES, SANS VERSION</span><span style="flex:1;min-width:200px">'
+    +doneNoVer.map(function(x){return '✓ '+esc2(x.detail||'—')+' <span style="color:#6B6790">· faite'+(x.doneBy?' par '+esc2(x.doneBy):'')+'</span>';}).join('<br>')+'</span></div></div>';
   if(last){
     var lm=last.modId?(doc.mods||[]).find(function(x){return x.id===last.modId;}):null;
+    // toutes les demandes rattachées à cette version : faites avec elle, ou faites ensuite « sans changer de version »
+    var incl=(doc.mods||[]).filter(function(x){return x&&x.status==='fait'&&x.verId===last.id;});
+    var multi=incl.length>1||incl.some(function(x){return x.noNewVer;});
     h+='<div class="mdx-body">'
       +(last.note?'<div class="mdx-row"><span class="mdx-l">DÉTAIL MODIFICATION</span><span style="flex:1;min-width:200px;white-space:pre-wrap">'+esc2(last.note)+'</span></div>':'')
-      +(last.reqDate||lm?'<div class="mdx-row"><span class="mdx-l">DEMANDÉE</span><span>'+(last.reqBy?'par '+esc2(last.reqBy)+' ':'')+'le '+esc2(last.reqDate||(lm&&lm.date)||'')+(lm&&lm.files&&lm.files.length?' · '+_modsFilesHtml(lm.files):'')+'</span></div>':'')
-      +'<div class="mdx-row"><span class="mdx-l">FICHIER</span>'+_modsFileLink(last)+'</div>'
+      +(multi?'<div class="mdx-row"><span class="mdx-l">MODIFICATIONS INCLUSES</span><span style="flex:1;min-width:200px">'
+          +incl.map(function(x){return '• '+esc2(x.detail||'—')+' <span style="color:#6B6790">· demandée'+(x.byName?' par '+esc2(x.byName):'')+' le '+esc2(x.date||'')+'</span>'+(x.noNewVer?' <span class="mdx-new" style="background:#ECFDF5;color:#047857">faite sans nouvelle version</span>':'')+((x.files||[]).length?' · '+_modsFilesHtml(x.files):'');}).join('<br>')+'</span></div>'
+        :(last.reqDate||lm?'<div class="mdx-row"><span class="mdx-l">DEMANDÉE</span><span>'+(last.reqBy?'par '+esc2(last.reqBy)+' ':'')+'le '+esc2(last.reqDate||(lm&&lm.date)||'')+(lm&&lm.files&&lm.files.length?' · '+_modsFilesHtml(lm.files):'')+'</span></div>':''))
+      +'<div class="mdx-row"><span class="mdx-l">FICHIER'+(_modsVerFiles(last).length>1?'S':'')+'</span>'+_modsFileLink(last)+'</div>'
       +'<div class="mdx-row"><span class="mdx-l">PRÉVENUS</span><span style="flex:1;min-width:200px">'+_modsChips(last.dest,'personne n’est coché')+'</span></div>'
       +'<div class="mdx-row"><span class="mdx-l">EMAIL</span>'+_modsMailState(last)+'</div>'
       +'</div>';
@@ -11213,11 +11233,13 @@ var _modsVerHelp='Saisie libre : 3, B, Ind. C…';
 // Fichiers facultatifs d'une demande (PDF annoté…). Le mail du client ne passe PAS par le site :
 // Chrome / Edge ne reçoivent pas un mail glissé depuis Outlook (06/10/2026). On le glisse
 // directement dans le brouillon Outlook qui s'ouvre (Outlook le joint tout seul).
-function _modsDropHtml(){
+// forVersion (12/10/2026) : la même zone sert aux fichiers d'une version (plusieurs fichiers possibles)
+function _modsDropHtml(forVersion){
   return '<div id="mf-drop" class="mdx-drop" tabindex="0" role="button" aria-label="Ajouter des fichiers" onclick="document.getElementById(\'mf-files\').click()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}"'
     +' ondragover="event.preventDefault();this.classList.add(\'on\')" ondragleave="this.classList.remove(\'on\')" ondrop="event.preventDefault();this.classList.remove(\'on\');modAddFiles(event.dataTransfer.files)">'
-    +'📎 Glissez ici un PDF ou un autre fichier, ou cliquez pour le choisir (facultatif)'
-    +'<br><span style="font-size:11.5px;color:#9A96B3">Le mail du client : glissez-le directement dans le brouillon Outlook qui va s’ouvrir.</span></div>'
+    +(forVersion?'📎 Glissez ici le ou les fichiers de cette version (un ou plusieurs PDF…), ou cliquez pour les choisir'
+      :'📎 Glissez ici un PDF ou un autre fichier, ou cliquez pour le choisir (facultatif)'
+      +'<br><span style="font-size:11.5px;color:#9A96B3">Le mail du client : glissez-le directement dans le brouillon Outlook qui va s’ouvrir.</span>')+'</div>'
     +'<input type="file" id="mf-files" multiple style="display:none" onchange="modAddFiles(this.files);this.value=\'\'">'
     +'<div id="mf-flist" class="mdx-fls"></div>';
 }
@@ -11320,14 +11342,63 @@ function modShowDoneForm(docId,modId){
   var doc=_modsDoc(docId);if(!doc)return;
   var m=(doc.mods||[]).find(function(x){return x.id===modId;});if(!m)return;
   var last=_modsLatest(doc);
+  // (12/10/2026, demande de l'utilisateur) Une modification n'entraîne pas forcément une nouvelle version
+  // (le client en redemande une autre juste après) : on choisit « nouvelle version » ou « sans changer de version ».
+  // Les autres demandes encore à faire sur ce document peuvent être faites en même temps (une seule version pour toutes).
+  var others=_modsPending(doc).filter(function(x){return x.id!==m.id;});
+  var reqLine=function(x,on,dis){return '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:4px 0;cursor:'+(dis?'default':'pointer')+'"><input type="checkbox" class="mf-req" value="'+escHtml(x.id)+'"'+(on?' checked':'')+(dis?' disabled':'')+' onchange="_modsDoneNote()" style="margin-top:2px;accent-color:#16A34A"><span><b>'+esc2(x.detail||'—')+'</b><span style="color:#6B6790"> · demandée'+(x.byName?' par '+esc2(x.byName):'')+' le '+esc2(x.date||'')+'</span></span></label>';};
   _modsShowForm('<div class="mdx-ft">✓ Modification faite — '+esc2(doc.nom)+'</div>'
-    +'<div style="font-size:12px;color:#6B6790;margin-bottom:6px">Demandée'+(m.byName?' par '+esc2(m.byName):'')+' le '+esc2(m.date||'')+(last?' · version actuelle '+esc2(_modsVerLbl(last.version)):'')+'</div>'
+    +'<div style="font-size:12px;color:#6B6790;margin-bottom:6px">'+(last?'Version actuelle : <b>'+esc2(_modsVerLbl(last.version))+'</b>':'Pas encore de version')+'</div>'
+    +'<label class="mdx-fl">MODIFICATION'+(others.length?'S FAITES':' FAITE')+'</label>'
+    +'<div id="mf-reqs">'+reqLine(m,true,!others.length)+others.map(function(x){return reqLine(x,false,false);}).join('')+'</div>'
+    +(others.length?'<div style="font-size:11.5px;color:#6B6790;margin-top:2px">Cochez aussi les autres demandes faites en même temps : elles seront toutes dans la même version.</div>':'')
+    +'<label class="mdx-fl">VERSION</label>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;font-weight:700;color:#1C1A33">'
+    +'<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="radio" name="mf-mode" value="ver" checked onchange="_modsDoneMode()"> Nouvelle version</label>'
+    +'<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="radio" name="mf-mode" value="same" onchange="_modsDoneMode()"> Sans changer de version'+(last?' (reste '+esc2(_modsVerLbl(last.version))+')':'')+'</label></div>'
+    +'<div id="mf-same-note" style="display:none;font-size:12px;color:#6B6790;background:#F6F5FB;border-radius:10px;padding:8px 12px;margin-top:8px">La modification est marquée faite, sans nouveau fichier ni email. Elle sera notée comme intégrée à la version '+(last?esc2(_modsVerLbl(last.version)):'actuelle')+' (par exemple en attendant une autre modification du client avant de diffuser une nouvelle version).</div>'
+    +'<div id="mf-ver-block">'
     +'<div style="display:grid;grid-template-columns:180px 1fr;gap:12px">'
     +'<div><label class="mdx-fl" for="mf-ver">NOUVELLE VERSION</label><input type="text" id="mf-ver" class="mdx-in" placeholder="'+_modsVerHelp+'"></div>'
-    +'<div><label class="mdx-fl" for="mf-file">FICHIER DE LA NOUVELLE VERSION</label><input type="file" id="mf-file" class="mdx-in" style="padding:6px"></div></div>'
+    +'</div><label class="mdx-fl">FICHIERS DE LA NOUVELLE VERSION <span style="font-weight:600;color:#9A96B3">(un ou plusieurs)</span></label>'+_modsDropHtml(true)
     +'<label class="mdx-fl" for="mf-note">DÉTAIL MODIFICATION</label><textarea id="mf-note" class="mdx-in" rows="3">'+esc2(m.detail||'')+'</textarea>'
     +'<label class="mdx-fl">PERSONNES À PRÉVENIR <span style="font-weight:600;color:#9A96B3">(celles de la version d’avant, à ajuster si besoin)</span></label>'+_modsPeopleHtml(_modsSelOf(last&&last.dest),last&&last.dest)
-    +_modsFormButtons('modConfirmVer.bind(null,\''+docId+'\',\''+modId+'\')','Enregistrer et préparer l’email'));
+    +'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">'
+    +'<button type="button" class="mdx-btn" id="mf-go-mail" onclick="modConfirmDone(\''+docId+'\',\''+modId+'\',true)">✉ Enregistrer et préparer l’email</button>'
+    +'<button type="button" class="mdx-btn2" id="mf-go" onclick="modConfirmDone(\''+docId+'\',\''+modId+'\',false)">Enregistrer sans email</button>'
+    +'<button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button>'
+    +'<span id="mf-status" style="font-size:12px;font-weight:700;color:#6B6790"></span></div>');
+  window._mfDoneDoc=docId;
+}
+function _modsDoneMode(){
+  var same=(document.querySelector('input[name=mf-mode]:checked')||{}).value==='same';
+  var vb=document.getElementById('mf-ver-block'),sn=document.getElementById('mf-same-note'),gm=document.getElementById('mf-go-mail'),g=document.getElementById('mf-go');
+  if(vb)vb.style.display=same?'none':'';if(sn)sn.style.display=same?'':'none';
+  if(gm)gm.style.display=same?'none':'';if(g)g.textContent=same?'✓ Marquer comme faite':'Enregistrer sans email';
+}
+// Détail de la nouvelle version = détails des demandes cochées (tant qu'on ne l'a pas réécrit à la main)
+function _modsDoneNote(){
+  var doc=_modsDoc(window._mfDoneDoc),ta=document.getElementById('mf-note');if(!doc||!ta)return;
+  var ids=[].slice.call(document.querySelectorAll('#mf-reqs .mf-req:checked')).map(function(c){return c.value;});
+  var txt=(doc.mods||[]).filter(function(x){return ids.indexOf(x.id)>=0;}).map(function(x){return x.detail||'';}).filter(Boolean);
+  if(ta.dataset.auto===undefined)ta.dataset.auto=ta.value;
+  if(ta.value===ta.dataset.auto){ta.value=txt.length>1?txt.map(function(t){return '• '+t;}).join('\n'):(txt[0]||'');ta.dataset.auto=ta.value;}
+}
+async function modConfirmDone(docId,modId,withMail){
+  var doc=_modsDoc(docId);if(!doc){alert('Ce document a été supprimé entre-temps.');return;}
+  var ids=[].slice.call(document.querySelectorAll('#mf-reqs .mf-req:checked')).map(function(c){return c.value;});
+  if(ids.indexOf(modId)<0)ids.unshift(modId);
+  var same=(document.querySelector('input[name=mf-mode]:checked')||{}).value==='same';
+  if(!same)return modConfirmVer(docId,modId,withMail,ids);
+  // Sans changer de version : demandes faites, rattachées à la version actuelle (s'il y en a une)
+  var last=_modsLatest(doc),me=_modsMyName(),n=0;
+  (doc.mods||[]).forEach(function(m){
+    if(ids.indexOf(m.id)<0||m.status==='fait')return;
+    m.status='fait';m.doneAt=Date.now();m.doneBy=me;m.noNewVer=true;m.verId=last?last.id:null;n++;
+  });
+  saveNow();modCloseForm();renderModificationsTab();
+  _modsToast('✓ '+n+' modification'+(n>1?'s':'')+' marquée'+(n>1?'s':'')+' faite'+(n>1?'s':'')+(last?', intégrée'+(n>1?'s':'')+' à la version '+esc2(_modsVerLbl(last.version)):'')+' (pas de nouvelle version).',6000);
 }
 // ── Version directe (sans demande) et nouveau document ──
 function modShowAddVersionForm(docId){
@@ -11338,7 +11409,7 @@ function modShowAddVersionForm(docId){
     +(last?'<div style="font-size:12px;color:#6B6790">Version actuelle : '+esc2(_modsVerLbl(last.version))+'</div>':'')
     +'<div style="display:grid;grid-template-columns:180px 1fr;gap:12px">'
     +'<div><label class="mdx-fl" for="mf-ver">NOUVELLE VERSION</label><input type="text" id="mf-ver" class="mdx-in" placeholder="'+_modsVerHelp+'"></div>'
-    +'<div><label class="mdx-fl" for="mf-file">FICHIER</label><input type="file" id="mf-file" class="mdx-in" style="padding:6px"></div></div>'
+    +'</div><label class="mdx-fl">FICHIERS <span style="font-weight:600;color:#9A96B3">(un ou plusieurs)</span></label>'+_modsDropHtml(true)
     +'<label class="mdx-fl" for="mf-note">DÉTAIL MODIFICATION</label><textarea id="mf-note" class="mdx-in" rows="2"></textarea>'
     +'<label class="mdx-fl">PERSONNES À PRÉVENIR <span style="font-weight:600;color:#9A96B3">(celles de la version d’avant, à ajuster si besoin)</span></label>'+_modsPeopleHtml(_modsSelOf(last&&last.dest),last&&last.dest)
     +_modsFormButtons('modConfirmVer.bind(null,\''+docId+'\',\'\')','Enregistrer et préparer l’email'));
@@ -11349,7 +11420,7 @@ function modShowAddDocForm(){
     +'<label class="mdx-fl" for="mf-doc-nom">NOM DU DOCUMENT</label><input type="text" id="mf-doc-nom" class="mdx-in" placeholder="Ex : Schéma unifilaire MCC-1">'
     +'<div style="display:grid;grid-template-columns:180px 1fr;gap:12px">'
     +'<div><label class="mdx-fl" for="mf-ver">VERSION</label><input type="text" id="mf-ver" class="mdx-in" placeholder="'+_modsVerHelp+'"></div>'
-    +'<div><label class="mdx-fl" for="mf-file">FICHIER</label><input type="file" id="mf-file" class="mdx-in" style="padding:6px"></div></div>'
+    +'</div><label class="mdx-fl">FICHIERS <span style="font-weight:600;color:#9A96B3">(un ou plusieurs)</span></label>'+_modsDropHtml(true)
     +'<label class="mdx-fl" for="mf-note">DÉTAIL MODIFICATION</label><textarea id="mf-note" class="mdx-in" rows="2">Première diffusion</textarea>'
     +'<label class="mdx-fl">PERSONNES À PRÉVENIR</label>'+_modsPeopleHtml({},[])
     +_modsFormButtons('modConfirmVer.bind(null,\'\',\'\')','Enregistrer et préparer l’email'));
@@ -11361,9 +11432,11 @@ function modShowAddDocForm(){
 // dernière n'en a pas, celui d'avant reste). Les fichiers joints aux demandes (mods[].files) ne sont pas touchés.
 function _modsOldFiles(doc){
   var vs=_modsVersSorted(doc),i=-1;
-  for(var k=0;k<vs.length;k++){if(vs[k].attachmentPath){i=k;break;}}
+  for(var k=0;k<vs.length;k++){if(_modsVerHasFile(vs[k])){i=k;break;}}
   if(i<0)return [];
-  return vs.slice(i+1).filter(function(v){return v.attachmentPath;}).map(function(v){return {v:v.id,path:v.attachmentPath};});
+  var out=[];
+  vs.slice(i+1).forEach(function(v){_modsVerFiles(v).forEach(function(f){if(f.path)out.push({v:v.id,path:f.path});});}); // tous ses fichiers (12/10/2026)
+  return out;
 }
 async function _modsDropOldFiles(aff,docIds,silent){
   var P=STORE.projects[aff],docs=(P&&P.documents)||[],items=[];
@@ -11381,9 +11454,10 @@ async function _modsDropOldFiles(aff,docIds,silent){
   items.forEach(function(it){
     var d=((STORE.projects[aff]||{}).documents||[]).find(function(x){return x.id===it.doc;});
     var v=d&&(d.versions||[]).find(function(x){return x.id===it.v;});
-    if(!v||v.attachmentPath!==it.path)return;
-    v.attachmentPath=null;
-    v.attachmentName=(v.attachmentName||'fichier')+' — retiré du site (rangé sur votre serveur)';
+    if(!v)return;
+    var tag=' — retiré du site (rangé sur votre serveur)';
+    if(v.attachmentPath===it.path){v.attachmentPath=null;v.attachmentName=(v.attachmentName||'fichier')+tag;}
+    else{var xf=(v.extraFiles||[]).find(function(f){return f&&f.path===it.path;});if(!xf)return;xf.path=null;xf.name=(xf.name||'fichier')+tag;}
     v.fileRemovedAt=Date.now();
     n++;
   });
@@ -11401,7 +11475,8 @@ async function modsDropAllOldFiles(){
   if(n)alert(n+' ancien(s) fichier(s) retiré(s) du site.');
 }
 // docId '' = nouveau document ; modId = demande qui devient « faite » (sinon version directe)
-async function modConfirmVer(docId,modId,withMail){
+// modIds (12/10/2026) : toutes les demandes faites dans cette version (sinon seulement modId)
+async function modConfirmVer(docId,modId,withMail,modIds){
   var val=function(id){var e=document.getElementById(id);return e?String(e.value||'').trim():'';};
   var isNew=!docId,doc=isNew?null:_modsDoc(docId);
   if(!isNew&&!doc){alert('Ce document a été supprimé entre-temps.');return;}
@@ -11412,29 +11487,36 @@ async function modConfirmVer(docId,modId,withMail){
   if(!isNew&&(doc.versions||[]).some(function(v){return String(v.version).trim().toLowerCase()===version.toLowerCase();})&&!confirm('La version « '+version+' » existe déjà pour ce document. L’ajouter quand même ?'))return;
   var note=val('mf-note'),dest=_modsCheckedDest();
   if(withMail&&!dest.length){alert('Cochez au moins une personne à prévenir.');return;}
-  var fe=document.getElementById('mf-file'),file=(fe&&fe.files&&fe.files[0])||null;
-  var dId=isNew?_modsUid('doc_'):docId,verId=_modsUid('v_'),aff=STORE.current,up=null;
-  if(file){
-    _modsBusyForm(true,'Envoi du fichier…');
-    up=await _modsUploadP(file,dId,verId);
-    if(!up.path)alert('Le fichier n’a pas pu être enregistré sur le serveur ('+up.err+').\nLa version est enregistrée sans fichier'+(withMail?', mais il sera quand même joint à l’email.':'.'));
+  // (12/10/2026) un ou plusieurs fichiers (zone glisser-déposer) : le 1er dans attachmentPath, les autres dans extraFiles
+  var files=(window._mfFiles||[]).slice();
+  var dId=isNew?_modsUid('doc_'):docId,verId=_modsUid('v_'),aff=STORE.current,ups=[];
+  if(files.length){
+    _modsBusyForm(true,'Envoi '+(files.length>1?'des '+files.length+' fichiers':'du fichier')+'…');
+    for(var fi=0;fi<files.length;fi++)ups.push(await _modsUploadP(files[fi],dId,fi?verId+'_'+fi:verId));
+    var bad=ups.filter(function(u){return !u.path;});
+    if(bad.length)alert(bad.length+' fichier(s) n’ont pas pu être enregistrés sur le serveur ('+bad[0].err+').\nLa version est enregistrée sans eux'+(withMail?', mais ils seront quand même joints à l’email.':'.'));
   }
   if(STORE.current!==aff){alert('L’affaire a changé pendant l’enregistrement : la version n’a pas été ajoutée.');return;}
+  var fo=function(u){return {path:u.path||null,name:u.name+(u.path?'':' (non enregistré sur le serveur)')};};
   var v={id:verId,version:version,date:_modsNowFr(),note:note,dest:dest,byEmail:_modsMe(),byName:_modsMyName(),
-    attachmentPath:up&&up.path||null,attachmentName:up?(up.name+(up.path?'':' (non enregistré sur le serveur)')):null,_createdAt:Date.now()};
+    attachmentPath:ups[0]&&ups[0].path||null,attachmentName:ups[0]?fo(ups[0]).name:null,_createdAt:Date.now()};
+  if(ups.length>1)v.extraFiles=ups.slice(1).map(fo);
   if(isNew){doc={id:dId,nom:nom,_createdAt:Date.now(),versions:[v],mods:[]};_modsGetDocs().push(doc);}
   else{
     doc=_modsDoc(dId);if(!doc){alert('Ce document a été supprimé entre-temps.');return;}
-    var m=modId?(doc.mods||[]).find(function(x){return x.id===modId;}):null;
-    if(m){v.modId=m.id;v.reqBy=m.byName||'';v.reqDate=m.date||'';m.status='fait';m.doneAt=Date.now();m.doneBy=_modsMyName();m.verId=v.id;}
+    var ids=(modIds&&modIds.length)?modIds:(modId?[modId]:[]),done=[];
+    (doc.mods||[]).forEach(function(m){if(ids.indexOf(m.id)>=0){m.status='fait';m.doneAt=Date.now();m.doneBy=_modsMyName();m.verId=v.id;delete m.noNewVer;done.push(m);}});
+    var m0=done.find(function(x){return x.id===modId;})||done[0];
+    if(m0){v.modId=m0.id;v.reqBy=m0.byName||'';v.reqDate=m0.date||'';}
+    if(done.length>1)v.modIds=done.map(function(x){return x.id;});
     doc.versions=doc.versions||[];doc.versions.push(v);
   }
   saveNow();
   modCloseForm();
   renderModificationsTab();
-  if(withMail)modsPrepareEmail(doc.id,v.id,file);
-  // nouveau fichier bien enregistré : celui de la version d'avant est retiré du site (09/10/2026)
-  if(!isNew&&up&&up.path)_modsDropOldFiles(aff,[doc.id],true);
+  if(withMail)modsPrepareEmail(doc.id,v.id,files);
+  // nouveau fichier bien enregistré : ceux de la version d'avant sont retirés du site (09/10/2026)
+  if(!isNew&&ups.some(function(u){return u.path;}))_modsDropOldFiles(aff,[doc.id],true);
 }
 // Préparer (ou refaire) l'email d'une version : vérifier les personnes d'abord
 function modEditDest(docId,verId){
@@ -11586,11 +11668,13 @@ async function modsPrepareEmail(docId,verId,localFile){
   _modsToast('⏳ Préparation de l’email…');
   var A=_modsAffTxt();
   var asc=_modsVersSorted(doc).reverse(),i=asc.indexOf(v),prev=i>0?asc[i-1]:null;
-  var att=await _modsGetAttachments(localFile?[localFile]:null,v.attachmentPath?[{path:v.attachmentPath,name:v.attachmentName}]:[]);
+  // (12/10/2026) localFile : un fichier ou une liste ; sinon tous les fichiers de la version enregistrés sur le site
+  var loc=localFile?(Array.isArray(localFile)?localFile:[localFile]):null;if(loc&&!loc.length)loc=null;
+  var att=await _modsGetAttachments(loc,_modsVerFiles(v).filter(function(f){return f.path;}));
   var rows=[['Affaire',A.txt],['Document',doc.nom,1],['Version',_modsVerLbl(v.version)+(prev?' (remplace '+_modsVerLbl(prev.version)+')':''),1]];
   if(v.note)rows.push(['Détail modification',v.note]);
   // pas de « Demandée le » ni de « Date » dans l'email (demande de l'utilisateur, 06/10)
-  var lines=[(att.files.length?'Le document est joint à ce message.':(att.msgs.length?'':'Pas de fichier pour cette version.'))+(prev?' Merci de ne plus utiliser les versions précédentes.':'')].filter(function(x){return x.trim();});
+  var lines=[(att.files.length>1?'Les fichiers du document sont joints à ce message.':att.files.length?'Le document est joint à ce message.':(att.msgs.length?'':'Pas de fichier pour cette version.'))+(prev?' Merci de ne plus utiliser les versions précédentes.':'')].filter(function(x){return x.trim();});
   att.msgs.forEach(function(x){lines.push(x);});
   var nv=!!(prev||v.modId); // suite d'une modification = nouvelle version, même sans version d'avant enregistrée
   var r=await _modsMakeEml({to:dest,subject:'['+A.num+'] '+(nv?'Nouvelle version':'Nouveau document')+' : '+doc.nom+' — '+_modsVerLbl(v.version),
@@ -11654,11 +11738,11 @@ function modDeleteVersion(docId,verId){
   if((doc.versions||[]).length<=1&&!(doc.mods||[]).length){modDeleteDoc(docId);return;}
   // (09/10/2026) le fichier de la version d'avant a pu être retiré du site : le dire avant de supprimer la dernière
   var _vs=_modsVersSorted(doc),_prev=_vs[0]&&_vs[0].id===verId?_vs[1]:null;
-  var _warn=_prev&&!_prev.attachmentPath&&_prev.fileRemovedAt?'\n\nAttention : la version '+_modsVerLbl(_prev.version)+' redeviendra la dernière, mais son fichier n’est plus sur le site (il est sur votre serveur). Il faudra le rajouter.':'';
+  var _warn=_prev&&!_modsVerHasFile(_prev)&&_prev.fileRemovedAt?'\n\nAttention : la version '+_modsVerLbl(_prev.version)+' redeviendra la dernière, mais son fichier n’est plus sur le site (il est sur votre serveur). Il faudra le rajouter.':'';
   if(!confirm('Supprimer cette version ?'+_warn))return;
   doc.versions=(doc.versions||[]).filter(function(v){return v.id!==verId;});
   // la demande qui avait donné cette version redevient « à faire »
-  (doc.mods||[]).forEach(function(m){if(m.verId===verId){m.status='afaire';delete m.verId;delete m.doneAt;delete m.doneBy;}});
+  (doc.mods||[]).forEach(function(m){if(m.verId===verId){m.status='afaire';delete m.verId;delete m.doneAt;delete m.doneBy;delete m.noNewVer;}}); // y compris celles faites « sans changer de version » (12/10/2026)
   saveNow();
   renderModificationsTab();
 }
@@ -11813,7 +11897,7 @@ function modsExportAll(){
   var attachments=[];
   docs.forEach(function(doc){
     (doc.versions||[]).forEach(function(v){
-      if(v.attachmentPath)attachments.push({doc:doc,v:v});
+      _modsVerFiles(v).forEach(function(f){if(f.path)attachments.push({doc:doc,v:{version:v.version,attachmentPath:f.path,attachmentName:f.name}});}); // tous les fichiers de la version (12/10/2026)
     });
     // fichiers des demandes de modification (PDF annoté…)
     (doc.mods||[]).forEach(function(m){
@@ -11869,14 +11953,14 @@ function modsPurgeAttachments(){
   var docs=_modsGetDocs();
   var paths=[];
   docs.forEach(function(doc){
-    (doc.versions||[]).forEach(function(v){if(v.attachmentPath)paths.push(v.attachmentPath);});
+    (doc.versions||[]).forEach(function(v){_modsVerFiles(v).forEach(function(f){if(f.path)paths.push(f.path);});});
     (doc.mods||[]).forEach(function(m){(m.files||[]).forEach(function(f){if(f&&f.path)paths.push(f.path);});});
   });
   if(!paths.length){alert('Aucune pièce jointe à purger pour cette affaire.');return;}
   if(!confirm('Supprimer les '+paths.length+' pièce(s) jointe(s) de cette affaire du serveur ?\n\nAssurez-vous d\'avoir bien exporté les documents avant (bouton "Exporter tous les documents").\n\nL\'historique (noms, versions, dates, ce qui change, personnes concernées) sera conservé — seuls les fichiers seront supprimés.'))return;
   supa.storage.from(BUCKET).remove(paths).then(function(){
     docs.forEach(function(doc){
-      (doc.versions||[]).forEach(function(v){if(v.attachmentPath){v.attachmentPath=null;v.attachmentName=(v.attachmentName||'')+' (purgé, exporté localement)';}});
+      (doc.versions||[]).forEach(function(v){if(v.attachmentPath){v.attachmentPath=null;v.attachmentName=(v.attachmentName||'')+' (purgé, exporté localement)';}(v.extraFiles||[]).forEach(function(f){if(f&&f.path){f.path=null;f.name=(f.name||'')+' (purgé, exporté localement)';}});});
       (doc.mods||[]).forEach(function(m){(m.files||[]).forEach(function(f){if(f&&f.path){f.path=null;f.name=(f.name||'')+' (purgé, exporté localement)';}});});
     });
     saveNow();
