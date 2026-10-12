@@ -651,6 +651,8 @@
     _keysOf(baseP,localP,remoteP).forEach(function(f){
       if(_PROJ_OWN_MERGE[f])return;
       if(f==='documents'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f],_m3doc);return;}
+      // heures Automatisme saisies (Avancement / Modifications, 12/10/2026) : saisie par saisie
+      if(f==='autHours'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
       var v=_pick3(baseP[f],localP[f],remoteP[f]);
       if(v===undefined)delete remoteP[f];else remoteP[f]=v;
     });
@@ -11086,6 +11088,12 @@ var _MODS_MAX_ATT=20*1024*1024; // au-delà, la plupart des messageries refusent
     +'.mdx-dacts{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-top:4px}.mdx-lnk.red{color:#B91C1C}'
     +'.mdx-gc.wait1{border:1.5px solid #FDBA74;background:#FFF7ED;color:#C2410C;padding:3px 10px;cursor:pointer}'
     +'.mdx-sgrid{display:grid;gap:10px;max-width:760px}'
+    // 2 sections ELS / Client (5e passe)
+    +'.mdx-sect{margin-bottom:18px}.mdx-secth{display:flex;align-items:center;gap:10px;margin:0 2px 8px;flex-wrap:wrap}'
+    +'.mdx-secth span{font-size:16px;font-weight:900;color:#1C1A33}.mdx-secth small{font-size:12px;font-weight:800;color:#9A96B3;background:#F1EFF8;border-radius:999px;padding:1px 8px}'
+    +'.mdx-secth .mdx-lnk{margin-left:auto}'
+    +'.mdx-sect.cli .mdx-tbl{border-color:#A5F3FC;box-shadow:0 0 0 1px #CFFAFE inset}.mdx-sect.cli .mdx-secth span{color:#155E75}'
+    +'.mdx-empty{padding:16px;text-align:center;font-size:12.5px;color:#9A96B3}'
     +'@media (max-width:820px){.mdx-th{display:none}.mdx-drh{grid-template-columns:18px 1fr auto;grid-template-areas:"c n a" "c v a" "c s s";row-gap:4px}'
     +'.mdx-chev{grid-area:c}.mdx-drn{grid-area:n}.mdx-drv{grid-area:v}.mdx-drf{display:none}.mdx-drs{grid-area:s}.mdx-dra{grid-area:a}.mdx-drb{padding:4px 12px 14px}}'
     +'.mdx-hrs{margin-top:6px;background:#FFFBEB;border:1px solid #FCD34D;border-radius:9px;padding:6px 8px}'
@@ -11127,9 +11135,12 @@ var _MODS_DOC_MODELS=['Schéma électrique','SLD','BOQ','Cables list','Note de c
 // (12/10/2026, 2e passe) l'onglet est en 4 COLONNES, une par phase (avec sa couleur) ; chaque document a sa phase (doc.phase,
 // Études par défaut pour les anciens). Chaque phase a sa liste de documents type (Études = la liste ci-dessus).
 var _MODS_PH=[{k:'ETUDE',l:'Études'},{k:'TABLEAUTERIE',l:'Tableauterie'},{k:'AUTOMATISME',l:'Automatisme'},{k:'CHANTIER',l:'Chantier'}];
-function _modsPhOf(d){var p=d&&d.phase;return _MODS_PH.some(function(x){return x.k===p;})?p:'ETUDE';}
-function _modsPhLbl(k){var x=_MODS_PH.find(function(p){return p.k===k;});return x?x.l:k;}
-function _modsPhCol(k){var c=(typeof PH_BASE!=='undefined'&&PH_BASE[k])||{};return {x:c.x||'#7C6FF0',xl:c.xl||'#E4E1F0',xd:c.xd||'#4A3FC0'};}
+// (12/10/2026, 5e passe) 2 sections : documents ELS (par phase) et documents CLIENT (phase « CLIENT »)
+var _MODS_CLIENT={k:'CLIENT',l:'Client'};
+var _MODS_PH_ALL=_MODS_PH.concat([_MODS_CLIENT]);
+function _modsPhOf(d){var p=d&&d.phase;return _MODS_PH_ALL.some(function(x){return x.k===p;})?p:'ETUDE';}
+function _modsPhLbl(k){var x=_MODS_PH_ALL.find(function(p){return p.k===k;});return x?x.l:k;}
+function _modsPhCol(k){if(k==='CLIENT')return {x:'#0E7490',xl:'#CFFAFE',xd:'#155E75'};var c=(typeof PH_BASE!=='undefined'&&PH_BASE[k])||{};return {x:c.x||'#7C6FF0',xl:c.xl||'#E4E1F0',xd:c.xd||'#4A3FC0'};}
 function _modsModelsKey(k){return k==='ETUDE'?'modsDocModels':'modsDocModels_'+k;}
 function _modsModels(k){k=k||'ETUDE';var s=STORE.settings&&STORE.settings[_modsModelsKey(k)];return (Array.isArray(s)&&s.length)?s.slice():(k==='ETUDE'?_MODS_DOC_MODELS.slice():[]);}
 function _modsGrp(m){return (m&&(m.grp||m.id))||'';}
@@ -11206,7 +11217,7 @@ function _modsDocsPickHtml(sel,exclude,cls,withNew){
   var docs=_modsGetDocs().filter(function(d){return !exclude||!exclude[d.id];});
   // (12/10/2026, 2e passe) rangés par phase, avec sa couleur
   var h='';
-  _MODS_PH.forEach(function(ph){
+  _MODS_PH_ALL.forEach(function(ph){
     var ds=docs.filter(function(d){return _modsPhOf(d)===ph.k;});if(!ds.length)return;
     var c=_modsPhCol(ph.k);
     h+='<div class="mdx-dkg" style="--pc:'+c.x+';--pcl:'+c.xl+';--pcd:'+c.xd+'"><div class="mdx-dkgt">'+esc2(ph.l)+'</div><div class="mdx-dk">'+ds.map(function(d){
@@ -11215,7 +11226,7 @@ function _modsDocsPickHtml(sel,exclude,cls,withNew){
     }).join('')+'</div></div>';
   });
   if(withNew)h+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><input type="text" id="mf-doc-new" class="mdx-in" style="flex:1;min-width:200px" placeholder="Autre document (nouveau) : tapez son nom, il sera créé">'
-    +'<select id="mf-doc-new-ph" class="mdx-in" style="width:auto" aria-label="Colonne du nouveau document">'+_MODS_PH.map(function(p){return '<option value="'+p.k+'">'+esc2(p.l)+'</option>';}).join('')+'</select></div>';
+    +'<select id="mf-doc-new-ph" class="mdx-in" style="width:auto" aria-label="Phase (ou client) du nouveau document">'+_MODS_PH_ALL.map(function(p){return '<option value="'+p.k+'">'+esc2(p.l)+'</option>';}).join('')+'</select></div>';
   return h;
 }
 function _modsChecked(cls){return Array.prototype.map.call(document.querySelectorAll('#mods-form-area .'+cls+':checked'),function(c){return c.value;});}
@@ -11326,22 +11337,34 @@ function renderModificationsTab(){
       +'<button type="button" class="mdx-tab'+(flt==='all'?' on':'')+'" onclick="modSetFilter(\'all\')">Tous les documents <b>'+docs.length+'</b></button>'
       +'<button type="button" class="mdx-tab w'+(flt==='todo'?' on':'')+'" onclick="modSetFilter(\'todo\')"'+(nTodoDocs?'':' disabled')+'>⏳ À modifier <b>'+nTodoDocs+'</b></button>'
       +'<span style="flex:1"></span>'
-      +(ed?'<button type="button" class="mdx-btn2 sm" onclick="modShowSetupForm()">＋ Ajouter un document</button>':'')
+
       +'<button type="button" class="mdx-btn2 sm" onclick="modsExportAll()">⬇ Exporter (.zip)</button>'
       +(ed&&docs.some(function(d){return _modsOldFiles(d).length;})?'<button type="button" class="mdx-btn2 sm" onclick="modsDropAllOldFiles()" title="Seul le fichier de la dernière version de chaque document reste sur le site ; l’historique est gardé">🧹 Anciens fichiers</button>':'')
       +(hasAtt&&ed?'<button type="button" class="mdx-btn2 sm red" onclick="modsPurgeAttachments()">🗑 Purger</button>':'')
       +'</div>';
-    h+='<div class="mdx-card mdx-tbl">'
-      +'<div class="mdx-th"><span></span><span>DOCUMENT</span><span>VERSION À JOUR</span><span>FICHIER</span><span>ÉTAT</span><span></span></div>';
+    // (5e passe) 2 sections : DOCUMENTS ELS (rangés par phase) puis DOCUMENTS CLIENT
+    var thead='<div class="mdx-th"><span></span><span>DOCUMENT</span><span>VERSION À JOUR</span><span>FICHIER</span><span>ÉTAT</span><span></span></div>';
+    var sel=function(k){return docs.filter(function(d){return _modsPhOf(d)===k&&(flt==='all'||_modsPending(d).length);}).sort(function(a,b){return (a._createdAt||0)-(b._createdAt||0);});};
+    var nEls=docs.filter(function(d){return _modsPhOf(d)!=='CLIENT';}).length,nCli=docs.length-nEls;
+    h+='<div class="mdx-sect"><div class="mdx-secth"><span>🏢 Documents ELS</span><small>'+nEls+'</small>'
+      +(ed?'<button type="button" class="mdx-lnk" onclick="modShowSetupForm(\'ELS\')">＋ Ajouter un document ELS</button>':'')+'</div>'
+      +'<div class="mdx-card mdx-tbl">'+thead;
+    var anyEls=false;
     _MODS_PH.forEach(function(ph){
-      var list=docs.filter(function(d){return _modsPhOf(d)===ph.k&&(flt==='all'||_modsPending(d).length);})
-        .sort(function(a,b){return (a._createdAt||0)-(b._createdAt||0);});
-      if(!list.length)return;
+      var list=sel(ph.k);if(!list.length)return;anyEls=true;
       var c=_modsPhCol(ph.k);
       h+='<div class="mdx-phh" style="--pc:'+c.x+';--pcd:'+c.xd+'"><span class="dot"></span>'+esc2(ph.l)+' <small>'+list.length+'</small></div>'
         +list.map(function(d){return _modsBuildDocCard(d,ed);}).join('');
     });
-    h+='</div>';
+    if(!anyEls)h+='<div class="mdx-empty">'+(flt==='todo'?'Rien à modifier côté ELS.':'Aucun document ELS.')+'</div>';
+    h+='</div></div>';
+    var cli=sel('CLIENT');
+    h+='<div class="mdx-sect cli"><div class="mdx-secth"><span>🤝 Documents client</span><small>'+nCli+'</small>'
+      +(ed?'<button type="button" class="mdx-lnk" onclick="modShowSetupForm(\'CLIENT\')">＋ Ajouter un document client</button>':'')+'</div>'
+      +'<div class="mdx-card mdx-tbl">'+thead
+      +(cli.length?cli.map(function(d){return _modsBuildDocCard(d,ed);}).join('')
+        :'<div class="mdx-empty">'+(flt==='todo'?'Rien à modifier côté client.':'Aucun document client pour l’instant.'+(ed?' <button type="button" class="mdx-lnk" onclick="modShowSetupForm(\'CLIENT\')">＋ Ajouter un document client</button>':''))+'</div>')
+      +'</div></div>';
   }
   h+='</div>';
   w.innerHTML=h;
@@ -11394,7 +11417,7 @@ function _modsInclHtml(doc,v){
 // total des heures Automatisme d'une demande (étiquette) et heures par personne d'une version
 function _modsHoursSum(m){
   var g=_modsGrp(m),t=0;
-  _modsGetDocs().forEach(function(d){(d.hours||[]).forEach(function(x){if(x&&x.grp===g)t+=+x.h||0;});});
+  _autHrsAll().forEach(function(y){if(y.x.grp===g)t+=+y.x.h||0;});
   return t?' <span class="mdx-tag" style="background:#FEF3C7;color:#92400E">⏱ '+_modsFmtH(t)+'</span>':'';
 }
 function _modsVerHoursHtml(doc,v){
@@ -11406,7 +11429,7 @@ function _modsVerHoursHtml(doc,v){
     if(isAut||!_modsGroupItems(g).some(function(y){return _modsPhOf(y.doc)==='AUTOMATISME';}))gs[g]=1;
   });
   var by={},tot=0;
-  _modsGetDocs().forEach(function(d){(d.hours||[]).forEach(function(x){if(x&&gs[x.grp]){var k=x.by||x.email||'?';by[k]=(by[k]||0)+(+x.h||0);tot+=+x.h||0;}});});
+  _autHrsAll().forEach(function(y){var x=y.x;if(gs[x.grp]){var k=x.by||x.email||'?';by[k]=(by[k]||0)+(+x.h||0);tot+=+x.h||0;}});
   if(!tot)return '';
   return '<div class="mdx-sm"><span class="mdx-k">HEURES AUTOM</span> <b>'+_modsFmtH(tot)+'</b> '+Object.keys(by).map(function(k){return '<span class="mdx-chip">'+esc2(k)+' · '+_modsFmtH(by[k])+'</span>';}).join('')+'</div>';
 }
@@ -11490,7 +11513,7 @@ function _modsDocDetailHtml(doc,ed){
     +'<button type="button" class="mdx-btn2 sm" onclick="modShowReqForm(\''+id+'\')">＋ Modification sur ce document</button>'
     +(last?'<button type="button" class="mdx-btn2 sm" onclick="modShowAddVersionForm(\''+id+'\')" title="Modification faite sans demande avant (nouvelle version ou même indice)">＋ Modif directe</button>':'')
     +'<button type="button" class="mdx-lnk" onclick="modRenameDoc(\''+id+'\')">✎ Renommer</button>'
-    +'<button type="button" class="mdx-lnk" onclick="modMoveDoc(\''+id+'\')">⇄ Changer de phase</button>'
+    +'<button type="button" class="mdx-lnk" onclick="modMoveDoc(\''+id+'\')">⇄ Déplacer (phase ou client)</button>'
     +'<button type="button" class="mdx-lnk red" onclick="modDeleteDoc(\''+id+'\')">✕ Supprimer le document</button>'
     +'</div>';
   return h;
@@ -11531,19 +11554,39 @@ function _modsGroupRowHtml(m,doc,noAut){ // noAut : tâches Automatisme montrée
     +tk.map(function(r){return esc2(r.lb||'tâche')+' <span class="mdx-mut">('+_modsTaskSt(r)+')</span>';}).join(' · ')+'</div>';
   return h;
 }
-// ── Heures Automatisme (12/10/2026, demande de l'utilisateur) : les automaticiens ne font pas de feuille d'heure ;
-// ils saisissent ici les heures passées sur une tâche Automatisme liée à la demande. Chaque saisie garde le nom
-// et l'email du compte. Rangées dans doc.hours [{id, grp, modId, task, h, by, email, at}] (fusion élément par élément).
+// ── Heures Automatisme (12/10/2026, demande de l'utilisateur) : les automaticiens ne font pas de feuille d'heure.
+// Ils saisissent leurs heures sur une tâche Automatisme : dans l'onglet AVANCEMENT (à côté de la tâche, et demandé
+// quand on la marque terminée) et dans une demande de modification. Chaque saisie garde le nom et l'email du compte.
+// Stock UNIQUE de l'affaire : autHours [{id, task, h, by, email, at, src:'av'|'modif', grp?, modId?}],
+// fusionné saisie par saisie (_merge3ProjectFields). Les 1res saisies du 12/10 (doc.hours) sont encore lues.
 function _modsIsAutTask(r){return !!r&&_phCat(r.pk)==='AUTOMATISME';}
-function _modsHoursOf(grp,taskId){
-  var out=[];_modsGetDocs().forEach(function(d){(d.hours||[]).forEach(function(x){if(x&&x.grp===grp&&x.task===taskId)out.push({doc:d,x:x});});});
+function _autHrsAll(p){
+  p=p||currP()||{};var out=[];
+  (p.autHours||[]).forEach(function(x){if(x)out.push({x:x,doc:null});});
+  (p.documents||[]).forEach(function(d){(d.hours||[]).forEach(function(x){if(x)out.push({x:x,doc:d});});});
   return out.sort(function(a,b){return (a.x.at||0)-(b.x.at||0);});
 }
+function _autHrsOfTask(taskId){return _autHrsAll().filter(function(y){return y.x.task===taskId;});}
+function _autHrsAdd(rec){
+  var p=currP();p.autHours=p.autHours||[];
+  rec.id=_modsUid('h_');rec.by=_modsMyName();rec.email=_modsMe();rec.at=Date.now();
+  p.autHours.push(rec);return rec;
+}
+function _autHrsCanDel(x){return String(x.email||'').toLowerCase()===_modsMe()||(typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin');}
+function _autHrsDel(hid){
+  var y=_autHrsAll().find(function(z){return z.x.id===hid;});if(!y)return false;
+  if(!_autHrsCanDel(y.x)){alert('Seule la personne qui a saisi ces heures (ou un administrateur) peut les retirer.');return false;}
+  if(!confirm('Retirer '+_modsFmtH(y.x.h)+' saisie'+(y.x.h>1?'s':'')+' par '+(y.x.by||y.x.email)+' ?'))return false;
+  if(y.doc)y.doc.hours=(y.doc.hours||[]).filter(function(z){return z.id!==hid;});
+  else{var p=currP();p.autHours=(p.autHours||[]).filter(function(z){return z.id!==hid;});}
+  return true;
+}
+function _modsHoursOf(grp,taskId){return _autHrsAll().filter(function(y){return y.x.grp===grp&&y.x.task===taskId;});}
 function _modsFmtH(h){return String(Math.round((+h||0)*100)/100).replace('.',',')+' h';}
 function _modsParseH(s){var v=parseFloat(String(s||'').replace(',','.').replace(/[^0-9.]/g,''));return isFinite(v)?v:0;}
 // Une ligne par tâche Automatisme de la demande : total, détail par personne, et saisie (si on peut modifier)
 function _modsHoursHtml(m,doc,ed){
-  var grp=_modsGrp(m),me=_modsMe(),adm=(typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin');
+  var grp=_modsGrp(m);
   var tk=(m.tasks||[]).map(_modsTaskRow).filter(_modsIsAutTask);
   if(!tk.length)return '';
   return tk.map(function(r){
@@ -11551,26 +11594,22 @@ function _modsHoursHtml(m,doc,ed){
     var fid='mh-'+m.id+'-'+r.id;
     return '<div class="mdx-hrs"><div class="mdx-hrst">⏱ '+esc2(r.lb||'tâche')+' <span class="mdx-mut" style="font-weight:600">('+_modsTaskSt(r)+')</span> <b>'+_modsFmtH(tot)+'</b></div>'
       +(it.length?'<div class="mdx-hrsl">'+it.map(function(y){
-        var mine=String(y.x.email||'').toLowerCase()===me;
         return '<span class="mdx-chip" title="'+escHtml((y.x.email||'')+' · '+_modsFmtDT(y.x.at))+'">'+esc2(y.x.by||y.x.email||'?')+' · '+_modsFmtH(y.x.h)
-          +(ed&&(mine||adm)?' <button type="button" class="mdx-x" style="margin:0" onclick="modDelHours(\''+_modsJs(y.doc.id)+'\',\''+_modsJs(y.x.id)+'\')" title="Retirer cette saisie" aria-label="Retirer cette saisie">✕</button>':'')+'</span>';
+          +(ed&&_autHrsCanDel(y.x)?' <button type="button" class="mdx-x" style="margin:0" onclick="modDelHours(\'\',\''+_modsJs(y.x.id)+'\')" title="Retirer cette saisie" aria-label="Retirer cette saisie">✕</button>':'')+'</span>';
       }).join('')+'</div>':'')
       +(ed?'<div class="mdx-hrsi"><input type="text" inputmode="decimal" id="'+escHtml(fid)+'" class="mdx-in" placeholder="Heures" aria-label="Heures passées sur '+escHtml(r.lb||'la tâche')+'" onkeydown="if(event.key===\'Enter\')modAddHours(\''+_modsJs(doc.id)+'\',\''+_modsJs(m.id)+'\',\''+_modsJs(r.id)+'\')">'
         +'<button type="button" class="mdx-btn2 sm" onclick="modAddHours(\''+_modsJs(doc.id)+'\',\''+_modsJs(m.id)+'\',\''+_modsJs(r.id)+'\')">＋ Mes heures</button></div>':'')
       +'</div>';
   }).join('');
 }
-// Fiche qui porte la saisie des heures d'une demande : celle de la colonne Automatisme (sinon la 1re de la demande)
+// Fiche qui porte la saisie des heures d'une demande : celle de la phase Automatisme (sinon la 1re de la demande)
 function _modsHoursHost(m,doc){
   var it=_modsGroupItems(_modsGrp(m)).filter(function(x){return x.m.status!=='fait';});
   var aut=it.filter(function(x){return _modsPhOf(x.doc)==='AUTOMATISME';});
   if(aut.length)return aut[0].doc===doc;
   return !!it[0]&&it[0].doc===doc;
 }
-function _modsPushHours(doc,m,taskId,h){
-  doc.hours=doc.hours||[];
-  doc.hours.push({id:_modsUid('h_'),grp:_modsGrp(m),modId:m.id,task:taskId,h:h,by:_modsMyName(),email:_modsMe(),at:Date.now()});
-}
+function _modsPushHours(doc,m,taskId,h){_autHrsAdd({task:taskId,h:h,src:'modif',grp:_modsGrp(m),modId:m.id});}
 function modAddHours(docId,modId,taskId){
   if(!_modsCanEdit())return;
   var doc=_modsDoc(docId);if(!doc)return;
@@ -11588,15 +11627,7 @@ function _modsApplyPendingHours(doc){
   var m=(doc.mods||[]).find(function(x){return x.id===P.modId;});if(!m)return;
   P.list.forEach(function(x){_modsPushHours(doc,m,x.task,x.h);});
 }
-function modDelHours(docId,hid){
-  var doc=_modsDoc(docId);if(!doc)return;
-  var x=(doc.hours||[]).find(function(y){return y.id===hid;});if(!x)return;
-  var adm=(typeof CURRENT_ROLE!=='undefined'&&CURRENT_ROLE==='admin');
-  if(String(x.email||'').toLowerCase()!==_modsMe()&&!adm){alert('Seule la personne qui a saisi ces heures (ou un administrateur) peut les retirer.');return;}
-  if(!confirm('Retirer '+_modsFmtH(x.h)+' saisie'+(x.h>1?'s':'')+' par '+(x.by||x.email)+' ?'))return;
-  doc.hours=(doc.hours||[]).filter(function(y){return y.id!==hid;});
-  saveNow();renderModificationsTab();
-}
+function modDelHours(docId,hid){if(_autHrsDel(hid)){saveNow();renderModificationsTab();}}
 function _modsGoDoc(id){
   // (4e passe) la liste : on ouvre le document (et on enlève le filtre s'il le cache)
   window._modsOpen=window._modsOpen||{};
@@ -11627,7 +11658,7 @@ function _modsBanRow(g,ed){
   var pend=items.filter(function(x){return x.m.status!=='fait';}),m0=items[0].m,nw=window._modsNew||{};
   var host=pend.find(function(x){return _modsPhOf(x.doc)==='AUTOMATISME';})||pend[0];
   var nDone=items.length-pend.length,isNew=pend.some(function(x){return nw[x.m.id];});
-  var phRows=_MODS_PH.map(function(ph){
+  var phRows=_MODS_PH_ALL.map(function(ph){
     var its=items.filter(function(x){return _modsPhOf(x.doc)===ph.k;});if(!its.length)return '';
     var c=_modsPhCol(ph.k);
     return '<div class="mdx-gph" style="--pc:'+c.x+';--pcl:'+c.xl+';--pcd:'+c.xd+'"><span class="mdx-gphl">'+esc2(ph.l)+'</span><span class="mdx-gchips">'
@@ -11712,7 +11743,7 @@ function modMoveDoc(docId){
   var doc=_modsDoc(docId);if(!doc)return;
   var cur=_modsPhOf(doc);
   _modsShowForm('<div class="mdx-ft">⇄ Phase de « '+esc2(doc.nom)+' »</div><div class="mdx-dk" style="margin-top:8px">'
-    +_MODS_PH.map(function(p){var c=_modsPhCol(p.k);return '<button type="button" class="mdx-btn2" style="border-color:'+c.x+';color:'+c.xd+(p.k===cur?';background:'+c.xl:'')+'" onclick="modMoveDocTo(\''+_modsJs(docId)+'\',\''+p.k+'\')">'+(p.k===cur?'✓ ':'')+esc2(p.l)+'</button>';}).join('')
+    +_MODS_PH_ALL.map(function(p){var c=_modsPhCol(p.k);return '<button type="button" class="mdx-btn2" style="border-color:'+c.x+';color:'+c.xd+(p.k===cur?';background:'+c.xl:'')+'" onclick="modMoveDocTo(\''+_modsJs(docId)+'\',\''+p.k+'\')">'+(p.k===cur?'✓ ':'')+esc2(p.l)+'</button>';}).join('')
     +'</div><div style="margin-top:12px"><button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button></div>');
 }
 function modMoveDocTo(docId,ph){
@@ -11730,7 +11761,7 @@ function _modsSetupLine(nm,isHave){
     :'<div class="mdx-sl" data-new="1"><input type="checkbox" checked onchange="window._modsSetupTouched=1" aria-label="Créer ce document"><input type="text" class="mdx-in mdx-snm" value="'+escHtml(nm)+'" placeholder="Nom du document" oninput="window._modsSetupTouched=1" aria-label="Nom du document">'+_modsSetupVerIn()+'</div>';
 }
 function _modsSetupHtml(first,only){
-  var phs=only?_MODS_PH.filter(function(p){return p.k===only;}):_MODS_PH;
+  var phs=only==='ELS'?_MODS_PH:only?_MODS_PH_ALL.filter(function(p){return p.k===only;}):_MODS_PH_ALL; // 'ELS' = les 4 phases
   var sec=phs.map(function(p){
     var c=_modsPhCol(p.k),have={};
     _modsGetDocs().forEach(function(d){if(_modsPhOf(d)===p.k)have[_modsNormNom(d.nom)]=1;});
@@ -11740,7 +11771,7 @@ function _modsSetupHtml(first,only){
       +'<div class="mdx-ssl">'+lines+'</div>'
       +'<button type="button" class="mdx-lnk" style="margin-top:6px" onclick="modSetupAddLine(\''+p.k+'\')">＋ Autre document</button></div>';
   }).join('');
-  return '<div class="mdx-ft">'+(first?'📋 Quels documents pour cette affaire ?':'＋ Ajouter des documents'+(only?' — '+esc2(_modsPhLbl(only)):''))+'</div>'
+  return '<div class="mdx-ft">'+(first?'📋 Quels documents pour cette affaire ?':only==='ELS'?'＋ Documents ELS':only==='CLIENT'?'＋ Documents client':'＋ Ajouter des documents'+(only?' — '+esc2(_modsPhLbl(only)):''))+'</div>'
     +'<div class="mdx-sub" style="margin-bottom:10px">Cochez les documents'+(first?' de chaque phase':'')+' : une fiche est créée pour chacun. Nom modifiable ; <b>VERSION</b> facultative (si le document existe déjà dans une version, ex : C).'+(first?' Une colonne peut rester vide.':'')+'</div>'
     +'<div class="mdx-sgrid">'+sec+'</div>'
     +'<label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#6B6790;margin-top:12px;cursor:pointer"><input type="checkbox" id="mf-setup-def" style="accent-color:#4B3FC7"> Retenir '+(only?'cette liste':'ces listes')+' (noms et ordre) pour les prochaines affaires</label>'
@@ -13216,9 +13247,39 @@ function _avTaskHtml(r,level,inSb){
   if(!inSb&&!excl){
     h+='<div style="margin-top:6px;font-size:11px;font-weight:700;color:#B45309">Hors sous-phase : ne compte pas dans le total de l’affaire</div>';
   }
+  if(_phCat(r.pk)==='AUTOMATISME')h+=_avHoursHtml(r,can);
   h+=_avCmtHtml(r,can);
   return h+'</div>';
 }
+// ── Heures passées sur une tâche Automatisme (12/10/2026, demande de l'utilisateur) ──
+// Les automaticiens ne font pas de feuille d'heure : ils notent ici leurs heures sur la tâche, au nom de leur
+// compte (stock commun avec les modifications : _autHrsAll / _autHrsAdd, projet.autHours).
+function _avHoursHtml(r,can){
+  var it=_autHrsOfTask(r.id),tot=it.reduce(function(s,y){return s+(+y.x.h||0);},0);
+  if(!can&&!it.length)return '';
+  var sid=_avSafe(r.id),jsId=_avJs(r.id);
+  return '<div class="av-hrs" style="margin-top:10px;background:#FFFBEB;border:1px solid #FCD34D;border-radius:var(--r);padding:8px 10px">'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:10px;font-weight:800;color:#92400E;letter-spacing:.3px">⏱ HEURES PASSÉES</span>'
+    +'<b style="font-size:13px;color:#78350F">'+_modsFmtH(tot)+'</b></div>'
+    +(it.length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">'+it.map(function(y){
+      var x=y.x,lbl=x.src==='modif'?' (modif)':'';
+      return '<span title="'+escHtml((x.email||'')+' · '+_modsFmtDT(x.at))+'" style="font-size:11px;font-weight:700;background:#FEF3C7;color:#78350F;border-radius:999px;padding:2px 9px">'+escHtml(x.by||x.email||'?')+' · '+_modsFmtH(x.h)+escHtml(lbl)
+        +(can&&_autHrsCanDel(x)?' <button type="button" onclick="avDelHours(\''+_avJs(x.id)+'\')" title="Retirer cette saisie" aria-label="Retirer cette saisie" style="border:none;background:none;color:#92400E;cursor:pointer;font-size:11px;padding:0 0 0 2px">✕</button>':'')+'</span>';
+    }).join('')+'</div>':'')
+    +(can?'<div style="display:flex;gap:6px;margin-top:6px;align-items:center">'
+      +'<input type="text" inputmode="decimal" id="avh-'+sid+'" placeholder="Heures" aria-label="Mes heures sur '+escHtml(r.lb||'la tâche')+'" onkeydown="if(event.key===\'Enter\')avAddHours(\''+jsId+'\')" style="width:90px;border:1.5px solid #FCD34D;border-radius:var(--r);padding:5px 8px;font-size:12px;font-family:inherit;background:#fff;color:var(--tx);outline:none">'
+      +'<button type="button" onclick="avAddHours(\''+jsId+'\')" style="border:1.5px solid #FCD34D;background:#fff;color:#92400E;border-radius:var(--r);padding:5px 10px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">＋ Mes heures</button>'
+      +'<span style="font-size:10.5px;color:var(--tx3)">au nom de '+escHtml(_modsMyName()||_modsMe()||'votre compte')+'</span></div>':'')
+    +'</div>';
+}
+function avAddHours(id,val){
+  var r=_avRow(id);if(!r||!_peutChangerStatut(r))return;
+  var e=document.getElementById('avh-'+_avSafe(id)),h=_modsParseH(val!=null?val:(e&&e.value));
+  if(!(h>0)||h>500){alert('Indiquez un nombre d’heures (ex : 3,5).');if(e)e.focus();return false;}
+  _autHrsAdd({task:r.id,h:h,src:'av'});
+  saveNow();renderAvancement();return true;
+}
+function avDelHours(hid){if(_autHrsDel(hid)){saveNow();renderAvancement();}}
 // ── Commentaire de tâche (onglet Avancement uniquement) ────────────────
 // Visible et modifiable ici seulement : JAMAIS repris dans les
 // téléchargements (avancement, planning client, récap). Mêmes droits que
@@ -13341,7 +13402,18 @@ function avSetStatus(id,st){
   if(!_peutChangerStatut(r)){_avDenied();return;}
   if(st==='done'){
     if(r.done){r.done=false;r.inProgress=false;r.progress=0;}
-    else{r.done=true;r.inProgress=false;}
+    else{
+      r.done=true;r.inProgress=false;
+      // (12/10/2026) tâche Automatisme terminée : on demande les heures passées (facultatif), au nom du compte
+      if(_phCat(r.pk)==='AUTOMATISME'){
+        var v=prompt('Tâche terminée : « '+(r.lb||'')+' »\n\nCombien d’heures avez-vous passé dessus ?\n(facultatif — enregistré au nom de '+(_modsMyName()||_modsMe()||'votre compte')+' ; laissez vide si rien à ajouter)','');
+        if(v!=null&&String(v).trim()){
+          var hh=_modsParseH(v);
+          if(hh>0&&hh<=500)_autHrsAdd({task:r.id,h:hh,src:'av'});
+          else alert('Nombre d’heures non compris : rien n’a été ajouté. Vous pouvez les saisir sous la tâche.');
+        }
+      }
+    }
   }else{
     if(r.inProgress&&!r.done){r.inProgress=false;r.progress=0;}
     else{r.done=false;r.inProgress=true;if((+r.progress||0)>=100)r.progress=0;}
