@@ -11334,7 +11334,7 @@ function _modsSetupHtml(first){
   var have={};_modsGetDocs().forEach(function(d){have[_modsNormNom(d.nom)]=1;});
   var line=function(nm,isHave){
     return isHave?'<div class="mdx-sl" data-have="'+escHtml(nm)+'"><input type="checkbox" checked disabled><span style="font-size:13px;font-weight:800;flex:1">'+esc2(nm)+'</span><span class="mdx-have">✓ déjà dans l’affaire</span></div>'
-      :'<div class="mdx-sl" data-new="1"><input type="checkbox" checked onchange="window._modsSetupTouched=1" aria-label="Créer ce document"><input type="text" class="mdx-in" value="'+escHtml(nm)+'" oninput="window._modsSetupTouched=1" aria-label="Nom du document"></div>';
+      :'<div class="mdx-sl" data-new="1"><input type="checkbox" checked onchange="window._modsSetupTouched=1" aria-label="Créer ce document"><input type="text" class="mdx-in" value="'+escHtml(nm)+'" oninput="window._modsSetupTouched=1" aria-label="Nom du document">'+_modsSetupVerIn()+'</div>';
   };
   return '<div class="mdx-ft">'+(first?'📋 Quels documents pour cette affaire ?':'＋ Ajouter des documents')+'</div>'
     +'<div class="mdx-sub" style="margin-bottom:8px">'+(first?'Cochez les documents de l’affaire : une fiche est créée pour chacun. Vous pouvez les renommer ici ou plus tard (✎).':'Cochez les documents à ajouter, ou tapez le nom d’un autre document.')+'</div>'
@@ -11345,6 +11345,12 @@ function _modsSetupHtml(first){
     +'<button type="button" class="mdx-btn" onclick="modSetupCreate()">✓ Créer les fiches</button>'
     +(first?'':'<button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button>')+'</div>';
 }
+// (12/10/2026, demande de l'utilisateur) case « version » à droite : le document existe parfois déjà dans une
+// version avancée (même schéma qu'une autre affaire) → la fiche est créée directement avec cette version (sans fichier ni email)
+function _modsSetupVerIn(){
+  return '<span style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto"><span style="font-size:10.5px;font-weight:800;color:#9A96B3;letter-spacing:.3px">VERSION</span>'
+    +'<input type="text" class="mdx-in mdx-sv" style="width:110px" placeholder="facultatif" oninput="window._modsSetupTouched=1" aria-label="Version de départ (facultatif)" title="Si ce document existe déjà dans une version (ex : C), tapez-la : la fiche commencera à cette version"></span>';
+}
 function modShowSetupForm(){
   if(!_modsCanEdit())return;
   _modsShowForm('<div id="mdx-setup">'+_modsSetupHtml(false)+'</div>');
@@ -11352,7 +11358,7 @@ function modShowSetupForm(){
 function modSetupAddLine(){
   var l=document.getElementById('mf-setup-list');if(!l)return;
   window._modsSetupTouched=1;
-  l.insertAdjacentHTML('beforeend','<div class="mdx-sl" data-new="1"><input type="checkbox" checked aria-label="Créer ce document"><input type="text" class="mdx-in" value="" placeholder="Nom du document" aria-label="Nom du document"></div>');
+  l.insertAdjacentHTML('beforeend','<div class="mdx-sl" data-new="1"><input type="checkbox" checked aria-label="Créer ce document"><input type="text" class="mdx-in" value="" placeholder="Nom du document" aria-label="Nom du document">'+_modsSetupVerIn()+'</div>');
   var ins=l.querySelectorAll('.mdx-in');if(ins.length)ins[ins.length-1].focus();
 }
 function modSetupCreate(){
@@ -11361,14 +11367,19 @@ function modSetupCreate(){
   var names=[],all=[];
   box.querySelectorAll('.mdx-sl').forEach(function(l){
     if(l.dataset.have){all.push(l.dataset.have);return;}
-    var cb=l.querySelector('input[type=checkbox]'),inp=l.querySelector('.mdx-in'),nm=inp?inp.value.trim():'';
-    if(!nm)return;all.push(nm);if(cb&&cb.checked)names.push(nm);
+    var cb=l.querySelector('input[type=checkbox]'),inp=l.querySelector('.mdx-in:not(.mdx-sv)'),vi=l.querySelector('.mdx-sv'),nm=inp?inp.value.trim():'';
+    if(!nm)return;all.push(nm);if(cb&&cb.checked)names.push({nm:nm,ver:vi?vi.value.trim():''});
   });
   if(!names.length){alert('Cochez au moins un document (ou tapez le nom d’un autre document).');return;}
-  var made=[],t=Date.now();
-  names.forEach(function(nm){
-    if(_modsDocByName(nm)||made.some(function(x){return _modsNormNom(x)===_modsNormNom(nm);}))return;
-    _modsGetDocs().push({id:_modsUid('doc_'),nom:nm,_createdAt:t+made.length,versions:[],mods:[]});made.push(nm);
+  var made=[],t=Date.now(),me=_modsMyName(),byK={};
+  // même nom sur deux lignes : une seule fiche, avec la version tapée s'il y en a une
+  names=names.filter(function(x){var k=_modsNormNom(x.nm);if(byK[k]){if(!byK[k].ver&&x.ver)byK[k].ver=x.ver;return false;}byK[k]=x;return true;});
+  names.forEach(function(x){
+    var nm=x.nm;
+    if(_modsDocByName(nm)||made.some(function(y){return _modsNormNom(y)===_modsNormNom(nm);}))return;
+    var vs=x.ver?[{id:_modsUid('v_'),version:x.ver,date:_modsNowFr(),note:'Version de départ (existait déjà avant le site)',dest:[],
+      byEmail:_modsMe(),byName:me,attachmentPath:null,attachmentName:null,initial:true,_createdAt:t+made.length}]:[];
+    _modsGetDocs().push({id:_modsUid('doc_'),nom:nm,_createdAt:t+made.length,versions:vs,mods:[]});made.push(nm+(x.ver?' ('+_modsVerLbl(x.ver)+')':''));
   });
   var def=document.getElementById('mf-setup-def');
   if(def&&def.checked){
