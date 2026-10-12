@@ -10922,7 +10922,7 @@ function _modsResponsables(){
 //   mods[]     {id, detail, files [{path,name}], to [{email,nom}], byEmail, byName, date, _createdAt,
 //               mailAt, mailBy, status 'afaire'|'fait', doneAt, doneBy, verId}
 // Droit « modifications » (Gestion des droits) : Voir = l'onglet ; Modifier = tout le reste. Admin = tout.
-var _MODS_CATS=[['els','ELS'],['client','Client'],['auto','Automatisme'],['be','ELS Bureau d’Études'],['chantier','Chantier'],['tableauterie','Tableauterie']];
+var _MODS_CATS=[['els','ELS Projet'],['client','Client'],['auto','Automatisme'],['be','ELS Bureau d’Études'],['chantier','Chantier'],['tableauterie','Tableauterie']];
 var _MODS_MAX_ATT=20*1024*1024; // au-delà, la plupart des messageries refusent les pièces jointes
 (function(){
   if(document.getElementById('mdx-css'))return;
@@ -10976,6 +10976,25 @@ var _MODS_MAX_ATT=20*1024*1024; // au-delà, la plupart des messageries refusent
     +'.mdx-quote{font-size:12.5px;background:#fff;border:1px solid #FED7AA;border-radius:10px;padding:8px 11px;white-space:pre-wrap}'
     +'#mods-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9700;max-width:620px;width:calc(100% - 32px);background:#1C1A33;color:#fff;border-radius:14px;padding:13px 16px;font-size:13px;line-height:1.45;box-shadow:0 12px 40px rgba(0,0,0,.3);cursor:pointer}'
     +'#mods-toast small{display:block;color:#C7C1F5;margin-top:4px;font-size:11.5px}'
+    // (12/10/2026) documents à cocher, tâches Études, mise en place, vue d'ensemble
+    +'.mdx-dk{display:flex;flex-wrap:wrap;gap:8px}'
+    +'.mdx-dkc{display:flex;gap:8px;align-items:flex-start;border:1.5px solid #E4E1F0;background:#fff;border-radius:12px;padding:8px 12px;cursor:pointer;font-size:13px;font-weight:800;color:#1C1A33;min-width:150px}'
+    +'.mdx-dkc:has(input:checked){border-color:#4B3FC7;background:#F5F3FF}.mdx-dkc input{accent-color:#4B3FC7;margin-top:2px}'
+    +'.mdx-dkc small{display:block;font-weight:600;color:#9A96B3;font-size:11px}'
+    +'.mdx-tk{margin-top:12px;border:1.5px solid #E4E1F0;border-radius:12px;background:#fff;padding:10px 12px}'
+    +'.mdx-tk summary{cursor:pointer;font-size:12.5px;font-weight:800;color:#3A2EAE}.mdx-tk .mdx-pp{border:none;padding:4px 0 0}'
+    +'.mdx-setup{border:2px solid #C7C1F5;background:#FBFAFF}'
+    +'.mdx-sl{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #EFEDF7}.mdx-sl:last-child{border-bottom:none}'
+    +'.mdx-sl input[type=checkbox]{width:18px;height:18px;accent-color:#4B3FC7;flex-shrink:0}.mdx-sl .mdx-in{max-width:360px}'
+    +'.mdx-sl .mdx-have{font-size:11.5px;font-weight:700;color:#15803D}'
+    +'.mdx-ov2{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:14px}'
+    +'.mdx-tile{border:1.5px solid #E4E1F0;background:#fff;border-radius:14px;padding:10px 12px;cursor:pointer;text-align:left;font-family:inherit}'
+    +'.mdx-tile:hover{border-color:#C7C1F5}.mdx-tile b{display:block;font-size:13.5px;color:#1C1A33;margin-bottom:4px}'
+    +'.mdx-st{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:8px}'
+    +'.mdx-st.ok{background:#DCFCE7;color:#15803D}.mdx-st.wait{background:#FFEDD5;color:#C2410C}.mdx-st.none{background:#F1EFF8;color:#6B6790}'
+    +'.mdx-tile.wait{border-color:#FDBA74;background:#FFFBF5}'
+    +'.mdx-grp{font-size:12px;color:#9A3412;margin-top:2px}.mdx-grp b{font-weight:800}'
+    +'.mdx-ren{border:none;background:none;color:#9A96B3;cursor:pointer;font-size:13px;padding:0 4px;vertical-align:2px}.mdx-ren:hover{color:#4B3FC7}'
     +'.sec-badge{display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:#DC2626;color:#fff;font-size:10.5px;font-weight:800;text-align:center;vertical-align:1px}';
   document.head.appendChild(st);
 })();
@@ -10999,6 +11018,107 @@ function _modsVersSorted(doc){return (doc.versions||[]).slice().sort(function(a,
 function _modsLatest(doc){return _modsVersSorted(doc)[0]||null;}
 function _modsPending(doc){return (doc.mods||[]).filter(function(m){return m&&m.status!=='fait';}).sort(function(a,b){return (a._createdAt||0)-(b._createdAt||0);});}
 function _modsUid(p){return p+Date.now()+'_'+Math.random().toString(36).slice(2,7);}
+
+// ── (12/10/2026, demande de l'utilisateur) Liste de documents type, une demande sur PLUSIEURS documents,
+// et tâches de la phase Études rouvertes pendant la modification ──
+// Une demande sur n documents = n entrées mods[] (une par document) qui partagent le même « grp ».
+// Ainsi tout le reste (faite / nouvelle version / sans changer de version / synchro élément par élément) ne change pas.
+// m.tasks = tâches Études liées ; m.reopened = celles que la demande tient « en cours » (terminées au départ,
+// ou déjà tenues par une autre demande). Quand TOUS les documents de la demande sont faits (ou annulés),
+// ces tâches repassent « terminées », sauf si une autre demande à faire les tient encore.
+var _MODS_DOC_MODELS=['Schéma électrique','SLD','BOQ','Cables list','Note de calcul'];
+function _modsModels(){var s=STORE.settings&&STORE.settings.modsDocModels;return (Array.isArray(s)&&s.length)?s.slice():_MODS_DOC_MODELS.slice();}
+function _modsGrp(m){return (m&&(m.grp||m.id))||'';}
+function _modsGroupItems(grp){var out=[];_modsGetDocs().forEach(function(d){(d.mods||[]).forEach(function(m){if(m&&_modsGrp(m)===grp)out.push({doc:d,m:m});});});return out;}
+function _modsNormNom(s){return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();}
+function _modsDocByName(nom){var k=_modsNormNom(nom);return _modsGetDocs().find(function(d){return _modsNormNom(d.nom)===k;})||null;}
+function _modsEtudeTasks(){
+  var out=[],ens=null,sb=null;
+  (D()||[]).forEach(function(r){
+    if(r.t==='ph'){ens=null;sb=null;return;}
+    if(r.t==='ens'){ens=r;sb=null;return;}
+    if(r.t==='ensend'){ens=null;sb=null;return;}
+    if(r.t==='sb'){sb=r;return;}
+    if(r.t==='act'&&_phCat(r.pk)==='ETUDE')out.push({r:r,where:[ens&&ens.lb,sb&&sb.lb].filter(Boolean).join(' › ')});
+  });
+  return out;
+}
+function _modsTaskRow(id){return (D()||[]).find(function(x){return x&&x.id===id&&x.t==='act';})||null;}
+function _modsTaskSt(r){return !r?'':r.done?'✓ terminée':((r.inProgress||(+r.progress||0)>0)?'en cours':'pas commencée');}
+// une autre demande encore à faire tient cette tâche « en cours »
+function _modsTaskHeld(id,exceptGrp){
+  return _modsGetDocs().some(function(d){return (d.mods||[]).some(function(m){return m&&m.status!=='fait'&&_modsGrp(m)!==exceptGrp&&(m.reopened||[]).indexOf(id)>=0;});});
+}
+// tâches cochées → celles à tenir « en cours » (les terminées sont rouvertes)
+function _modsHoldTasks(ids){
+  var held=[];
+  (ids||[]).forEach(function(id){
+    var r=_modsTaskRow(id);if(!r)return;
+    if(r.done){r.done=false;r.inProgress=true;if((+r.progress||0)>=100)r.progress=0;r._modAt=Date.now();held.push(id);}
+    else if(_modsTaskHeld(id,null))held.push(id);
+  });
+  return held;
+}
+// une demande redevient « à faire » (version supprimée) : ses tâches terminées entre-temps sont rouvertes
+function _modsReholdTasks(m){
+  (m&&m.reopened||[]).forEach(function(id){var r=_modsTaskRow(id);if(r&&r.done){r.done=false;r.inProgress=true;if((+r.progress||0)>=100)r.progress=0;r._modAt=Date.now();}});
+}
+// demande finie sur tous ses documents (ou annulée) → ses tâches repassent « terminées ». extra = tâches d'entrées supprimées.
+function _modsGroupCheck(grp,extra){
+  if(!grp)return [];
+  var it=_modsGroupItems(grp);
+  if(it.some(function(x){return x.m.status!=='fait';}))return [];
+  var ids={};(extra||[]).forEach(function(id){ids[id]=1;});
+  it.forEach(function(x){(x.m.reopened||[]).forEach(function(id){ids[id]=1;});});
+  var closed=[];
+  Object.keys(ids).forEach(function(id){
+    if(_modsTaskHeld(id,grp))return;
+    var r=_modsTaskRow(id);if(r&&!r.done){r.done=true;r.inProgress=false;r._modAt=Date.now();closed.push(r.lb||'tâche');}
+  });
+  return closed;
+}
+function _modsClosedMsg(closed){return closed&&closed.length?'<small>📅 Planning : '+closed.map(esc2).join(', ')+' repassée'+(closed.length>1?'s':'')+' « terminée'+(closed.length>1?'s':'')+' ».</small>':'';}
+// Cases « tâches de la phase Études » (formulaire de demande)
+function _modsTasksHtml(sel){
+  var ts=_modsEtudeTasks();if(!ts.length)return '';
+  sel=sel||{};
+  var by={};ts.forEach(function(t){(by[t.where]=by[t.where]||[]).push(t);});
+  var nSel=ts.filter(function(t){return sel[t.r.id];}).length;
+  return '<details class="mdx-tk"'+(nSel?' open':'')+'><summary>📅 Tâches du planning (phase Études) touchées par cette modification <span style="font-weight:600;color:#9A96B3">— facultatif</span></summary>'
+    +'<div style="font-size:11.5px;color:#6B6790;margin:6px 0 4px">Une tâche terminée repasse « en cours » ; elle redevient « terminée » quand la modification est faite sur tous ses documents.</div>'
+    +'<div class="mdx-pp">'+Object.keys(by).map(function(w){
+      return (w?'<div class="mdx-pg">'+esc2(w.toUpperCase())+'</div>':'')+by[w].map(function(t){
+        return '<label class="mdx-pl"><input type="checkbox" class="mf-task" value="'+escHtml(t.r.id)+'"'+(sel[t.r.id]?' checked':'')+'><span>'+esc2(t.r.lb||'(sans nom)')+'<small>'+_modsTaskSt(t.r)+'</small></span></label>';
+      }).join('');
+    }).join('')+'</div></details>';
+}
+function _modsCheckedTasks(){return Array.prototype.map.call(document.querySelectorAll('#mods-form-area .mf-task:checked'),function(c){return c.value;});}
+// Cases « documents » : ceux de l'affaire + un champ pour un autre document
+function _modsDocsPickHtml(sel,exclude,cls,withNew){
+  var docs=_modsGetDocs().filter(function(d){return !exclude||!exclude[d.id];});
+  var h='<div class="mdx-dk">'+docs.map(function(d){
+    var l=_modsLatest(d),p=_modsPending(d).length;
+    return '<label class="mdx-dkc"><input type="checkbox" class="'+cls+'" value="'+escHtml(d.id)+'"'+(sel&&sel[d.id]?' checked':'')+'><span>'+esc2(d.nom)+'<small>'+(l?esc2(_modsVerLbl(l.version)):'pas de version')+(p?' · '+p+' à faire':'')+'</small></span></label>';
+  }).join('')+'</div>';
+  if(withNew)h+='<input type="text" id="mf-doc-new" class="mdx-in" style="margin-top:6px" placeholder="Autre document (nouveau) : tapez son nom, il sera créé">';
+  return h;
+}
+function _modsChecked(cls){return Array.prototype.map.call(document.querySelectorAll('#mods-form-area .'+cls+':checked'),function(c){return c.value;});}
+// Ajoute des demandes « à faire » sur d'autres documents, dans la même demande que base (sinon une nouvelle)
+function _modsAddImpacted(docIds,base,detail){
+  var grp=base?_modsGrp(base):_modsUid('g_'),n=[];
+  if(base&&!base.grp)base.grp=grp;
+  (docIds||[]).forEach(function(id){
+    var d=_modsDoc(id);if(!d)return;
+    d.mods=d.mods||[];
+    if(d.mods.some(function(m){return m&&m.status!=='fait'&&_modsGrp(m)===grp;}))return;
+    d.mods.push({id:_modsUid('m_'),grp:grp,detail:detail||(base&&base.detail)||'',files:base?(base.files||[]).slice():[],to:base?(base.to||[]).slice():[],
+      tasks:base?(base.tasks||[]).slice():[],reopened:base?(base.reopened||[]).slice():[],
+      byEmail:_modsMe(),byName:_modsMyName(),date:_modsNowFr(),_createdAt:Date.now(),status:'afaire'});
+    n.push(d.nom);
+  });
+  return n;
+}
 
 // Personnes des Infos de l'affaire (avec un email), sans doublon
 function _modsPeople(){
@@ -11054,7 +11174,7 @@ function _modsMarkSeen(items){
 // Saisie en cours dans l'onglet : ne pas redessiner (synchro)
 function _modsBusy(){
   var fa=document.getElementById('mods-form-area'),w=document.getElementById('mods-w'),a=document.activeElement;
-  return !!((fa&&fa.innerHTML)||(w&&a&&w.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)));
+  return !!((fa&&fa.innerHTML)||(window._modsSetupTouched&&document.getElementById('mdx-setup'))||(w&&a&&w.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)));
 }
 
 // ═════════ ÉCRAN ═════════
@@ -11063,26 +11183,34 @@ function renderModificationsTab(){
   if(!w)return;
   var docs=_modsGetDocs(),aff=STORE.current,ed=_modsCanEdit();
   // nouveautés pour moi : surlignées pendant cette visite, puis comptées comme vues
-  if(window._modsNewAff!==aff){window._modsNewAff=aff;window._modsNew={};}
+  if(window._modsNewAff!==aff){window._modsNewAff=aff;window._modsNew={};window._modsSetupTouched=0;}
   var un=modsUnseen(aff);un.forEach(function(v){window._modsNew[v.id]=1;});_modsMarkSeen(un);
   var nPeople=_modsPeople().length;
   var hasAtt=docs.some(function(d){return (d.versions||[]).some(function(v){return _modsVerHasFile(v);})||(d.mods||[]).some(function(m){return (m.files||[]).some(function(f){return f.path;});});});
   var nTodo=docs.reduce(function(n,d){return n+_modsPending(d).length;},0);
   var h='<div class="mdx">'
-    +'<div class="mdx-card mdx-top"><div style="flex:1;min-width:260px"><div class="mdx-h">📄 Modifications et documents'+(nTodo?' <span class="mdx-new org" style="font-size:12px">'+nTodo+' à faire</span>':'')+'</div>'
-    +'<div class="mdx-sub">1) « Nouvelle modification » : le détail et qui doit la faire → un email tout prêt s’ouvre dans Outlook (glissez-y le mail du client).<br>2) Une fois faite : « ✓ Marquer comme faite », avec la version et les personnes à prévenir → un 2e email tout prêt avec le document.</div>'
+    +'<div class="mdx-card mdx-top"><div style="flex:1;min-width:260px"><div class="mdx-h">📄 Documents et modifications'+(nTodo?' <span class="mdx-new org" style="font-size:12px">'+nTodo+' à faire</span>':'')+'</div>'
+    +'<div class="mdx-sub">1) « ＋ Nouvelle modification » : cochez <b>tous les documents</b> qu’elle touche (et les tâches Études du planning), le détail et qui doit la faire → un email tout prêt s’ouvre dans Outlook.<br>2) Sur chaque document : « ✓ Marquer comme faite », avec une nouvelle version (email avec le document) ou sans changer de version.</div>'
     +(nPeople||!ed?'':'<div class="mdx-warn">Aucune personne avec un email dans les infos de l’affaire. <button type="button" class="mdx-lnk" onclick="openAffaireInfos()">ℹ️ Ajouter des personnes</button></div>')
     +'</div><div class="mdx-acts">'
     +(docs.length?'<button type="button" class="mdx-btn2" onclick="modsExportAll()">⬇ Exporter (.zip)</button>':'')
     +(ed&&docs.some(function(d){return _modsOldFiles(d).length;})?'<button type="button" class="mdx-btn2" onclick="modsDropAllOldFiles()" title="Seul le fichier de la dernière version de chaque document reste sur le site ; l’historique est gardé">🧹 Retirer les anciens fichiers</button>':'')
     +(hasAtt&&ed?'<button type="button" class="mdx-btn2 red" onclick="modsPurgeAttachments()">🗑 Purger les fichiers</button>':'')
-    +(ed?'<button type="button" class="mdx-btn2" onclick="modShowAddDocForm()">＋ Ajouter un document</button>'
+    +(ed&&docs.length?'<button type="button" class="mdx-btn2" onclick="modShowSetupForm()">＋ Ajouter des documents</button>'
       +'<button type="button" class="mdx-btn" onclick="modShowReqForm(\'\')">＋ Nouvelle modification</button>':'')
     +'</div></div>'
     +'<div id="mods-form-area"></div>';
   if(!docs.length){
-    h+='<div class="mdx-card" style="text-align:center;color:#9A96B3;padding:30px">Aucune modification ni document pour cette affaire.'+(ed?' Cliquez sur « ＋ Nouvelle modification » pour commencer.':'')+'</div>';
+    // (12/10/2026) 1re arrivée sur l'onglet : on coche les documents de l'affaire → leurs fiches sont créées
+    h+=ed?'<div class="mdx-card mdx-setup" id="mdx-setup">'+_modsSetupHtml(true)+'</div>'
+      :'<div class="mdx-card" style="text-align:center;color:#9A96B3;padding:30px">Aucun document pour cette affaire.</div>';
   }else{
+    // Vue d'ensemble : un coup d'œil sur l'état de chaque document (clic = aller à sa fiche)
+    h+='<div class="mdx-ov2">'+docs.map(function(d){
+      var l=_modsLatest(d),p=_modsPending(d).length;
+      var st=p?'<span class="mdx-st wait">⏳ '+p+' modification'+(p>1?'s':'')+' à faire</span>':(l?'<span class="mdx-st ok">✓ À jour · '+esc2(_modsVerLbl(l.version))+'</span>':'<span class="mdx-st none">Pas encore de version</span>');
+      return '<button type="button" class="mdx-tile'+(p?' wait':'')+'" onclick="_modsGoDoc(\''+_modsJs(d.id)+'\')"><b>'+esc2(d.nom)+'</b>'+st+'</button>';
+    }).join('')+'</div>';
     // les documents avec une modification à faire en haut, puis les plus récents
     var rk=function(d){var l=_modsLatest(d),m=(d.mods||[]).reduce(function(x,y){return Math.max(x,y._createdAt||0);},0);return Math.max((l&&l._createdAt)||0,m,d._createdAt||0);};
     docs.slice().sort(function(a,b){
@@ -11129,13 +11257,14 @@ function _modsBuildDocCard(doc,ed){
   var nw=window._modsNew||{},isNew=!!(last&&nw[last.id])||pend.some(function(m){return nw[m.id];});
   var h='<div class="mdx-card mdx-doc'+(isNew?' new':'')+'" id="mdx-doc-'+escHtml(doc.id)+'">'
     +'<div class="mdx-dh"><div style="min-width:0;flex:1 1 300px">'
-    +'<div class="mdx-dn">'+esc2(doc.nom)+(last&&nw[last.id]?'<span class="mdx-new">Nouvelle version</span>':'')+(pend.length?'<span class="mdx-new org">'+pend.length+' modification'+(pend.length>1?'s':'')+' à faire</span>':'')+'</div>'
+    +'<div class="mdx-dn">'+esc2(doc.nom)+(ed?'<button type="button" class="mdx-ren" onclick="modRenameDoc(\''+doc.id+'\')" title="Renommer le document" aria-label="Renommer le document">✎</button>':'')+(last&&nw[last.id]?'<span class="mdx-new">Nouvelle version</span>':'')+(pend.length?'<span class="mdx-new org">'+pend.length+' modification'+(pend.length>1?'s':'')+' à faire</span>':'')+'</div>'
     +'<div class="mdx-dv">'+(last?'Dernière version : <b>'+esc2(_modsVerLbl(last.version))+'</b> du '+esc2(last.date||'—')+(last.byName?' · ajoutée par '+esc2(last.byName):'')
       +(ed?' · <button type="button" class="mdx-lnk" style="font-size:11.5px;color:#9A96B3" onclick="modDeleteVersion(\''+doc.id+'\',\''+last.id+'\')">supprimer cette version</button>':''):'Pas encore de version')+'</div>'
     +'</div><div class="mdx-acts">'
     +(ed&&last?'<button type="button" class="mdx-btn2" onclick="modEditDest(\''+doc.id+'\',\''+last.id+'\')" title="Ouvre Outlook avec les personnes à prévenir, le message et le fichier de la dernière version">✉ Prévenir de cette version</button>':'')
     +(ed?'<button type="button" class="mdx-btn2" onclick="modShowReqForm(\''+doc.id+'\')">＋ Modification</button>'
-      +'<button type="button" class="mdx-btn2" onclick="modShowAddVersionForm(\''+doc.id+'\')" title="Ajouter directement une version, sans modification demandée">＋ Version</button>'
+      +(last?'<button type="button" class="mdx-btn2" onclick="modShowAddVersionForm(\''+doc.id+'\')" title="Modification faite directement, sans demande avant : nouvelle version (fichier + email) ou sans changer de version">＋ Modif directe (sans demande)</button>'
+        :'<button type="button" class="mdx-btn2" onclick="modShowAddVersionForm(\''+doc.id+'\')" title="Déposer le fichier de la première version de ce document">⬆ Déposer la 1re version</button>')
       +'<button type="button" class="mdx-ico" onclick="modDeleteDoc(\''+doc.id+'\')" title="Supprimer le document" aria-label="Supprimer le document">✕</button>':'')
     +'</div></div>';
   // Modifications à faire
@@ -11149,6 +11278,7 @@ function _modsBuildDocCard(doc,ed){
       +'</div><div style="display:grid;gap:7px">'
       +'<div class="mdx-row"><span class="mdx-l">DÉTAIL MODIFICATION</span><span style="flex:1;min-width:200px;white-space:pre-wrap">'+esc2(m.detail||'—')+'</span></div>'
       +((m.files||[]).length?'<div class="mdx-row"><span class="mdx-l">FICHIERS</span><span style="flex:1;min-width:200px">'+_modsFilesHtml(m.files)+'</span></div>':'')
+      +_modsGroupRowHtml(m,doc)
       +'<div class="mdx-row"><span class="mdx-l">À FAIRE PAR</span><span style="flex:1;min-width:200px">'+_modsChips(m.to,'personne n’est coché')+'</span></div>'
       +'<div class="mdx-row"><span class="mdx-l">EMAIL</span>'+_modsMailState(m)+'</div>'
       +'</div></div>';
@@ -11166,7 +11296,7 @@ function _modsBuildDocCard(doc,ed){
     h+='<div class="mdx-body">'
       +(last.note?'<div class="mdx-row"><span class="mdx-l">DÉTAIL MODIFICATION</span><span style="flex:1;min-width:200px;white-space:pre-wrap">'+esc2(last.note)+'</span></div>':'')
       +(multi?'<div class="mdx-row"><span class="mdx-l">MODIFICATIONS INCLUSES</span><span style="flex:1;min-width:200px">'
-          +incl.map(function(x){return '• '+esc2(x.detail||'—')+' <span style="color:#6B6790">· demandée'+(x.byName?' par '+esc2(x.byName):'')+' le '+esc2(x.date||'')+'</span>'+(x.noNewVer?' <span class="mdx-new" style="background:#ECFDF5;color:#047857">faite sans nouvelle version</span>':'')+((x.files||[]).length?' · '+_modsFilesHtml(x.files):'');}).join('<br>')+'</span></div>'
+          +incl.map(function(x){return '• '+esc2(x.detail||'—')+' <span style="color:#6B6790">· '+(x.direct?'faite directement':'demandée')+(x.byName?' par '+esc2(x.byName):'')+' le '+esc2(x.date||'')+'</span>'+(x.noNewVer?' <span class="mdx-new" style="background:#ECFDF5;color:#047857">faite sans nouvelle version</span>':'')+((x.files||[]).length?' · '+_modsFilesHtml(x.files):'');}).join('<br>')+'</span></div>'
         :(last.reqDate||lm?'<div class="mdx-row"><span class="mdx-l">DEMANDÉE</span><span>'+(last.reqBy?'par '+esc2(last.reqBy)+' ':'')+'le '+esc2(last.reqDate||(lm&&lm.date)||'')+(lm&&lm.files&&lm.files.length?' · '+_modsFilesHtml(lm.files):'')+'</span></div>':''))
       +'<div class="mdx-row"><span class="mdx-l">FICHIER'+(_modsVerFiles(last).length>1?'S':'')+'</span>'+_modsFileLink(last)+'</div>'
       +'<div class="mdx-row"><span class="mdx-l">PRÉVENUS</span><span style="flex:1;min-width:200px">'+_modsChips(last.dest,'personne n’est coché')+'</span></div>'
@@ -11183,6 +11313,87 @@ function _modsBuildDocCard(doc,ed){
       }).join('')+'</details>';
   }
   return h+'</div>';
+}
+
+// Dans une demande : les AUTRES documents de la même demande et les tâches du planning qu'elle tient
+function _modsGroupRowHtml(m,doc){
+  var grp=_modsGrp(m),others=_modsGroupItems(grp).filter(function(x){return x.m!==m;}),h='';
+  if(others.length)h+='<div class="mdx-row"><span class="mdx-l">MÊME DEMANDE SUR</span><span style="flex:1;min-width:200px">'
+    +others.map(function(x){return '<button type="button" class="mdx-lnk" style="text-decoration:none" onclick="_modsGoDoc(\''+_modsJs(x.doc.id)+'\')">'+esc2(x.doc.nom)+'</button> '+(x.m.status==='fait'?'<span class="mdx-ok">✓ faite</span>':'<span class="mdx-todo">⏳ à faire</span>');}).join(' &nbsp;·&nbsp; ')+'</span></div>';
+  var tk=(m.tasks||[]).map(_modsTaskRow).filter(Boolean);
+  if(tk.length)h+='<div class="mdx-row"><span class="mdx-l">PLANNING (ÉTUDES)</span><span style="flex:1;min-width:200px">'
+    +tk.map(function(r){return esc2(r.lb||'tâche')+' <span style="color:#6B6790">('+_modsTaskSt(r)+')</span>';}).join(' · ')+'</span></div>';
+  return h;
+}
+function _modsGoDoc(id){
+  var el=document.getElementById('mdx-doc-'+id);if(!el)return;
+  el.scrollIntoView({behavior:'smooth',block:'start'});el.classList.add('mdx-flash');setTimeout(function(){el.classList.remove('mdx-flash');},3400);
+}
+// ── Liste des documents de l'affaire (1re arrivée, ou « ＋ Ajouter des documents ») ──
+function _modsSetupHtml(first){
+  var have={};_modsGetDocs().forEach(function(d){have[_modsNormNom(d.nom)]=1;});
+  var line=function(nm,isHave){
+    return isHave?'<div class="mdx-sl" data-have="'+escHtml(nm)+'"><input type="checkbox" checked disabled><span style="font-size:13px;font-weight:800;flex:1">'+esc2(nm)+'</span><span class="mdx-have">✓ déjà dans l’affaire</span></div>'
+      :'<div class="mdx-sl" data-new="1"><input type="checkbox" checked onchange="window._modsSetupTouched=1" aria-label="Créer ce document"><input type="text" class="mdx-in" value="'+escHtml(nm)+'" oninput="window._modsSetupTouched=1" aria-label="Nom du document"></div>';
+  };
+  return '<div class="mdx-ft">'+(first?'📋 Quels documents pour cette affaire ?':'＋ Ajouter des documents')+'</div>'
+    +'<div class="mdx-sub" style="margin-bottom:8px">'+(first?'Cochez les documents de l’affaire : une fiche est créée pour chacun. Vous pouvez les renommer ici ou plus tard (✎).':'Cochez les documents à ajouter, ou tapez le nom d’un autre document.')+'</div>'
+    +'<div id="mf-setup-list">'+_modsModels().map(function(nm){return line(nm,!!have[_modsNormNom(nm)]);}).join('')+'</div>'
+    +'<button type="button" class="mdx-lnk" style="margin-top:8px" onclick="modSetupAddLine()">＋ Autre document</button>'
+    +'<label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#6B6790;margin-top:12px;cursor:pointer"><input type="checkbox" id="mf-setup-def" style="accent-color:#4B3FC7"> Retenir cette liste (noms et ordre) pour les prochaines affaires</label>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">'
+    +'<button type="button" class="mdx-btn" onclick="modSetupCreate()">✓ Créer les fiches</button>'
+    +(first?'':'<button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button>')+'</div>';
+}
+function modShowSetupForm(){
+  if(!_modsCanEdit())return;
+  _modsShowForm('<div id="mdx-setup">'+_modsSetupHtml(false)+'</div>');
+}
+function modSetupAddLine(){
+  var l=document.getElementById('mf-setup-list');if(!l)return;
+  window._modsSetupTouched=1;
+  l.insertAdjacentHTML('beforeend','<div class="mdx-sl" data-new="1"><input type="checkbox" checked aria-label="Créer ce document"><input type="text" class="mdx-in" value="" placeholder="Nom du document" aria-label="Nom du document"></div>');
+  var ins=l.querySelectorAll('.mdx-in');if(ins.length)ins[ins.length-1].focus();
+}
+function modSetupCreate(){
+  if(!_modsCanEdit())return;
+  var box=document.getElementById('mdx-setup');if(!box)return;
+  var names=[],all=[];
+  box.querySelectorAll('.mdx-sl').forEach(function(l){
+    if(l.dataset.have){all.push(l.dataset.have);return;}
+    var cb=l.querySelector('input[type=checkbox]'),inp=l.querySelector('.mdx-in'),nm=inp?inp.value.trim():'';
+    if(!nm)return;all.push(nm);if(cb&&cb.checked)names.push(nm);
+  });
+  if(!names.length){alert('Cochez au moins un document (ou tapez le nom d’un autre document).');return;}
+  var made=[],t=Date.now();
+  names.forEach(function(nm){
+    if(_modsDocByName(nm)||made.some(function(x){return _modsNormNom(x)===_modsNormNom(nm);}))return;
+    _modsGetDocs().push({id:_modsUid('doc_'),nom:nm,_createdAt:t+made.length,versions:[],mods:[]});made.push(nm);
+  });
+  var def=document.getElementById('mf-setup-def');
+  if(def&&def.checked){
+    var seen={},lst=all.filter(function(n){var k=_modsNormNom(n);if(seen[k])return false;seen[k]=1;return true;});
+    STORE.settings=STORE.settings||{};STORE.settings.modsDocModels=lst;
+  }
+  window._modsSetupTouched=0;
+  saveNow();modCloseForm();renderModificationsTab();
+  _modsToast(made.length?'✓ '+made.length+' fiche'+(made.length>1?'s':'')+' créée'+(made.length>1?'s':'')+' : '+made.map(esc2).join(', ')+'.':'Ces documents existent déjà dans l’affaire.',6000);
+}
+// ── Renommer un document ──
+function modRenameDoc(docId){
+  if(!_modsCanEdit())return;
+  var doc=_modsDoc(docId);if(!doc)return;
+  _modsShowForm('<div class="mdx-ft">✎ Renommer le document</div>'
+    +'<input type="text" id="mf-ren" class="mdx-in" value="'+escHtml(doc.nom)+'" onkeydown="if(event.key===\'Enter\')modRenameConfirm(\''+docId+'\');if(event.key===\'Escape\')modCloseForm();">'
+    +'<div style="display:flex;gap:8px;margin-top:12px"><button type="button" class="mdx-btn" onclick="modRenameConfirm(\''+docId+'\')">Enregistrer</button>'
+    +'<button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button></div>');
+}
+function modRenameConfirm(docId){
+  var doc=_modsDoc(docId);if(!doc){modCloseForm();return;}
+  var e=document.getElementById('mf-ren'),nm=e?e.value.trim():'';
+  if(!nm){alert('Indiquez le nom du document.');return;}
+  var o=_modsDocByName(nm);if(o&&o!==doc){alert('Un document « '+o.nom+' » existe déjà dans cette affaire.');return;}
+  doc.nom=nm;saveNow();modCloseForm();renderModificationsTab();
 }
 
 // ═════════ FORMULAIRES ═════════
@@ -11260,53 +11471,54 @@ function _modsUploadP(file,docId,key){
 // ── 1) Nouvelle modification (demande) ──
 function modShowReqForm(docId){
   if(!_modsCanEdit())return;
-  var doc=docId?_modsDoc(docId):null,docs=_modsGetDocs();
-  var last=doc?_modsLatest(doc):null;
-  var docField=doc
-    ?'<div style="font-size:13px;font-weight:800;color:#3A2EAE">'+esc2(doc.nom)+(last?' <span style="font-weight:600;color:#6B6790">· version actuelle '+esc2(_modsVerLbl(last.version))+'</span>':'')+'</div>'
-    :'<select id="mf-doc-sel" class="mdx-in" onchange="document.getElementById(\'mf-doc-new\').style.display=this.value?\'none\':\'\'">'
-      +'<option value="">＋ Nouveau document…</option>'
-      +docs.map(function(d){return '<option value="'+escHtml(d.id)+'">'+esc2(d.nom)+'</option>';}).join('')+'</select>'
-      +'<input type="text" id="mf-doc-new" class="mdx-in" style="margin-top:6px" placeholder="Nom du document, ex : Schéma unifilaire MCC-1">';
-  // par défaut : les personnes de la dernière demande sur ce document
-  var prevReq=doc?(doc.mods||[]).slice().sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);})[0]:null;
+  var doc=docId?_modsDoc(docId):null,sel={};
+  if(doc)sel[doc.id]=1;
+  // par défaut : les personnes de la dernière demande (sur ce document, sinon sur l'affaire)
+  var allM=[];(doc?[doc]:_modsGetDocs()).forEach(function(d){(d.mods||[]).forEach(function(m){if(m)allM.push(m);});});
+  var prevReq=allM.sort(function(a,b){return (b._createdAt||0)-(a._createdAt||0);})[0]||null;
+  // (12/10/2026) une demande peut toucher PLUSIEURS documents : on les coche tous
   _modsShowForm('<div class="mdx-ft">🛠 Nouvelle modification</div>'
-    +'<label class="mdx-fl">DOCUMENT</label>'+docField
+    +'<label class="mdx-fl">DOCUMENTS CONCERNÉS <span style="font-weight:600;color:#9A96B3">(cochez tous ceux qu’il faudra modifier)</span></label>'+_modsDocsPickHtml(sel,null,'mf-doc',true)
     +'<label class="mdx-fl" for="mf-note">DÉTAIL MODIFICATION</label><textarea id="mf-note" class="mdx-in" rows="4" placeholder="Ex : le client demande d’ajouter le départ pompe P3 et de passer le câble en 5G6²"></textarea>'
     +'<label class="mdx-fl">FICHIERS</label>'+_modsDropHtml()
     +'<label class="mdx-fl">À FAIRE PAR <span style="font-weight:600;color:#9A96B3">(elles recevront l’email « modification à faire »)</span></label>'+_modsPeopleHtml(_modsSelOf(prevReq&&prevReq.to),prevReq&&prevReq.to)
-    +_modsFormButtons('modConfirmReq.bind(null,\''+(docId||'')+'\')','Enregistrer et préparer l’email'),'org');
+    +_modsTasksHtml({})
+    +_modsFormButtons('modConfirmReq.bind(null,\'\')','Enregistrer et préparer l’email'),'org');
 }
 async function modConfirmReq(docId,withMail){
   var val=function(id){var e=document.getElementById(id);return e?String(e.value||'').trim():'';};
-  var doc=docId?_modsDoc(docId):null,isNewDoc=false,nom='';
-  if(docId&&!doc){alert('Ce document a été supprimé entre-temps.');return;}
-  if(!doc){
-    var sel=val('mf-doc-sel');
-    if(sel){doc=_modsDoc(sel);if(!doc){alert('Ce document a été supprimé entre-temps.');return;}}
-    else{nom=val('mf-doc-new');if(!nom){alert('Choisissez le document, ou indiquez le nom d’un nouveau document.');return;}isNewDoc=true;}
-  }
+  // (12/10/2026) plusieurs documents cochés : une demande par document, toutes dans le même groupe (grp)
+  var ids=_modsChecked('mf-doc'),nom=val('mf-doc-new');
+  if(nom){var ex=_modsDocByName(nom);if(ex){if(ids.indexOf(ex.id)<0)ids.push(ex.id);nom='';}}
+  if(!ids.length&&!nom){alert('Cochez au moins un document concerné (ou tapez le nom d’un nouveau document).');return;}
   var detail=val('mf-note');
   if(!detail){alert('Indiquez le détail de la modification.');return;}
-  var to=_modsCheckedDest();
+  var to=_modsCheckedDest(),tasks=_modsCheckedTasks();
   if(withMail&&!to.length){alert('Cochez au moins une personne qui doit faire la modification.');return;}
-  var dId=doc?doc.id:_modsUid('doc_'),mId=_modsUid('m_'),aff=STORE.current,files=(window._mfFiles||[]).slice();
-  var up=[];
+  var newId=nom?_modsUid('doc_'):null,grp=_modsUid('g_'),aff=STORE.current,files=(window._mfFiles||[]).slice();
+  var firstDoc=ids[0]||newId,up=[];
   if(files.length){
     _modsBusyForm(true,'Envoi des fichiers…');
-    for(var i=0;i<files.length;i++)up.push(await _modsUploadP(files[i],dId,mId+'_'+i));
+    for(var i=0;i<files.length;i++)up.push(await _modsUploadP(files[i],firstDoc,grp+'_'+i));
     var bad=up.filter(function(u){return !u.path;});
     if(bad.length)alert(bad.length+' fichier(s) n’ont pas pu être enregistrés sur le serveur ('+bad[0].err+').'+(withMail?'\nIls seront quand même joints à l’email.':''));
   }
   if(STORE.current!==aff){alert('L’affaire a changé pendant l’enregistrement : la modification n’a pas été ajoutée.');return;}
-  var m={id:mId,detail:detail,files:up.map(function(u){return {path:u.path,name:u.name+(u.path?'':' (non enregistré sur le serveur)')};}),to:to,
-    byEmail:_modsMe(),byName:_modsMyName(),date:_modsNowFr(),_createdAt:Date.now(),status:'afaire'};
-  if(isNewDoc){doc={id:dId,nom:nom,_createdAt:Date.now(),versions:[],mods:[m]};_modsGetDocs().push(doc);}
-  else{doc=_modsDoc(dId);if(!doc){alert('Ce document a été supprimé entre-temps.');return;}doc.mods=doc.mods||[];doc.mods.push(m);}
+  if(newId)_modsGetDocs().push({id:newId,nom:nom,_createdAt:Date.now(),versions:[],mods:[]});
+  var fl=up.map(function(u){return {path:u.path,name:u.name+(u.path?'':' (non enregistré sur le serveur)')};});
+  var held=_modsHoldTasks(tasks),made=[],t=Date.now();
+  (newId?ids.concat([newId]):ids).forEach(function(id,k){
+    var d=_modsDoc(id);if(!d)return;
+    var m={id:_modsUid('m_'),grp:grp,detail:detail,files:fl.slice(),to:to.slice(),tasks:tasks.slice(),reopened:held.slice(),
+      byEmail:_modsMe(),byName:_modsMyName(),date:_modsNowFr(),_createdAt:t+k,status:'afaire'};
+    d.mods=d.mods||[];d.mods.push(m);made.push({doc:d,m:m});
+  });
+  if(!made.length){alert('Ces documents ont été supprimés entre-temps.');return;}
   saveNow();
   modCloseForm();
   renderModificationsTab();
-  if(withMail)modsPrepareReqEmail(doc.id,m.id,files);
+  if(held.length)_modsToast('📅 Planning : '+held.map(function(id){var r=_modsTaskRow(id);return esc2(r&&r.lb||'tâche');}).join(', ')+' — en cours jusqu’à ce que la modification soit faite.',6000);
+  if(withMail)modsPrepareReqEmail(made[0].doc.id,made[0].m.id,files);
 }
 // Préparer (ou refaire) l'email d'une demande : vérifier les personnes d'abord
 function modEditReqDest(docId,modId){
@@ -11324,16 +11536,21 @@ function modReqDestAndMail(docId,modId){
   var m=(doc.mods||[]).find(function(x){return x.id===modId;});if(!m)return;
   var to=_modsCheckedDest();
   if(!to.length){alert('Cochez au moins une personne.');return;}
-  m.to=to;saveNow();modCloseForm();renderModificationsTab();
+  // toute la demande (tous ses documents) a les mêmes personnes
+  _modsGroupItems(_modsGrp(m)).forEach(function(x){if(x.m.status!=='fait')x.m.to=to.slice();});m.to=to;
+  saveNow();modCloseForm();renderModificationsTab();
   modsPrepareReqEmail(docId,modId,null);
 }
 function modDeleteReq(docId,modId){
   var doc=_modsDoc(docId);if(!doc)return;
-  if(!confirm('Annuler cette demande de modification ?'))return;
+  var m0=(doc.mods||[]).find(function(m){return m.id===modId;});
+  var others=m0?_modsGroupItems(_modsGrp(m0)).filter(function(x){return x.m!==m0&&x.m.status!=='fait';}):[];
+  if(!confirm('Annuler cette demande de modification sur « '+doc.nom+' » ?'+(others.length?'\n\nElle reste à faire sur : '+others.map(function(x){return x.doc.nom;}).join(', ')+'.':'')))return;
   doc.mods=(doc.mods||[]).filter(function(m){return m.id!==modId;});
-  // document créé seulement pour cette demande : retiré aussi
-  if(!(doc.versions||[]).length&&!doc.mods.length){var a=_modsGetDocs(),i=a.indexOf(doc);if(i>=0)a.splice(i,1);}
+  // (12/10/2026) les documents restent (fiches créées pour l'affaire) ; tâches du planning rendues si la demande est finie
+  var closed=m0?_modsGroupCheck(_modsGrp(m0),m0.reopened):[];
   saveNow();renderModificationsTab();
+  if(closed.length)_modsToast(_modsClosedMsg(closed).replace(/^<small>|<\/small>$/g,''),6000);
 }
 
 // ── 2) Modification faite → nouvelle version ──
@@ -11352,6 +11569,7 @@ function modShowDoneForm(docId,modId){
     +'<label class="mdx-fl">MODIFICATION'+(others.length?'S FAITES':' FAITE')+'</label>'
     +'<div id="mf-reqs">'+reqLine(m,true,!others.length)+others.map(function(x){return reqLine(x,false,false);}).join('')+'</div>'
     +(others.length?'<div style="font-size:11.5px;color:#6B6790;margin-top:2px">Cochez aussi les autres demandes faites en même temps : elles seront toutes dans la même version.</div>':'')
+    +(function(){var g=_modsGroupRowHtml(m,doc);return g?'<div style="display:grid;gap:6px;margin-top:10px;background:#FFF7ED;border-radius:10px;padding:8px 12px">'+g+'</div>':'';})()
     +'<label class="mdx-fl">VERSION</label>'
     +'<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;font-weight:700;color:#1C1A33">'
     +'<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="radio" name="mf-mode" value="ver" checked onchange="_modsDoneMode()"> Nouvelle version</label>'
@@ -11364,6 +11582,7 @@ function modShowDoneForm(docId,modId){
     +'<label class="mdx-fl" for="mf-note">DÉTAIL MODIFICATION</label><textarea id="mf-note" class="mdx-in" rows="3">'+esc2(m.detail||'')+'</textarea>'
     +'<label class="mdx-fl">PERSONNES À PRÉVENIR <span style="font-weight:600;color:#9A96B3">(celles de la version d’avant, à ajuster si besoin)</span></label>'+_modsPeopleHtml(_modsSelOf(last&&last.dest),last&&last.dest)
     +'</div>'
+    +_modsImpactHtml(doc,m)
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">'
     +'<button type="button" class="mdx-btn" id="mf-go-mail" onclick="modConfirmDone(\''+docId+'\',\''+modId+'\',true)">✉ Enregistrer et préparer l’email</button>'
     +'<button type="button" class="mdx-btn2" id="mf-go" onclick="modConfirmDone(\''+docId+'\',\''+modId+'\',false)">Enregistrer sans email</button>'
@@ -11375,7 +11594,7 @@ function _modsDoneMode(){
   var same=(document.querySelector('input[name=mf-mode]:checked')||{}).value==='same';
   var vb=document.getElementById('mf-ver-block'),sn=document.getElementById('mf-same-note'),gm=document.getElementById('mf-go-mail'),g=document.getElementById('mf-go');
   if(vb)vb.style.display=same?'none':'';if(sn)sn.style.display=same?'':'none';
-  if(gm)gm.style.display=same?'none':'';if(g)g.textContent=same?'✓ Marquer comme faite':'Enregistrer sans email';
+  if(gm)gm.style.display=same?'none':'';if(g)g.textContent=same?(g.dataset.same||'✓ Marquer comme faite'):'Enregistrer sans email';
 }
 // Détail de la nouvelle version = détails des demandes cochées (tant qu'on ne l'a pas réécrit à la main)
 function _modsDoneNote(){
@@ -11392,27 +11611,72 @@ async function modConfirmDone(docId,modId,withMail){
   var same=(document.querySelector('input[name=mf-mode]:checked')||{}).value==='same';
   if(!same)return modConfirmVer(docId,modId,withMail,ids);
   // Sans changer de version : demandes faites, rattachées à la version actuelle (s'il y en a une)
-  var last=_modsLatest(doc),me=_modsMyName(),n=0;
+  var imp=_modsChecked('mf-imp');
+  var last=_modsLatest(doc),me=_modsMyName(),n=0,grps={};
   (doc.mods||[]).forEach(function(m){
     if(ids.indexOf(m.id)<0||m.status==='fait')return;
-    m.status='fait';m.doneAt=Date.now();m.doneBy=me;m.noNewVer=true;m.verId=last?last.id:null;n++;
+    m.status='fait';m.doneAt=Date.now();m.doneBy=me;m.noNewVer=true;m.verId=last?last.id:null;n++;grps[_modsGrp(m)]=1;
   });
+  var base=(doc.mods||[]).find(function(x){return x.id===modId;});
+  var added=imp.length?_modsAddImpacted(imp,base):[];
+  var closed=[];Object.keys(grps).forEach(function(g){closed=closed.concat(_modsGroupCheck(g));});
   saveNow();modCloseForm();renderModificationsTab();
-  _modsToast('✓ '+n+' modification'+(n>1?'s':'')+' marquée'+(n>1?'s':'')+' faite'+(n>1?'s':'')+(last?', intégrée'+(n>1?'s':'')+' à la version '+esc2(_modsVerLbl(last.version)):'')+' (pas de nouvelle version).',6000);
+  _modsToast('✓ '+n+' modification'+(n>1?'s':'')+' marquée'+(n>1?'s':'')+' faite'+(n>1?'s':'')+(last?', intégrée'+(n>1?'s':'')+' à la version '+esc2(_modsVerLbl(last.version)):'')+' (pas de nouvelle version).'
+    +(added.length?'<small>🔗 À faire aussi sur : '+added.map(esc2).join(', ')+'.</small>':'')+_modsClosedMsg(closed),8000);
+}
+// « Cette modification touche aussi d'autres documents ? » (formulaires « faite » et « modif directe »)
+function _modsImpactHtml(doc,m){
+  var ex={};ex[doc.id]=1;
+  if(m)_modsGroupItems(_modsGrp(m)).forEach(function(x){ex[x.doc.id]=1;});
+  if(!_modsGetDocs().some(function(d){return !ex[d.id];}))return '';
+  return '<details class="mdx-tk"><summary>🔗 Cette modification touche aussi d’autres documents ?</summary>'
+    +'<div style="font-size:11.5px;color:#6B6790;margin:6px 0">Cochez-les : ils passeront « modification à faire », avec le même détail, jusqu’à ce qu’ils soient marqués faits.</div>'
+    +_modsDocsPickHtml({},ex,'mf-imp',false)+'</details>';
 }
 // ── Version directe (sans demande) et nouveau document ──
 function modShowAddVersionForm(docId){
   if(!_modsCanEdit())return;
   var doc=_modsDoc(docId);if(!doc)return;
   var last=_modsLatest(doc);
-  _modsShowForm('<div class="mdx-ft">Nouvelle version — '+esc2(doc.nom)+'</div>'
-    +(last?'<div style="font-size:12px;color:#6B6790">Version actuelle : '+esc2(_modsVerLbl(last.version))+'</div>':'')
+  // (12/10/2026, demande de l'utilisateur) « Modif directe » = faite sans demande avant ; comme pour une demande,
+  // on choisit « nouvelle version » ou « sans changer de version » (alors : ni fichier ni email, notée sur la version actuelle).
+  // (12/10/2026) document sans version (fiche créée vide) : « Déposer la 1re version », sans le choix « sans changer de version »
+  _modsShowForm('<div class="mdx-ft">'+(last?'Modification directe (sans demande) — ':'⬆ Première version — ')+esc2(doc.nom)+'</div>'
+    +'<div style="font-size:12px;color:#6B6790;margin-bottom:6px">'+(last?'Version actuelle : <b>'+esc2(_modsVerLbl(last.version))+'</b>':'Pas encore de version')+'</div>'
+    +'<label class="mdx-fl" for="mf-note">DÉTAIL MODIFICATION</label><textarea id="mf-note" class="mdx-in" rows="2">'+(last?'':'Première diffusion')+'</textarea>'
+    +'<label class="mdx-fl"'+(last?'':' style="display:none"')+'>VERSION</label>'
+    +'<div style="display:'+(last?'flex':'none')+';gap:16px;flex-wrap:wrap;font-size:13px;font-weight:700;color:#1C1A33">'
+    +'<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="radio" name="mf-mode" value="ver" checked onchange="_modsDoneMode()"> Nouvelle version</label>'
+    +'<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="radio" name="mf-mode" value="same" onchange="_modsDoneMode()"> Sans changer de version'+(last?' (reste '+esc2(_modsVerLbl(last.version))+')':'')+'</label></div>'
+    +'<div id="mf-same-note" style="display:none;font-size:12px;color:#6B6790;background:#F6F5FB;border-radius:10px;padding:8px 12px;margin-top:8px">La modification est notée faite, sans nouveau fichier ni email, et intégrée à la version '+(last?esc2(_modsVerLbl(last.version)):'actuelle')+'.</div>'
+    +'<div id="mf-ver-block">'
     +'<div style="display:grid;grid-template-columns:180px 1fr;gap:12px">'
     +'<div><label class="mdx-fl" for="mf-ver">NOUVELLE VERSION</label><input type="text" id="mf-ver" class="mdx-in" placeholder="'+_modsVerHelp+'"></div>'
     +'</div><label class="mdx-fl">FICHIERS <span style="font-weight:600;color:#9A96B3">(un ou plusieurs)</span></label>'+_modsDropHtml(true)
-    +'<label class="mdx-fl" for="mf-note">DÉTAIL MODIFICATION</label><textarea id="mf-note" class="mdx-in" rows="2"></textarea>'
     +'<label class="mdx-fl">PERSONNES À PRÉVENIR <span style="font-weight:600;color:#9A96B3">(celles de la version d’avant, à ajuster si besoin)</span></label>'+_modsPeopleHtml(_modsSelOf(last&&last.dest),last&&last.dest)
-    +_modsFormButtons('modConfirmVer.bind(null,\''+docId+'\',\'\')','Enregistrer et préparer l’email'));
+    +'</div>'
+    +(last?_modsImpactHtml(doc,null):'')
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">'
+    +'<button type="button" class="mdx-btn" id="mf-go-mail" onclick="modConfirmDirect(\''+docId+'\',true)">✉ Enregistrer et préparer l’email</button>'
+    +'<button type="button" class="mdx-btn2" id="mf-go" data-same="✓ Enregistrer la modification" onclick="modConfirmDirect(\''+docId+'\',false)">Enregistrer sans email</button>'
+    +'<button type="button" class="mdx-btn2" style="color:#6B6790" onclick="modCloseForm()">Annuler</button>'
+    +'<span id="mf-status" style="font-size:12px;font-weight:700;color:#6B6790"></span></div>');
+}
+function modConfirmDirect(docId,withMail){
+  var same=(document.querySelector('input[name=mf-mode]:checked')||{}).value==='same';
+  if(!same)return modConfirmVer(docId,'',withMail);
+  var doc=_modsDoc(docId);if(!doc){alert('Ce document a été supprimé entre-temps.');return;}
+  var e=document.getElementById('mf-note'),detail=e?String(e.value||'').trim():'';
+  if(!detail){alert('Indiquez le détail de la modification.');if(e)e.focus();return;}
+  var last=_modsLatest(doc),me=_modsMyName(),imp=_modsChecked('mf-imp');
+  doc.mods=doc.mods||[];
+  var dm={id:_modsUid('m_'),detail:detail,files:[],to:[],byEmail:_modsMe(),byName:me,date:_modsNowFr(),_createdAt:Date.now(),
+    status:'fait',direct:true,doneAt:Date.now(),doneBy:me,noNewVer:true,verId:last?last.id:null};
+  doc.mods.push(dm);
+  var added=imp.length?_modsAddImpacted(imp,dm):[];
+  saveNow();modCloseForm();renderModificationsTab();
+  _modsToast('✓ Modification enregistrée'+(last?', intégrée à la version '+esc2(_modsVerLbl(last.version)):'')+' (pas de nouvelle version).'
+    +(added.length?'<small>🔗 À faire aussi sur : '+added.map(esc2).join(', ')+' — pensez à « ✉ Préparer l’email » sur ces documents.</small>':''),8000);
 }
 function modShowAddDocForm(){
   if(!_modsCanEdit())return;
@@ -11485,7 +11749,7 @@ async function modConfirmVer(docId,modId,withMail,modIds){
   var version=val('mf-ver');
   if(!version){alert('Indiquez la version (saisie libre : 3, B, Ind. C…).');document.getElementById('mf-ver').focus();return;}
   if(!isNew&&(doc.versions||[]).some(function(v){return String(v.version).trim().toLowerCase()===version.toLowerCase();})&&!confirm('La version « '+version+' » existe déjà pour ce document. L’ajouter quand même ?'))return;
-  var note=val('mf-note'),dest=_modsCheckedDest();
+  var note=val('mf-note'),dest=_modsCheckedDest(),imp=_modsChecked('mf-imp'); // imp : autres documents touchés (12/10/2026)
   if(withMail&&!dest.length){alert('Cochez au moins une personne à prévenir.');return;}
   // (12/10/2026) un ou plusieurs fichiers (zone glisser-déposer) : le 1er dans attachmentPath, les autres dans extraFiles
   var files=(window._mfFiles||[]).slice();
@@ -11511,9 +11775,16 @@ async function modConfirmVer(docId,modId,withMail,modIds){
     if(done.length>1)v.modIds=done.map(function(x){return x.id;});
     doc.versions=doc.versions||[];doc.versions.push(v);
   }
+  // (12/10/2026) autres documents touchés → « à faire » (même demande) ; demande finie partout → tâches Études terminées
+  var added=[],closed=[];
+  if(imp.length)added=_modsAddImpacted(imp,m0||null,m0?null:'Suite à '+doc.nom+' '+_modsVerLbl(version)+(note?' : '+note:''));
+  var _g={};(done||[]).forEach(function(m){_g[_modsGrp(m)]=1;});
+  Object.keys(_g).forEach(function(g){closed=closed.concat(_modsGroupCheck(g));});
+  var extra=(added.length?'<small>🔗 À faire aussi sur : '+added.map(esc2).join(', ')+'.</small>':'')+_modsClosedMsg(closed);
   saveNow();
   modCloseForm();
   renderModificationsTab();
+  if(extra){if(withMail)window._modsExtraMsg=extra;else _modsToast('✓ Version '+esc2(_modsVerLbl(version))+' enregistrée.'+extra,8000);}
   if(withMail)modsPrepareEmail(doc.id,v.id,files);
   // nouveau fichier bien enregistré : ceux de la version d'avant sont retirés du site (09/10/2026)
   if(!isNew&&ups.some(function(u){return u.path;}))_modsDropOldFiles(aff,[doc.id],true);
@@ -11625,7 +11896,8 @@ async function _modsMakeEml(o){
   return {fn:fn,attached:n};
 }
 function _modsDoneToast(r,nTo,msgs,tip){
-  _modsToast('📧 <b>Email prêt</b> : ouvrez le fichier « '+esc2(r.fn)+' » (barre des téléchargements du navigateur). Outlook l’affiche avec '+nTo+' destinataire'+(nTo>1?'s':'')+(r.attached?' et '+r.attached+' pièce'+(r.attached>1?'s':'')+' jointe'+(r.attached>1?'s':''):'')+' : vérifiez, puis cliquez sur Envoyer.'
+  var ex=window._modsExtraMsg||'';window._modsExtraMsg='';
+  _modsToast(ex+'📧 <b>Email prêt</b> : ouvrez le fichier « '+esc2(r.fn)+' » (barre des téléchargements du navigateur). Outlook l’affiche avec '+nTo+' destinataire'+(nTo>1?'s':'')+(r.attached?' et '+r.attached+' pièce'+(r.attached>1?'s':'')+' jointe'+(r.attached>1?'s':''):'')+' : vérifiez, puis cliquez sur Envoyer.'
     +(tip?'<small style="color:#FDE68A;font-weight:700">'+tip+'</small>':'')
     +msgs.map(function(m){return '<small>⚠️ '+esc2(m)+'</small>';}).join('')
     +'<small>Astuce : dans le menu des téléchargements, choisissez « Toujours ouvrir les fichiers de ce type » pour qu’Outlook s’ouvre directement la prochaine fois.</small>',14000);
@@ -11642,8 +11914,13 @@ async function modsPrepareReqEmail(docId,modId,localFiles){
   _modsToast('⏳ Préparation de l’email…');
   var A=_modsAffTxt(),last=_modsLatest(doc);
   var att=await _modsGetAttachments(localFiles,m.files);
-  var rows=[['Affaire',A.txt],['Document',doc.nom,1]];
-  if(last)rows.push(['Version actuelle',_modsVerLbl(last.version)]);
+  // (12/10/2026) toute la demande : chaque document encore à faire, avec sa version actuelle
+  var grpIt=_modsGroupItems(_modsGrp(m)).filter(function(x){return x.m.status!=='fait';});
+  if(!grpIt.some(function(x){return x.m===m;}))grpIt.unshift({doc:doc,m:m});
+  var dl=function(x){var l=_modsLatest(x.doc);return x.doc.nom+(l?' ('+_modsVerLbl(l.version)+')':'');};
+  var rows=[['Affaire',A.txt]];
+  if(grpIt.length>1)rows.push(['Documents à modifier',grpIt.map(dl).join('\n'),1]);
+  else{rows.push(['Document',doc.nom,1]);if(last)rows.push(['Version actuelle',_modsVerLbl(last.version)]);}
   rows.push(['Détail modification',m.detail||'']); // pas de date dans l'email (demande de l'utilisateur, 06/10)
   var lines=[];
   if(att.files.length)lines.push(att.files.length>1?'Les fichiers sont joints à ce message.':'Le fichier est joint à ce message.');
@@ -11652,9 +11929,12 @@ async function modsPrepareReqEmail(docId,modId,localFiles){
   var link=location.origin+location.pathname+'?go=modifs&aff='+encodeURIComponent(STORE.current)+'&mod='+encodeURIComponent(m.id);
   lines.push({t:'Une fois la modification faite, merci de l’indiquer sur Pétrosphère : '+link+' (bouton « ✓ Marquer comme faite »).',
     h:'Une fois la modification faite, merci de l’indiquer sur Pétrosphère : <a href="'+escHtml(link)+'" style="color:#4B3FC7;font-weight:bold">ouvrir la modification</a> (bouton « ✓ Marquer comme faite »).'});
-  var r=await _modsMakeEml({to:to,subject:'['+A.num+'] Modification à faire : '+doc.nom,intro:'Une modification est à faire sur un document de l’affaire '+A.txt+'.',
-    rows:rows,lines:lines,files:att.files,fn:A.num+' - Modification à faire - '+doc.nom});
-  m.mailAt=Date.now();m.mailBy=_modsMyName();
+  var noms=grpIt.map(function(x){return x.doc.nom;}).join(', ');
+  var r=await _modsMakeEml({to:to,subject:'['+A.num+'] Modification à faire : '+noms,
+    intro:grpIt.length>1?'Une modification est à faire sur '+grpIt.length+' documents de l’affaire '+A.txt+'.':'Une modification est à faire sur un document de l’affaire '+A.txt+'.',
+    rows:rows,lines:lines,files:att.files,fn:A.num+' - Modification à faire - '+(grpIt.length>1?grpIt.length+' documents':doc.nom)});
+  var _now=Date.now(),_me=_modsMyName();
+  grpIt.forEach(function(x){x.m.mailAt=_now;x.m.mailBy=_me;});
   saveNow();
   if(!_modsBusy())renderModificationsTab();
   _modsDoneToast(r,to.length,att.msgs,'👉 Pour joindre le mail du client : dans Outlook, glissez-le de votre boîte de réception dans ce brouillon.');
@@ -11728,21 +12008,26 @@ function modDeleteDoc(docId){
   var docs=_modsGetDocs();
   var doc=docs.find(function(d){return d.id===docId;});
   var idx=docs.indexOf(doc);
+  // (12/10/2026) ses demandes disparaissent : la demande de groupe peut devenir finie → tâches Études terminées
+  var gr={};((doc&&doc.mods)||[]).forEach(function(m){if(m&&m.status!=='fait'){var g=_modsGrp(m);gr[g]=(gr[g]||[]).concat(m.reopened||[]);}});
   if(idx>=0)docs.splice(idx,1);
+  Object.keys(gr).forEach(function(g){_modsGroupCheck(g,gr[g]);});
   saveNow();
   renderModificationsTab();
 }
 function modDeleteVersion(docId,verId){
   var doc=_modsDoc(docId);
   if(!doc)return;
-  if((doc.versions||[]).length<=1&&!(doc.mods||[]).length){modDeleteDoc(docId);return;}
+  // (12/10/2026) la fiche du document reste même sans version (avant : le document entier était supprimé)
   // (09/10/2026) le fichier de la version d'avant a pu être retiré du site : le dire avant de supprimer la dernière
   var _vs=_modsVersSorted(doc),_prev=_vs[0]&&_vs[0].id===verId?_vs[1]:null;
   var _warn=_prev&&!_modsVerHasFile(_prev)&&_prev.fileRemovedAt?'\n\nAttention : la version '+_modsVerLbl(_prev.version)+' redeviendra la dernière, mais son fichier n’est plus sur le site (il est sur votre serveur). Il faudra le rajouter.':'';
   if(!confirm('Supprimer cette version ?'+_warn))return;
   doc.versions=(doc.versions||[]).filter(function(v){return v.id!==verId;});
   // la demande qui avait donné cette version redevient « à faire »
-  (doc.mods||[]).forEach(function(m){if(m.verId===verId){m.status='afaire';delete m.verId;delete m.doneAt;delete m.doneBy;delete m.noNewVer;}}); // y compris celles faites « sans changer de version » (12/10/2026)
+  // une modif directe (sans demande, 12/10/2026) reste faite : rattachée à la version qui redevient la dernière
+  var _nl=_modsLatest(doc);
+  (doc.mods||[]).forEach(function(m){if(m.verId===verId&&m.direct){m.verId=_nl?_nl.id:null;m.noNewVer=true;return;}if(m.verId===verId){m.status='afaire';delete m.verId;delete m.doneAt;delete m.doneBy;delete m.noNewVer;_modsReholdTasks(m);}}); // y compris celles faites « sans changer de version » (12/10/2026)
   saveNow();
   renderModificationsTab();
 }
@@ -13635,7 +13920,7 @@ function phSetNotifResps(pk){
   if(!phRow)return;
   var p=currP(),infos=p.infos||{},resps=infos.responsables||{};
   var current=phRow.notifResps||[];
-  var defs=[{k:'els',l:'ELS'},{k:'auto',l:'Automatisme'},{k:'be',l:"ELS Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
+  var defs=[{k:'els',l:'ELS Projet'},{k:'auto',l:'Automatisme'},{k:'be',l:"ELS Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
 
   // Construire un modal de sélection
   var ex=document.getElementById('_notifModal');if(ex)ex.remove();
@@ -14236,7 +14521,7 @@ function openAffaireInfos(){
 
   // Construire les blocs responsables
   var respDefs=[
-    {k:'els',l:'ELS'},
+    {k:'els',l:'ELS Projet'},
     {k:'client',l:'Client'},
     {k:'auto',l:'Automatisme'},
     {k:'be',l:'ELS Bureau d\u2019\u00C9tudes'},
@@ -14426,7 +14711,7 @@ function _nafPickPerson(sel, pfx, respKey){
 
 // Mapping service → services annuaire associés
 var _NAF_SVC_MAP={
-  els:['els_projet','els_auto'],
+  els:['els_projet'], // (12/10/2026) ELS Projet seulement, plus les automaticiens,
   client:['client'],
   auto:['els_auto'],
   be:['bureau_etude'],
@@ -14470,7 +14755,7 @@ function _nafRespBlock(k,label,contactsIn,cls,addFn){
     // responsables de CETTE affaire (Infos affaire) — pas tout l'annuaire.
     var _p=currP();
     var respAll=(_p.infos&&_p.infos.responsables)||{};
-    var catDefs=[{k:'chantier',l:'Chantier'},{k:'els',l:'ELS'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'\u00C9tudes"},{k:'tableauterie',l:'Tableauterie'}];
+    var catDefs=[{k:'chantier',l:'Chantier'},{k:'els',l:'ELS Projet'},{k:'auto',l:'Automatisme'},{k:'be',l:"Bureau d'\u00C9tudes"},{k:'tableauterie',l:'Tableauterie'}];
     var seenNm={};
     modifGroups=[];
     catDefs.forEach(function(cd){
@@ -14484,7 +14769,11 @@ function _nafRespBlock(k,label,contactsIn,cls,addFn){
     });
     cands=modifGroups.reduce(function(acc,g){return acc.concat(g.people);},[]);
   }else{
+    // (12/10/2026, demande de l'utilisateur) ELS Projet et Chantier : SEULEMENT les personnes de ce service dans
+    // l'annuaire (jamais tout l'annuaire en repli) ; Chantier : jamais d'intérimaire ni de sous-traitant.
+    var _strict=(k==='els'||k==='chantier');
     cands=Object.values(gp).filter(function(p){
+      if(k==='chantier'&&(p.type==='Interim'||p.type==='S-T'))return false;
       return !svcs.length||svcs.indexOf(p.service||'')>=0;
     }).sort(function(a,b){
       if(svcs.length){
@@ -14496,7 +14785,7 @@ function _nafRespBlock(k,label,contactsIn,cls,addFn){
     });
 
     // Toutes les personnes si pas de candidats dans le service
-    if(!cands.length){
+    if(!cands.length&&!_strict){
       cands=Object.values(gp).sort(function(a,b){return a.name.localeCompare(b.name);});
     }
   }
@@ -14564,6 +14853,7 @@ function _nafRespBlock(k,label,contactsIn,cls,addFn){
       opts+='</optgroup>';
     }
   }else{
+    if(!cands.length&&_strict)opts='<option value="">— Personne n’est classé « '+escHtml(svcInfo.l||label)+' » dans l’annuaire —</option>';
     cands.forEach(function(p){
       opts+='<option value="'+escHtml(p.name)+'|'+escHtml(p.email||'')+'">'+escHtml(p.name)+(p.email?' · '+escHtml(p.email):'')+'</option>';
     });
@@ -14588,7 +14878,7 @@ function showNewAffaireForm(){
   ov.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:30px 20px;overflow-y:auto';
   var copyOpts='<option value="">— Nouvelle affaire vide —</option>';
   Object.keys(STORE.projects).sort().forEach(function(k){copyOpts+='<option value="'+k+'">'+getAffLabel(k)+'</option>';});
-  var respDefs=[{k:'els',l:'ELS'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"ELS Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
+  var respDefs=[{k:'els',l:'ELS Projet'},{k:'client',l:'Client'},{k:'auto',l:'Automatisme'},{k:'be',l:"ELS Bureau d'\u00C9tudes"},{k:'chantier',l:'Chantier'},{k:'tableauterie',l:'Tableauterie'}];
   var respHtml=respDefs.map(function(rd){return _nafRespBlock(rd.k,rd.l,[],'naf','nafAddEmail');}).join('');
   var box=document.createElement('div');
   box.style.cssText='background:var(--bg2);border-radius:14px;padding:28px 32px;width:660px;max-width:100%;box-shadow:0 24px 80px rgba(0,0,0,.4);font-family:inherit';
