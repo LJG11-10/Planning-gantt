@@ -4017,6 +4017,17 @@ function _phCat(pk){
   if(u.indexOf('ETUDE')>=0)return 'ETUDE';
   return 'AUTRES';
 }
+// (19/10/2026, règle de l'utilisateur) Les « heures vendues » (p.budget) ne se saisissent plus : partout où elles
+// servaient, on prend le BUDGET HEURES DE LA PHASE CHANTIER (« c'est généralement la même valeur »).
+// Budget de la (des) ligne(s) de phase Chantier ; s'il n'y en a pas, somme des sous-phases de cette phase.
+function _chantierBudget(p){
+  var ph=0,sb=0;
+  ((p&&p.data)||[]).forEach(function(r){
+    if(!r||_phCat(r.pk)!=='CHANTIER')return;
+    if(r.t==='ph')ph+=+r.budgetH||0;else if(r.t==='sb')sb+=+r.budgetH||0;
+  });
+  return Math.round((ph>0?ph:sb)*10)/10;
+}
 function _phLimited(){try{if(CURRENT_ROLE==='admin')return false;var p=CURRENT_PERMISSIONS.phx_lim;return !!(p&&p.can_view);}catch(e){return false;}}
 function _phOK(pk){if(!_phLimited())return true;var p=CURRENT_PERMISSIONS['phx_'+_phCat(pk)];return !!(p&&p.can_view);}
 function _phGuardId(id){try{var r=D().find(function(x){return x.id===id;});if(r&&!_phOK(r.pk)){_phDenied();return true;}}catch(e){}return false;}
@@ -6362,7 +6373,7 @@ function deleteDuplicateAffaire(key){
 }
 
 function dbRecap(){
-  // (12/10/2026) la colonne « BUDGET » ci-dessous = heures VENDUES (p.budget) : case « H vendues » (budget_toolbar), réservée aux ELS projet
+  // (12/10/2026) la colonne « BUDGET CHANTIER » ci-dessous = budget de la phase Chantier (avant 19/10/2026 : heures vendues p.budget) : case « H vendues » (budget_toolbar), réservée aux ELS projet
   // (12/10/2026) rôle limité à certaines phases : ce bilan additionne les heures de TOUTES les phases → pas affiché
   if(typeof _phLimited==='function'&&_phLimited())return '<div style="max-width:560px;margin:40px auto;text-align:center;background:#fff;border:1px solid #E4E1F0;border-radius:14px;padding:26px;color:#4A4766;font-size:13px">🔒 Le bilan de toutes les affaires additionne les heures de toutes les phases : il n’est pas visible avec un rôle limité à certaines phases.<br><br>Les heures de vos phases sont dans chaque affaire, onglets <b>Bilan</b> et <b>Heures</b>.</div>';
   var affs=Object.keys(STORE.projects).sort();
@@ -6377,7 +6388,7 @@ function dbRecap(){
     // (08/10/2026) prévues = budgets heures des phases ; réelles = feuilles d'heure (plus hPrev / hReel)
     gPrev+=(p.data||[]).reduce(function(s,r){return s+(r.t==='ph'?(+r.budgetH||0):0);},0);
     gReel+=_fhOf(aff).total;
-    gBud+=(p.budget||0);
+    gBud+=_chantierBudget(p); // (19/10/2026) budget de la phase Chantier
     gActs+=acts.length;
     gDone+=acts.filter(function(a){return a.done;}).length;
   });
@@ -6387,7 +6398,7 @@ function dbRecap(){
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--or)">'+gPrev+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET PHASES</div></div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--gn)">'+gReel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:'+(gPrev-gReel<0?'var(--rd)':gPrev-gReel>0?'var(--gn)':'var(--tx3)')+'">'+(gPrev-gReel===0?'—':(gPrev-gReel>0?'+':'')+(gPrev-gReel)+'H')+'</div><div style="font-size:8px;color:var(--tx3)">Δ</div></div>'
-    +(hasView('budget_toolbar')?'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gBud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
+    +(hasView('budget_toolbar')?'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gBud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET CHANTIER</div></div>':'')
     +'<div style="text-align:center"><div style="font-size:18px;font-weight:700;color:var(--tx2)">'+gDone+'/'+gActs+'</div><div style="font-size:8px;color:var(--tx3)">TERMINÉES</div></div>'
     +'</div>';
 
@@ -6395,7 +6406,7 @@ function dbRecap(){
   affs.forEach(function(aff){
     var p=STORE.projects[aff];
     var acts=(p.data||[]).filter(function(r){return r.t==='act';});
-    var bud=p.budget||0;
+    var bud=_chantierBudget(p); // (19/10/2026) budget de la phase Chantier
     var prev=Math.round((p.data||[]).reduce(function(s,r){return s+(r.t==='ph'?(+r.budgetH||0):0);},0)*10)/10;
     var reel=_fhOf(aff).total;
     var delta=Math.round((prev-reel)*10)/10;
@@ -6434,7 +6445,7 @@ function dbRecap(){
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--or)">'+prev+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET PHASES</div></div>'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--gn)">'+reel+'H</div><div style="font-size:8px;color:var(--tx3)">RÉELLES</div></div>'
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:'+(delta<0?'var(--rd)':delta>0?'var(--gn)':'var(--tx3)')+'">'+(delta===0?'—':(delta>0?'+':'')+delta+'H')+'</div><div style="font-size:8px;color:var(--tx3)">DELTA</div></div>'
-      +(hasView('budget_toolbar')?'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+bud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET</div></div>':'')
+      +(hasView('budget_toolbar')?'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+bud+'H</div><div style="font-size:8px;color:var(--tx3)">BUDGET CHANTIER</div></div>':'')
       +'<div style="text-align:center"><div style="font-size:15px;font-weight:700;color:var(--tx2)">'+done+'/'+acts.length+'</div><div style="font-size:8px;color:var(--tx3)">TERMIN.</div></div>'
       +'</div></div>'
       // Progress bars
@@ -7577,7 +7588,7 @@ function dbDownloadRecap(aff){
   var totReel=acts.reduce(function(s,a){return s+(+a.hReel||0);},0);
   var totDone=acts.filter(function(a){return a.done;}).length;
   var pctAdv=acts.length?Math.round(totDone/acts.length*100):0;
-  var bud=p.budget||0;
+  var bud=_chantierBudget(p); // (19/10/2026) budget de la phase Chantier
   var body='<h1>'+esc(aff)+'</h1><p style="color:#888;margin-bottom:24px">Généré le '+date+'</p>';
   body+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px">';
   body+='<div style="background:#EFF6FF;border-radius:8px;padding:14px;text-align:center"><div style="font-size:24px;font-weight:900;color:#2563EB">'+pctAdv+'%</div><div style="font-size:10px;color:#888;font-weight:700">AVANCEMENT</div></div>';
@@ -8158,7 +8169,7 @@ function downloadPlanning(mode){
   var totR=Math.round(acts.reduce(function(s,a){return s+(_FH.byId[a.id]||0);},0)*10)/10;
   var done=acts.filter(function(a){return a.done;}).length;
   var pct=calcHierProgress(p.data,{includeSb:function(sb){return _clientRowIncluded(sb.pk,sb.ensId);}});
-  var bud=p.budget||0;
+  var bud=_chantierBudget(p); // (19/10/2026) budget de la phase Chantier
   // Ecart = ce qu'il reste de prévu (positif/vert) ou le dépassement
   // (négatif/rouge) — même logique que le récap à l'écran.
   var ecart=Math.round((totP-totR)*10)/10;
@@ -8181,7 +8192,7 @@ function downloadPlanning(mode){
   body+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:28px">';
   [
     {v:pct+'%',l:'Avancement',sub:done+'/'+acts.length+' activités terminées',c:'#2563EB',bg:'#EFF6FF'},
-    {v:mode!=='client'?Math.round(totP)+'H':'—',l:'H Prévues',sub:hasView('budget_toolbar')?('Budget : '+(bud||'—')+'H'):'',c:'#D97706',bg:'#FFF7ED',hide:mode==='client'},
+    {v:mode!=='client'?Math.round(totP)+'H':'—',l:'H Prévues',sub:hasView('budget_toolbar')?('Budget chantier : '+(bud||'—')+'H'):'',c:'#D97706',bg:'#FFF7ED',hide:mode==='client'},
     {v:mode!=='client'?Math.round(totR)+'H':'—',l:'H Réelles',sub:'Écart : '+(ecart>=0?'+':'')+ecart+'H',c:ecart<0?'#DC2626':'#059669',bg:ecart<0?'#FEF2F2':'#F0FDF4',hide:mode==='client'},
   ].filter(function(x){return !x.hide;}).forEach(function(x){
     body+='<div style="background:'+x.bg+';border-radius:12px;padding:20px;border-top:4px solid '+x.c+'">'
@@ -22314,7 +22325,7 @@ function renderHeures(){
   const _lim=typeof _phLimited==='function'&&_phLimited();
   // (12/10/2026) heures vendues / restantes : seulement avec la case « H vendues » (Gestion des droits › Budget Heures)
   const _noBud=typeof hasView==='function'&&!hasView('budget_toolbar');
-  const aff=STORE.current,bud=(_lim||_noBud)?0:(currP().budget||0);
+  const aff=STORE.current,bud=(_lim||_noBud)?0:_chantierBudget(currP());
   const pm={},rows={},where={};
   // Où est rangée chaque ligne du planning : ensemble (PAE 4…) et sous-phase, pour afficher « PAE 5 › Skid 6 »
   (function(){var ens=null,sb=null;(currP().data||[]).forEach(r=>{rows[r.id]=r;
@@ -22546,7 +22557,7 @@ function renderSkids(){
 
   if(!p.skBuds)p.skBuds={};
   const cw=TODAY?TODAY.w:1;
-  const projBud=p.budget||0,projUsed=totalUsed();
+  const projBud=_chantierBudget(p),projUsed=totalUsed();
   const projHP=projBud?Math.min(100,projUsed/projBud*100):0;
   const projSmin=allA.length?Math.min(...allA.map(a=>a.s)):1;
   const projSmax=allA.length?Math.max(...allA.map(a=>a.e)):52;
@@ -27102,7 +27113,8 @@ window.PetroNav=(function(){
   function chipsHtml(k){
     var p=STORE.projects[k]||{},h='';
     var ch=function(l,v,st){return '<span class="sec-chip"'+(st?' style="'+st+'"':'')+'><span class="sec-lbl">'+l+'</span><b>'+v+'</b></span>';};
-    if(secVis('#inp-bud')&&!(typeof _phLimited==='function'&&_phLimited()))h+='<span class="sec-chip in"><span class="sec-lbl">H VENDUES</span><span id="sec-bud-slot"></span><b>h</b></span>';
+    // (19/10/2026, demande de l'utilisateur) case « H VENDUES » retirée de l'en-tête : « ça ne sert à rien ».
+    // Le vrai champ #inp-bud reste caché à sa place (#sec-bud-home) ; placeBud ne trouve plus de case, il n'y bouge plus.
     if(secVis('#inp-dstart')){
       var ds=($('inp-dstart')||{}).value||p.dstart||'',de=($('inp-dend')||{}).value||p.dend||'';
       if(ds)h+=ch('DÉBUT',frDate(ds));
