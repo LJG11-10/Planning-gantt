@@ -27416,6 +27416,7 @@ window.PunchList=(function(){
   // ({fn, blob, missing}) au lieu de le télécharger ; sans row = la punch list ouverte, comme avant.
   async function exportXlsx(row){
     if(row&&!row.data) row=null;
+    var asFile=!!row; // (19/10/2026) noté ici : « row » est réutilisé plus bas pour les lignes Excel → le bouton ne téléchargeait plus rien
     if(!row&&!S.cur) return;
     if(!row&&Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); }
     var btn=row?null:$('pl-xls'),lbl=function(t){ if(btn){ btn.textContent=t; } };
@@ -27490,12 +27491,12 @@ window.PunchList=(function(){
       var buf=await wb.xlsx.writeBuffer();
       var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
       var fn=String((d._title||'Punch list')+(cv.rev?' Rev '+cv.rev:'')+' - ELS '+fr(todayIso()).replace(/\//g,'-')).replace(/[\\\/:*?"<>|\r\n]+/g,'_').slice(0,120)+'.xlsx';
-      if(row) return {fn:fn,blob:blob,missing:missing,stats:st};
+      if(asFile) return {fn:fn,blob:blob,missing:missing,stats:st};
       var url=URL.createObjectURL(blob),a=document.createElement('a'); a.href=url; a.download=fn; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){ URL.revokeObjectURL(url); },15000);
       if(missing) alert(missing+' photo(s) n’ont pas pu être récupérées : elles sont indiquées « photo indisponible » dans le fichier.');
       return {fn:fn,size:blob.size,rows:K.length,photos:doneP-missing};
-    }catch(e){ if(row) throw e; alert('Export Excel impossible : '+(e&&e.message||e)); }
+    }catch(e){ if(asFile) throw e; alert('Export Excel impossible : '+(e&&e.message||e)); }
     finally{ if(btn){ btn.disabled=false; btn.textContent='⬇ Excel'; } }
   }
   // Dossier de fin d'affaire : toutes les punch lists d'une affaire, en .xlsx avec photos
