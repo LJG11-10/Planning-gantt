@@ -11242,6 +11242,7 @@ function _modsDocsPickHtml(sel,exclude,cls,withNew){
     }).join('')+'</div></div>';
   });
   if(withNew)h+='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><input type="text" id="mf-doc-new" class="mdx-in" style="flex:1;min-width:200px" placeholder="Autre document (nouveau) : tapez son nom, il sera créé">'
+    +'<input type="text" id="mf-doc-new-v" class="mdx-in" style="width:130px" placeholder="Sa version *" aria-label="Version du nouveau document (obligatoire)" title="Obligatoire : version actuelle du nouveau document (ex : A)">'
     +'<select id="mf-doc-new-ph" class="mdx-in" style="width:auto" aria-label="Phase (ou client) du nouveau document">'+_MODS_PH_ALL.map(function(p){return '<option value="'+p.k+'">'+esc2(p.l)+'</option>';}).join('')+'</select></div>';
   return h;
 }
@@ -11774,7 +11775,12 @@ function modMoveDocTo(docId,ph){
 // ── Liste des documents (1re arrivée : les 4 phases ; « ＋ » d'une colonne : cette phase seulement) ──
 // Case « VERSION » à droite : le document existe parfois déjà dans une version avancée → la fiche commence à cette version.
 function _modsSetupVerIn(){
-  return '<input type="text" class="mdx-in mdx-sv" placeholder="Version" oninput="window._modsSetupTouched=1" aria-label="Version de départ (facultatif)" title="Facultatif : si ce document existe déjà dans une version (ex : C), tapez-la — la fiche commencera à cette version">';
+  return '<input type="text" class="mdx-in mdx-sv" placeholder="Version *" oninput="window._modsSetupTouched=1;this.style.borderColor=\'\'" aria-label="Version du document (obligatoire)" title="Obligatoire : version actuelle du document (ex : A, ou C s’il existe déjà dans une version avancée)">';
+}
+// (19/10/2026, demande de l'utilisateur) un document créé a TOUJOURS une version : la 1re version de sa fiche
+function _modsInitVer(ver,t){
+  return {id:_modsUid('v_'),version:ver,date:_modsNowFr(),note:'Version de départ',dest:[],
+    byEmail:_modsMe(),byName:_modsMyName(),attachmentPath:null,attachmentName:null,initial:true,_createdAt:t||Date.now()};
 }
 function _modsSetupLine(nm,isHave){
   return isHave?'<div class="mdx-sl" data-have="'+escHtml(nm)+'"><input type="checkbox" checked disabled><span class="mdx-sln">'+esc2(nm)+'</span><span class="mdx-have">✓ déjà là</span></div>'
@@ -11792,7 +11798,7 @@ function _modsSetupHtml(first,only){
       +'<button type="button" class="mdx-lnk" style="margin-top:6px" onclick="modSetupAddLine(\''+p.k+'\')">＋ Autre document</button></div>';
   }).join('');
   return '<div class="mdx-ft">'+(first?'📋 Quels documents pour cette affaire ?':only==='ELS'?'＋ Documents ELS':only==='CLIENT'?'＋ Documents client':'＋ Ajouter des documents'+(only?' — '+esc2(_modsPhLbl(only)):''))+'</div>'
-    +'<div class="mdx-sub" style="margin-bottom:10px">Cochez les documents'+(first?' de chaque phase':'')+' : une fiche est créée pour chacun. Nom modifiable ; <b>VERSION</b> facultative (si le document existe déjà dans une version, ex : C).'+(first?' Une colonne peut rester vide.':'')+'</div>'
+    +'<div class="mdx-sub" style="margin-bottom:10px">Cochez les documents'+(first?' de chaque phase':'')+' : une fiche est créée pour chacun. Nom modifiable ; <b>VERSION obligatoire</b> : la version actuelle du document (ex : A, ou C s’il existe déjà dans une version avancée).'+(first?' Une colonne peut rester vide.':'')+'</div>'
     +'<div class="mdx-sgrid">'+sec+'</div>'
     +'<label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#6B6790;margin-top:12px;cursor:pointer"><input type="checkbox" id="mf-setup-def" style="accent-color:#4B3FC7"> Retenir '+(only?'cette liste':'ces listes')+' (noms et ordre) pour les prochaines affaires</label>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">'
@@ -11822,13 +11828,22 @@ function modSetupCreate(){
     });
   });
   if(!names.length){alert('Cochez au moins un document (ou tapez le nom d’un autre document).');return;}
+  // version obligatoire pour chaque fiche qui sera vraiment créée
+  var noV=[],fV=null;
+  box.querySelectorAll('.mdx-sl[data-new]').forEach(function(l){
+    var cb=l.querySelector('input[type=checkbox]'),inp=l.querySelector('.mdx-snm'),vi=l.querySelector('.mdx-sv'),ss=l.closest('.mdx-ss'),nm=inp?inp.value.trim():'';
+    if(!cb||!cb.checked||!nm||!vi||vi.value.trim())return;
+    if(_modsDocByName(nm,ss&&ss.dataset.ph||'ETUDE'))return;
+    if(names.some(function(x){return x.ver&&x.ph===(ss&&ss.dataset.ph||'ETUDE')&&_modsNormNom(x.nm)===_modsNormNom(nm);}))return;
+    vi.style.borderColor='#DC2626';noV.push(nm);if(!fV)fV=vi;
+  });
+  if(noV.length){alert('Indiquez la version de : '+noV.join(', ')+'.\n(Sa version actuelle, ex : A.)');if(fV)fV.focus();return;}
   // même nom deux fois dans une colonne : une seule fiche, avec la version tapée s'il y en a une
   var byK={};
   names=names.filter(function(x){var k=x.ph+'|'+_modsNormNom(x.nm);if(byK[k]){if(!byK[k].ver&&x.ver)byK[k].ver=x.ver;return false;}byK[k]=x;return true;});
   names.forEach(function(x){
     if(_modsDocByName(x.nm,x.ph))return;
-    var vs=x.ver?[{id:_modsUid('v_'),version:x.ver,date:_modsNowFr(),note:'Version de départ (existait déjà avant le site)',dest:[],
-      byEmail:_modsMe(),byName:me,attachmentPath:null,attachmentName:null,initial:true,_createdAt:t+made.length}]:[];
+    var vs=x.ver?[_modsInitVer(x.ver,t+made.length)]:[];
     _modsGetDocs().push({id:_modsUid('doc_'),nom:x.nm,phase:x.ph,_createdAt:t+made.length,versions:vs,mods:[]});
     made.push(x.nm+(x.ver?' ('+_modsVerLbl(x.ver)+')':''));
   });
@@ -11953,8 +11968,9 @@ function modShowReqForm(docId){
 async function modConfirmReq(docId,withMail){
   var val=function(id){var e=document.getElementById(id);return e?String(e.value||'').trim():'';};
   // (12/10/2026) plusieurs documents cochés : une demande par document, toutes dans le même groupe (grp)
-  var ids=_modsChecked('mf-doc'),nom=val('mf-doc-new'),newPh=val('mf-doc-new-ph')||'ETUDE';
+  var ids=_modsChecked('mf-doc'),nom=val('mf-doc-new'),newPh=val('mf-doc-new-ph')||'ETUDE',newV=val('mf-doc-new-v');
   if(nom){var ex=_modsDocByName(nom,newPh);if(ex){if(ids.indexOf(ex.id)<0)ids.push(ex.id);nom='';}}
+  if(nom&&!newV){alert('Indiquez la version du nouveau document « '+nom+' ».');return;}
   if(!ids.length&&!nom){alert('Cochez au moins un document concerné (ou tapez le nom d’un nouveau document).');return;}
   var detail=val('mf-note');
   if(!detail){alert('Indiquez le détail de la modification.');return;}
@@ -11969,7 +11985,7 @@ async function modConfirmReq(docId,withMail){
     if(bad.length)alert(bad.length+' fichier(s) n’ont pas pu être enregistrés sur le serveur ('+bad[0].err+').'+(withMail?'\nIls seront quand même joints à l’email.':''));
   }
   if(STORE.current!==aff){alert('L’affaire a changé pendant l’enregistrement : la modification n’a pas été ajoutée.');return;}
-  if(newId)_modsGetDocs().push({id:newId,nom:nom,phase:newPh,_createdAt:Date.now(),versions:[],mods:[]});
+  if(newId)_modsGetDocs().push({id:newId,nom:nom,phase:newPh,_createdAt:Date.now(),versions:[_modsInitVer(newV)],mods:[]});
   var fl=up.map(function(u){return {path:u.path,name:u.name+(u.path?'':' (non enregistré sur le serveur)')};});
   var held=_modsHoldTasks(tasks),made=[],t=Date.now();
   (newId?ids.concat([newId]):ids).forEach(function(id,k){
@@ -12921,8 +12937,9 @@ function m2NewReq(docId,pre){
 }
 async function m2Create(withMail){
   var t=_m2Val('m2-t'),det=_m2Val('m2-d'),ids=_m2Q('.m2-doc:checked').map(function(c){return c.value;});
-  var nom=_m2Val('mf-doc-new'),nph=_m2Val('mf-doc-new-ph')||'ETUDE';
+  var nom=_m2Val('mf-doc-new'),nph=_m2Val('mf-doc-new-ph')||'ETUDE',nver=_m2Val('mf-doc-new-v');
   if(nom){var ex=_modsDocByName(nom,nph);if(ex){if(ids.indexOf(ex.id)<0)ids.push(ex.id);nom='';}}
+  if(nom&&!nver){alert('Indiquez la version du nouveau document « '+nom+' » (sa version actuelle, ex : A).');var fv=document.getElementById('mf-doc-new-v');if(fv)fv.focus();return;}
   var who=_m2WhoVals(),tasks=_m2Q('.mf-task:checked').map(function(c){return c.value;});
   if(!t){alert('Indiquez un titre court.');return;}
   if(!ids.length&&!nom){alert('Cochez au moins un document (ou tapez le nom d’un nouveau document).');return;}
@@ -12938,7 +12955,7 @@ async function m2Create(withMail){
     _m2Busy(false);
   }
   if(STORE.current!==aff){alert('L’affaire a changé pendant l’enregistrement : rien n’a été créé.');return;}
-  if(newId)_modsGetDocs().push({id:newId,nom:nom,phase:nph,_createdAt:Date.now(),versions:[],mods:[]});
+  if(newId)_modsGetDocs().push({id:newId,nom:nom,phase:nph,_createdAt:Date.now(),versions:[_modsInitVer(nver)],mods:[]});
   var fl=up.filter(function(u){return u.path;}).map(function(u){return {path:u.path,name:u.name};});
   var held=_modsHoldTasks(tasks),tm=Date.now(),me=_modsMyName(),src=_m2Val('m2-src');
   (newId?ids.concat([newId]):ids).forEach(function(id,k){
