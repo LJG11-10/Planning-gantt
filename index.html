@@ -12726,7 +12726,7 @@ function renderModificationsTab(){
   var est=open.reduce(function(s,g){return s+_m2EstTot(g);},0),done=open.reduce(function(s,g){return s+_m2HTot(g.id);},0);
   var h='<div class="m2">'
     +'<div class="m2-card"><div class="m2-row" style="align-items:flex-start"><div style="flex:1;min-width:260px"><div class="m2-h2">🔧 Modifications</div>'
-    +'<div class="m2-flow"><span><b>1</b>Demande</span><em>→</em><span><b>2</b>Planifiée (qui, quand, combien d’heures)</span><em>→</em><span><b>3</b>Faite + document joint</span><em>→</em><span><b>4</b>Chaque document validé (ELS Projet · Autom pour ses documents)</span><em>↺ sinon « à reprendre »</em></div>'
+    +'<div class="m2-flow"><span><b>1</b>Demande</span><em>→</em><span><b>2</b>Planifiée (qui, quand, combien d’heures)</span><em>→</em><span><b>3</b>Faite (document joint si besoin)</span><em>→</em><span><b>4</b>Chaque document validé (ELS Projet · Autom pour ses documents)</span><em>↺ sinon « à reprendre »</em></div>'
     +'<div class="m2-sub" style="margin-top:8px">Les heures passées sont notées par chacun (bureau d’études, automatisme, chantier). La tâche du planning ne passe « terminée » qu’à la validation.</div>'
     +(_modsPeople().length||!ed?'':'<div class="mdx-warn">Aucune personne avec un email dans les infos de l’affaire. <button type="button" class="mdx-lnk" onclick="openAffaireInfos()">ℹ️ Ajouter des personnes</button></div>')
     +'</div>'+(ed&&docs.length?'<button type="button" class="m2-btn big" onclick="m2NewReq()">＋ Nouvelle modification</button>':'')+'</div></div>'
@@ -12813,7 +12813,7 @@ function _m2DrawReq(){
     +G.items.map(function(x){
       var d=x.doc,m=x.m,st=_m2St(m),l=_modsLatest(d),dep=m.dep,c=_modsPhCol(_modsPhOf(d)),dj=_modsJs(d.id),mj=_modsJs(m.id);
       var ver;
-      if(dep&&st!=='todo')ver='<b>'+esc2(_modsVerLbl(dep.nv))+'</b>'+(dep.same?' <span class="m2-note">(même indice)</span>':'')+'<br>'+_modsFilesHtml(dep.files);
+      if(dep&&st!=='todo')ver='<b>'+esc2(_modsVerLbl(dep.nv))+'</b>'+(dep.same?' <span class="m2-note">(même indice)</span>':'')+'<br>'+((dep.files||[]).length?_modsFilesHtml(dep.files):'<span class="m2-note">sans fichier</span>');
       else if(st==='valid'&&m.verId){var vv=(d.versions||[]).find(function(v){return v.id===m.verId;});ver=vv?'<b>'+esc2(_modsVerLbl(vv.version))+'</b>':'—';}
       else ver='<span class="m2-note">actuelle : '+esc2(l?_modsVerLbl(l.version):'—')+'</span>';
       var act='';
@@ -13002,29 +13002,46 @@ function m2DepForm(docId,modId){
   var d=it.doc,m=it.m,l=_modsLatest(d),me=_modsMe();
   m2Modal('<h2>⬆ '+esc2(d.nom)+' — modification faite</h2><div class="m2-note">Version actuelle : <b>'+esc2(l?_modsVerLbl(l.version):'aucune')+'</b>. Le document part ensuite en validation.</div>'
     +(_m2St(m)==='redo'&&m.reason?'<div class="m2-tl" style="margin-top:8px"><div><span class="m2-rs">↺ À reprendre : '+esc2(m.reason)+'</span></div></div>':'')
-    +'<label class="m2-fl" for="m2-v">NOUVELLE VERSION</label><div class="m2-g2"><input type="text" id="m2-v" class="m2-in" placeholder="Ex : Ind. D" value="'+escHtml(_m2St(m)==='redo'&&m.dep&&!m.dep.same?m.dep.nv:'')+'">'
-    +(l?'<label style="display:flex;gap:6px;align-items:center;font-size:12px;cursor:pointer"><input type="checkbox" id="m2-same" style="accent-color:#6457F4"> Même indice (pas de nouvelle version)</label>':'<span></span>')+'</div>'
-    +'<label class="m2-fl">DOCUMENT (OBLIGATOIRE)</label>'+_modsDropHtml(true)
+    // (19/10/2026, demande de l'utilisateur) UN champ « version », toujours à remplir : prérempli avec la version actuelle ;
+    // on la change si l'indice change, on la laisse si elle reste la même
+    +'<label class="m2-fl" for="m2-v">VERSION DU DOCUMENT</label>'
+    +'<div class="m2-row"><input type="text" id="m2-v" class="m2-in" style="width:180px" placeholder="Ex : Ind. D" value="'+escHtml(_m2St(m)==='redo'&&m.dep?m.dep.nv:(l?l.version:''))+'" oninput="_m2VerHint(\''+_modsJs(docId)+'\')">'
+    +'<span id="m2-vh" class="m2-note" style="font-weight:700"></span></div>'
+    +'<div class="m2-note" style="margin-top:4px">'+(l?'Tapez la nouvelle version si l’indice change, ou laissez <b>'+esc2(l.version)+'</b> s’il ne change pas.':'Première version de ce document : tapez sa version (ex : A).')+'</div>'
+    +'<label class="m2-fl">DOCUMENT <span class="m2-note">(facultatif — un ou plusieurs fichiers)</span></label>'+_modsDropHtml(true)
     +'<label class="m2-fl">HEURES PASSÉES <span class="m2-note">(depuis la dernière saisie — au nom de '+esc2(_modsMyName()||me)+')</span></label>'
     +'<div class="m2-row"><input id="m2-dh" class="m2-in" style="width:120px" placeholder="Heures" inputmode="decimal"><select id="m2-dsvc" class="m2-in" style="width:auto">'+Object.keys(M2_SVC).map(function(k){return '<option value="'+k+'"'+(_m2SvcOfEmail(me)===k?' selected':'')+'>'+M2_SVC[k].l+'</option>';}).join('')+'</select></div>'
     +'<label class="m2-fl" for="m2-dc">COMMENTAIRE <span class="m2-note">(facultatif)</span></label><input type="text" id="m2-dc" class="m2-in" placeholder="Ex : repères corrigés folios 9 à 12">'
     +'<div class="m2-mact"><span id="m2-status" class="m2-note" style="margin-right:auto"></span><button type="button" class="m2-btn2" onclick="m2CloseModal()">Annuler</button><button type="button" class="m2-btn gn" onclick="m2Deposit(\''+_modsJs(docId)+'\',\''+_modsJs(modId)+'\')">✓ Envoyer en validation</button></div>');
+  _m2VerHint(docId);
+}
+function _m2VerNorm(s){return String(s==null?'':s).trim().toLowerCase().replace(/\s+/g,' ');}
+// « → même version » / « → nouvelle version » à côté du champ
+function _m2VerHint(docId){
+  var d=_modsDoc(docId),l=d&&_modsLatest(d),e=document.getElementById('m2-vh'),v=_m2Val('m2-v');if(!e)return;
+  if(!v){e.textContent='';return;}
+  if(l&&_m2VerNorm(v)===_m2VerNorm(l.version)){e.style.color='#6B6790';e.textContent='→ même version (l’indice ne change pas)';}
+  else{e.style.color='#15803D';e.textContent='→ nouvelle version'+(l?' (remplacera '+_modsVerLbl(l.version)+')':'');}
 }
 async function m2Deposit(docId,modId){
   var it=_m2Item(docId,modId);if(!it){m2CloseModal();return;}
-  var d=it.doc,m=it.m,l=_modsLatest(d),same=!!(document.getElementById('m2-same')||{}).checked,nv=_m2Val('m2-v');
+  var d=it.doc,m=it.m,l=_modsLatest(d),nv=_m2Val('m2-v');
+  // même version que l'actuelle = l'indice ne change pas
+  var same=!!(l&&nv&&_m2VerNorm(nv)===_m2VerNorm(l.version));
   var files=(window._mfFiles||[]).slice(),hh=_modsParseH(_m2Val('m2-dh')),c=_m2Val('m2-dc');
-  if(!files.length){alert('Joignez le document (obligatoire).');return;}
-  if(!same&&!nv){alert('Indiquez la nouvelle version, ou cochez « Même indice ».');document.getElementById('m2-v').focus();return;}
-  if(!same&&(d.versions||[]).some(function(v){return String(v.version).trim().toLowerCase()===nv.toLowerCase();})&&!confirm('La version « '+nv+' » existe déjà pour ce document. Continuer quand même ?'))return;
+  // (19/10/2026, demande de l'utilisateur) le document joint est FACULTATIF
+  if(!nv){alert('Indiquez la version du document (la même que l’actuelle si elle ne change pas).');document.getElementById('m2-v').focus();return;}
+  if(!same&&(d.versions||[]).some(function(v){return _m2VerNorm(v.version)===_m2VerNorm(nv);})&&!confirm('La version « '+nv+' » existe déjà (ancienne version de ce document). Continuer quand même ?'))return;
   if(_m2Val('m2-dh')&&!(hh>0&&hh<=500)){alert('Heures : indiquez un nombre (ex : 3,5), ou laissez vide.');return;}
   var aff=STORE.current,up=[],key=modId+'_d'+Date.now().toString(36);
-  _m2Busy(true,'Envoi '+(files.length>1?'des '+files.length+' fichiers':'du fichier')+'…');
-  for(var i=0;i<files.length;i++)up.push(await _modsUploadP(files[i],docId,key+'_'+i));
-  _m2Busy(false);
+  if(files.length){
+    _m2Busy(true,'Envoi '+(files.length>1?'des '+files.length+' fichiers':'du fichier')+'…');
+    for(var i=0;i<files.length;i++)up.push(await _modsUploadP(files[i],docId,key+'_'+i));
+    _m2Busy(false);
+  }
   var ok=up.filter(function(u){return u.path;});
-  if(!ok.length){alert('Le fichier n’a pas pu être enregistré sur le serveur ('+(up[0]&&up[0].err||'erreur')+'). Rien n’a été déposé.');return;}
-  if(ok.length<up.length)alert((up.length-ok.length)+' fichier(s) n’ont pas pu être enregistrés : seuls les autres sont déposés.');
+  if(files.length&&!ok.length&&!confirm('Le fichier n’a pas pu être enregistré sur le serveur ('+(up[0]&&up[0].err||'erreur')+').\n\nMarquer quand même comme fait, sans fichier ?'))return;
+  if(ok.length&&ok.length<up.length)alert((up.length-ok.length)+' fichier(s) n’ont pas pu être enregistrés : seuls les autres sont déposés.');
   if(STORE.current!==aff){alert('L’affaire a changé pendant l’envoi : rien n’a été déposé.');return;}
   it=_m2Item(docId,modId);if(!it){alert('Cette demande a été supprimée entre-temps.');return;}
   m=it.m;
@@ -13046,18 +13063,22 @@ function m2Val(docId,modId){
   var it=_m2Item(docId,modId);if(!it)return;
   var d=it.doc,m=it.m,dep=m.dep,g=_modsGrp(m);
   if(!_m2CanValDoc(d)){alert('Ce document est à valider par ELS Projet'+(_modsPhOf(d)==='AUTOMATISME'?' ou l’Automatisme':'')+'.');return;}
-  if(!dep||!(dep.files||[]).length){alert('Aucun document déposé à valider.');return;}
-  var aff=STORE.current,l=_modsLatest(d),G=_m2Find(g),f0=dep.files[0],rest=dep.files.slice(1);
+  if(!dep){alert('Ce document n’a pas encore été marqué fait.');return;}
+  var dfs=dep.files||[];
+  var aff=STORE.current,l=_modsLatest(d),G=_m2Find(g),f0=dfs[0]||null,rest=dfs.slice(1);
   if(dep.same&&l){
-    // même indice : le fichier de la version actuelle est remplacé par celui déposé
-    var old=_modsVerFiles(l).map(function(f){return f.path;}).filter(function(p){return p&&!dep.files.some(function(x){return x.path===p;});});
-    l.attachmentPath=f0.path;l.attachmentName=f0.name;if(rest.length)l.extraFiles=rest.map(function(x){return {path:x.path,name:x.name};});else delete l.extraFiles;
+    // même indice : le fichier de la version actuelle est remplacé par celui déposé (s'il y en a un)
+    if(f0){
+      var old=_modsVerFiles(l).map(function(f){return f.path;}).filter(function(p){return p&&!dfs.some(function(x){return x.path===p;});});
+      l.attachmentPath=f0.path;l.attachmentName=f0.name;if(rest.length)l.extraFiles=rest.map(function(x){return {path:x.path,name:x.name};});else delete l.extraFiles;
+      if(old.length&&typeof supa!=='undefined'&&supa){try{supa.storage.from(BUCKET).remove(old);}catch(e){}}
+    }
     l.note=(l.note?l.note+'\n':'')+'Mis à jour (même indice) : '+(G?G.t:'');
-    if(old.length&&typeof supa!=='undefined'&&supa){try{supa.storage.from(BUCKET).remove(old);}catch(e){}}
     m.verId=l.id;m.noNewVer=true;
   }else{
+    // nouvelle version (avec ou sans fichier : le fichier est facultatif)
     var v={id:_modsUid('v_'),version:dep.nv,date:_modsNowFr(),note:G?(G.detail||G.t):'',dest:[],byEmail:dep.byEmail,byName:dep.byName,
-      attachmentPath:f0.path,attachmentName:f0.name,modId:m.id,reqBy:G?G.by:'',reqDate:G?G.date:'',_createdAt:Date.now()};
+      attachmentPath:f0?f0.path:null,attachmentName:f0?f0.name:null,modId:m.id,reqBy:G?G.by:'',reqDate:G?G.date:'',_createdAt:Date.now()};
     if(rest.length)v.extraFiles=rest.map(function(x){return {path:x.path,name:x.name};});
     d.versions=d.versions||[];d.versions.push(v);m.verId=v.id;delete m.noNewVer;
   }
