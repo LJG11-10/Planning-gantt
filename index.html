@@ -10672,22 +10672,24 @@ if(!window._wpatOutsideClickBound){
 function buildSbTree(aff,selId){
   if(!aff)return {label:'',panel:''};
   var dat=(STORE.projects[aff]&&STORE.projects[aff].data)||[];
-  var label='';
+  var label='',labelEns='';
   var panel='';
-  var curPh=null,gid=0,openEns=null;
+  var curPh=null,gid=0,openEns=null,curEns='';
   dat.forEach(function(r){
-    if(r.t==='ph'){curPh=r.pk;if(openEns)panel+='</div>';openEns=null;return;}
+    if(r.t==='ph'){curPh=r.pk;if(openEns)panel+='</div>';openEns=null;curEns='';return;}
+    // fin de sous-ensemble (« Modifier la structure ») : les sous-phases suivantes sont hors sous-ensemble
+    if(r.t==='ensend'){if(openEns)panel+='</div>';openEns=null;curEns='';return;}
     if(r.t==='ens'){
       if(openEns)panel+='</div>';
-      openEns='g'+(gid++);
+      openEns='g'+(gid++);curEns=r.lb||'';
       panel+='<div class="wpat-hdr" data-g="'+openEns+'" onclick="_wpTreeFold(this,event)" style="cursor:pointer;font-weight:800;font-size:10px;color:var(--ac);padding:4px 6px;background:var(--ac2);border-radius:4px;margin-top:3px"><span class="wpat-arrow">\u25BC</span> \u25B8 '+escHtml((curPh?curPh+' \u25B8 ':'')+r.lb)+'</div><div class="wpat-c-'+openEns+'" style="padding-left:8px">';
       return;
     }
     if(r.t!=='sb')return;
     var _isSel=selId===r.id;
-    if(_isSel)label=r.lb;
+    if(_isSel){label=r.lb;labelEns=curEns;}
     var _cls=openEns?'wpat-c-'+openEns:'';
-    panel+='<div class="wpat-item'+(_cls?' '+_cls:'')+'" data-id="'+r.id+'" data-lb="'+escHtml(r.lb)+'" onclick="_fhSbPick(this,event)" style="cursor:pointer;font-size:10px;padding:3px 6px;border-radius:4px;'+(_isSel?'background:var(--ac);color:#fff;font-weight:700':'color:var(--tx)')+'">'+escHtml(r.lb)+'</div>';
+    panel+='<div class="wpat-item'+(_cls?' '+_cls:'')+'" data-id="'+r.id+'" data-lb="'+escHtml(r.lb)+'" data-ens="'+escHtml(curEns)+'" onclick="_fhSbPick(this,event)" style="cursor:pointer;font-size:10px;padding:3px 6px;border-radius:4px;'+(_isSel?'background:var(--ac);color:#fff;font-weight:700':'color:var(--tx)')+'">'+escHtml(r.lb)+'</div>';
   });
   if(openEns)panel+='</div>';
   if(!panel)panel='<div style="padding:10px;text-align:center;font-size:10px;color:var(--tx3)">Aucune sous-phase disponible</div>';
@@ -10695,7 +10697,13 @@ function buildSbTree(aff,selId){
   // générales de l'affaire (avant : impossible de retirer une sous-phase
   // choisie par erreur, à part supprimer la ligne et la refaire).
   panel='<div class="wpat-item" data-id="" data-lb="" onclick="_fhSbPick(this,event)" style="cursor:pointer;font-size:10px;padding:3px 6px;border-radius:4px;font-style:italic;border-bottom:1px dashed var(--bd);margin-bottom:3px;'+(!selId?'background:var(--ac);color:#fff;font-weight:700':'color:var(--tx2)')+'">Heures générales (pas de sous-phase)</div>'+panel;
-  return {label:label,panel:panel};
+  return {label:label,ens:labelEns,html:_fhSbLabelHtml(label,labelEns),panel:panel};
+}
+// (19/10/2026, demande du chef de chantier) sous-phase affichée avec son sous-ensemble : « PAE 5 › Raccordement »
+// (même nom de sous-phase dans plusieurs PAE). Écran seulement : pas dans les documents téléchargés / imprimés.
+function _fhSbLabelHtml(lb,ens){
+  if(!lb)return '';
+  return (ens?'<span class="fhx-ens" title="Sous-ensemble">'+escHtml(ens)+'</span><span class="fhx-ensa">›</span>':'')+escHtml(lb);
 }
 // Choisir une sous-phase dans l'arbre de la Feuille d'heures : ferme le
 // panneau, met à jour l'affichage, et enregistre via fhLineSet.
@@ -10710,7 +10718,7 @@ window._fhSbPick=function(item,ev){
     el.style.color=el===item?'#fff':'var(--tx)';
     el.style.fontWeight=el===item?'700':'400';
   });
-  if(trigger)trigger.textContent=lb||'— Choisir une sous-phase —';
+  if(trigger){if(lb)trigger.innerHTML=_fhSbLabelHtml(lb,item.dataset.ens||'');else trigger.textContent='— Choisir une sous-phase —';}
   panel.style.display='none';
   fhLineSet(panel.dataset.aff,panel.dataset.nm,+panel.dataset.w,+panel.dataset.di,+panel.dataset.li,'actId',sbId);
 };
@@ -10799,7 +10807,7 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
       +affOpts+'</select>'
       +(selAff2
         ?'<div class="fhx-lbl" style="color:'+_cH+';margin-top:6px">SOUS-PHASE (rempli automatiquement)</div>'
-         +'<div id="'+_fhWidId+'" class="wpat-trigger fhx-sb" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" onclick="window._wpActPickerToggle(this)" style="width:100%;font-family:inherit;color:'+(_sbTree.label?(_c?_c.xd:'#1C1A33'):'#6B6790')+';'+(_sbTree.label?'':'font-style:italic;')+'cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(_sbTree.label)||(ln.hours?'Heures générales (pas de sous-phase)':'— Choisir une sous-phase —'))+'</div>'
+         +'<div id="'+_fhWidId+'" class="wpat-trigger fhx-sb" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" onclick="window._wpActPickerToggle(this)" style="width:100%;font-family:inherit;color:'+(_sbTree.label?(_c?_c.xd:'#1C1A33'):'#6B6790')+';'+(_sbTree.label?'':'font-style:italic;')+'cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+((_sbTree.html||escHtml(_sbTree.label))||(ln.hours?'Heures générales (pas de sous-phase)':'— Choisir une sous-phase —'))+'</div>'
          +'<div class="wpat-panel" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" style="display:none;max-height:220px;overflow-y:auto;border:1px solid #E4E1F0;border-radius:10px;padding:4px;background:#fff;box-shadow:0 8px 20px rgba(30,20,90,.16);position:relative;z-index:20;margin-top:4px">'+_sbTree.panel+'</div>'
         :'')
       +'<div style="display:flex;align-items:center;gap:6px;margin-top:7px;padding-top:6px;border-top:1px dashed '+(_c?_c.xl:'#CBC7DE')+'">'
@@ -27763,6 +27771,8 @@ select.fhx-big:focus{border-color:#6457F4}
 .fhx-lbl{font-size:9.5px;font-weight:800;letter-spacing:.4px;margin-bottom:3px}
 .fhx-sel{height:30px;font-size:12px;font-weight:700}
 .fhx-sb{position:relative;height:30px;line-height:27px;padding:0 24px 0 10px;border:1.5px solid #fff;border-radius:9px;background:#fff;font-size:11.5px;box-sizing:border-box}
+.fhx-sb .fhx-ens{display:inline-block;line-height:17px;padding:0 7px;margin-right:2px;border-radius:999px;background:#EDEBFA;color:#4B3FC7;font-size:10.5px;font-weight:800;font-style:normal;vertical-align:1px}
+.fhx-sb .fhx-ensa{color:#9A96B3;margin:0 5px 0 3px;font-weight:700}
 .fhx-sb::after{content:'▾';position:absolute;right:9px;top:0;color:#6B6790;font-size:12px;font-style:normal}
 .fhx-h{flex:1;min-width:0;height:30px;text-align:center;font-weight:800;font-size:14px}
 .fhx-del{width:28px;height:28px;flex-shrink:0;border-radius:7px;border:none;background:rgba(0,0,0,.06);color:#B91C1C;cursor:pointer;font-size:12px;font-weight:800;padding:0;font-family:inherit}
