@@ -13263,8 +13263,12 @@ function _m2PlanView(G){
   var list=G.filter(function(g){return g.start&&(M2.planAll||_m2Rst(g)!=='ok');});
   var today=new Date();today.setHours(0,0,0,0);
   var lo=new Date(today.getTime()-14*864e5),hi=new Date(today.getTime()+28*864e5);
-  list.forEach(function(g){var a=_m2Date(g.start),b=_m2Date(g.end||g.start);if(a&&a<lo)lo=a;if(b&&b>hi)hi=b;});
-  var days=[],d=new Date(lo.getTime()-3*864e5);while(d<=hi&&days.length<120){if(d.getDay()>0&&d.getDay()<6)days.push(new Date(d));d=new Date(d.getTime()+864e5);}
+  // (19/10/2026) la période couvre TOUTES les barres (prévu + jours avec des heures) ; limite portée de 120 à 600 jours ouvrés (~2 ans 4 mois),
+  // avant : une modification à plus de ~6 mois était collée en bout de planning à une fausse date
+  list.forEach(function(g){var a=_m2Date(g.start),b=_m2Date(g.end||g.start);if(a&&a<lo)lo=a;if(b&&b>hi)hi=b;
+    _m2Hours(g.id).forEach(function(y){var dt=y.x.d?_m2Date(y.x.d):(y.x.at?new Date(y.x.at):null);if(!dt||isNaN(dt))return;dt.setHours(0,0,0,0);if(dt<lo)lo=dt;if(dt>hi)hi=dt;});});
+  hi=new Date(hi.getTime()+7*864e5); // une semaine de marge après la dernière barre
+  var days=[],d=new Date(lo.getTime()-3*864e5);while(d<=hi&&days.length<600){if(d.getDay()>0&&d.getDay()<6)days.push(new Date(d));d=new Date(d.getTime()+864e5);}
   var DW=34,W=days.length*DW;
   function first(dt){for(var i=0;i<days.length;i++)if(days[i]>=dt)return i;return days.length-1;}
   function lastI(dt){var b=-1;for(var i=0;i<days.length;i++)if(days[i]<=dt)b=i;return b;}
