@@ -653,6 +653,8 @@
       if(f==='documents'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f],_m3doc);return;}
       // heures Automatisme saisies (Avancement / Modifications, 12/10/2026) : saisie par saisie
       if(f==='autHours'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
+      // (19/10/2026) Modifications v2 : fiches des demandes (titre, qui, dates, heures prévues) et historique, élément par élément
+      if((f==='modReqs'||f==='modHist')&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
       var v=_pick3(baseP[f],localP[f],remoteP[f]);
       if(v===undefined)delete remoteP[f];else remoteP[f]=v;
     });
@@ -3184,6 +3186,9 @@ window.DroitsAcces = (function () {
     {key:'docs_chantier', label:'Docs chantier (Voir = consulter et imprimer les fiches ; Modifier = créer, remplir, faire signer, verrouiller). Rouvrir une fiche signée : admin et chef de chantier'},
     {key:'punch_list', label:'Punch lists du client (Voir = consulter ; Modifier = importer l\'Excel du client, répondre, statut Closed / Open / N/A, photos). Supprimer une punch list : admin'},
     {key:'modifications', label:'Modifications de documents (Voir = l\'onglet Modifications de l\'affaire ; Modifier = demander une modification, la marquer faite, ajouter des versions, préparer les emails)'},
+    // (19/10/2026) validation des documents déposés : ELS Projet = tout ; Automatisme = ses documents (le rôle « automatisme » l'a d'office)
+    {key:'mods_valid', label:'Modifications — VALIDER tous les documents déposés (ELS Projet) — case Modifier'},
+    {key:'mods_valid_autom', label:'Modifications — valider les documents de la phase Automatisme — case Modifier'},
     {key:'commandes', label:'Commandes (Voir = consulter les commandes ; Modifier = saisir les quantités reçues)'},
     {key:'commandes_gestion', label:'Commandes — gestion (Modifier = créer, modifier et supprimer les commandes et leurs lignes, changer les délais, importer)'},
     {key:'budget_toolbar', label:'H vendues (barre d\'outils)', group:'Budget Heures'},
@@ -3987,7 +3992,7 @@ function hasView(mod){
 // jusqu'à ce qu'un admin la désarchive. Les droits « modifier » des modules propres à une affaire
 // renvoient faux quand l'affaire affichée est archivée (le GANTT, l'Avancement, les Modifications,
 // Commandes, Doc chantier… passent tous par hasEdit / _peutChangerStatut / leur ENV.canEdit).
-var _AFF_EDIT_MODS={planning:1,budget_gantt:1,budget_toolbar:1,gantt_statut_toutes:1,modifications:1,commandes:1,commandes_gestion:1,docs_chantier:1,punch_list:1};
+var _AFF_EDIT_MODS={planning:1,budget_gantt:1,budget_toolbar:1,gantt_statut_toutes:1,modifications:1,mods_valid:1,mods_valid_autom:1,commandes:1,commandes_gestion:1,docs_chantier:1,punch_list:1};
 function _affRO(aff){try{var p=STORE.projects[aff||STORE.current];return !!(p&&p.closed);}catch(e){return false;}}
 function _roDenied(){alert('🗄 Cette affaire est archivée : elle est en lecture seule.\nSeul un admin peut la désarchiver (menu ⋯ de l’affaire).');}
 function hasEdit(mod){
@@ -11311,11 +11316,15 @@ function _modsMarkSeen(items){
 // Saisie en cours dans l'onglet : ne pas redessiner (synchro)
 function _modsBusy(){
   var fa=document.getElementById('mods-form-area'),w=document.getElementById('mods-w'),a=document.activeElement;
+  // (19/10/2026) Modifications v2 : fenêtre de saisie ouverte, ou saisie dans le panneau de détail
+  var mo=document.getElementById('m2-mo'),dr=document.getElementById('m2-drawer');
+  if(mo&&mo.classList.contains('on'))return true;
+  if(dr&&a&&dr.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))return true;
   return !!((fa&&fa.innerHTML)||(window._modsSetupTouched&&document.getElementById('mdx-setup'))||(w&&a&&w.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)));
 }
 
 // ═════════ ÉCRAN ═════════
-function renderModificationsTab(){
+function _renderModificationsTabV1(){ // ancien écran (liste), remplacé le 19/10/2026 par Modifications v2
   var w=document.getElementById('mods-w');
   if(!w)return;
   var docs=_modsGetDocs(),aff=STORE.current,ed=_modsCanEdit();
@@ -12464,8 +12473,10 @@ function _modsDeepLink(){
       if(window.PetroNav)PetroNav.render();
     }catch(e){console.error('Lien Modifications :',e);}
     setTimeout(function(){
-      // (12/10/2026, liste) le document de la demande est ouvert, la demande encadrée
-      if(f){window._modsOpen=window._modsOpen||{};window._modsOpen[f.doc.id]=true;window._modsFilter='all';try{renderModificationsTab();}catch(e){}}
+      // (19/10/2026, Modifications v2) la demande s'ouvre dans le panneau de détail
+      if(f&&typeof m2Open==='function'){try{M2.view='req';renderModificationsTab();m2Open(_modsGrp(f.m));}catch(e){console.error(e);}
+        if(f.m.status==='fait')_modsToast('✓ Cette modification est déjà validée'+(f.m.valByName?' par '+esc2(f.m.valByName):'')+'.',6000);
+        return;}
       var el=document.getElementById('mdx-req-'+L.mod);
       if(!el){
         if(f)el=document.getElementById('mdx-doc-'+f.doc.id);
@@ -12505,6 +12516,776 @@ function modDeleteVersion(docId,verId){
   renderModificationsTab();
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// MODIFICATIONS v2 (19/10/2026, maquette maquette_modifications_v2.html validée par l'utilisateur)
+// Demande → planifiée (qui, quand, heures prévues) → chaque document déposé (fichier obligatoire)
+// → chaque document validé (ELS Projet : tout ; Automatisme : ses documents) ou « à reprendre » (motif + email).
+// Données : une entrée mods[] par document (comme avant, grp = la demande) avec st 'todo'|'done'|'redo'|'valid' et dep
+// (dépôt) ; fiche de la demande dans projet.modReqs ; historique dans projet.modHist ; heures dans projet.autHours (grp).
+// ══════════════════════════════════════════════════════════════════════════════
+(function(){
+  if(document.getElementById('m2-css'))return;
+  var st=document.createElement('style');st.id='m2-css';
+  st.textContent=''
+  +'.m2{padding:16px 20px 60px;max-width:1280px;margin:0 auto;color:var(--tx);font-family:inherit}'
+  +'.m2-card{background:#fff;border:1px solid var(--bd);border-radius:16px;padding:16px 18px;margin-bottom:14px}'
+  +'.m2-h2{font-size:17px;font-weight:800}.m2-sub{font-size:12.5px;color:var(--tx2);margin-top:4px;line-height:1.5}'
+  +'.m2-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}'
+  +'.m2-btn{height:38px;padding:0 16px;border-radius:10px;border:none;background:#4B3FC7;color:#fff;font-weight:800;white-space:nowrap;cursor:pointer;font-family:inherit;font-size:13px}'
+  +'.m2-btn:hover{background:#3A2EAE}.m2-btn.big{height:44px;font-size:14px;padding:0 20px;border-radius:12px}'
+  +'.m2-btn.gn{background:#15803D}.m2-btn.gn:hover{background:#166534}.m2-btn.or{background:#EA580C}.m2-btn.or:hover{background:#C2410C}'
+  +'.m2-btn.sm,.m2-btn2.sm{height:30px;padding:0 11px;font-size:12px;border-radius:9px}'
+  +'.m2-btn2{height:38px;padding:0 14px;border-radius:10px;border:1.5px solid var(--bd);background:#fff;color:#4B3FC7;font-weight:800;white-space:nowrap;cursor:pointer;font-family:inherit;font-size:13px}'
+  +'.m2-btn2:hover{border-color:#DCD8FB;background:#FAF9FF}.m2-btn2.red{color:#B91C1C}'
+  +'.m2-btn:disabled,.m2-btn2:disabled{opacity:.45;cursor:not-allowed}'
+  +'.m2-lnk{border:none;background:none;color:#4B3FC7;font-weight:800;text-decoration:underline;padding:0;cursor:pointer;font-family:inherit;font-size:12.5px}.m2-lnk.red{color:#B91C1C}'
+  +'.m2-flow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px}'
+  +'.m2-flow span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--tx2);background:var(--bg);border:1px solid var(--bd);border-radius:999px;padding:4px 11px}'
+  +'.m2-flow span b{width:18px;height:18px;border-radius:50%;background:#4B3FC7;color:#fff;font-size:10.5px;display:inline-flex;align-items:center;justify-content:center}'
+  +'.m2-flow em{font-style:normal;color:var(--tx3)}'
+  +'.m2-kpis{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 12px}'
+  +'.m2-kpi{border:1.5px solid var(--bd);background:#fff;border-radius:999px;padding:6px 13px;font-weight:800;font-size:12.5px;color:var(--tx2);cursor:pointer;font-family:inherit}'
+  +'.m2-kpi b{margin-left:5px}.m2-kpi.on{background:#4B3FC7;border-color:#4B3FC7;color:#fff}'
+  +'.m2-views{display:inline-flex;background:var(--bg3);border-radius:12px;padding:3px;gap:2px}'
+  +'.m2-views button{border:none;background:none;padding:7px 14px;border-radius:9px;font-weight:800;color:var(--tx2);cursor:pointer;font-family:inherit;font-size:13px}'
+  +'.m2-views button.on{background:#fff;color:#4B3FC7;box-shadow:0 1px 3px rgba(28,26,51,.12)}'
+  +'.m2-st{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;padding:3px 10px;border-radius:999px;white-space:nowrap}'
+  +'.m2-st.new{background:var(--bg3);color:var(--tx2)}.m2-st.plan{background:#E0F2FE;color:#0369A1}.m2-st.prog{background:#FEF3C7;color:#B45309}'
+  +'.m2-st.check{background:#EDE9FE;color:#6D28D9}.m2-st.redo{background:#FDECEC;color:#B91C1C}.m2-st.ok{background:#E6F8F2;color:#15803D}'
+  +'.m2-req{background:#fff;border:1px solid var(--bd);border-left:5px solid var(--bd2);border-radius:14px;padding:12px 14px;margin-bottom:10px;cursor:pointer;display:grid;grid-template-columns:1fr 270px;gap:14px}'
+  +'.m2-req:hover{box-shadow:0 4px 16px rgba(28,26,51,.07)}'
+  +'.m2-req.prog{border-left-color:#F59E0B}.m2-req.check{border-left-color:#8B5CF6}.m2-req.redo{border-left-color:#F2585B}.m2-req.ok{border-left-color:#13B98A}.m2-req.plan{border-left-color:#0EA5E9}'
+  +'.m2-req .t{font-size:14.5px;font-weight:800}.m2-ref{font-size:11px;color:var(--tx3);font-weight:800;margin-right:6px}'
+  +'.m2-req .d{font-size:12.5px;color:var(--tx2);margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}'
+  +'.m2-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}'
+  +'.m2-dc{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;border:1px solid var(--bd);border-radius:999px;padding:2px 9px;background:#fff;color:var(--tx2)}'
+  +'.m2-dc i{width:8px;height:8px;border-radius:50%;display:inline-block}'
+  +'.m2-dc.done{background:#EDE9FE;border-color:#DDD6FE;color:#6D28D9}.m2-dc.redo{background:#FDECEC;border-color:#FECACA;color:#B91C1C}.m2-dc.valid{background:#E6F8F2;border-color:#A7F3D0;color:#15803D}'
+  +'.m2-steps{display:flex;gap:3px;margin-top:9px}.m2-steps span{flex:1;height:5px;border-radius:3px;background:var(--bg4)}'
+  +'.m2-steps span.on{background:#6457F4}.m2-steps.redo span.on{background:#F2585B}.m2-steps.ok span.on{background:#13B98A}'
+  +'.m2-rside{border-left:1px dashed var(--bd);padding-left:14px;display:flex;flex-direction:column;gap:6px;font-size:12px}'
+  +'.m2-k{font-size:9.5px;font-weight:800;color:var(--tx3);letter-spacing:.4px}'
+  +'.m2-bar{height:8px;border-radius:4px;background:var(--bg3);overflow:hidden;position:relative}'
+  +'.m2-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:#13B98A}.m2-bar i.over{background:#F2585B}'
+  +'.m2-who{display:inline-flex;align-items:center;gap:5px}'
+  +'.m2-av{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:9.5px;font-weight:800;flex-shrink:0}'
+  +'.m2-note{font-size:11.5px;color:var(--tx3)}'
+  +'.m2-tag{font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px}'
+  +'.m2-empty{padding:22px;text-align:center;color:var(--tx3)}'
+  // panneau de détail
+  +'#m2-ov{position:fixed;inset:0;background:rgba(28,26,51,.35);z-index:3500;display:none}'
+  +'#m2-drawer{position:fixed;top:0;right:0;bottom:0;width:min(740px,100%);background:var(--bg);z-index:3501;transform:translateX(105%);transition:transform .2s;overflow:auto;box-shadow:-12px 0 40px rgba(0,0,0,.15);font-family:inherit;color:var(--tx);font-size:13px}'
+  +'#m2-drawer.on{transform:none}'
+  +'.m2-dh{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--bd);padding:14px 18px;z-index:2}'
+  +'.m2-dh .x{position:absolute;right:14px;top:12px;border:1px solid var(--bd);background:#fff;border-radius:9px;width:32px;height:32px;font-size:15px;cursor:pointer}'
+  +'.m2-db{padding:14px 18px 40px;display:grid;gap:12px}'
+  +'.m2-box{background:#fff;border:1px solid var(--bd);border-radius:14px;padding:12px 14px}'
+  +'.m2-box h3{font-size:11px;font-weight:800;color:var(--tx3);letter-spacing:.5px;margin:0 0 8px;display:flex;align-items:center;gap:8px}'
+  +'.m2-box h3 .r{margin-left:auto}'
+  +'.m2-tbl{width:100%;border-collapse:collapse}.m2-tbl td,.m2-tbl th{padding:7px 6px;border-bottom:1px solid var(--bg3);text-align:left;vertical-align:middle;font-size:12.5px}'
+  +'.m2-tbl th{font-size:10px;color:var(--tx3);letter-spacing:.4px}.m2-tbl tr:last-child td{border-bottom:none}'
+  +'.m2-valbox{border:2px solid #C4B5FD;background:#F5F3FF}.m2-okbox{border:2px solid #86EFAC;background:#F0FDF4}'
+  +'.m2-tl{position:relative;padding-left:16px}'
+  +'.m2-tl>div{position:relative;padding:4px 0 8px;font-size:12px;color:var(--tx2)}'
+  +'.m2-tl>div::before{content:"";position:absolute;left:-13px;top:9px;width:8px;height:8px;border-radius:50%;background:#DCD8FB;border:2px solid #fff;box-shadow:0 0 0 1px #DCD8FB}'
+  +'.m2-tl>div::after{content:"";position:absolute;left:-9px;top:19px;bottom:-4px;width:1px;background:var(--bd)}.m2-tl>div:last-child::after{display:none}'
+  +'.m2-tl b{color:var(--tx)}.m2-rs{display:block;margin-top:3px;background:#FDECEC;color:#B91C1C;border-radius:8px;padding:5px 8px;font-weight:600;white-space:pre-wrap}'
+  +'.m2-in{width:100%;box-sizing:border-box;border:1.5px solid var(--bd);border-radius:10px;padding:8px 11px;background:#fff;font-family:inherit;font-size:13px;color:var(--tx)}'
+  +'.m2-in:focus{outline:none;border-color:#6457F4}'
+  +'.m2-fl{display:block;font-size:10.5px;font-weight:800;color:var(--tx2);letter-spacing:.4px;margin:12px 0 5px}'
+  +'.m2-g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.m2-g3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}'
+  // fenêtre de saisie
+  +'#m2-mo{position:fixed;inset:0;background:rgba(28,26,51,.45);z-index:3600;display:none;align-items:flex-start;justify-content:center;padding:30px 14px;overflow:auto;font-family:inherit;color:var(--tx);font-size:13px}'
+  +'#m2-mo.on{display:flex}'
+  +'.m2-mbox{background:#fff;border-radius:18px;width:min(680px,100%);padding:20px 22px;box-shadow:0 24px 80px rgba(0,0,0,.3)}'
+  +'.m2-mbox h2{font-size:16px;font-weight:800;margin:0 0 4px}'
+  +'.m2-mact{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap;align-items:center}'
+  +'.m2-pick{display:flex;flex-wrap:wrap;gap:6px}'
+  +'.m2-pick label{display:flex;gap:6px;align-items:center;border:1.5px solid var(--bd);border-radius:10px;padding:6px 10px;cursor:pointer;font-weight:700;font-size:12.5px;background:#fff}'
+  +'.m2-pick label:has(input:checked){border-color:#6457F4;background:#EFEDFE}.m2-pick input{accent-color:#6457F4}'
+  +'.m2-pg{font-size:10px;font-weight:800;letter-spacing:.4px;margin:8px 0 4px;padding-left:6px;border-left:4px solid var(--bd2)}'
+  // documents
+  +'.m2-dsect{margin-bottom:16px}.m2-dsect h2{font-size:15px;font-weight:800;margin:0 2px 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}'
+  +'.m2-dsect h2 small{font-size:11.5px;color:var(--tx3);background:var(--bg3);border-radius:999px;padding:1px 8px}'
+  +'.m2-dtbl{background:#fff;border:1px solid var(--bd);border-radius:16px;overflow:hidden}'
+  +'.m2-th,.m2-tr{display:grid;grid-template-columns:22px minmax(170px,2fr) 120px minmax(150px,1.5fr) minmax(190px,2fr) 110px;gap:12px;align-items:center;padding:0 16px}'
+  +'.m2-th{font-size:10px;font-weight:800;color:var(--tx3);letter-spacing:.5px;padding-top:8px;padding-bottom:8px;border-bottom:1px solid var(--bg3)}'
+  +'.m2-phh{display:flex;gap:8px;align-items:center;padding:11px 16px 5px;font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase}'
+  +'.m2-phh i{width:10px;height:10px;border-radius:50%}'
+  +'.m2-tr{min-height:50px;border-top:1px solid #F1EFF8;cursor:pointer}.m2-tr:hover{background:#FAF9FF}'
+  +'.m2-tr .n{font-weight:800;font-size:13.5px;overflow-wrap:anywhere}.m2-tr .v b{font-size:17px;font-weight:800;color:#14532D;margin-right:5px}.m2-tr .v small{color:var(--tx3);font-size:11px}'
+  +'.m2-tr .f{font-size:12px;min-width:0;overflow:hidden}'
+  +'.m2-hist{padding:4px 16px 14px 50px;background:#FAF9FF;display:grid;gap:6px}'
+  +'.m2-hv{display:flex;gap:10px;align-items:baseline;font-size:12px;flex-wrap:wrap}'
+  +'.m2-hv.last{background:#F0FDF4;border:1.5px solid #86EFAC;border-radius:10px;padding:7px 10px}'
+  +'.m2-hv.old{opacity:.55;filter:grayscale(1);padding:2px 10px}'
+  +'.m2-vt{font-weight:800;border-radius:6px;padding:1px 7px;background:var(--bg3)}.m2-hv.old .m2-vt{text-decoration:line-through}'
+  // planning façon GANTT
+  +'.m2-gwrap{overflow:auto;background:#fff;border:1px solid var(--bd);border-radius:16px}'
+  +'.m2-gh{font-size:10.5px;color:var(--tx3);font-weight:800;text-align:center;padding:5px 0;background:#fff;border-bottom:1px solid var(--bd)}'
+  +'.m2-gh.gd{line-height:1.25;border-left:1px solid #F4F3F9}.m2-gh.gd b{color:var(--tx2);font-size:11.5px}.m2-gh.td{background:#FEE2E2;color:#B91C1C}.m2-gh.td b{color:#B91C1C}'
+  +'.m2-gnm2{text-align:left;padding:8px 12px;position:sticky;left:0;z-index:2;display:flex;align-items:flex-end}'
+  +'.m2-gnm{position:sticky;left:0;z-index:2;background:#fff;padding:7px 12px;border-bottom:1px solid var(--bg3);border-right:1px solid var(--bd);cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:1px}'
+  +'.m2-gnm:hover{background:#FAF9FF}.m2-gnm b{font-size:12.5px}.m2-gnm small{font-size:11px;color:var(--tx3)}'
+  +'.m2-glane{position:relative;height:66px;border-bottom:1px solid var(--bg3)}'
+  +'.m2-gprev{position:absolute;top:14px;height:15px;border:1.5px solid;border-radius:5px;cursor:pointer;box-sizing:border-box}'
+  +'.m2-greal{position:absolute;top:35px;height:15px;border-radius:4px}'
+  +'.m2-gtoday{position:absolute;top:0;bottom:0;width:2px;background:#EF4444;opacity:.75;pointer-events:none}'
+  // Avancement / Bilan
+  +'.m2-avmods{border:2px solid #FDBA74;background:#FFFBF5;border-radius:16px;padding:12px 16px;margin:0 0 12px}'
+  +'.m2-avm{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 0;border-top:1px solid #FED7AA;cursor:pointer;font-size:12.5px}.m2-avm:first-of-type{border-top:none}'
+  +'.m2-bil{border:2px solid #FDBA74;background:#FFFBF5;border-radius:16px;padding:16px 18px;margin:14px 0}'
+  +'.m2-bk{flex:1;min-width:140px;background:#fff;border:1px solid var(--bd);border-radius:14px;padding:12px 14px}.m2-bk b{display:block;font-size:22px;font-weight:800}'
+  +'@media (max-width:900px){.m2-req{grid-template-columns:1fr}.m2-rside{border-left:none;border-top:1px dashed var(--bd);padding:8px 0 0}'
+  +'.m2-th{display:none}.m2-tr{grid-template-columns:18px 1fr auto;grid-template-areas:"c n s" "c v s"}.m2-tr .c{grid-area:c}.m2-tr .n{grid-area:n}.m2-tr .v{grid-area:v}.m2-tr .f,.m2-tr .e{display:none}.m2-tr .s{grid-area:s}'
+  +'.m2-g2,.m2-g3{grid-template-columns:1fr}}';
+  document.head.appendChild(st);
+})();
+// ── État de l'écran ──
+var M2={aff:null,view:'req',flt:'all',open:null,docOpen:{},planAll:false};
+var M2_SVC={be:{l:'Bureau d’études',c:'#7C6FF0'},autom:{l:'Automatisme',c:'#F2585B'},chantier:{l:'Chantier',c:'#F5A524'}};
+var M2_STL={new:'Nouvelle',plan:'📅 Planifiée',prog:'🔧 En cours',check:'🔎 À valider',redo:'↺ À reprendre',ok:'✓ Validée'};
+function _m2Pad(n){return ('0'+n).slice(-2);}
+function _m2Iso(d){d=d||new Date();return d.getFullYear()+'-'+_m2Pad(d.getMonth()+1)+'-'+_m2Pad(d.getDate());}
+function _m2Fr(iso){var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+'/'+m[2]:'';}
+function _m2Date(iso){var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?new Date(+m[1],+m[2]-1,+m[3]):null;}
+function _m2FrAt(t){if(!t)return '';var d=new Date(t);return _m2Pad(d.getDate())+'/'+_m2Pad(d.getMonth()+1);}
+function _m2Reqs(p){p=p||currP();if(!p.modReqs)p.modReqs=[];return p.modReqs;}
+function _m2Rec(g){return _m2Reqs().find(function(r){return r&&r.id===g;})||null;}
+function _m2HistOf(g){var p=currP();return (p.modHist||[]).filter(function(h){return h&&h.grp===g;}).sort(function(a,b){return (a.at||0)-(b.at||0);});}
+function _m2AddHist(g,a,extra){var p=currP();p.modHist=p.modHist||[];p.modHist.push(Object.assign({id:_modsUid('mh_'),grp:g,at:Date.now(),w:_modsMyName()||_modsMe(),a:a},extra||{}));}
+// État d'un document dans une demande (les anciennes demandes : « faite » = validée, sinon à faire)
+// « faite » (status) fait foi : une version supprimée remet status « à faire » → plus jamais « validé »
+function _m2St(m){if(!m)return 'todo';if(m.status==='fait')return 'valid';if(m.st&&m.st!=='valid')return m.st;return 'todo';}
+// Service d'une personne (pour les heures) : d'après les infos de l'affaire, sinon l'annuaire
+function _m2SvcOfEmail(email){
+  var e=String(email||'').toLowerCase(),svc='';
+  _modsPeople().some(function(p){if(p.email.toLowerCase()!==e)return false;
+    var c=(p.cats||[]).join(' ');svc=/Automat/i.test(c)?'autom':/Chantier/i.test(c)?'chantier':/tudes/i.test(c)?'be':'';return true;});
+  if(svc)return svc;
+  var gp=(STORE&&STORE.globalPersons)||{};
+  Object.keys(gp).some(function(k){var x=gp[k];if(String((x&&x.email)||'').toLowerCase()!==e)return false;svc={els_auto:'autom',els_chantier:'chantier',bureau_etude:'be'}[x.service]||'';return true;});
+  if(svc)return svc;
+  try{if(e===_modsMe()&&CURRENT_ROLE==='automatisme')return 'autom';if(e===_modsMe()&&CURRENT_ROLE==='chef_chantier')return 'chantier';}catch(x){}
+  return 'be';
+}
+// Une demande = le groupe de ses entrées (un document chacune) + sa fiche (modReqs)
+function _m2Groups(){
+  var by={},order=[];
+  _modsGetDocs().forEach(function(d){(d.mods||[]).forEach(function(m){
+    if(!m||m.direct)return;var g=_modsGrp(m);if(!by[g]){by[g]=[];order.push(g);}by[g].push({doc:d,m:m});
+  });});
+  return order.map(function(g){return _m2Group(g,by[g]);});
+}
+function _m2Group(g,items){
+  items=items||_modsGroupItems(g).filter(function(x){return !x.m.direct;});
+  items=items.slice().sort(function(a,b){return (a.m._createdAt||0)-(b.m._createdAt||0);});
+  var rec=_m2Rec(g),m0=items[0]?items[0].m:{};
+  var det=(rec&&rec.detail)||m0.detail||'';
+  var who=(rec&&rec.who)||(m0.to||[]).map(function(t){return {email:t.email,nom:t.nom||t.email,svc:_m2SvcOfEmail(t.email)};});
+  return {id:g,rec:rec,items:items,m0:m0,t:(rec&&rec.t)||String(det).split('\n')[0].slice(0,80)||'Modification',detail:det,
+    who:who,start:rec&&rec.start||'',end:rec&&rec.end||'',est:(rec&&rec.est)||{},src:rec&&rec.src||null,
+    by:(rec&&rec.byName)||m0.byName||'',date:(rec&&rec.date)||m0.date||'',files:(rec&&rec.files)||m0.files||[],
+    tasks:m0.tasks||[],ref:(rec&&rec.ref)||''};
+}
+function _m2Find(g){var G=_m2Groups().find(function(x){return x.id===g;});return G||null;}
+function _m2Hours(g,svc){return _autHrsAll().filter(function(y){return y.x.grp===g&&(!svc||_m2HSvc(y.x)===svc);});}
+function _m2HSvc(x){return x.svc||(x.task?'autom':'be');}
+function _m2HTot(g,svc){return _m2Hours(g,svc).reduce(function(s,y){return s+(+y.x.h||0);},0);}
+function _m2EstTot(G){var t=0;for(var k in G.est)t+=+G.est[k]||0;return t;}
+function _m2Rst(G){
+  var s=G.items.map(function(x){return _m2St(x.m);});
+  if(!s.length||s.every(function(v){return v==='valid';}))return 'ok';
+  if(s.indexOf('redo')>=0)return 'redo';
+  if(s.every(function(v){return v==='done'||v==='valid';}))return 'check';
+  if(s.indexOf('done')>=0||_m2Hours(G.id).length)return 'prog';
+  return G.start?'plan':'new';
+}
+function _m2Step(s){return {new:1,plan:2,prog:2,redo:3,check:3,ok:4}[s];}
+function _m2Mine(G){var me=_modsMe();return (G.who||[]).some(function(w){return String(w.email||'').toLowerCase()===me;});}
+// Droits : déposer = droit « modifications » ; valider = ELS Projet (mods_valid) tout, Automatisme ses documents
+function _m2CanEdit(){return _modsCanEdit();}
+function _m2CanValDoc(d){
+  try{if(_affRO())return false;if(CURRENT_ROLE==='admin')return true;
+    if(hasEdit('mods_valid'))return true;
+    if(_modsPhOf(d)==='AUTOMATISME'&&(CURRENT_ROLE==='automatisme'||hasEdit('mods_valid_autom')))return true;}catch(e){}
+  return false;
+}
+function _m2MyVal(G){return G.items.filter(function(x){return _m2St(x.m)==='done'&&_m2CanValDoc(x.doc);}).length;}
+function _m2Av(nom,svc){var c=(M2_SVC[svc]||{}).c||'#6457F4';return '<span class="m2-av" style="background:'+c+'">'+esc2(String(nom||'?').trim().charAt(0).toUpperCase())+'</span>';}
+function _m2Ref(G){var all=_m2Groups().slice().sort(function(a,b){return (a.m0._createdAt||0)-(b.m0._createdAt||0);});var i=all.findIndex(function(x){return x.id===G.id;});return 'M-'+('00'+(i+1)).slice(-3);}
+
+// ═════════ ÉCRAN ═════════
+function renderModificationsTab(){
+  var w=document.getElementById('mods-w');if(!w)return;
+  var aff=STORE.current,docs=_modsGetDocs(),ed=_m2CanEdit();
+  if(M2.aff!==aff){M2.aff=aff;M2.open=null;M2.docOpen={};M2.flt='all';_m2CloseDrawer(true);window._modsSetupTouched=0;}
+  var un=modsUnseen(aff);window._modsNew=window._modsNew||{};un.forEach(function(v){window._modsNew[v.id]=1;});_modsMarkSeen(un);
+  var G=_m2Groups(),cnt={};G.forEach(function(g){var s=_m2Rst(g);cnt[s]=(cnt[s]||0)+1;});
+  var open=G.filter(function(g){return _m2Rst(g)!=='ok';});
+  var est=open.reduce(function(s,g){return s+_m2EstTot(g);},0),done=open.reduce(function(s,g){return s+_m2HTot(g.id);},0);
+  var h='<div class="m2">'
+    +'<div class="m2-card"><div class="m2-row" style="align-items:flex-start"><div style="flex:1;min-width:260px"><div class="m2-h2">🔧 Modifications</div>'
+    +'<div class="m2-flow"><span><b>1</b>Demande</span><em>→</em><span><b>2</b>Planifiée (qui, quand, combien d’heures)</span><em>→</em><span><b>3</b>Faite + document joint</span><em>→</em><span><b>4</b>Chaque document validé (ELS Projet · Autom pour ses documents)</span><em>↺ sinon « à reprendre »</em></div>'
+    +'<div class="m2-sub" style="margin-top:8px">Les heures passées sont notées par chacun (bureau d’études, automatisme, chantier). La tâche du planning ne passe « terminée » qu’à la validation.</div>'
+    +(_modsPeople().length||!ed?'':'<div class="mdx-warn">Aucune personne avec un email dans les infos de l’affaire. <button type="button" class="mdx-lnk" onclick="openAffaireInfos()">ℹ️ Ajouter des personnes</button></div>')
+    +'</div>'+(ed&&docs.length?'<button type="button" class="m2-btn big" onclick="m2NewReq()">＋ Nouvelle modification</button>':'')+'</div></div>'
+    +'<div id="mods-form-area"></div>';
+  if(!docs.length){
+    h+=ed?'<div class="mdx-card mdx-setup" id="mdx-setup">'+_modsSetupHtml(true)+'</div>':'<div class="m2-card m2-empty">Aucun document pour cette affaire.</div>';
+  }else{
+    h+='<div class="m2-row" style="margin-bottom:12px"><div class="m2-views">'
+      +[['req','📋 Demandes'],['docs','📄 Documents'],['plan','📅 Planning']].map(function(v){return '<button type="button" class="'+(M2.view===v[0]?'on':'')+'" onclick="M2.view=\''+v[0]+'\';renderModificationsTab()">'+v[1]+'</button>';}).join('')+'</div>'
+      +'<span style="margin-left:auto" class="m2-note">En cours : <b style="color:var(--tx)">'+_modsFmtH(done)+'</b> passées sur <b style="color:var(--tx)">'+_modsFmtH(est)+'</b> prévues</span></div>';
+    if(M2.view==='docs')h+=_m2DocsView(ed);
+    else if(M2.view==='plan')h+=_m2PlanView(G);
+    else h+=_m2ReqView(G,cnt);
+  }
+  w.innerHTML=h+'</div>';
+  if(M2.open){if(_m2Find(M2.open))_m2DrawReq();else _m2CloseDrawer();}
+}
+function _m2ReqView(G,cnt){
+  var mine=G.filter(function(g){return _m2Mine(g)&&['plan','prog','redo','new'].indexOf(_m2Rst(g))>=0;}).length;
+  var myVal=G.reduce(function(n,g){return n+_m2MyVal(g);},0);
+  var h='<div class="m2-kpis">'+[['all','Toutes',G.length],['mine','👤 Pour moi',mine],['plan','📅 Planifiées',(cnt.plan||0)+(cnt.new||0)],['prog','🔧 En cours',cnt.prog||0],['check','🔎 À valider',cnt.check||0],['redo','↺ À reprendre',cnt.redo||0],['ok','✓ Validées',cnt.ok||0]]
+    .map(function(k){return '<button type="button" class="m2-kpi'+(M2.flt===k[0]?' on':'')+'" onclick="M2.flt=\''+k[0]+'\';renderModificationsTab()">'+k[1]+'<b>'+k[2]+'</b></button>';}).join('')
+    +(myVal?'<span class="m2-st check" style="align-self:center">👉 '+myVal+' document'+(myVal>1?'s':'')+' à valider par vous</span>':'')+'</div>';
+  var list=G.filter(function(g){var s=_m2Rst(g);return M2.flt==='all'||(M2.flt==='mine'?(_m2Mine(g)&&['plan','prog','redo','new'].indexOf(s)>=0):M2.flt==='plan'?(s==='plan'||s==='new'):s===M2.flt);});
+  var ord={redo:0,check:1,prog:2,plan:3,new:4,ok:5};
+  list.sort(function(a,b){return (ord[_m2Rst(a)]-ord[_m2Rst(b)])||((b.m0._createdAt||0)-(a.m0._createdAt||0));});
+  return h+(list.length?list.map(_m2Card).join(''):'<div class="m2-card m2-empty">'+(G.length?'Aucune demande ici.':'Aucune modification pour l’instant.'+(_m2CanEdit()?' Cliquez sur « ＋ Nouvelle modification ».':''))+'</div>');
+}
+function _m2Card(G){
+  var s=_m2Rst(G),n=_m2Step(s),et=_m2EstTot(G),ht=_m2HTot(G.id),pct=et?Math.min(100,ht/et*100):0,nw=window._modsNew||{};
+  var mv=_m2MyVal(G),act='';
+  if(mv)act='<div class="m2-note" style="color:#6D28D9;font-weight:800">👉 À vous de valider ('+mv+' document'+(mv>1?'s':'')+')</div>';
+  else if(['plan','prog','redo','new'].indexOf(s)>=0&&_m2Mine(G))act='<div class="m2-note" style="color:#B45309;font-weight:800">👉 À vous de la faire</div>';
+  var isNew=G.items.some(function(x){return nw[x.m.id];});
+  return '<div class="m2-req '+s+'" onclick="m2Open(\''+_modsJs(G.id)+'\')">'
+    +'<div style="min-width:0"><div class="m2-row" style="gap:6px"><span class="m2-ref">'+_m2Ref(G)+'</span><span class="t">'+esc2(G.t)+'</span><span class="m2-st '+s+'">'+M2_STL[s]+'</span>'+(isNew?'<span class="mdx-new org">Nouvelle</span>':'')+'</div>'
+    +'<div class="d">'+esc2(G.detail)+'</div>'
+    +'<div class="m2-chips">'+G.items.map(function(x){var st=_m2St(x.m),c=_modsPhCol(_modsPhOf(x.doc));return '<span class="m2-dc '+st+'"><i style="background:'+c.x+'"></i>'+esc2(x.doc.nom)+' '+({todo:'⏳',done:'🔎',redo:'↺',valid:'✓'}[st])+'</span>';}).join('')+'</div>'
+    +'<div class="m2-steps'+(s==='redo'?' redo':s==='ok'?' ok':'')+'">'+[1,2,3,4].map(function(i){return '<span class="'+(i<=n?'on':'')+'"></span>';}).join('')+'</div></div>'
+    +'<div class="m2-rside"><div><span class="m2-k">QUI</span><br>'+(G.who.length?G.who.map(function(w){return '<span class="m2-who">'+_m2Av(w.nom,w.svc)+' '+esc2(String(w.nom||w.email).split(' ')[0])+'</span>';}).join(' &nbsp;'):'<i class="m2-note">personne</i>')+'</div>'
+    +'<div><span class="m2-k">PRÉVU</span><br>'+(G.start?'du '+_m2Fr(G.start)+' au <b>'+_m2Fr(G.end)+'</b>':'<i class="m2-note">pas planifiée</i>')+'</div>'
+    +'<div><span class="m2-k">HEURES</span> <b>'+_modsFmtH(ht)+'</b> / '+_modsFmtH(et)+'<div class="m2-bar"><i class="'+(et&&ht>et?'over':'')+'" style="width:'+(et?pct:(ht?100:0))+'%"></i></div></div>'
+    +act+'</div></div>';
+}
+// ═════════ PANNEAU DE DÉTAIL D'UNE DEMANDE ═════════
+function _m2Shell(){
+  if(document.getElementById('m2-drawer'))return;
+  var ov=document.createElement('div');ov.id='m2-ov';ov.onclick=function(){_m2CloseDrawer();};document.body.appendChild(ov);
+  var dr=document.createElement('div');dr.id='m2-drawer';dr.setAttribute('role','dialog');dr.setAttribute('aria-label','Détail de la modification');document.body.appendChild(dr);
+  var mo=document.createElement('div');mo.id='m2-mo';mo.onclick=function(e){if(e.target===mo)m2CloseModal();};mo.innerHTML='<div class="m2-mbox" id="m2-mbox"></div>';document.body.appendChild(mo);
+  document.addEventListener('keydown',function(e){if(e.key!=='Escape')return;if(document.getElementById('m2-mo').classList.contains('on'))m2CloseModal();else if(M2.open)_m2CloseDrawer();});
+}
+function m2Open(g){_m2Shell();M2.open=g;_m2DrawReq();document.getElementById('m2-ov').style.display='block';document.getElementById('m2-drawer').classList.add('on');}
+function _m2CloseDrawer(silent){M2.open=null;var o=document.getElementById('m2-ov'),d=document.getElementById('m2-drawer');if(o)o.style.display='none';if(d)d.classList.remove('on');}
+function _m2DocState(x){
+  var st=_m2St(x.m);
+  return {todo:'<span class="m2-st plan">⏳ À faire</span>',done:'<span class="m2-st check">🔎 Déposé — à valider</span>',redo:'<span class="m2-st redo">↺ À reprendre</span>',valid:'<span class="m2-st ok">✓ Validé</span>'}[st];
+}
+function _m2DrawReq(){
+  var G=_m2Find(M2.open),dr=document.getElementById('m2-drawer');if(!G||!dr){_m2CloseDrawer();return;}
+  var s=_m2Rst(G),ed=_m2CanEdit(),gj=_modsJs(G.id),me=_modsMe();
+  var keep=dr.scrollTop;
+  var h='<div class="m2-dh"><button type="button" class="x" onclick="_m2CloseDrawer()" aria-label="Fermer">✕</button>'
+    +'<div class="m2-row" style="gap:6px;padding-right:40px"><span class="m2-ref">'+_m2Ref(G)+'</span><span class="m2-st '+s+'">'+M2_STL[s]+'</span></div>'
+    +'<div class="m2-h2" style="margin-top:4px">'+esc2(G.t)+'</div></div><div class="m2-db">';
+  // La demande
+  var src=G.src&&_modsDoc(G.src.doc);
+  h+='<div class="m2-box"><h3>LA DEMANDE</h3><div style="font-size:13px;line-height:1.55;white-space:pre-wrap">'+esc2(G.detail||'—')+'</div>'
+    +((G.files||[]).length?'<div style="margin-top:6px">'+_modsFilesHtml(G.files)+'</div>':'')
+    +'<div class="m2-note" style="margin-top:6px">Demandée'+(G.by?' par '+esc2(G.by):'')+(G.date?' le '+esc2(G.date):'')+(src?' · d’après <b style="color:#0E7490">'+esc2(src.nom)+' '+esc2(G.src.v||'')+'</b> (document client)':'')+'</div></div>';
+  // Documents à valider (document par document)
+  var toVal=G.items.filter(function(x){return _m2St(x.m)==='done';});
+  if(toVal.length){
+    var mv=toVal.filter(function(x){return _m2CanValDoc(x.doc);}).length;
+    h+='<div class="m2-box m2-valbox"><h3 style="color:#6D28D9">🔎 '+toVal.length+' DOCUMENT'+(toVal.length>1?'S':'')+' À VALIDER</h3><div style="font-size:12.5px">'
+      +(mv?'Ouvrez chaque document déposé, puis <b>✓ Valider</b> ou <b>↺ À reprendre</b> dans la liste ci-dessous.'+(mv<toVal.length?' Les autres sont à valider par ELS Projet.':''):'En attente de validation par '+(toVal.some(function(x){return _modsPhOf(x.doc)==='AUTOMATISME';})?'ELS Projet ou l’Automatisme':'ELS Projet')+'.')
+      +'</div><div class="m2-note" style="margin-top:4px">ELS Projet valide tous les documents · l’Automatisme valide les documents Automatisme.</div></div>';
+  }
+  if(s==='ok')h+='<div class="m2-box m2-okbox"><h3 style="color:#15803D">✓ VALIDÉE</h3><div style="font-size:12.5px">Les nouvelles versions sont à jour dans l’onglet Documents. Les tâches liées sont passées « terminées ».</div>'
+    +(ed?'<div class="m2-row" style="margin-top:8px"><button type="button" class="m2-btn2 sm" onclick="m2MailNew(\''+gj+'\')">✉ Prévenir des nouvelles versions</button></div>':'')+'</div>';
+  // Documents
+  var nDep=G.items.filter(function(x){var t=_m2St(x.m);return t==='done'||t==='valid';}).length;
+  h+='<div class="m2-box"><h3>DOCUMENTS À MODIFIER <span class="r m2-note">'+nDep+' / '+G.items.length+' déposés</span></h3><table class="m2-tbl"><tr><th>DOCUMENT</th><th>VERSION</th><th>ÉTAT</th><th></th></tr>'
+    +G.items.map(function(x){
+      var d=x.doc,m=x.m,st=_m2St(m),l=_modsLatest(d),dep=m.dep,c=_modsPhCol(_modsPhOf(d)),dj=_modsJs(d.id),mj=_modsJs(m.id);
+      var ver;
+      if(dep&&st!=='todo')ver='<b>'+esc2(_modsVerLbl(dep.nv))+'</b>'+(dep.same?' <span class="m2-note">(même indice)</span>':'')+'<br>'+_modsFilesHtml(dep.files);
+      else if(st==='valid'&&m.verId){var vv=(d.versions||[]).find(function(v){return v.id===m.verId;});ver=vv?'<b>'+esc2(_modsVerLbl(vv.version))+'</b>':'—';}
+      else ver='<span class="m2-note">actuelle : '+esc2(l?_modsVerLbl(l.version):'—')+'</span>';
+      var act='';
+      if((st==='todo'||st==='redo')&&ed)act='<button type="button" class="m2-btn sm" onclick="m2DepForm(\''+dj+'\',\''+mj+'\')">⬆ Déposer & marquer fait</button>';
+      else if(st==='done')act=_m2CanValDoc(d)?'<div class="m2-row" style="justify-content:flex-end;gap:6px"><button type="button" class="m2-btn gn sm" onclick="m2Val(\''+dj+'\',\''+mj+'\')">✓ Valider</button><button type="button" class="m2-btn or sm" onclick="m2RedoForm(\''+dj+'\',\''+mj+'\')">↺ À reprendre</button></div>'
+        :'<span class="m2-note">Validation : '+(_modsPhOf(d)==='AUTOMATISME'?'ELS Projet ou Autom':'ELS Projet')+'</span>';
+      else if(st==='valid'&&m.valByName)act='<span class="m2-note">validé par '+esc2(m.valByName)+'</span>';
+      var del=ed&&st!=='valid'?' <button type="button" class="m2-lnk red" style="font-size:11px;text-decoration:none" onclick="modDeleteReq(\''+dj+'\',\''+mj+'\')" title="Retirer ce document de la demande">✕</button>':'';
+      return '<tr><td><span class="m2-tag" style="background:'+c.x+'22;color:'+c.xd+'">'+esc2(_modsPhLbl(_modsPhOf(d)))+'</span><br><b>'+esc2(d.nom)+'</b>'+del
+        +(st==='redo'&&m.reason?'<div class="m2-tl"><div><span class="m2-rs">↺ '+esc2(m.reason)+'</span></div></div>':'')
+        +(dep&&dep.c&&st!=='todo'?'<div class="m2-note">« '+esc2(dep.c)+' » — '+esc2(dep.byName||'')+'</div>':'')+'</td>'
+        +'<td>'+ver+'</td><td>'+_m2DocState(x)+'</td><td style="text-align:right">'+act+'</td></tr>';
+    }).join('')+'</table>'
+    +(ed&&s!=='ok'?'<button type="button" class="m2-lnk" style="margin-top:8px" onclick="m2AddDocForm(\''+gj+'\')">＋ Un autre document est touché</button>':'')+'</div>';
+  // Planification
+  var et=_m2EstTot(G);
+  h+='<div class="m2-box"><h3>📅 PLANIFICATION'+(ed&&s!=='ok'?'<button type="button" class="m2-lnk r" onclick="m2PlanForm(\''+gj+'\')">Modifier</button>':'')+'</h3>'
+    +'<div class="m2-g3"><div><div class="m2-note">QUI LA FAIT</div>'+(G.who.length?G.who.map(function(w){return '<div class="m2-who" style="margin-top:4px">'+_m2Av(w.nom,w.svc)+' <b>'+esc2(w.nom||w.email)+'</b> <span class="m2-note">'+esc2((M2_SVC[w.svc]||{}).l||'')+'</span></div>';}).join(''):'<div class="m2-note" style="margin-top:4px">personne</div>')+'</div>'
+    +'<div><div class="m2-note">QUAND</div><div style="margin-top:4px">'+(G.start?'du <b>'+_m2Fr(G.start)+'</b> au <b>'+_m2Fr(G.end)+'</b>':'<i class="m2-note">pas encore planifiée</i>')+'</div></div>'
+    +'<div><div class="m2-note">TEMPS PRÉVU</div><div style="margin-top:4px"><b>'+_modsFmtH(et)+'</b></div>'+Object.keys(G.est).filter(function(k){return +G.est[k]>0;}).map(function(k){return '<div class="m2-note">'+M2_SVC[k].l+' : '+_modsFmtH(G.est[k])+'</div>';}).join('')+'</div></div></div>';
+  // Heures passées
+  var svcs=Object.keys(M2_SVC).filter(function(k){return +G.est[k]>0||_m2HTot(G.id,k);});
+  var hrs=_m2Hours(G.id);
+  h+='<div class="m2-box"><h3>⏱ HEURES PASSÉES <span class="r"><b style="color:var(--tx);font-size:13px">'+_modsFmtH(_m2HTot(G.id))+'</b> / '+_modsFmtH(et)+' prévues</span></h3>'
+    +svcs.map(function(k){var a=_m2HTot(G.id,k),b=+G.est[k]||0,p=b?Math.min(100,a/b*100):100;return '<div style="margin-bottom:8px"><div class="m2-row" style="justify-content:space-between;font-size:12px"><b style="color:'+M2_SVC[k].c+'">'+M2_SVC[k].l+'</b><span><b>'+_modsFmtH(a)+'</b> / '+(b?_modsFmtH(b):'—')+(b&&a>b?' <b style="color:#B91C1C">+'+_modsFmtH(a-b)+'</b>':'')+'</span></div><div class="m2-bar"><i class="'+(b&&a>b?'over':'')+'" style="width:'+p+'%;'+(b&&a>b?'':'background:'+M2_SVC[k].c)+'"></i></div></div>';}).join('')
+    +(hrs.length?'<table class="m2-tbl" style="margin-top:6px"><tr><th>DATE</th><th>QUI</th><th>HEURES</th><th>NOTE</th><th></th></tr>'+hrs.map(function(y){var x=y.x,sv=_m2HSvc(x);
+      return '<tr><td>'+esc2(x.d?_m2Fr(x.d):_m2FrAt(x.at))+'</td><td><span class="m2-who">'+_m2Av(x.by||x.email,sv)+' '+esc2(x.by||x.email||'?')+'</span> <span class="m2-note">'+esc2(M2_SVC[sv].l)+'</span></td><td><b>'+_modsFmtH(x.h)+'</b></td><td class="m2-note">'+esc2(x.c||'')+'</td>'
+        +'<td style="text-align:right">'+(ed&&_autHrsCanDel(x)?'<button type="button" class="m2-lnk red" style="text-decoration:none" onclick="m2DelHours(\''+_modsJs(x.id)+'\')" title="Retirer cette saisie" aria-label="Retirer cette saisie">✕</button>':'')+'</td></tr>';}).join('')+'</table>':'<div class="m2-note">Aucune heure notée pour l’instant.</div>')
+    +(ed&&s!=='ok'?'<div class="m2-row" style="margin-top:10px;background:#FFFBEB;border:1px solid #FCD34D;border-radius:10px;padding:8px 10px"><b style="font-size:12px;color:#92400E">＋ Mes heures</b>'
+      +'<input id="m2-hh" class="m2-in" style="width:90px" placeholder="Heures" inputmode="decimal" aria-label="Heures passées" onkeydown="if(event.key===\'Enter\')m2AddHours(\''+gj+'\')">'
+      +'<select id="m2-hsvc" class="m2-in" style="width:auto" aria-label="Service">'+Object.keys(M2_SVC).map(function(k){return '<option value="'+k+'"'+(_m2SvcOfEmail(me)===k?' selected':'')+'>'+M2_SVC[k].l+'</option>';}).join('')+'</select>'
+      +'<input id="m2-hc" class="m2-in" style="flex:1;min-width:150px" placeholder="Ce que j’ai fait (facultatif)" aria-label="Ce que j’ai fait" onkeydown="if(event.key===\'Enter\')m2AddHours(\''+gj+'\')">'
+      +'<button type="button" class="m2-btn sm" onclick="m2AddHours(\''+gj+'\')">Ajouter</button><span class="m2-note">au nom de '+esc2(_modsMyName()||me)+'</span></div>':'')+'</div>';
+  // Tâches du planning liées
+  var tk=(G.tasks||[]).map(_modsTaskRow).filter(Boolean);
+  if(tk.length)h+='<div class="m2-box"><h3>📈 TÂCHES DU PLANNING LIÉES</h3>'+tk.map(function(r){var c=_modsPhCol(_phCat(r.pk)==='AUTRES'?'ETUDE':_phCat(r.pk));
+    return '<div class="m2-row" style="justify-content:space-between;padding:4px 0"><span><span class="m2-tag" style="background:'+c.x+'22;color:'+c.xd+'">'+esc2(_modsPhLbl(_phCat(r.pk)))+'</span> <b>'+esc2(r.lb||'tâche')+'</b></span>'+(r.done?'<span class="m2-st ok">✓ Terminée</span>':'<span class="m2-st prog">⚡ En cours — terminée à la validation</span>')+'</div>';}).join('')+'</div>';
+  // Emails
+  if(ed){
+    var anyRedo=G.items.filter(function(x){return _m2St(x.m)==='redo';});
+    h+='<div class="m2-box"><h3>✉ EMAILS <span class="r m2-note">brouillons Outlook</span></h3><div class="m2-row">'
+      +(s!=='ok'?'<button type="button" class="m2-btn2 sm" onclick="m2MailTodo(\''+gj+'\')">« Modification à faire »</button>':'')
+      +(toVal.length?'<button type="button" class="m2-btn2 sm" onclick="m2MailCheck(\''+gj+'\')">« Faite — à valider »</button>':'')
+      +anyRedo.map(function(x){return '<button type="button" class="m2-btn2 sm" onclick="m2MailRedo(\''+_modsJs(x.doc.id)+'\',\''+_modsJs(x.m.id)+'\')">« À reprendre » '+esc2(x.doc.nom)+'</button>';}).join('')
+      +(G.items.some(function(x){return _m2St(x.m)==='valid'&&x.m.verId;})?'<button type="button" class="m2-btn2 sm" onclick="m2MailNew(\''+gj+'\')">« Nouvelles versions »</button>':'')
+      +'</div></div>';
+  }
+  // Historique
+  var hist=_m2HistOf(G.id);
+  h+='<div class="m2-box"><h3>🕓 HISTORIQUE</h3><div class="m2-tl">'
+    +(hist.length?'':'<div><b>'+esc2(G.date||'')+'</b> · <b>'+esc2(G.by||'')+'</b> a créé la demande</div>')
+    +hist.map(function(x){return '<div><b>'+_m2FrAt(x.at)+'</b> · <b>'+esc2(x.w||'')+'</b> '+esc2(x.a||'')+(x.x?' <span class="m2-note">— '+esc2(x.x)+'</span>':'')+(x.r?'<span class="m2-rs">« '+esc2(x.r)+' »</span>':'')+'</div>';}).join('')+'</div></div>';
+  if(ed&&s!=='ok')h+='<div style="text-align:right"><button type="button" class="m2-lnk red" onclick="modCancelGroup(\''+gj+'\')">Annuler la demande</button></div>';
+  dr.innerHTML=h+'</div>';
+  dr.scrollTop=keep;
+}
+function m2AddHours(g){
+  if(!_m2CanEdit())return;
+  var e=document.getElementById('m2-hh'),v=_modsParseH(e&&e.value);
+  if(!(v>0)||v>500){alert('Indiquez un nombre d’heures (ex : 2,5).');if(e)e.focus();return;}
+  var svc=(document.getElementById('m2-hsvc')||{}).value||'be',c=((document.getElementById('m2-hc')||{}).value||'').trim();
+  _autHrsAdd({grp:g,h:v,src:'modif',svc:svc,c:c,d:_m2Iso()});
+  saveNow();renderModificationsTab();
+  _modsToast('⏱ '+_modsFmtH(v)+' ajoutée'+(v>1?'s':'')+' au nom de <b>'+esc2(_modsMyName()||_modsMe())+'</b>.',4000);
+}
+function m2DelHours(hid){if(_autHrsDel(hid)){saveNow();renderModificationsTab();}}
+// ═════════ FENÊTRES DE SAISIE ═════════
+function m2Modal(html){_m2Shell();window._mfFiles=[];var b=document.getElementById('m2-mbox');b.innerHTML=html;document.getElementById('m2-mo').classList.add('on');
+  var f=b.querySelector('input[type=text],textarea');if(f)setTimeout(function(){try{f.focus();}catch(e){}},50);}
+function m2CloseModal(){var m=document.getElementById('m2-mo');if(m)m.classList.remove('on');window._mfFiles=[];}
+function _m2Q(sel){return [].slice.call(document.querySelectorAll('#m2-mo '+sel));}
+function _m2Val(id){var e=document.getElementById(id);return e?String(e.value||'').trim():'';}
+function _m2Busy(on,msg){_m2Q('button').forEach(function(b){b.disabled=!!on;});var s=document.getElementById('m2-status');if(s)s.textContent=msg||'';}
+// Cases « qui la fait » : les personnes (avec email) des infos de l'affaire
+function _m2WhoHtml(sel){
+  var ppl=_modsPeople(),known={};ppl.forEach(function(p){known[p.email.toLowerCase()]=1;});
+  (sel||[]).forEach(function(w){if(w&&w.email&&!known[w.email.toLowerCase()]){known[w.email.toLowerCase()]=1;ppl.push({email:w.email,nom:w.nom||'',cats:['Déjà choisie']});}});
+  if(!ppl.length)return '<div class="mdx-warn" style="margin-top:0">Aucune personne avec un email dans les infos de l’affaire. <button type="button" class="mdx-lnk" onclick="m2CloseModal();openAffaireInfos()">ℹ️ Ajouter des personnes</button></div>';
+  var s={};(sel||[]).forEach(function(w){if(w&&w.email)s[w.email.toLowerCase()]=1;});
+  return '<div class="m2-pick">'+ppl.map(function(p){var sv=_m2SvcOfEmail(p.email);
+    return '<label><input type="checkbox" class="m2-who" value="'+escHtml(p.email)+'" data-nom="'+escHtml(p.nom||p.email)+'" data-svc="'+sv+'"'+(s[p.email.toLowerCase()]?' checked':'')+'>'+_m2Av(p.nom||p.email,sv)+' '+esc2(p.nom||p.email)+' <span class="m2-note">'+esc2((p.cats||[])[0]||'')+'</span></label>';}).join('')+'</div>';
+}
+function _m2WhoVals(){return _m2Q('.m2-who:checked').map(function(c){return {email:c.value,nom:c.getAttribute('data-nom')||c.value,svc:c.getAttribute('data-svc')||'be'};});}
+function _m2EstHtml(est){est=est||{};return '<div class="m2-g3" style="margin-top:8px">'+[['be','Heures prévues BE'],['autom','Heures prévues Autom'],['chantier','Heures prévues Chantier']].map(function(x){return '<div><div class="m2-note">'+x[1]+'</div><input id="m2-e-'+x[0]+'" class="m2-in" inputmode="decimal" placeholder="0" value="'+(+est[x[0]]>0?String(est[x[0]]).replace('.',','):'')+'"></div>';}).join('')+'</div>';}
+function _m2EstVals(){var o={};['be','autom','chantier'].forEach(function(k){var v=_modsParseH(_m2Val('m2-e-'+k));if(v>0)o[k]=v;});return o;}
+// ── Nouvelle demande ──
+function m2NewReq(docId,pre){
+  if(!_m2CanEdit())return;
+  pre=pre||{};var sel={};if(docId)sel[docId]=1;
+  var cli=_modsGetDocs().filter(function(d){return _modsPhOf(d)==='CLIENT';});
+  var today=_m2Iso(),in3=_m2Iso(new Date(Date.now()+3*864e5));
+  m2Modal('<h2>＋ Nouvelle modification</h2><div class="m2-note">Elle sera envoyée par email à la personne qui la fait, puis chaque document sera validé (ELS Projet, ou l’Automatisme pour ses documents).</div>'
+    +'<label class="m2-fl" for="m2-t">TITRE COURT</label><input type="text" id="m2-t" class="m2-in" placeholder="Ex : Ajout pompe P-105" value="'+escHtml(pre.t||'')+'">'
+    +'<label class="m2-fl" for="m2-d">DÉTAIL</label><textarea id="m2-d" class="m2-in" rows="3" placeholder="Ce qu’il faut changer, et pourquoi">'+esc2(pre.detail||'')+'</textarea>'
+    +'<label class="m2-fl" for="m2-src">D’APRÈS UN DOCUMENT CLIENT ? <span class="m2-note">(facultatif)</span></label><select id="m2-src" class="m2-in"><option value="">— Non, demande interne —</option>'
+      +cli.map(function(d){var l=_modsLatest(d);return '<option value="'+escHtml(d.id)+'"'+(pre.src===d.id?' selected':'')+'>'+esc2(d.nom)+(l?' '+esc2(_modsVerLbl(l.version)):'')+'</option>';}).join('')+'</select>'
+    +'<label class="m2-fl">DOCUMENTS À MODIFIER <span class="m2-note">(cochez tous ceux que ça touche)</span></label>'+_modsDocsPickHtml(sel,null,'m2-doc',true)
+    +'<label class="m2-fl">QUI LA FAIT</label>'+_m2WhoHtml([])
+    +'<label class="m2-fl">PLANIFICATION</label><div class="m2-g2"><div><div class="m2-note">Début</div><input type="date" id="m2-s" class="m2-in" value="'+today+'"></div><div><div class="m2-note">Fin prévue</div><input type="date" id="m2-e" class="m2-in" value="'+in3+'"></div></div>'
+    +_m2EstHtml({})
+    +_modsTasksHtml({})
+    +'<label class="m2-fl">FICHIERS <span class="m2-note">(facultatif : PDF annoté, mail du client…)</span></label>'+_modsDropHtml()
+    +'<div class="m2-mact"><span id="m2-status" class="m2-note" style="margin-right:auto"></span><button type="button" class="m2-btn2" onclick="m2CloseModal()">Annuler</button>'
+    +'<button type="button" class="m2-btn2" onclick="m2Create(false)">Créer sans email</button><button type="button" class="m2-btn" onclick="m2Create(true)">Créer et préparer l’email</button></div>');
+}
+async function m2Create(withMail){
+  var t=_m2Val('m2-t'),det=_m2Val('m2-d'),ids=_m2Q('.m2-doc:checked').map(function(c){return c.value;});
+  var nom=_m2Val('mf-doc-new'),nph=_m2Val('mf-doc-new-ph')||'ETUDE';
+  if(nom){var ex=_modsDocByName(nom,nph);if(ex){if(ids.indexOf(ex.id)<0)ids.push(ex.id);nom='';}}
+  var who=_m2WhoVals(),tasks=_m2Q('.mf-task:checked').map(function(c){return c.value;});
+  if(!t){alert('Indiquez un titre court.');return;}
+  if(!ids.length&&!nom){alert('Cochez au moins un document (ou tapez le nom d’un nouveau document).');return;}
+  if(withMail&&!who.length){alert('Cochez au moins une personne qui fait la modification.');return;}
+  var s=_m2Val('m2-s'),e=_m2Val('m2-e');if(s&&e&&e<s){alert('La fin prévue est avant le début.');return;}
+  var aff=STORE.current,grp=_modsUid('g_'),newId=nom?_modsUid('doc_'):null,files=(window._mfFiles||[]).slice(),up=[];
+  var first=ids[0]||newId;
+  if(files.length){
+    _m2Busy(true,'Envoi des fichiers…');
+    for(var i=0;i<files.length;i++)up.push(await _modsUploadP(files[i],first,grp+'_'+i));
+    var bad=up.filter(function(u){return !u.path;});
+    if(bad.length)alert(bad.length+' fichier(s) n’ont pas pu être enregistrés sur le serveur ('+bad[0].err+').');
+    _m2Busy(false);
+  }
+  if(STORE.current!==aff){alert('L’affaire a changé pendant l’enregistrement : rien n’a été créé.');return;}
+  if(newId)_modsGetDocs().push({id:newId,nom:nom,phase:nph,_createdAt:Date.now(),versions:[],mods:[]});
+  var fl=up.filter(function(u){return u.path;}).map(function(u){return {path:u.path,name:u.name};});
+  var held=_modsHoldTasks(tasks),tm=Date.now(),me=_modsMyName(),src=_m2Val('m2-src');
+  (newId?ids.concat([newId]):ids).forEach(function(id,k){
+    var d=_modsDoc(id);if(!d)return;d.mods=d.mods||[];
+    d.mods.push({id:_modsUid('m_'),grp:grp,detail:det||t,files:fl.slice(),to:who.map(function(w){return {email:w.email,nom:w.nom};}),tasks:tasks.slice(),reopened:held.slice(),
+      byEmail:_modsMe(),byName:me,date:_modsNowFr(),_createdAt:tm+k,status:'afaire',st:'todo'});
+  });
+  var sd=src&&_modsDoc(src),sl=sd&&_modsLatest(sd);
+  _m2Reqs().push({id:grp,t:t,detail:det,src:sd?{doc:src,v:sl?_modsVerLbl(sl.version):''}:null,byEmail:_modsMe(),byName:me,date:_modsNowFr(),at:tm,
+    who:who,start:s,end:e,est:_m2EstVals(),files:fl});
+  _m2AddHist(grp,'a créé la demande',withMail&&who.length?{x:'email « à faire » préparé pour '+who.map(function(w){return w.nom;}).join(', ')}:null);
+  if(s)_m2AddHist(grp,'a planifié du '+_m2Fr(s)+' au '+_m2Fr(e)+' ('+_modsFmtH(_m2EstTot({est:_m2EstVals()}))+' prévues)');
+  saveNow();m2CloseModal();M2.view='req';M2.flt='all';renderModificationsTab();m2Open(grp);
+  if(held.length)_modsToast('📅 Planning : '+held.map(function(id){var r=_modsTaskRow(id);return esc2(r&&r.lb||'tâche');}).join(', ')+' — en cours jusqu’à la validation.',6000);
+  if(withMail)m2MailTodo(grp,files);
+}
+// ── Planification ──
+function m2PlanForm(g){
+  var G=_m2Find(g);if(!G||!_m2CanEdit())return;
+  m2Modal('<h2>📅 Planification — '+esc2(G.t)+'</h2>'
+    +'<label class="m2-fl">QUI LA FAIT</label>'+_m2WhoHtml(G.who)
+    +'<div class="m2-g2" style="margin-top:8px"><div><div class="m2-note">Début</div><input type="date" id="m2-s" class="m2-in" value="'+escHtml(G.start||'')+'"></div><div><div class="m2-note">Fin prévue</div><input type="date" id="m2-e" class="m2-in" value="'+escHtml(G.end||'')+'"></div></div>'
+    +_m2EstHtml(G.est)
+    +'<div class="m2-mact"><button type="button" class="m2-btn2" onclick="m2CloseModal()">Annuler</button><button type="button" class="m2-btn" onclick="m2SavePlan(\''+_modsJs(g)+'\')">Enregistrer</button></div>');
+}
+function _m2EnsureRec(G){
+  var r=_m2Rec(G.id);
+  if(!r){r={id:G.id,t:G.t,detail:G.detail,src:null,byEmail:G.m0.byEmail||'',byName:G.by,date:G.date,at:G.m0._createdAt||Date.now(),who:G.who,start:'',end:'',est:{},files:G.files||[]};_m2Reqs().push(r);}
+  return r;
+}
+function m2SavePlan(g){
+  var G=_m2Find(g);if(!G)return;
+  var s=_m2Val('m2-s'),e=_m2Val('m2-e');if(s&&e&&e<s){alert('La fin prévue est avant le début.');return;}
+  var r=_m2EnsureRec(G),who=_m2WhoVals();
+  r.who=who;r.start=s;r.end=e;r.est=_m2EstVals();r._modAt=Date.now();
+  G.items.forEach(function(x){if(_m2St(x.m)!=='valid')x.m.to=who.map(function(w){return {email:w.email,nom:w.nom};});});
+  _m2AddHist(g,'a modifié la planification : '+(s?'du '+_m2Fr(s)+' au '+_m2Fr(e):'sans dates')+' ('+_modsFmtH(_m2EstTot({est:r.est}))+' prévues)');
+  saveNow();m2CloseModal();renderModificationsTab();
+}
+// ── Un autre document est touché ──
+function m2AddDocForm(g){
+  var G=_m2Find(g);if(!G||!_m2CanEdit())return;
+  var ex={};G.items.forEach(function(x){ex[x.doc.id]=1;});
+  if(!_modsGetDocs().some(function(d){return !ex[d.id];})){alert('Tous les documents de l’affaire sont déjà dans cette demande.');return;}
+  m2Modal('<h2>＋ Un autre document est touché</h2><div class="m2-note">Il passe « à faire » dans cette même demande.</div><div style="margin-top:8px">'+_modsDocsPickHtml({},ex,'m2-adoc',false)+'</div>'
+    +'<div class="m2-mact"><button type="button" class="m2-btn2" onclick="m2CloseModal()">Annuler</button><button type="button" class="m2-btn" onclick="m2AddDocsOk(\''+_modsJs(g)+'\')">Ajouter</button></div>');
+}
+function m2AddDocsOk(g){
+  var ids=_m2Q('.m2-adoc:checked').map(function(c){return c.value;});if(!ids.length){alert('Cochez au moins un document.');return;}
+  var G=_m2Find(g);if(!G){m2CloseModal();return;}
+  var base=(G.items.find(function(x){return _m2St(x.m)!=='valid';})||G.items[0]).m;
+  var added=_modsAddImpacted(ids,base);
+  _modsGetDocs().forEach(function(d){(d.mods||[]).forEach(function(m){if(m&&_modsGrp(m)===g&&!m.st&&m.status!=='fait')m.st='todo';});});
+  if(added.length)_m2AddHist(g,'a ajouté : '+added.join(', '));
+  saveNow();m2CloseModal();renderModificationsTab();
+}
+// ── Déposer un document (fichier obligatoire) ──
+function _m2Item(docId,modId){var d=_modsDoc(docId),m=d&&(d.mods||[]).find(function(x){return x.id===modId;});return m?{doc:d,m:m}:null;}
+function m2DepForm(docId,modId){
+  var it=_m2Item(docId,modId);if(!it||!_m2CanEdit())return;
+  var d=it.doc,m=it.m,l=_modsLatest(d),me=_modsMe();
+  m2Modal('<h2>⬆ '+esc2(d.nom)+' — modification faite</h2><div class="m2-note">Version actuelle : <b>'+esc2(l?_modsVerLbl(l.version):'aucune')+'</b>. Le document part ensuite en validation.</div>'
+    +(_m2St(m)==='redo'&&m.reason?'<div class="m2-tl" style="margin-top:8px"><div><span class="m2-rs">↺ À reprendre : '+esc2(m.reason)+'</span></div></div>':'')
+    +'<label class="m2-fl" for="m2-v">NOUVELLE VERSION</label><div class="m2-g2"><input type="text" id="m2-v" class="m2-in" placeholder="Ex : Ind. D" value="'+escHtml(_m2St(m)==='redo'&&m.dep&&!m.dep.same?m.dep.nv:'')+'">'
+    +(l?'<label style="display:flex;gap:6px;align-items:center;font-size:12px;cursor:pointer"><input type="checkbox" id="m2-same" style="accent-color:#6457F4"> Même indice (pas de nouvelle version)</label>':'<span></span>')+'</div>'
+    +'<label class="m2-fl">DOCUMENT (OBLIGATOIRE)</label>'+_modsDropHtml(true)
+    +'<label class="m2-fl">HEURES PASSÉES <span class="m2-note">(depuis la dernière saisie — au nom de '+esc2(_modsMyName()||me)+')</span></label>'
+    +'<div class="m2-row"><input id="m2-dh" class="m2-in" style="width:120px" placeholder="Heures" inputmode="decimal"><select id="m2-dsvc" class="m2-in" style="width:auto">'+Object.keys(M2_SVC).map(function(k){return '<option value="'+k+'"'+(_m2SvcOfEmail(me)===k?' selected':'')+'>'+M2_SVC[k].l+'</option>';}).join('')+'</select></div>'
+    +'<label class="m2-fl" for="m2-dc">COMMENTAIRE <span class="m2-note">(facultatif)</span></label><input type="text" id="m2-dc" class="m2-in" placeholder="Ex : repères corrigés folios 9 à 12">'
+    +'<div class="m2-mact"><span id="m2-status" class="m2-note" style="margin-right:auto"></span><button type="button" class="m2-btn2" onclick="m2CloseModal()">Annuler</button><button type="button" class="m2-btn gn" onclick="m2Deposit(\''+_modsJs(docId)+'\',\''+_modsJs(modId)+'\')">✓ Envoyer en validation</button></div>');
+}
+async function m2Deposit(docId,modId){
+  var it=_m2Item(docId,modId);if(!it){m2CloseModal();return;}
+  var d=it.doc,m=it.m,l=_modsLatest(d),same=!!(document.getElementById('m2-same')||{}).checked,nv=_m2Val('m2-v');
+  var files=(window._mfFiles||[]).slice(),hh=_modsParseH(_m2Val('m2-dh')),c=_m2Val('m2-dc');
+  if(!files.length){alert('Joignez le document (obligatoire).');return;}
+  if(!same&&!nv){alert('Indiquez la nouvelle version, ou cochez « Même indice ».');document.getElementById('m2-v').focus();return;}
+  if(!same&&(d.versions||[]).some(function(v){return String(v.version).trim().toLowerCase()===nv.toLowerCase();})&&!confirm('La version « '+nv+' » existe déjà pour ce document. Continuer quand même ?'))return;
+  if(_m2Val('m2-dh')&&!(hh>0&&hh<=500)){alert('Heures : indiquez un nombre (ex : 3,5), ou laissez vide.');return;}
+  var aff=STORE.current,up=[],key=modId+'_d'+Date.now().toString(36);
+  _m2Busy(true,'Envoi '+(files.length>1?'des '+files.length+' fichiers':'du fichier')+'…');
+  for(var i=0;i<files.length;i++)up.push(await _modsUploadP(files[i],docId,key+'_'+i));
+  _m2Busy(false);
+  var ok=up.filter(function(u){return u.path;});
+  if(!ok.length){alert('Le fichier n’a pas pu être enregistré sur le serveur ('+(up[0]&&up[0].err||'erreur')+'). Rien n’a été déposé.');return;}
+  if(ok.length<up.length)alert((up.length-ok.length)+' fichier(s) n’ont pas pu être enregistrés : seuls les autres sont déposés.');
+  if(STORE.current!==aff){alert('L’affaire a changé pendant l’envoi : rien n’a été déposé.');return;}
+  it=_m2Item(docId,modId);if(!it){alert('Cette demande a été supprimée entre-temps.');return;}
+  m=it.m;
+  // ancien dépôt (renvoyé « à reprendre ») : ses fichiers sont retirés du stockage
+  var oldDep=(m.dep&&m.dep.files||[]).map(function(f){return f.path;}).filter(Boolean);
+  if(oldDep.length&&typeof supa!=='undefined'&&supa){try{supa.storage.from(BUCKET).remove(oldDep);}catch(e){}}
+  m.st='done';m.dep={nv:same?(l?l.version:nv):nv,same:same,files:ok.map(function(u){return {path:u.path,name:u.name};}),byEmail:_modsMe(),byName:_modsMyName(),at:Date.now(),c:c};
+  delete m.reason;
+  if(hh>0)_autHrsAdd({grp:_modsGrp(m),h:hh,src:'modif',svc:_m2Val('m2-dsvc')||'be',c:c||('Dépôt '+d.nom),d:_m2Iso(),modId:m.id});
+  var g=_modsGrp(m);
+  _m2AddHist(g,'a déposé '+d.nom+' '+_modsVerLbl(m.dep.nv)+(same?' (même indice)':'')+' — à valider',c?{x:c}:null);
+  saveNow();m2CloseModal();renderModificationsTab();
+  var G=_m2Find(g),rest=G?G.items.filter(function(x){var t=_m2St(x.m);return t==='todo'||t==='redo';}).length:0;
+  _modsToast(rest?'✓ '+esc2(d.nom)+' déposé. Il reste '+rest+' document'+(rest>1?'s':'')+' à faire.'
+    :'🔎 Tous les documents sont déposés : la demande part <b>en validation</b>.<small><button type="button" class="m2-btn2 sm" style="margin-top:6px" onclick="m2MailCheck(\''+_modsJs(g)+'\')">✉ Préparer l’email « faite — à valider »</button></small>',9000);
+}
+// ── Valider un document ──
+function m2Val(docId,modId){
+  var it=_m2Item(docId,modId);if(!it)return;
+  var d=it.doc,m=it.m,dep=m.dep,g=_modsGrp(m);
+  if(!_m2CanValDoc(d)){alert('Ce document est à valider par ELS Projet'+(_modsPhOf(d)==='AUTOMATISME'?' ou l’Automatisme':'')+'.');return;}
+  if(!dep||!(dep.files||[]).length){alert('Aucun document déposé à valider.');return;}
+  var aff=STORE.current,l=_modsLatest(d),G=_m2Find(g),f0=dep.files[0],rest=dep.files.slice(1);
+  if(dep.same&&l){
+    // même indice : le fichier de la version actuelle est remplacé par celui déposé
+    var old=_modsVerFiles(l).map(function(f){return f.path;}).filter(function(p){return p&&!dep.files.some(function(x){return x.path===p;});});
+    l.attachmentPath=f0.path;l.attachmentName=f0.name;if(rest.length)l.extraFiles=rest.map(function(x){return {path:x.path,name:x.name};});else delete l.extraFiles;
+    l.note=(l.note?l.note+'\n':'')+'Mis à jour (même indice) : '+(G?G.t:'');
+    if(old.length&&typeof supa!=='undefined'&&supa){try{supa.storage.from(BUCKET).remove(old);}catch(e){}}
+    m.verId=l.id;m.noNewVer=true;
+  }else{
+    var v={id:_modsUid('v_'),version:dep.nv,date:_modsNowFr(),note:G?(G.detail||G.t):'',dest:[],byEmail:dep.byEmail,byName:dep.byName,
+      attachmentPath:f0.path,attachmentName:f0.name,modId:m.id,reqBy:G?G.by:'',reqDate:G?G.date:'',_createdAt:Date.now()};
+    if(rest.length)v.extraFiles=rest.map(function(x){return {path:x.path,name:x.name};});
+    d.versions=d.versions||[];d.versions.push(v);m.verId=v.id;delete m.noNewVer;
+  }
+  m.status='fait';m.st='valid';m.doneAt=dep.at||Date.now();m.doneBy=dep.byName;m.valBy=_modsMe();m.valByName=_modsMyName();m.valAt=Date.now();
+  _m2AddHist(g,'a validé '+d.nom+' '+_modsVerLbl(dep.nv));
+  var closed=_modsGroupCheck(g),G2=_m2Find(g),fin=G2&&_m2Rst(G2)==='ok';
+  if(fin)_m2AddHist(g,'demande terminée (tous les documents validés)');
+  saveNow();renderModificationsTab();
+  if(!dep.same)_modsDropOldFiles(aff,[docId],true); // seul le fichier de la dernière version reste sur le site
+  _modsToast('✓ <b>'+esc2(d.nom)+' '+esc2(_modsVerLbl(dep.nv))+'</b> validé — c’est la version à jour.'
+    +(fin?'<br>🎉 Tous les documents sont validés : la demande est <b>terminée</b>.'+_modsClosedMsg(closed):'<br>Il reste '+(G2?G2.items.filter(function(x){return _m2St(x.m)!=='valid';}).length:0)+' document(s).'),7000);
+}
+// ── À reprendre (un document) ──
+function m2RedoForm(docId,modId){
+  var it=_m2Item(docId,modId);if(!it)return;
+  if(!_m2CanValDoc(it.doc)){alert('Ce document est à valider par ELS Projet.');return;}
+  m2Modal('<h2>↺ '+esc2(it.doc.nom)+' '+esc2(_modsVerLbl(it.m.dep&&it.m.dep.nv))+' — à reprendre</h2><div class="m2-note">Ce document repart à '+esc2((it.m.dep&&it.m.dep.byName)||'la personne qui l’a déposé')+', avec votre commentaire dans l’email. Les autres documents de la demande ne changent pas.</div>'
+    +'<label class="m2-fl" for="m2-rc">POURQUOI ? (sera dans l’email)</label><textarea id="m2-rc" class="m2-in" rows="4" placeholder="Ex : les repères X12.4 à X12.8 sont inversés par rapport à la liste E/S client"></textarea>'
+    +'<div class="m2-mact"><button type="button" class="m2-btn2" onclick="m2CloseModal()">Annuler</button><button type="button" class="m2-btn or" onclick="m2Redo(\''+_modsJs(docId)+'\',\''+_modsJs(modId)+'\')">↺ Renvoyer et préparer l’email</button></div>');
+}
+function m2Redo(docId,modId){
+  var it=_m2Item(docId,modId),c=_m2Val('m2-rc');if(!it){m2CloseModal();return;}
+  if(!c){alert('Expliquez pourquoi c’est à reprendre.');return;}
+  it.m.st='redo';it.m.reason=c;it.m.redoBy=_modsMyName();it.m.redoAt=Date.now();
+  _m2AddHist(_modsGrp(it.m),'a renvoyé '+it.doc.nom+' « à reprendre »',{r:c});
+  saveNow();m2CloseModal();renderModificationsTab();
+  m2MailRedo(docId,modId);
+}
+// ── Document client : nouvelle révision reçue ──
+function m2ClientRev(docId){
+  var d=_modsDoc(docId);if(!d||!_m2CanEdit())return;var l=_modsLatest(d);
+  m2Modal('<h2>⬆ '+esc2(d.nom)+' — nouvelle révision reçue</h2><div class="m2-note">Révision actuelle : <b>'+esc2(l?_modsVerLbl(l.version):'aucune')+'</b></div>'
+    +'<label class="m2-fl" for="m2-crv">NOUVELLE RÉVISION</label><input type="text" id="m2-crv" class="m2-in" placeholder="Ex : Rev 6">'
+    +'<label class="m2-fl">FICHIER <span class="m2-note">(facultatif)</span></label>'+_modsDropHtml(true)
+    +'<label class="m2-fl" for="m2-crn">CE QUI CHANGE <span class="m2-note">(d’après le client)</span></label><input type="text" id="m2-crn" class="m2-in" placeholder="Ex : ajout vanne V-210">'
+    +'<label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:700;cursor:pointer"><input type="checkbox" id="m2-crm" checked style="accent-color:#6457F4"> Créer la modification qui en découle</label>'
+    +'<div class="m2-mact"><span id="m2-status" class="m2-note" style="margin-right:auto"></span><button type="button" class="m2-btn2" onclick="m2CloseModal()">Annuler</button><button type="button" class="m2-btn" onclick="m2ClientRevOk(\''+_modsJs(docId)+'\')">Enregistrer</button></div>');
+}
+async function m2ClientRevOk(docId){
+  var d=_modsDoc(docId),v=_m2Val('m2-crv'),n=_m2Val('m2-crn'),mk=!!(document.getElementById('m2-crm')||{}).checked,files=(window._mfFiles||[]).slice();
+  if(!d){m2CloseModal();return;}if(!v){alert('Indiquez la nouvelle révision.');return;}
+  var aff=STORE.current,vid=_modsUid('v_'),up=[];
+  if(files.length){_m2Busy(true,'Envoi du fichier…');for(var i=0;i<files.length;i++)up.push(await _modsUploadP(files[i],docId,i?vid+'_'+i:vid));_m2Busy(false);}
+  if(STORE.current!==aff){alert('L’affaire a changé : rien n’a été enregistré.');return;}
+  var ok=up.filter(function(u){return u.path;});
+  var ver={id:vid,version:v,date:_modsNowFr(),note:n||'Nouvelle révision reçue du client',dest:[],byEmail:_modsMe(),byName:'Client',attachmentPath:ok[0]?ok[0].path:null,attachmentName:ok[0]?ok[0].name:null,_createdAt:Date.now()};
+  if(ok.length>1)ver.extraFiles=ok.slice(1).map(function(u){return {path:u.path,name:u.name};});
+  d.versions=d.versions||[];d.versions.push(ver);
+  saveNow();m2CloseModal();renderModificationsTab();
+  if(ok.length)_modsDropOldFiles(aff,[docId],true);
+  if(mk)m2NewReq(null,{t:n||('Mise à jour suivant '+d.nom+' '+v),detail:'Suite à la révision '+v+' de « '+d.nom+' » envoyée par le client'+(n?' : '+n:'')+'.',src:docId});
+  else _modsToast('✓ '+esc2(d.nom)+' passe en <b>'+esc2(v)+'</b>.',4000);
+}
+// ═════════ EMAILS (brouillons .eml, comme avant) ═════════
+function _m2Link(G){return location.origin+location.pathname+'?go=modifs&aff='+encodeURIComponent(STORE.current)+'&mod='+encodeURIComponent(G.m0.id||'');}
+function _m2LinkLine(G,txt){var L=_m2Link(G);return {t:txt+' : '+L,h:esc2(txt)+' : <a href="'+escHtml(L)+'" style="color:#4B3FC7;font-weight:bold">ouvrir la demande</a>'};}
+function _m2DocsTxt(G,filter){return G.items.filter(filter||function(){return true;}).map(function(x){var l=_modsLatest(x.doc),dep=x.m.dep,st=_m2St(x.m);
+  return '• '+x.doc.nom+' ('+(dep&&st!=='todo'?_modsVerLbl(dep.nv):(l?_modsVerLbl(l.version):'—'))+')';}).join('\n');}
+async function m2MailTodo(g,localFiles){
+  var G=_m2Find(g);if(!G)return;
+  var to=(G.who||[]).filter(function(w){return w&&w.email;});
+  if(!to.length){alert('Personne n’est choisi pour faire cette modification. Cliquez « Modifier » dans PLANIFICATION.');return;}
+  _modsToast('⏳ Préparation de l’email…');
+  var A=_modsAffTxt(),att=await _modsGetAttachments(localFiles&&localFiles.length?localFiles:null,G.files||[]);
+  var rows=[['Affaire',A.txt],['Modification',G.t,1],['Documents à modifier',_m2DocsTxt(G,function(x){return _m2St(x.m)!=='valid';}),1]];
+  if(G.detail)rows.push(['Détail',G.detail]);
+  if(G.start)rows.push(['Prévu','du '+_m2Fr(G.start)+' au '+_m2Fr(G.end)+(_m2EstTot(G)?' ('+_modsFmtH(_m2EstTot(G))+')':'')]);
+  var lines=[];if(att.files.length)lines.push(att.files.length>1?'Les fichiers sont joints à ce message.':'Le fichier est joint à ce message.');
+  att.msgs.forEach(function(x){lines.push(x);});
+  lines.push(_m2LinkLine(G,'Une fois faite, sur Pétrosphère : « Déposer & marquer fait » avec le document et vos heures'));
+  var r=await _modsMakeEml({to:to,subject:'['+A.num+'] Modification à faire : '+G.t,intro:'Une modification est à faire sur l’affaire '+A.txt+'.',rows:rows,lines:lines,files:att.files,fn:A.num+' - Modification a faire - '+G.t});
+  var now=Date.now(),me=_modsMyName();G.items.forEach(function(x){if(_m2St(x.m)!=='valid'){x.m.mailAt=now;x.m.mailBy=me;}});
+  _m2AddHist(g,'a préparé l’email « à faire »',{x:to.map(function(w){return w.nom||w.email;}).join(', ')});
+  saveNow();if(!_modsBusy())renderModificationsTab();
+  _modsDoneToast(r,to.length,att.msgs,'👉 Pour joindre le mail du client : dans Outlook, glissez-le dans ce brouillon.');
+}
+async function m2MailCheck(g){
+  var G=_m2Find(g);if(!G)return;
+  var dep=G.items.filter(function(x){return _m2St(x.m)==='done';});
+  var aut=dep.some(function(x){return _modsPhOf(x.doc)==='AUTOMATISME';});
+  var to=_modsPeople().filter(function(p){var c=(p.cats||[]).join('|');return /ELS Projet/.test(c)||(aut&&/Automatisme/.test(c));}).map(function(p){return {email:p.email,nom:p.nom};});
+  if(!to.length){alert('Aucune personne « ELS Projet » avec un email dans les infos de l’affaire (ℹ️ Infos de l’affaire).');return;}
+  _modsToast('⏳ Préparation de l’email…');
+  var A=_modsAffTxt(),files=[];dep.forEach(function(x){(x.m.dep.files||[]).forEach(function(f){files.push(f);});});
+  var att=await _modsGetAttachments(null,files);
+  var lines=[att.files.length?'Les documents déposés sont joints à ce message.':''].filter(Boolean);att.msgs.forEach(function(x){lines.push(x);});
+  lines.push(_m2LinkLine(G,'Merci de valider chaque document (ou de le renvoyer « à reprendre ») sur Pétrosphère'));
+  var r=await _modsMakeEml({to:to,subject:'['+A.num+'] Modification faite — à valider : '+G.t,intro:'La modification « '+G.t+' » est faite sur l’affaire '+A.txt+'.',
+    rows:[['Affaire',A.txt],['Modification',G.t,1],['Documents déposés',_m2DocsTxt(G,function(x){return _m2St(x.m)==='done';}),1]],lines:lines,files:att.files,fn:A.num+' - A valider - '+G.t});
+  _m2AddHist(g,'a préparé l’email « faite — à valider »',{x:to.map(function(w){return w.nom||w.email;}).join(', ')});saveNow();
+  _modsDoneToast(r,to.length,att.msgs);
+}
+async function m2MailRedo(docId,modId){
+  var it=_m2Item(docId,modId);if(!it)return;var m=it.m,G=_m2Find(_modsGrp(m));if(!G)return;
+  var dep=m.dep||{},to=dep.byEmail?[{email:dep.byEmail,nom:dep.byName||dep.byEmail}]:(G.who||[]);
+  if(!to.length){alert('Je ne sais pas à qui envoyer : personne n’a déposé ce document.');return;}
+  var A=_modsAffTxt();
+  var r=await _modsMakeEml({to:to,subject:'['+A.num+'] À reprendre : '+it.doc.nom+' — '+G.t,intro:'Le document « '+it.doc.nom+' » de la modification « '+G.t+' » est à reprendre.',
+    rows:[['Affaire',A.txt],['Modification',G.t,1],['Document',it.doc.nom+(dep.nv?' ('+_modsVerLbl(dep.nv)+')':''),1],['À reprendre parce que',m.reason||'']],
+    lines:[_m2LinkLine(G,'Merci de redéposer le document corrigé sur Pétrosphère')],files:[],fn:A.num+' - A reprendre - '+it.doc.nom});
+  _modsDoneToast(r,to.length,[]);
+}
+function m2MailNew(g){
+  var G=_m2Find(g);if(!G)return;
+  m2Modal('<h2>✉ Prévenir des nouvelles versions — '+esc2(G.t)+'</h2><div class="m2-note">Un brouillon Outlook est préparé avec les documents validés en pièces jointes.</div>'
+    +'<label class="m2-fl">À PRÉVENIR</label>'+_m2WhoHtml([])
+    +'<div class="m2-mact"><button type="button" class="m2-btn2" onclick="m2CloseModal()">Annuler</button><button type="button" class="m2-btn" onclick="m2MailNewOk(\''+_modsJs(g)+'\')">✉ Préparer l’email</button></div>');
+}
+async function m2MailNewOk(g){
+  var G=_m2Find(g),to=_m2WhoVals();if(!G){m2CloseModal();return;}
+  if(!to.length){alert('Cochez au moins une personne.');return;}
+  m2CloseModal();_modsToast('⏳ Préparation de l’email…');
+  var vs=[],files=[];G.items.forEach(function(x){if(_m2St(x.m)!=='valid'||!x.m.verId)return;var v=(x.doc.versions||[]).find(function(y){return y.id===x.m.verId;});if(!v)return;vs.push({doc:x.doc,v:v});_modsVerFiles(v).forEach(function(f){if(f.path)files.push({path:f.path,name:f.name});});});
+  var A=_modsAffTxt(),att=await _modsGetAttachments(null,files);
+  var lines=[(att.files.length?'Les documents sont joints à ce message. ':'')+'Merci de ne plus utiliser les versions précédentes.'];att.msgs.forEach(function(x){lines.push(x);});
+  var r=await _modsMakeEml({to:to.map(function(w){return {email:w.email,nom:w.nom};}),subject:'['+A.num+'] Nouvelles versions : '+G.t,intro:'Suite à la modification « '+G.t+' », voici les nouvelles versions des documents de l’affaire '+A.txt+'.',
+    rows:[['Affaire',A.txt],['Modification',G.t,1],['Nouvelles versions',vs.map(function(o){return '• '+o.doc.nom+' — '+_modsVerLbl(o.v.version);}).join('\n'),1]],lines:lines,files:att.files,fn:A.num+' - Nouvelles versions - '+G.t});
+  var now=Date.now(),me=_modsMyName();vs.forEach(function(o){o.v.mailAt=now;o.v.mailBy=me;o.v.dest=to.map(function(w){return {email:w.email,nom:w.nom};});});
+  _m2AddHist(g,'a préparé l’email « nouvelles versions »',{x:to.map(function(w){return w.nom;}).join(', ')});
+  saveNow();if(!_modsBusy())renderModificationsTab();
+  _modsDoneToast(r,to.length,att.msgs);
+}
+// ═════════ VUE DOCUMENTS (registre ELS / client) ═════════
+function _m2DocsView(ed){
+  var docs=_modsGetDocs(),G=_m2Groups();
+  function pendOf(d){var o=null;G.forEach(function(g){g.items.forEach(function(x){if(x.doc===d&&_m2St(x.m)!=='valid'&&!o)o={G:g,x:x};});});return o;}
+  function rows(list){return list.map(function(d){
+    var l=_modsLatest(d),pm=pendOf(d),op=!!M2.docOpen[d.id],dj=_modsJs(d.id);
+    var st=pm?(function(t){return t==='done'?'<span class="m2-st check">🔎 À valider ('+_m2Ref(pm.G)+')</span>':t==='redo'?'<span class="m2-st redo">↺ À reprendre ('+_m2Ref(pm.G)+')</span>':'<span class="m2-st prog">🔧 En modification ('+_m2Ref(pm.G)+')</span>';})(_m2St(pm.x.m))
+      :(l?'<span class="m2-st ok">✓ À jour</span>':'<span class="m2-st new">Pas encore de version</span>');
+    var h='<div class="m2-tr" role="button" tabindex="0" aria-expanded="'+op+'" onclick="M2.docOpen[\''+dj+'\']=!M2.docOpen[\''+dj+'\'];renderModificationsTab()" onkeydown="if(event.key===\'Enter\'){this.click();}">'
+      +'<span class="c" style="color:#4B3FC7;font-weight:800">'+(op?'▾':'▸')+'</span><span class="n">'+esc2(d.nom)+'</span>'
+      +'<span class="v">'+(l?'<b>'+esc2(_modsVerLbl(l.version))+'</b><small>'+esc2(l.date||'')+'</small>':'<small>—</small>')+'</span>'
+      +'<span class="f" onclick="event.stopPropagation()">'+(l&&_modsVerFiles(l).length?_modsFileLink(l):'<small class="m2-note">—</small>')+'</span>'
+      +'<span class="s">'+st+'</span><span class="e m2-note">'+(l?(_modsPhOf(d)==='CLIENT'?'reçu du client':esc2(l.byName||'')):'')+'</span></div>';
+    if(op){
+      var vs=_modsVersSorted(d);
+      h+='<div class="m2-hist">'+(vs.length?vs.map(function(v,i){return '<div class="m2-hv '+(i?'old':'last')+'"><span class="m2-vt">'+esc2(_modsVerLbl(v.version))+'</span>'+(i?'':'<b style="color:#15803D">✓ VERSION À JOUR</b>')
+          +'<span>'+esc2(v.date||'')+(v.byName?' · '+esc2(v.byName):'')+'</span><span style="white-space:pre-wrap">'+esc2(v.note||'')+'</span>'+(_modsVerFiles(v).length?'<span>'+_modsFileLink(v)+'</span>':'')+'</div>';}).join(''):'<div class="m2-note">Pas encore de version.</div>')
+        +(ed?'<div class="m2-row" style="margin-top:4px">'
+          +(_modsPhOf(d)==='CLIENT'?'<button type="button" class="m2-btn sm" onclick="m2ClientRev(\''+dj+'\')">⬆ Nouvelle révision reçue du client</button>':'')
+          +'<button type="button" class="m2-btn2 sm" onclick="m2NewReq(\''+dj+'\')">＋ Modification sur ce document</button>'
+          +'<button type="button" class="m2-lnk" onclick="modShowAddVersionForm(\''+dj+'\');window.scrollTo&&document.getElementById(\'mods-w\').scrollTo({top:0,behavior:\'smooth\'})">'+(l?'⬆ Version directe (sans demande)':'⬆ Déposer la 1re version')+'</button>'
+          +'<button type="button" class="m2-lnk" onclick="modRenameDoc(\''+dj+'\');document.getElementById(\'mods-w\').scrollTo({top:0,behavior:\'smooth\'})">✎ Renommer</button>'
+          +'<button type="button" class="m2-lnk" onclick="modMoveDoc(\''+dj+'\');document.getElementById(\'mods-w\').scrollTo({top:0,behavior:\'smooth\'})">⇄ Changer de section</button>'
+          +'<button type="button" class="m2-lnk red" onclick="modDeleteDoc(\''+dj+'\')">✕ Supprimer</button></div>':'')+'</div>';
+    }
+    return h;}).join('');}
+  var nE=docs.filter(function(d){return _modsPhOf(d)!=='CLIENT';}),nC=docs.filter(function(d){return _modsPhOf(d)==='CLIENT';});
+  var th='<div class="m2-th"><span></span><span>DOCUMENT</span><span>VERSION À JOUR</span><span>FICHIER</span><span>ÉTAT</span><span></span></div>';
+  var hasOld=ed&&docs.some(function(d){return _modsOldFiles(d).length;});
+  var h='<div class="m2-row" style="justify-content:flex-end;margin:-4px 0 10px"><button type="button" class="m2-btn2 sm" onclick="modsExportAll()">⬇ Exporter (.zip)</button>'
+    +(hasOld?'<button type="button" class="m2-btn2 sm" onclick="modsDropAllOldFiles()">🧹 Anciens fichiers</button>':'')+'</div>';
+  h+='<div class="m2-dsect"><h2>🏢 Documents ELS <small>'+nE.length+'</small>'+(ed?'<button type="button" class="m2-btn2 sm" style="margin-left:auto" onclick="modShowSetupForm(\'ELS\');document.getElementById(\'mods-w\').scrollTo({top:0,behavior:\'smooth\'})">＋ Ajouter un document ELS</button>':'')+'</h2><div class="m2-dtbl">'+th;
+  _MODS_PH.forEach(function(ph){var l=nE.filter(function(d){return _modsPhOf(d)===ph.k;}).sort(function(a,b){return (a._createdAt||0)-(b._createdAt||0);});if(!l.length)return;var c=_modsPhCol(ph.k);
+    h+='<div class="m2-phh" style="color:'+c.xd+'"><i style="background:'+c.x+'"></i>'+esc2(ph.l)+'</div>'+rows(l);});
+  if(!nE.length)h+='<div class="m2-empty">Aucun document ELS.</div>';
+  h+='</div></div><div class="m2-dsect"><h2 style="color:#155E75">🤝 Documents client <small>'+nC.length+'</small><span class="m2-note" style="font-weight:600">— reçus du client, on s’y réfère ; une nouvelle révision peut déclencher une modification</span>'
+    +(ed?'<button type="button" class="m2-btn2 sm" style="margin-left:auto" onclick="modShowSetupForm(\'CLIENT\');document.getElementById(\'mods-w\').scrollTo({top:0,behavior:\'smooth\'})">＋ Ajouter un document client</button>':'')+'</h2><div class="m2-dtbl" style="border-color:#A5F3FC">'
+    +th.replace('VERSION À JOUR','RÉVISION À JOUR')+(nC.length?rows(nC.sort(function(a,b){return (a._createdAt||0)-(b._createdAt||0);})):'<div class="m2-empty">Aucun document client pour l’instant.</div>')+'</div></div>';
+  return h;
+}
+// ═════════ VUE PLANNING (dessinée comme le GANTT : Prévu clair / Réel plein) ═════════
+function _m2PlanView(G){
+  var list=G.filter(function(g){return g.start&&(M2.planAll||_m2Rst(g)!=='ok');});
+  var today=new Date();today.setHours(0,0,0,0);
+  var lo=new Date(today.getTime()-14*864e5),hi=new Date(today.getTime()+28*864e5);
+  list.forEach(function(g){var a=_m2Date(g.start),b=_m2Date(g.end||g.start);if(a&&a<lo)lo=a;if(b&&b>hi)hi=b;});
+  var days=[],d=new Date(lo.getTime()-3*864e5);while(d<=hi&&days.length<120){if(d.getDay()>0&&d.getDay()<6)days.push(new Date(d));d=new Date(d.getTime()+864e5);}
+  var DW=34,W=days.length*DW;
+  function first(dt){for(var i=0;i<days.length;i++)if(days[i]>=dt)return i;return days.length-1;}
+  function lastI(dt){var b=-1;for(var i=0;i<days.length;i++)if(days[i]<=dt)b=i;return b;}
+  function isoW(x){var t=new Date(Date.UTC(x.getFullYear(),x.getMonth(),x.getDate()));var n=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-n);var y=new Date(Date.UTC(t.getUTCFullYear(),0,1));return Math.ceil(((t-y)/864e5+1)/7);}
+  var tdI=lastI(today),col={plan:'#0EA5E9',prog:'#F59E0B',check:'#8B5CF6',redo:'#F2585B',new:'#9A96B3',ok:'#13B98A'};
+  var weeks=[];days.forEach(function(x){var w=isoW(x);if(!weeks.length||weeks[weeks.length-1].w!==w)weeks.push({w:w,n:0});weeks[weeks.length-1].n++;});
+  var grid='background-image:repeating-linear-gradient(90deg,transparent 0 '+(DW-1)+'px,#F1EFF8 '+(DW-1)+'px '+DW+'px);';
+  var h='<div class="m2-row" style="margin-bottom:8px"><span class="m2-note">Une ligne par modification : <b style="color:var(--tx)">barre claire = Prévu</b> (dates planifiées), <b style="color:var(--tx)">barre pleine = Réel</b> (jours où des heures ont été notées). Trait rouge = aujourd’hui.</span>'
+    +'<label style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;font-weight:700;color:var(--tx2);cursor:pointer"><input type="checkbox" '+(M2.planAll?'checked':'')+' onchange="M2.planAll=this.checked;renderModificationsTab()" style="accent-color:#6457F4"> Afficher aussi les validées</label></div>'
+    +'<div class="m2-gwrap" id="m2-gwrap"><div style="display:grid;grid-template-columns:270px '+W+'px;min-width:'+(270+W)+'px">'
+    +'<div class="m2-gh m2-gnm2" style="grid-row:span 2">MODIFICATION</div>'
+    +'<div style="display:flex">'+weeks.map(function(w){return '<div class="m2-gh" style="width:'+(w.n*DW)+'px;border-left:1px solid var(--bd)">S'+w.w+'</div>';}).join('')+'</div>'
+    +'<div style="display:flex">'+days.map(function(x,i){return '<div class="m2-gh gd'+(i===tdI?' td':'')+'" style="width:'+DW+'px">'+['','L','M','M','J','V'][x.getDay()]+'<br><b>'+x.getDate()+'</b></div>';}).join('')+'</div>';
+  if(!list.length)h+='<div class="m2-empty" style="grid-column:span 2">Aucune modification planifiée. Les dates se mettent dans la demande (PLANIFICATION).</div>';
+  list.forEach(function(g){
+    var s=_m2Rst(g),sd=_m2Date(g.start),ed=_m2Date(g.end||g.start),a=first(sd),b=lastI(ed),late=ed<today&&s!=='check'&&s!=='ok',c=col[s];
+    if(b<a)b=a;
+    var real={};_m2Hours(g.id).forEach(function(y){var dt=y.x.d?_m2Date(y.x.d):new Date(y.x.at||0);if(!dt)return;dt.setHours(0,0,0,0);var i=lastI(dt);if(i>=0&&days[i].getTime()===dt.getTime()){real[i]=real[i]||[];real[i].push((y.x.by||'')+' '+_modsFmtH(y.x.h));}});
+    h+='<div class="m2-gnm" onclick="m2Open(\''+_modsJs(g.id)+'\')"><b>'+_m2Ref(g)+' · '+esc2(g.t)+'</b><small>'+esc2(g.who.map(function(w){return String(w.nom||w.email).split(' ')[0];}).join(', ')||'personne')+' · '+_modsFmtH(_m2HTot(g.id))+' / '+_modsFmtH(_m2EstTot(g))+(late?' · <b style="color:#B91C1C">⚠ en retard</b>':'')+'</small><span class="m2-st '+s+'" style="margin-top:3px">'+M2_STL[s]+'</span></div>'
+      +'<div class="m2-glane" style="'+grid+'">'
+      +'<div class="m2-gprev" style="left:'+(a*DW+2)+'px;width:'+((b-a+1)*DW-4)+'px;border-color:'+c+';background:'+c+'22'+(late?';background-image:repeating-linear-gradient(135deg,'+c+'33 0 6px,transparent 6px 12px)':'')+'" title="Prévu du '+_m2Fr(g.start)+' au '+_m2Fr(g.end)+'" onclick="m2Open(\''+_modsJs(g.id)+'\')"></div>'
+      +(late&&tdI>b?'<div class="m2-gprev" style="left:'+((b+1)*DW+2)+'px;width:'+((tdI-b)*DW-4)+'px;border-style:dashed;border-color:#F2585B;background:transparent" title="Retard"></div>':'')
+      +Object.keys(real).map(function(i){return '<div class="m2-greal" style="left:'+(i*DW+2)+'px;width:'+(DW-4)+'px;background:'+c+'" title="'+escHtml(real[i].join(' · '))+'"></div>';}).join('')
+      +(tdI>=0?'<div class="m2-gtoday" style="left:'+(tdI*DW+DW/2)+'px"></div>':'')+'</div>';
+  });
+  h+='</div></div>';
+  var load={};G.filter(function(g){return _m2Rst(g)!=='ok';}).forEach(function(g){g.who.forEach(function(w){var k=w.nom||w.email;load[k]=load[k]||{h:0,svc:w.svc};load[k].h+=Math.max(0,(+g.est[w.svc]||0)-_m2HTot(g.id,w.svc));});});
+  var ks=Object.keys(load);
+  if(ks.length)h+='<div class="m2-card" style="margin-top:12px"><b>Reste à faire, par personne</b> <span class="m2-note">(heures prévues − heures passées, modifications non validées)</span><div class="m2-row" style="margin-top:8px">'
+    +ks.map(function(k){return '<span class="m2-who" style="border:1px solid var(--bd);border-radius:999px;padding:4px 10px">'+_m2Av(k,load[k].svc)+' <b>'+esc2(k)+'</b> '+_modsFmtH(load[k].h)+'</span>';}).join('')+'</div></div>';
+  setTimeout(function(){var gw=document.getElementById('m2-gwrap');if(gw&&tdI>8)gw.scrollLeft=Math.max(0,(tdI-8)*DW);},0);
+  return h;
+}
+// ═════════ ENCADRÉS : Avancement (modifications en cours) et Bilan (heures, indépendant) ═════════
+function _m2AvBoxHtml(){
+  try{if(!(CURRENT_ROLE==='admin'||hasView('modifications')))return '';}catch(e){return '';}
+  var G=_m2Groups().filter(function(g){return _m2Rst(g)!=='ok';});if(!G.length)return '';
+  return '<div class="m2-avmods"><div class="m2-row"><b style="color:#C2410C;font-size:14px">🔧 Modifications en cours</b><span class="m2-note">('+G.length+') — cliquez pour ouvrir</span></div>'
+    +G.map(function(g){var s=_m2Rst(g);return '<div class="m2-avm" onclick="_m2GoReq(\''+_modsJs(g.id)+'\')"><span class="m2-note" style="font-weight:800">'+_m2Ref(g)+'</span><b style="flex:1;min-width:180px">'+esc2(g.t)+'</b><span class="m2-st '+s+'">'+M2_STL[s]+'</span><span class="m2-note">'+esc2(g.who.map(function(w){return String(w.nom||w.email).split(' ')[0];}).join(', '))+'</span><span><b>'+_modsFmtH(_m2HTot(g.id))+'</b> / '+_modsFmtH(_m2EstTot(g))+'</span><span class="m2-note">fin prévue '+(g.end?_m2Fr(g.end):'—')+'</span></div>';}).join('')+'</div>';
+}
+function _m2GoReq(g){try{switchTab('modifications');if(window.PetroNav)PetroNav.render();}catch(e){}M2.view='req';renderModificationsTab();m2Open(g);}
+function _m2BilanBoxHtml(){
+  try{if(!(CURRENT_ROLE==='admin'||hasView('modifications')))return '';}catch(e){return '';}
+  var G=_m2Groups();if(!G.length)return '';
+  var by={be:0,autom:0,chantier:0},eb={be:0,autom:0,chantier:0},tot=0,est=0;
+  G.forEach(function(g){_m2Hours(g.id).forEach(function(y){var k=_m2HSvc(y.x);by[k]=(by[k]||0)+(+y.x.h||0);tot+=+y.x.h||0;});for(var k in g.est){eb[k]=(eb[k]||0)+(+g.est[k]||0);est+=+g.est[k]||0;}});
+  var nOpen=G.filter(function(g){return _m2Rst(g)!=='ok';}).length,nOk=G.length-nOpen;
+  var top=G.slice().sort(function(a,b){return _m2HTot(b.id)-_m2HTot(a.id);}).filter(function(g){return _m2HTot(g.id)>0;}).slice(0,3);
+  var k=function(v,l,c){return '<div class="m2-bk"><b style="color:'+(c||'var(--tx)')+'">'+v+'</b><span class="m2-note" style="font-weight:700">'+l+'</span></div>';};
+  return '<div class="m2-bil"><div class="m2-row"><div class="m2-h2" style="color:#C2410C">🔧 Heures des modifications</div>'
+    +'<span class="m2-st new" style="background:#fff;border:1px solid #FED7AA;color:#9A3412">indépendant — ne compte pas dans le bilan</span>'
+    +'<button type="button" class="m2-btn2 sm" style="margin-left:auto" onclick="_m2GoTab()">Voir le détail →</button></div>'
+    +'<div class="m2-row" style="margin-top:12px">'+k(_modsFmtH(tot),'passées sur les modifications','#C2410C')+k(_modsFmtH(est),'prévues')+k(G.length+' modif'+(G.length>1?'s':''),nOpen+' en cours · '+nOk+' validée'+(nOk>1?'s':''))+'</div>'
+    +'<div style="margin-top:14px">'+Object.keys(M2_SVC).map(function(s){var a=by[s]||0,b=eb[s]||0,p=b?Math.min(100,a/b*100):(a?100:0);
+      return '<div style="margin-bottom:9px"><div class="m2-row" style="justify-content:space-between;font-size:12.5px"><b style="color:'+M2_SVC[s].c+'">'+M2_SVC[s].l+'</b><span><b>'+_modsFmtH(a)+'</b> / '+(b?_modsFmtH(b):'—')+' prévues'+(b&&a>b?' <b style="color:#B91C1C">+'+_modsFmtH(a-b)+'</b>':'')+'</span></div><div class="m2-bar" style="height:10px"><i class="'+(b&&a>b?'over':'')+'" style="width:'+p+'%;'+(b&&a>b?'':'background:'+M2_SVC[s].c)+'"></i></div></div>';}).join('')+'</div>'
+    +(top.length?'<div class="m2-note" style="margin-top:6px">Celles qui ont pris le plus de temps : '+top.map(function(g){return '<button type="button" class="m2-lnk" style="font-size:11.5px" onclick="_m2GoReq(\''+_modsJs(g.id)+'\')">'+_m2Ref(g)+' '+esc2(g.t)+'</button> ('+_modsFmtH(_m2HTot(g.id))+')';}).join(' · ')+'</div>':'')
+    +'<div class="m2-note" style="margin-top:6px">Le détail reste dans l’onglet Modifications. Les feuilles d’heure comptent toujours dans le bilan comme avant : cet encadré ne s’y ajoute pas.</div></div>';
+}
+function _m2GoTab(){try{switchTab('modifications');if(window.PetroNav)PetroNav.render();}catch(e){}}
 // ── Responsables (réutilise le composant annuaire existant) ──────────
 function modsAddEmail(){
   var ct=document.getElementById('mods-contacts-modif');
@@ -13381,7 +14162,8 @@ function renderAvancement(){
     +card('Avancement de l’affaire','av-glob',calcHierProgress(D(),{})+'%')
     +card('Tâches en cours','av-nprog',c.p)
     +card('Tâches terminées','av-ndone',c.d)
-    +'</div>';
+    +'</div>'
+    +(typeof _m2AvBoxHtml==='function'?_m2AvBoxHtml():''); // (19/10/2026) modifications en cours (lecture seule, ne crée aucune tâche)
   if(!tree.length){
     h+='<div style="text-align:center;padding:40px;color:var(--tx3);border:1px dashed var(--bd);border-radius:var(--r2)">Aucune tâche dans cette affaire.</div>';
   }else{
@@ -22308,6 +23090,8 @@ function renderRecap(){
   // Heures et budget : nouveau visuel en cartes (les anciens tableaux restent dans l'export HTML)
   window._rcHOpenHtml='';
   h+=_rcHoursBlock();
+  // (19/10/2026, décision de l'utilisateur) heures des modifications : encadré INDÉPENDANT, pas additionné au bilan
+  if(typeof _m2BilanBoxHtml==='function')h+=_m2BilanBoxHtml();
   var nFt=((currP()&&currP().fortuites)||[]).length;
   h+=_rcSectionHtml('sec:fort','⚡ Fortuites','#DC2626',_rcPill(nFt),_recapFortuitesHtml);
   rw.innerHTML=h+'</div>';
@@ -27009,7 +27793,7 @@ window.PetroNav=(function(){
       {k:'modifs',lbl:'Modifications',vis:function(){return secVis('.nb[data-tab="modifications"]')||role()==='admin'||(typeof hasView==='function'&&hasView('modifications'));},
         on:function(){return nbOn()==='modifications';},
         // nouvelles versions de documents pas encore vues par la personne connectée
-        badge:function(){var k=curAff();try{return k&&typeof modsUnseen==='function'?modsUnseen(k).length:0;}catch(e){return 0;}},
+        badge:function(){var k=curAff();try{var n=k&&typeof modsUnseen==='function'?modsUnseen(k).length:0;if(k&&k===STORE.current&&typeof _m2Groups==='function')n+=_m2Groups().reduce(function(s,g){return s+_m2MyVal(g);},0);return n;}catch(e){return 0;}},
         go:function(){switchTab('modifications');}},
       {k:'commandes',lbl:'Commandes',vis:function(){return !!(window.Commandes&&window.Commandes.canView());},
         on:function(){return nbOn()==='commandes';},
