@@ -23804,6 +23804,11 @@ window.QRFeuille=(function(){
   function affOf(ctx,k){if(!k)return null;var l=ctx.payload.affaires||[];for(var i=0;i<l.length;i++)if(l[i].k===k)return l[i];return null;}
   function affLbl(a){return a?(a.n+(a.l?' — '+a.l:'')):'';}
   function sbLbl(a,id){if(!a||!id)return '';var l=a.sbs||[];for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i].lb;return '';}
+  // (19/10/2026) sous-ensemble (PAE 5…) d'une sous-phase, pour ne pas se tromper entre deux sous-phases du même nom.
+  // Listes publiées avant cette date : pas de champ « e », on le relit dans le groupe « PHASE ▸ PAE 5 ».
+  function sbEnsOf(s){if(!s)return '';if(s.e!=null)return s.e;var p=String(s.g||'').split(' ▸ ');return p.length>1?p.slice(1).join(' ▸ '):'';}
+  function sbEns(a,id){if(!a||!id)return '';var l=a.sbs||[];for(var i=0;i<l.length;i++)if(l[i].id===id)return sbEnsOf(l[i]);return '';}
+  function sbFull(s){var e=sbEnsOf(s);return (e?e+' › ':'')+(s.lb||'');}
   function dayTotal(d){var t=0;(d.lines||[]).forEach(function(l){var h=num(l.hours);if(h>0)t+=h;});var tr=num(d.trajetH);if(tr>0)t+=tr;return r1(t);}
   function dayHas(d){return !!(d.panier||d.gd||num(d.trajetH)>0||d.zone||d.vehicule||(d.lieu&&String(d.lieu).trim())||(d.lines||[]).some(function(l){return l.affId||l.actId||num(l.hours)>0;}));}
   function dataTotal(data){var t=0;if(data&&data.days)Object.keys(data.days).forEach(function(k){t+=dayTotal(normData({days:{0:data.days[k]}}).days[0]);});return r1(t);}
@@ -23896,8 +23901,11 @@ window.QRFeuille=(function(){
     if(l.affId){
       var groups={},order=[];
       ((a&&a.sbs)||[]).forEach(function(s){var g=s.g||'';if(!groups[g]){groups[g]=[];order.push(g);}groups[g].push(s);});
-      h+='<div class="qrf-lbl">SOUS-PHASE</div><select class="qrf-in"'+dis+' onchange="QRFeuille._line('+q(id)+','+di+','+li+','+q('actId')+',this.value)" style="margin-bottom:10px"><option value="">Pas de sous-phase</option>'
-        +order.map(function(g){var o=groups[g].map(function(s){return '<option value="'+esc(s.id)+'"'+(s.id===l.actId?' selected':'')+'>'+esc(s.lb)+'</option>';}).join('');return g?'<optgroup label="'+esc(g)+'">'+o+'</optgroup>':o;}).join('')+'</select>';
+      // l'option porte « PAE 5 › Raccordement » : sur téléphone, la liste fermée n'affiche que l'option choisie
+      var _ens=sbEns(a,l.actId);
+      h+='<div class="qrf-lbl">SOUS-PHASE</div><select class="qrf-in"'+dis+' onchange="QRFeuille._lineSb('+q(id)+','+di+','+li+',this.value)" style="margin-bottom:'+(_ens?'6':'10')+'px"><option value="">Pas de sous-phase</option>'
+        +order.map(function(g){var o=groups[g].map(function(s){return '<option value="'+esc(s.id)+'"'+(s.id===l.actId?' selected':'')+'>'+esc(sbFull(s))+'</option>';}).join('');return g?'<optgroup label="'+esc(g)+'">'+o+'</optgroup>':o;}).join('')+'</select>'
+        +(_ens?'<div style="margin-bottom:10px"><span class="qrf-badge" style="background:#EDEBFA;color:#3A2EAE;font-size:13px;padding:4px 12px">📦 Sous-ensemble : '+esc(_ens)+'</span></div>':'');
     }
     h+='<div class="qrf-lbl">HEURES</div><input class="qrf-in" inputmode="decimal" autocomplete="off" placeholder="Ex : 7,5" value="'+esc(l.hours)+'"'+dis+' oninput="QRFeuille._line('+q(id)+','+di+','+li+','+q('hours')+',this.value)" style="font-size:20px;font-weight:800;text-align:center">';
     return h+'</div>';
@@ -23916,6 +23924,7 @@ window.QRFeuille=(function(){
   function _delLine(id,di,li){var c=_ok(id);if(!c)return;c.data.days[di].lines.splice(li,1);after(id,di,true);}
   function _lineAff(id,di,li,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l.affId=v;l.actId='';after(id,di,true);}
   function _line(id,di,li,f,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l[f]=v;after(id,di,false);}
+  function _lineSb(id,di,li,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l.actId=v;after(id,di,true);} // redessine : étiquette du sous-ensemble
 
   // ══ 1) TÉLÉPHONE (lien ?qr=...) : connexion puis sa feuille ═════════
   var P=null; // {session, person, weeks:[...], wk:semaine ouverte}
@@ -24137,7 +24146,7 @@ window.QRFeuille=(function(){
       d.lines.forEach(function(l){
         if(!l.affId&&!l.actId&&!(num(l.hours)>0))return;
         var a=affOf(c,l.affId);
-        h+='<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-top:6px;padding-top:6px;border-top:1px dashed #E4E1F0"><div><b>'+esc(a?affLbl(a):'Chantier à choisir')+'</b><div style="font-size:12px;color:#6B6790">'+esc(sbLbl(a,l.actId)||'Pas de sous-phase')+'</div></div><div style="font-weight:800;white-space:nowrap">'+esc(l.hours||'0')+' H</div></div>';
+        h+='<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-top:6px;padding-top:6px;border-top:1px dashed #E4E1F0"><div><b>'+esc(a?affLbl(a):'Chantier à choisir')+'</b><div style="font-size:12px;color:#6B6790">'+(sbEns(a,l.actId)?'<b style="color:#3A2EAE">'+esc(sbEns(a,l.actId))+'</b> › ':'')+esc(sbLbl(a,l.actId)||'Pas de sous-phase')+'</div></div><div style="font-weight:800;white-space:nowrap">'+esc(l.hours||'0')+' H</div></div>';
       });
       h+='</div>';
     }
@@ -24239,7 +24248,8 @@ window.QRFeuille=(function(){
       (p.data||[]).forEach(function(r){
         if(r.t==='ph'){ph=r.pk||r.lb||'';ens='';}
         else if(r.t==='ens'){ens=r.lb||'';}
-        else if(r.t==='sb'){sbs.push({id:r.id,lb:r.lb||'',g:ph+(ens?' ▸ '+ens:'')});}
+        else if(r.t==='ensend'){ens='';} // fin de sous-ensemble : les sous-phases suivantes sont hors PAE
+        else if(r.t==='sb'){sbs.push({id:r.id,lb:r.lb||'',g:ph+(ens?' ▸ '+ens:''),e:ens});}
       });
       affaires.push({k:k,n:parts.numero,l:parts.libelle,sbs:sbs});
     });
@@ -24764,7 +24774,7 @@ window.QRFeuille=(function(){
 
   return {
     render:render,startPublic:startPublic,publish:publish,
-    _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,
+    _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,_lineSb:_lineSb,
     _pubLogin:_pubLogin,_pubLogout:_pubLogout,_pubEnd:_pubEnd,_pubWeek:_pubWeek,_pubWeeks:chooseWeek,_pubDays:_pubDays,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
     _tab:_tab,_pubNow:_pubNow,_print:_print,_copy:_copy,
     _idFilter:_idFilter,_idReload:_idReload,_idGen:_idGen,_idActive:_idActive,_idDel:_idDel,_credCopy:_credCopy,_credPrint:_credPrint,
