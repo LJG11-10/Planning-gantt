@@ -3931,12 +3931,77 @@ async function doLogin() {
       return;
     }
     CURRENT_USER = res.data.user;
+    _petroIntro.play(); // (19/10/2026) intro « façon Netflix » après une connexion par le formulaire
     await loadRoleAndStart();
+    if (!CURRENT_ROLE) _petroIntro.stop(); // accès refusé : on revient tout de suite à l'écran de connexion
   } catch(e) {
+    _petroIntro.stop();
     setLoginLoading(false);
     showLoginMsg("Erreur réseau, réessayez.");
   }
 }
+
+// ── Intro animée après la connexion (19/10/2026, demande de l'utilisateur : « une transition propre avec le
+// logo, un peu comme Netflix », seulement APRÈS la page de connexion). Le site se charge dessous pendant
+// l'animation (~2,6 s). Clic ou Échap = passer. Mouvements réduits (réglage Windows) = simple fondu.
+// Le logo est repris de l'écran de connexion (pas de 2e copie en base64).
+var _petroIntro=(function(){
+  var el=null,tm=[],done=false;
+  function css(){
+    if(document.getElementById('pi-css'))return;
+    var s=document.createElement('style');s.id='pi-css';
+    s.textContent=''
+      +'#pi-ov{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;cursor:pointer;'
+      +'background:radial-gradient(ellipse at center,#22185A 0%,#0E0A26 55%,#05030D 100%);transition:opacity .55s ease .05s;font-family:"Plus Jakarta Sans",Arial,sans-serif}'
+      +'#pi-ov.out{opacity:0;pointer-events:none}'
+      +'#pi-g{display:flex;flex-direction:column;align-items:center;gap:18px;transition:transform .7s cubic-bezier(.6,0,.9,.4),opacity .55s ease .12s;will-change:transform}'
+      +'#pi-ov.out #pi-g{transform:scale(7);opacity:0}'
+      +'#pi-tile{position:relative;width:138px;height:138px;border-radius:30px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;'
+      +'opacity:0;transform:scale(.35);filter:blur(10px);animation:pi-in .9s cubic-bezier(.2,.9,.25,1.15) .1s forwards;box-shadow:0 0 0 0 rgba(200,30,30,0)}'
+      +'#pi-tile img{width:112px;height:auto;display:block}'
+      +'#pi-tile::after{content:"";position:absolute;top:-20%;bottom:-20%;width:40%;left:-60%;transform:skewX(-20deg);'
+      +'background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);animation:pi-sweep .8s ease-in-out 1.05s forwards}'
+      +'#pi-halo{position:absolute;width:138px;height:138px;border-radius:30px;pointer-events:none;opacity:0;animation:pi-halo 1.6s ease-out .55s forwards}'
+      +'#pi-wrap{position:relative;display:flex;align-items:center;justify-content:center}'
+      +'#pi-t{font-size:40px;font-weight:800;letter-spacing:.5px;color:#E5262E;white-space:nowrap;text-shadow:0 0 24px rgba(229,38,46,.45)}'
+      +'#pi-t span{display:inline-block;opacity:0;transform:translateY(14px);animation:pi-ch .45s cubic-bezier(.2,.8,.3,1) forwards}'
+      +'#pi-bar{width:0;height:3px;border-radius:3px;background:linear-gradient(90deg,transparent,#E5262E,#8B7CF6,transparent);animation:pi-bar .9s ease-out 1.15s forwards}'
+      +'@keyframes pi-in{to{opacity:1;transform:scale(1);filter:blur(0)}}'
+      +'@keyframes pi-sweep{to{left:130%}}'
+      +'@keyframes pi-halo{0%{opacity:.9;box-shadow:0 0 0 0 rgba(229,38,46,.55),0 0 40px 6px rgba(139,124,246,.45)}100%{opacity:0;box-shadow:0 0 0 46px rgba(229,38,46,0),0 0 90px 30px rgba(139,124,246,0)}}'
+      +'@keyframes pi-ch{to{opacity:1;transform:none}}'
+      +'@keyframes pi-bar{to{width:240px}}'
+      +'@media (max-width:520px){#pi-t{font-size:30px}#pi-tile,#pi-halo{width:112px;height:112px;border-radius:24px}#pi-tile img{width:90px}}'
+      +'@media (prefers-reduced-motion:reduce){#pi-tile,#pi-t span,#pi-bar,#pi-halo,#pi-tile::after{animation:none!important;opacity:1!important;transform:none!important;filter:none!important}#pi-bar{width:240px}#pi-ov.out #pi-g{transform:none}}';
+    document.head.appendChild(s);
+  }
+  function play(){
+    try{
+      if(el||window._QR_TOKEN)return;
+      css();done=false;
+      var src=(document.querySelector('#login-screen img')||document.querySelector('#nav .brand img')||{}).src||'';
+      var word='PétroSphère',letters='';
+      for(var i=0;i<word.length;i++)letters+='<span style="animation-delay:'+(0.62+i*0.05).toFixed(2)+'s">'+word.charAt(i)+'</span>';
+      el=document.createElement('div');el.id='pi-ov';el.setAttribute('aria-hidden','true');el.title='Cliquer pour passer';
+      el.innerHTML='<div id="pi-g"><div id="pi-wrap"><div id="pi-halo"></div><div id="pi-tile">'+(src?'<img alt="" src="'+src+'">':'')+'</div></div>'
+        +'<div id="pi-t">'+letters+'</div><div id="pi-bar"></div></div>';
+      el.addEventListener('click',stop);
+      document.addEventListener('keydown',onKey);
+      document.body.appendChild(el);
+      var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+      tm.push(setTimeout(stop,reduce?900:2050));
+    }catch(e){el=null;}
+  }
+  function onKey(e){if(e.key==='Escape'||e.key==='Enter'||e.key===' ')stop();}
+  function stop(){
+    if(!el||done)return;done=true;
+    tm.forEach(clearTimeout);tm=[];
+    document.removeEventListener('keydown',onKey);
+    var x=el;x.classList.add('out');
+    setTimeout(function(){if(x.parentNode)x.parentNode.removeChild(x);if(el===x)el=null;},800);
+  }
+  return {play:play,stop:stop};
+})();
 
 async function doSignup() {
   var email = document.getElementById('login-email').value.trim().toLowerCase();
