@@ -22816,7 +22816,7 @@ function _persReal(aff,r,raw){
 var _APPRENTI_COEF=1/3; // (26/10/2026) un TIERS (30 h pointées → 10 h comptées), précisé par l'utilisateur
 function _isApprenti(nm){var g=STORE.globalPersons&&STORE.globalPersons[nm];return !!(g&&g.type==='Alternant');}
 function _hrsCoef(nm){return _isApprenti(nm)?_APPRENTI_COEF:1;}
-function _apprTag(nm){return _isApprenti(nm)?' <span title="Apprenti : ses heures comptent pour un tiers sur l’affaire (30 h pointées = 10 h)" style="font-size:10px;font-weight:800;color:#0369A1;background:#E0F2FE;border-radius:6px;padding:0 5px;white-space:nowrap">apprenti ⅓</span>':'';}
+function _apprTag(nm){return _isApprenti(nm)?' <span title="Apprenti : ses heures comptent pour un tiers sur l’affaire (30 h pointées = 10 h)" style="font-size:10.5px;font-weight:800;color:#0369A1;background:#E0F2FE;border-radius:6px;padding:0 6px;white-space:nowrap">apprenti · compte 1/3</span>':'';}
 function _rcFhHours(aff,raw){
   var byId={},byPers={},general=0,total=0; // byPers[id][nom] = heures (08/10/2026 : source unique des heures du Bilan / GANTT)
   var coef={};function cf(nm){return raw?1:(coef[nm]!=null?coef[nm]:(coef[nm]=_hrsCoef(nm)));}
