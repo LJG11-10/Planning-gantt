@@ -6031,7 +6031,7 @@ function fhPrintFiche(nm){
       if(_dStatusP&&_dStatusP.type==='formation')_metaCellP='<span class="meta-badge" style="background:'+_dStatusP.bg+';color:'+_dStatusP.color+'">'+_dStatusP.icon+' '+_dStatusP.label+'</span>'+_metaCellP;
       var lines=wkData[di]||[];
       if(!Array.isArray(lines))lines=[];
-      var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
+      var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours||l.cmt);});
       // Les heures de trajet comptent maintenant aussi dans le total du jour
       // et de la semaine, en plus de rester visibles à part (trajetTotal).
       var dayH=Math.round((valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0)+(+_dmetaP.trajetH||0))*10)/10;
@@ -6055,7 +6055,7 @@ function fhPrintFiche(nm){
           var linesHtml=_groups[_affKey].map(function(l){
             var h=+(l.hours||l.h)||0;
             var act=getAct(l.actId,l.affId);
-            return '<div class="sb-line">'+(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')+esc(act.lb)+'<span class="sb-h">'+h+'H</span></div>';
+            return '<div class="sb-line">'+_fhExpLineHtml(act,l,h,esc)+'</div>';
           }).join('');
           return '<div class="aff-group"><div class="aff-lbl"><span class="aff-num">'+esc(_affParts.numero)+'</span>'+(_affParts.libelle?' '+esc(_affParts.libelle):'')+'</div>'+linesHtml+'</div>';
         }).join('');
@@ -10867,6 +10867,10 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
          +'<div id="'+_fhWidId+'" class="wpat-trigger fhx-sb" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" onclick="window._wpActPickerToggle(this)" style="width:100%;font-family:inherit;color:'+(_sbTree.label?(_c?_c.xd:'#1C1A33'):'#6B6790')+';'+(_sbTree.label?'':'font-style:italic;')+'cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+((_sbTree.html||escHtml(_sbTree.label))||(ln.hours?'Heures générales (pas de sous-phase)':'— Choisir une sous-phase —'))+'</div>'
          +'<div class="wpat-panel" data-aff="'+_bucket+'" data-nm="'+nmEsc+'" data-w="'+w+'" data-di="'+di+'" data-li="'+_idx+'" style="display:none;max-height:220px;overflow-y:auto;border:1px solid #E4E1F0;border-radius:10px;padding:4px;background:#fff;box-shadow:0 8px 20px rgba(30,20,90,.16);position:relative;z-index:20;margin-top:4px">'+_sbTree.panel+'</div>'
         :'')
+      // (27/10/2026, demande de l'utilisateur) commentaire de la ligne, possible SANS sous-phase ; repris dans les 3 documents
+      +'<input type="text" class="fhx-fld" style="margin-top:6px;width:100%;box-sizing:border-box" value="'+escHtml(ln.cmt||'')+'" placeholder="💬 Commentaire (facultatif)" aria-label="Commentaire de la ligne" '
+      +'oninput="fhLineCmtInput(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+',this.value)" '
+      +'onblur="fhLineCmtSave(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+',this.value)">'
       +'<div style="display:flex;align-items:center;gap:6px;margin-top:7px;padding-top:6px;border-top:1px dashed '+(_c?_c.xl:'#CBC7DE')+'">'
       +'<span style="font-size:9.5px;font-weight:800;color:#4A4766">HEURES</span>'
       +'<input type="number" min="0" max="24" step="0.5" class="fhx-fld fhx-h" aria-label="Heures" value="'+(ln.hours===''?'':ln.hours)+'" placeholder="0" '
@@ -10877,7 +10881,7 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
       +'<button type="button" class="fhx-del" title="Supprimer la ligne" aria-label="Supprimer la ligne" onmousedown="event.preventDefault();fhLineDel(\''+_bucket+'\',\''+nmEsc+'\','+w+','+di+','+_idx+')">✕</button>'
       +'</div></div>';
   }
-  var hasContent=lines.some(function(l){return l&&(l.affId||l.actId||l.hours);})||meta.panier||meta.gd||(meta.lieu&&meta.lieu.trim())||(meta.zone&&meta.zone.trim())||(meta.trajetH&&+meta.trajetH>0)||(meta.vehicule&&meta.vehicule.trim());
+  var hasContent=lines.some(function(l){return l&&(l.affId||l.actId||l.hours||l.cmt);})||meta.panier||meta.gd||(meta.lieu&&meta.lieu.trim())||(meta.zone&&meta.zone.trim())||(meta.trajetH&&+meta.trajetH>0)||(meta.vehicule&&meta.vehicule.trim());
   return '<div>'
     +_fhFormationTag
     +metaHtml
@@ -10914,10 +10918,10 @@ function fhToggleDupPicker(btn,aff,nm,w,srcDi){
 }
 function fhDupDayToDay(aff,nm,w,srcDi,targetDi){
   var srcLines=fhGet(aff,nm,w,srcDi);
-  var validLines=srcLines.filter(function(l){return l&&(l.affId||l.actId||l.hours);});
+  var validLines=srcLines.filter(function(l){return l&&(l.affId||l.actId||l.hours||l.cmt);});
   if(validLines.length){
     var targetLines=fhGet(aff,nm,w,targetDi).slice();
-    validLines.forEach(function(l){targetLines.push({affId:l.affId,actId:l.actId,hours:l.hours});});
+    validLines.forEach(function(l){var nl={affId:l.affId,actId:l.actId,hours:l.hours};if(l.cmt)nl.cmt=l.cmt;targetLines.push(nl);});
     fhPut(aff,nm,w,targetDi,targetLines);
   }
   var srcMeta=fhMetaGet(w,nm,srcDi);
@@ -16317,6 +16321,124 @@ function nafAddEmail(resp){
   ct.lastElementChild.querySelector('input').focus();
 }
 
+// Lignes de planning recopiées d'une autre affaire (Nouvelle affaire → Copier depuis, Copier une structure) :
+// la STRUCTURE seulement. Nouveaux id ; tâches non planifiées, sans personnes, heures, avancement ni
+// commentaires ; plus aucun budget d'heures, effectif, sous-traitance, statut ou alerte de phase.
+function _copyStructRows(rows){
+  var k=0;
+  return (rows||[]).map(function(row){
+    row=JSON.parse(JSON.stringify(row));
+    if(row.id)row.id=(row.t||'row')+'_'+Date.now()+'_'+(k++)+'_'+Math.random().toString(36).slice(2,7);
+    // tous niveaux : heures, personnes, avancement, budgets, horodatages
+    row.p=[];row.hReel=0;row.hPrev=0;row.done=false;row.inProgress=false;row.progress=0;
+    ['budgetH','budManual','budAuto','subco','headcount','_hReelFromFH','avComment','avCommentBy','avCommentAt','barComments',
+     '_modAt','_barsModAt','_cmtModAt','phStatus','notifResps','rappels','modifications','_retardNotifDate','excludeProgress',
+     'weekendPrev','weekendReel','_isoP','_isoR'].forEach(function(f){delete row[f];});
+    if(row.t==='sb')row.headcount={};
+    if(row.t==='act'){
+      // Mettre [] (pas delete) pour bloquer le fallback s/e dans getTaskDays5
+      row.prevDays=[];row.reelDays=[];
+      row.s=0;row.e=0;row.sPrev=0;row.ePrev=0;row.sReel=0;row.eReel=0;
+      row.dStart=0;row.dEnd=0;row.dStartR=0;row.dEndR=0;row.dDur=0;row.dDurR=0;row.hDur=0;row.hStart=0;row.hStartR=0;
+    }
+    return row;
+  });
+}
+// ── Nettoyer une affaire créée par l'ANCIENNE copie (27/10/2026, affaire ELS2600481 de l'utilisateur) ──
+// L'ancienne copie recopiait les feuilles d'heure, l'avancement, les budgets… Repères sûrs :
+//  - heure de la copie T = plus petit horodatage des id du planning (tous régénérés à la copie : « act_<ms>_… ») ;
+//  - une journée de feuille d'heure recopiée garde l'horodatage (_fhModAt) de l'affaire d'origine, donc < T ;
+//    une journée saisie APRÈS la copie a un horodatage ≥ T et n'est jamais touchée.
+// Rien n'est supprimé sans aperçu ; les journées retirées sont VIDÉES et horodatées (la synchro garde le vide).
+function _copyCleanScan(aff){
+  var p=STORE.projects[aff];if(!p)return null;
+  var T=Infinity;
+  (p.data||[]).forEach(function(r){var m=/^[a-z]+_(\d{13})_/.exec(r&&r.id||'');if(m&&+m[1]<T)T=+m[1];});
+  if(!isFinite(T))return null;
+  // Preuve de copie : la MÊME journée (mêmes lignes) existe aussi dans une autre affaire. Sans ça, une
+  // vieille journée sans horodatage (avant fin sept. 2026) d'une affaire normale passerait pour une copie.
+  var norm=function(ls){return JSON.stringify((ls||[]).filter(function(l){return l&&(l.affId||l.actId||l.hours||l.cmt);}).map(function(l){return [l.affId||'',l.actId||'',String(l.hours==null?'':l.hours),l.cmt||''];}));};
+  var elsewhere={};
+  Object.keys(STORE.projects).forEach(function(b){if(b===aff)return;var f=(STORE.projects[b]||{}).fh||{};
+    Object.keys(f).forEach(function(nm){Object.keys(f[nm]||{}).forEach(function(w){Object.keys(f[nm][w]||{}).forEach(function(d){elsewhere[nm+'|'+w+'|'+d+'|'+norm(f[nm][w][d])]=b;});});});});
+  var fh=p.fh||{},ma=p._fhModAt||{},days=[],byAff={},byPers={},tot=0,unsure=0,unsureDays=[],unsureH=0;
+  Object.keys(fh).forEach(function(nm){Object.keys(fh[nm]||{}).forEach(function(w){Object.keys(fh[nm][w]||{}).forEach(function(d){
+    var ls=fh[nm][w][d];if(!Array.isArray(ls)||!ls.some(function(l){return l&&(l.affId||l.actId||l.hours||l.cmt);}))return;
+    var t=(ma[nm]&&ma[nm][w]&&ma[nm][w][d])||0;if(t>=T)return; // saisi après la copie : on garde
+    if(!elsewhere[nm+'|'+w+'|'+d+'|'+norm(ls)]){ // pas retrouvée ailleurs : proposée à part, case décochée
+      unsure++;var uh=0;ls.forEach(function(l){uh+=+(l&&(l.hours||l.h))||0;});unsureDays.push({nm:nm,w:w,d:d});unsureH+=uh;return;}
+    days.push({nm:nm,w:w,d:d});
+    ls.forEach(function(l){var h=+(l&&(l.hours||l.h))||0;if(!h)return;var a=l.affId||aff;byAff[a]=(byAff[a]||0)+h;byPers[nm]=(byPers[nm]||0)+h;tot+=h;});
+  });});});
+  var prog=(p.data||[]).filter(function(r){return (r.t==='act'||r.t==='sb')&&(r.done||r.inProgress||(+r.progress>0));});
+  var buds=(p.data||[]).filter(function(r){return +r.budgetH>0;});
+  // Horodatage par journée en place depuis le 30/09/2026 (fhPut, validation QR) : pour une affaire créée APRÈS,
+  // rien de saisi sur elle ne peut dater d'avant sa création → les journées antérieures sont forcément copiées.
+  var sure=T>=Date.UTC(2026,9,1);
+  return {T:T,sure:sure,days:days,unsure:unsure,unsureDays:unsureDays,unsureH:Math.round(unsureH*10)/10,byAff:byAff,byPers:byPers,tot:Math.round(tot*10)/10,prog:prog,buds:buds,
+    docs:(p.documents||[]).length,mods:(p.modReqs||[]).length,aut:(p.autHours||[]).length,fort:(p.fortuites||[]).length};
+}
+function affCopyCleanAsk(aff){
+  aff=aff||STORE.current;
+  if(CURRENT_ROLE!=='admin'){alert('Réservé aux administrateurs.');return;}
+  var p=STORE.projects[aff];if(!p)return;if(p.closed){alert('Affaire archivée : désarchivez-la d’abord.');return;}
+  var s=_copyCleanScan(aff);
+  if(!s){alert('Impossible de retrouver la date de création de cette affaire : rien à nettoyer automatiquement.');return;}
+  var e=function(x){return escHtml(String(x==null?'':x));},r1=function(x){return String(Math.round(x*10)/10).replace('.',',');};
+  var when=new Date(s.T).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  var affLines=Object.keys(s.byAff).map(function(a){return '<li><b>'+e(a)+'</b> : '+r1(s.byAff[a])+' h'+(a!==aff?' <span style="color:#B91C1C">(comptées EN DOUBLE sur cette affaire)</span>':'')+'</li>';}).join('');
+  var persLines=Object.keys(s.byPers).sort().map(function(n){return e(n)+' '+r1(s.byPers[n])+' h';}).join(' · ');
+  var row=function(id,checked,title,body){return '<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1.5px solid #E4E1F0;border-radius:12px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="'+id+'"'+(checked?' checked':'')+' style="margin-top:3px"><span style="font-size:13px"><b>'+title+'</b><div style="font-size:12px;color:#4A4766;margin-top:3px">'+body+'</div></span></label>';};
+  var h='<div style="font-size:18px;font-weight:900;margin-bottom:4px">🧹 Nettoyer la copie — '+e(aff)+'</div>'
+    +'<div style="font-size:12.5px;color:#6B6790;margin-bottom:12px">Affaire créée le <b>'+when+'</b>. Seul ce qui existait AVANT cette date (donc recopié) est proposé. Ce qui a été saisi depuis n’est pas touché.</div>';
+  h+=s.days.length?row('cc-fh',true,'Feuilles d’heure recopiées : '+s.days.length+' journée'+(s.days.length>1?'s':'')+', '+r1(s.tot)+' h',
+      (affLines?'<ul style="margin:4px 0 4px 18px;padding:0">'+affLines+'</ul>':'')+(persLines?'Personnes : '+persLines:''))
+    :'<div style="font-size:12.5px;color:#15803D;margin-bottom:8px">✓ Aucune feuille d’heure recopiée.</div>';
+  if(s.unsure)h+=row('cc-uns',s.sure,'Aussi les '+s.unsure+' autre(s) journée(s) d’avant la création ('+r1(s.unsureH)+' h)',
+      'Elles datent d’AVANT la création de cette affaire, mais ne se retrouvent plus à l’identique dans une autre affaire (modifiées depuis là-bas, par exemple).'
+      +(s.sure?'<br><i>Affaire créée après fin septembre 2026 : toute saisie faite sur elle porte une date postérieure à sa création, donc ces journées viennent forcément de la copie.</i>'
+               :'<br><i>Cochez si cette affaire était neuve à sa création : rien ne peut alors dater d’avant.</i>'));
+  if(s.prog.length)h+=row('cc-av',true,'Avancement : '+s.prog.length+' tâche'+(s.prog.length>1?'s':'')+' / sous-phase'+(s.prog.length>1?'s':'')+' terminée'+(s.prog.length>1?'s':'')+' ou en cours → remis à zéro',
+      s.prog.slice(0,40).map(function(r){return e(r.lb||'')+(r.done?' (terminée)':' ('+(+r.progress||0)+' %)');}).join(' · ')+(s.prog.length>40?' …':'')+'<br><i>Décochez si une partie a vraiment avancé sur cette affaire.</i>');
+  if(s.buds.length)h+=row('cc-bud',false,'Budgets d’heures : '+s.buds.length+' ligne'+(s.buds.length>1?'s':'')+' → remis à 0',
+      s.buds.slice(0,40).map(function(r){return e(r.lb||r.pk||'')+' '+r1(+r.budgetH)+' h';}).join(' · ')+'<br><i>Cochez seulement si ces budgets viennent de l’autre affaire.</i>');
+  if(s.docs||s.mods||s.aut||s.fort)h+=row('cc-oth',false,'Autres éléments : '+[s.docs?s.docs+' document(s) (Modifications)':'',s.mods?s.mods+' demande(s) de modification':'',s.aut?s.aut+' saisie(s) d’heures autom':'',s.fort?s.fort+' fortuite(s)':''].filter(Boolean).join(', ')+' → retirés de cette affaire',
+      'Cochez seulement s’ils viennent de l’autre affaire. Les fichiers ne sont pas effacés du serveur (l’autre affaire peut les utiliser).');
+  h+='<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button type="button" onclick="document.getElementById(\'cc-modal\').remove()" style="height:38px;padding:0 16px;border-radius:10px;border:1px solid #E4E1F0;background:#fff;font-weight:700;cursor:pointer;font-family:inherit">Annuler</button>'
+    +'<button type="button" onclick="affCopyCleanDo(\''+String(aff).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')" style="height:38px;padding:0 16px;border-radius:10px;border:none;background:#4B3FC7;color:#fff;font-weight:800;cursor:pointer;font-family:inherit">Nettoyer</button></div>';
+  var ex=document.getElementById('cc-modal');if(ex)ex.remove();
+  var ov=document.createElement('div');ov.id='cc-modal';
+  ov.style.cssText='position:fixed;inset:0;z-index:10050;background:rgba(20,16,50,.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;padding:20px 22px;max-width:640px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);color:#1C1A33">'+h+'</div>';
+  ov.addEventListener('click',function(ev){if(ev.target===ov)ov.remove();});
+  document.body.appendChild(ov);
+}
+function affCopyCleanDo(aff){
+  var p=STORE.projects[aff],s=p&&_copyCleanScan(aff);if(!s)return;
+  var ck=function(id){var c=document.getElementById(id);return !!(c&&c.checked);},now=Date.now(),done=[];
+  var fhDays=(ck('cc-fh')?s.days:[]).concat(ck('cc-uns')?s.unsureDays:[]);
+  if(fhDays.length){
+    if(!p._fhModAt)p._fhModAt={};
+    fhDays.forEach(function(x){
+      p.fh[x.nm][x.w][x.d]=[]; // vidé ET horodaté : la synchro garde le vide au lieu de reprendre l'ancienne copie
+      if(!p._fhModAt[x.nm])p._fhModAt[x.nm]={};if(!p._fhModAt[x.nm][x.w])p._fhModAt[x.nm][x.w]={};
+      p._fhModAt[x.nm][x.w][x.d]=now;
+    });
+    var _hh=(ck('cc-fh')?s.tot:0)+(ck('cc-uns')?s.unsureH:0);
+    done.push(fhDays.length+' journée(s) de feuille d’heure ('+String(Math.round(_hh*10)/10).replace('.',',')+' h)');
+  }
+  if(ck('cc-av')&&s.prog.length){s.prog.forEach(function(r){r.done=false;r.inProgress=false;r.progress=0;r._modAt=now;});done.push(s.prog.length+' avancement(s)');}
+  if(ck('cc-bud')&&s.buds.length){s.buds.forEach(function(r){r.budgetH=0;delete r.budManual;delete r.budAuto;r._modAt=now;});done.push(s.buds.length+' budget(s)');}
+  if(ck('cc-oth')){p.documents=[];p.modReqs=[];p.modHist=[];p.autHours=[];p.fortuites=[];done.push('documents / modifications / heures autom / fortuites');}
+  var m=document.getElementById('cc-modal');if(m)m.remove();
+  if(!done.length){alert('Rien de coché : rien n’a été changé.');return;}
+  if(typeof _fhCacheAll!=='undefined')_fhCacheAll={t:0,m:{}};
+  window._gcFHc=null;
+  try{syncFichesToGantt();}catch(e){}
+  saveNow();
+  try{refreshAllTabs();}catch(e){}
+  alert('✓ Nettoyé sur '+aff+' : '+done.join(', ')+'.');
+}
 function confirmNewAffaire(){
   var num=(document.getElementById('naf-num').value||'').trim();
   var lib=(document.getElementById('naf-lib').value||'').trim();
@@ -16338,33 +16460,13 @@ function confirmNewAffaire(){
     if(!contacts.length)contacts=[{nom:'',email:''}];
     resps[k]={contacts:contacts};
   });
-  var base=copyFrom&&STORE.projects[copyFrom]?JSON.parse(JSON.stringify(STORE.projects[copyFrom])):{data:[],budget:500};
-  if(copyFrom&&base.data){
-    base.data.forEach(function(row){
-      // Régénérer un identifiant unique pour CHAQUE ligne, quel que soit son
-      // type (phase/ensemble/sous-phase/tâche) — sans ça, l'affaire dupliquée
-      // partage les mêmes id que l'affaire source, ce qui n'est jamais sain.
-      if(row.id)row.id=(row.t||'row')+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-      if(row.t==='sb'){
-        // L'effectif chantier saisi manuellement est propre à chaque affaire :
-        // ne pas le recopier depuis le modèle.
-        row.headcount={};
-      }
-      if(row.t==='act'){
-        // Vider personnes, heures, barres et TOUTES les métadonnées de dates
-        row.p=[];
-        row.hPrev=0;row.hReel=0;
-        // Mettre [] (pas delete) pour bloquer le fallback s/e dans getTaskDays5
-        row.prevDays=[];row.reelDays=[];
-        // Effacer toutes les métadonnées de dates
-        row.s=0;row.e=0;row.sPrev=0;row.ePrev=0;
-        row.sReel=0;row.eReel=0;
-        row.dStart=0;row.dEnd=0;row.dStartR=0;row.dEndR=0;
-        row.dDur=0;row.dDurR=0;row.hDur=0;row.hStart=0;row.hStartR=0;
-        delete row._isoP;delete row._isoR;
-        delete row.rappels;delete row.modifications;delete row._retardNotifDate;
-      }
-    });
+  // (27/10/2026, bug signalé par l'utilisateur) « Copier depuis » recopiait l'affaire ENTIÈRE : feuilles d'heure
+  // (heures en double, y compris sur l'affaire d'origine), avancement, budgets, documents, modifications,
+  // heures autom, fortuites… On ne reprend plus QUE la structure (data nettoyé + phases personnalisées).
+  var base={data:[],budget:0};
+  if(copyFrom&&STORE.projects[copyFrom]){
+    var _src=JSON.parse(JSON.stringify(STORE.projects[copyFrom]));
+    base={data:_copyStructRows(_src.data||[]),customPhases:_src.customPhases||{},budget:0,fh:{},fortuites:[],persons:[],skBuds:{}};
   }
   var numClient=(document.getElementById('naf-num-client')||{}).value||'';
   base.infos={numero:num,numeroClient:numClient,libelle:lib,dateCreation:dateC,responsables:resps};
@@ -17780,20 +17882,7 @@ function gsCopyFrom(src,keepTasks){if(typeof gsFlushPending==='function')gsFlush
   else{var sp=JSON.parse(JSON.stringify(STORE.projects[src]||{}));rows=sp.data||[];cps=sp.customPhases||{};}
   rows=JSON.parse(JSON.stringify(rows));
   // Mêmes remises à zéro que « Nouvelle affaire → Copier depuis » (confirmNewAffaire)
-  var k=0;
-  rows=rows.filter(function(row){return keepTasks||row.t!=='act';}).map(function(row){
-    if(row.id)row.id=(row.t||'row')+'_'+Date.now()+'_'+(k++)+'_'+Math.random().toString(36).slice(2,7);
-    if(row.t==='sb')row.headcount={};
-    if(row.t==='act'){
-      row.p=[];row.hPrev=0;row.hReel=0;row.prevDays=[];row.reelDays=[];
-      row.s=0;row.e=0;row.sPrev=0;row.ePrev=0;row.sReel=0;row.eReel=0;
-      row.dStart=0;row.dEnd=0;row.dStartR=0;row.dEndR=0;row.dDur=0;row.dDurR=0;row.hDur=0;row.hStart=0;row.hStartR=0;
-      row.done=false;row.inProgress=false;row.progress=0;delete row.excludeProgress;delete row.barComments;delete row.weekendPrev;delete row.weekendReel;
-      delete row._isoP;delete row._isoR;delete row.rappels;delete row.modifications;delete row._retardNotifDate;delete row.avComment;delete row.avCommentBy;delete row.avCommentAt;
-    }
-    if(row.t==='ph'){delete row.phStatus;delete row.notifResps;}
-    return row;
-  });
+  rows=_copyStructRows(rows.filter(function(row){return keepTasks||row.t!=='act';})); // (27/10/2026) même nettoyage que Nouvelle affaire
   var data=D(),p=currP();if(!p.customPhases)p.customPhases={};
   Object.keys(cps).forEach(function(pk){if(!p.customPhases[pk])p.customPhases[pk]=cps[pk];});
   // Par phase : si la phase existe déjà dans l'affaire, on ajoute à la fin de cette phase (pas de 2e en-tête)
@@ -20151,7 +20240,7 @@ function fhGetAllAffWithSource(nm,w,d,curAff){
       // AUTRES affaires ne sont incluses que si elles ont un contenu réel
       // (une case vide qui traîne ailleurs n'a rien à montrer ici).
       var isCur=bucketAff===curAff;
-      if(l&&(isCur||l.actId||l.affId||l.hours))combined.push(Object.assign({},l,{affId:l.affId||bucketAff,_bucket:bucketAff,_idx:idx}));
+      if(l&&(isCur||l.actId||l.affId||l.hours||l.cmt))combined.push(Object.assign({},l,{affId:l.affId||bucketAff,_bucket:bucketAff,_idx:idx}));
     });
   });
   return combined;
@@ -20160,7 +20249,7 @@ function fhGetAllAff(nm,w,d){
   var combined=[];
   Object.keys(STORE.projects).forEach(function(aff){
     fhGet(aff,nm,w,d).forEach(function(l){
-      if(l&&(l.actId||l.affId||l.hours))combined.push(Object.assign({},l,{affId:l.affId||aff}));
+      if(l&&(l.actId||l.affId||l.hours||l.cmt))combined.push(Object.assign({},l,{affId:l.affId||aff}));
     });
   });
   return combined;
@@ -20183,7 +20272,7 @@ function fhGetAllWeeksAllAff(nm){
         if(!Array.isArray(lines))return;
         if(!combined[wk][di])combined[wk][di]=[];
         lines.forEach(function(l){
-          if(l&&(l.actId||l.affId||l.hours))combined[wk][di].push(Object.assign({},l,{affId:l.affId||aff}));
+          if(l&&(l.actId||l.affId||l.hours||l.cmt))combined[wk][di].push(Object.assign({},l,{affId:l.affId||aff}));
         });
       });
     });
@@ -20356,6 +20445,28 @@ function fhLineSet(aff,nm,w,d,li,field,val){
     // Mise à jour immédiate du budget
     if(typeof updBudget==='function')updBudget();
   }
+}
+// Une ligne dans les 3 documents de feuille d'heure (imprimer / télécharger une personne / la semaine) :
+// sous-phase + commentaire (27/10/2026). Sans sous-phase mais avec un commentaire : le commentaire seul,
+// sans « (sous-phase non précisée) ». Pas de « 0H » sur une ligne qui n'a qu'un commentaire.
+function _fhExpLineHtml(act,l,h,esc){
+  var cmt=String(l.cmt||'').trim(),lb=(l.actId||!cmt)?act.lb:'';
+  return (act.pk&&l.actId?'<span class="pk">'+esc(act.pk)+'</span>':'')+(lb?esc(lb):'')
+    +(cmt?'<span style="font-style:italic;color:#4B5563">'+(lb?' — ':'')+'💬 '+esc(cmt)+'</span>':'')
+    +(h||!cmt?'<span class="sb-h">'+h+'H</span>':'');
+}
+// Commentaire d'une ligne (27/10/2026) : enregistré 0,7 s après la frappe et en quittant le champ (pas à chaque touche)
+function fhLineCmtInput(aff,nm,w,d,li,val){
+  clearTimeout(fhLineCmtInput._t);
+  fhLineCmtInput._t=setTimeout(function(){fhLineCmtSave(aff,nm,w,d,li,val);},700);
+}
+function fhLineCmtSave(aff,nm,w,d,li,val){
+  clearTimeout(fhLineCmtInput._t);
+  val=String(val==null?'':val).trim();
+  var cur=fhGet(aff,nm,w,d)[li];
+  if(!cur&&!val)return;
+  if(cur&&(cur.cmt||'')===val)return;
+  fhLineSet(aff,nm,w,d,li,'cmt',val);
 }
 function fhLineAdd(aff,nm,w,d){
   var absData=STORE.absences&&STORE.absences[nm];
@@ -20655,7 +20766,7 @@ function fhGenerateWeekHTML(wk,cb){
       if(!metaCell)metaCell='<span style="color:#ccc">—</span>';
       if(_dStatusW&&_dStatusW.type==='formation')metaCell='<span class="meta-badge" style="background:'+_dStatusW.bg+';color:'+_dStatusW.color+'">'+_dStatusW.icon+' '+_dStatusW.label+'</span>'+metaCell;
       var lines=fhGetAllAff(nm,wk,di);
-      var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
+      var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours||l.cmt);});
       // Les heures de trajet comptent maintenant aussi dans le total du jour
       // et de la semaine, en plus de rester visibles à part (trajetTotal).
       var dayH=Math.round((valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0)+(+meta.trajetH||0))*10)/10;
@@ -20675,7 +20786,7 @@ function fhGenerateWeekHTML(wk,cb){
           var linesHtml=_groups[_affKey].map(function(l){
             var h=+(l.hours||l.h)||0;
             var act=getAct(l.affId||fhAff,l.actId);
-            return '<div class="sb-line">'+(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')+esc(act.lb)+'<span class="sb-h">'+h+'H</span></div>';
+            return '<div class="sb-line">'+_fhExpLineHtml(act,l,h,esc)+'</div>';
           }).join('');
           return '<div class="aff-group"><div class="aff-lbl"><span class="aff-num">'+esc(_affParts.numero)+'</span>'+(_affParts.libelle?' '+esc(_affParts.libelle):'')+'</div>'+linesHtml+'</div>';
         }).join('');
@@ -20764,7 +20875,7 @@ function fhGenerateHTML(nm,cb){
       if(!_metaCell)_metaCell='<span style="color:#ccc">—</span>';
       if(_dStatusG&&_dStatusG.type==='formation')_metaCell='<span class="meta-badge" style="background:'+_dStatusG.bg+';color:'+_dStatusG.color+'">'+_dStatusG.icon+' '+_dStatusG.label+'</span>'+_metaCell;
       var lines=wkData[di]||[];if(!Array.isArray(lines))lines=[];
-      var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours);});
+      var valid=lines.filter(function(l){return l&&(l.actId||l.affId||l.hours||l.cmt);});
       // Les heures de trajet comptent maintenant aussi dans le total du jour
       // et de la semaine, en plus de rester visibles à part (trajetTotal).
       var dayH=Math.round((valid.reduce(function(s,l){return s+(+(l.hours||l.h)||0);},0)+(+_dmeta.trajetH||0))*10)/10;
@@ -20791,7 +20902,7 @@ function fhGenerateHTML(nm,cb){
             } else {
               act=getAct(l.actId);
             }
-            return '<div class="sb-line">'+(act.pk?'<span class="pk">'+esc(act.pk)+'</span>':'')+esc(act.lb)+'<span class="sb-h">'+h+'H</span></div>';
+            return '<div class="sb-line">'+_fhExpLineHtml(act,l,h,esc)+'</div>';
           }).join('');
           return '<div class="aff-group"><div class="aff-lbl"><span class="aff-num">'+esc(_affParts.numero)+'</span>'+(_affParts.libelle?' '+esc(_affParts.libelle):'')+'</div>'+linesHtml+'</div>';
         }).join('');
@@ -28066,6 +28177,8 @@ window.PetroNav=(function(){
     if(!(typeof _isCustomRole==='function'&&_isCustomRole())||hasView('scr_dl'))more.push(['affDossierAsk()','📦 Dossier de fin d’affaire (.zip)…']); // rôle créé ici : seulement avec « Télécharger »
     if(!closed&&(secVis('#sbar .btn-da[onclick*="openModal(\'del\')"]')||secVis('#sbar .btn-da[onclick*="openModal("]')))more.push(['PetroNav.archive()','🗄 Archiver l’affaire…']);
     if(closed&&isAdm)more.push(['PetroNav.unarchive()','✓ Désarchiver l’affaire']);
+    // (27/10/2026) affaire créée par l'ancienne copie : retirer ce qui a été recopié (admin, avec aperçu)
+    if(!closed&&isAdm){try{var _cc=_copyCleanScan(k);if(_cc&&(_cc.days.length||(_cc.sure&&_cc.unsure)))more.push(['affCopyCleanAsk()','🧹 Nettoyer une copie d’affaire…']);}catch(e){}}
     if(secVis('#sbar .btn-da[onclick*="openModal(\'del\')"]')||secVis('#sbar .btn-da[onclick*="openModal("]'))more.push(['openModal(\'del\')','🗑 Supprimer l’affaire',1]);
     var canEdit=secVis('#nav [onclick="openPlanEditor()"]')&&!closed;
     var bi=document.getElementById('inp-bud');if(bi)bi.disabled=!hasEdit('budget_toolbar'); // H vendues : grisé si archivée
@@ -28097,6 +28210,7 @@ window.PetroNav=(function(){
     'PetroNav.archive()':function(){archive();},
     'affDossierAsk()':function(){if(can('affDossierAsk'))affDossierAsk();},
     'PetroNav.unarchive()':function(){unarchive();},
+    'affCopyCleanAsk()':function(){if(typeof affCopyCleanAsk==='function')affCopyCleanAsk(curAff());},
     "openModal('new')":function(){openModal('new');}
   };
   function callAct(code){var f=ACTS[code];if(!f)return;try{f();}catch(e){console.error('Action :',e);}setTimeout(renderAll,50);}
