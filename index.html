@@ -5175,44 +5175,105 @@ function _mergePersonsFromProjects(){
 var SERVICES=[{k:'els_projet',l:'ELS Projet',color:'#6366F1',bg:'#EEF2FF'},{k:'els_auto',l:'ELS Automatisme',color:'#7C3AED',bg:'#F5F3FF'},{k:'els_chantier',l:'ELS Chantier',color:'#D97706',bg:'#FFFBEB'},{k:'tableauterie',l:'Tableauterie',color:'#DC2626',bg:'#FEF2F2'},{k:'client',l:'Client',color:'#059669',bg:'#ECFDF5'},{k:'bureau_etude',l:'ELS Bureau d\'\u00E9tude',color:'#0891B2',bg:'#ECFEFF'}];
 function getSvc(k){return SERVICES.find(function(s){return s.k===k;})||{k:k,l:k,color:'#6B7280',bg:'#F9FAFB'};}
 
+// (03/11/2026) Renommer / fusionner une personne : tout ce qui est au(x) nom(s) `olds` passe à `newNm`.
+// Les journées de feuille d'heure de l'ancien nom sont VIDÉES et horodatées (pas supprimées) : la fusion
+// des heures (_mergeFh) garde sinon la copie du serveur, et les heures comptaient en DOUBLE (ancien + nouveau nom).
+// Une journée identique des deux côtés (déjà dupliquée par un ancien renommage) n'est gardée qu'une fois.
+function _renamePersonData(olds,newNm){
+  var now=Date.now(),isOld=function(n){return olds.indexOf(n)>=0;};
+  var dedupe=function(arr,key){var s={};return arr.filter(function(x){var k=key(x);if(s[k])return false;s[k]=1;return true;});};
+  Object.keys(STORE.projects||{}).forEach(function(aff){
+    var p=STORE.projects[aff];if(!p)return;
+    if(p.persons){p.persons.forEach(function(pp){if(pp&&isOld(pp.name))pp.name=newNm;});p.persons=dedupe(p.persons,function(x){return x&&x.name;});}
+    (p.data||[]).forEach(function(r){
+      if(!r||!r.p||!r.p.length)return;var ch=false;
+      r.p.forEach(function(pp){if(pp&&isOld(pp.name)){pp.name=newNm;ch=true;}});
+      if(ch){r.p=dedupe(r.p,function(x){return x&&x.name;});r._modAt=now;}
+    });
+    if(!p.fh)return;
+    olds.forEach(function(o){
+      var src=p.fh[o];if(!src)return;
+      if(!p._fhModAt)p._fhModAt={};
+      var stamp=function(nm,w,d){if(!p._fhModAt[nm])p._fhModAt[nm]={};if(!p._fhModAt[nm][w])p._fhModAt[nm][w]={};p._fhModAt[nm][w][d]=now;};
+      Object.keys(src).forEach(function(w){Object.keys(src[w]||{}).forEach(function(d){
+        var ls=src[w][d];if(!Array.isArray(ls)||!ls.length)return;
+        if(!p.fh[newNm])p.fh[newNm]={};if(!p.fh[newNm][w])p.fh[newNm][w]={};
+        var cur=p.fh[newNm][w][d];
+        if(Array.isArray(cur)&&cur.length){if(JSON.stringify(cur)!==JSON.stringify(ls))p.fh[newNm][w][d]=cur.concat(ls);}
+        else p.fh[newNm][w][d]=ls.slice();
+        src[w][d]=[];stamp(newNm,w,d);stamp(o,w,d);
+      });});
+    });
+  });
+  if(STORE.fh)olds.forEach(function(o){if(STORE.fh[o]){if(!STORE.fh[newNm])STORE.fh[newNm]=STORE.fh[o];delete STORE.fh[o];}});
+  // Panier / GD / trajet / zone / véhicule / lieu (fusion à trois : la suppression de l'ancien nom est bien transmise)
+  Object.keys(STORE.fhMeta||{}).forEach(function(w){var W=STORE.fhMeta[w];if(!W)return;
+    olds.forEach(function(o){if(!W[o])return;if(!W[newNm])W[newNm]={};Object.keys(W[o]).forEach(function(d){if(!W[newNm][d])W[newNm][d]=W[o][d];
+      W[o][d]={panier:false,gd:false,lieu:'',zone:'',trajetH:'',vehicule:''};});});}); // vidé (pas supprimé) : la synchro ne le fait pas revenir
+  Object.keys(STORE.fhWeekHidden||{}).forEach(function(w){var H=STORE.fhWeekHidden[w];if(!H)return;
+    olds.forEach(function(o){if(H[o]!==undefined){if(H[newNm]===undefined)H[newNm]=H[o];delete H[o];}});});
+  // Planning réunion : une case déjà remplie au nouveau nom n'est pas écrasée
+  Object.values(STORE.weekPlan||{}).forEach(function(wk){
+    if(!wk)return;
+    Object.keys(wk).forEach(function(key){
+      var parts=key.split('::');if(!isOld(parts[0]))return;
+      var nk=newNm+'::'+parts[1],cur=wk[nk];
+      if(!cur||(Array.isArray(cur)&&!cur.length))wk[nk]=wk[key];
+      delete wk[key];
+    });
+  });
+  // Absences : regroupées sur le nouveau nom
+  if(STORE.absences)olds.forEach(function(o){
+    var a=STORE.absences[o];if(!a)return;
+    var b=STORE.absences[newNm];
+    if(!b)STORE.absences[newNm]=a;
+    else{
+      ['congesDays','formationDays','absenceDays','school','company'].forEach(function(f){
+        if(Array.isArray(a[f])){b[f]=(b[f]||[]).concat(a[f].filter(function(x){return (b[f]||[]).indexOf(x)<0;}));}
+      });
+      if(a.altDays){b.altDays=Object.assign({},a.altDays,b.altDays||{});}
+    }
+    STORE.absences[newNm]._modAt=now;
+    delete STORE.absences[o];
+  });
+}
+// Nom de personne comparé sans casse ni espaces en trop (« Jean  Dupont » = « jean dupont »)
+function _pnNorm(s){return String(s==null?'':s).trim().replace(/\s+/g,' ').toLowerCase();}
 function saveGlobalPerson(origNm, newNm, type, habsArr, service, email){
   var gp=_getGlobalPersons();
-  newNm=(newNm||'').trim();
-  origNm=(origNm||'').trim();
+  newNm=(newNm||'').trim().replace(/\s+/g,' ');
+  var rawOrig=String(origNm||'');origNm=rawOrig.trim();
   if(!newNm){alert('Le nom ne peut pas être vide.');return;}
-  // Si renommage → supprimer l'ancien, créer le nouveau
-  if(origNm && origNm !== newNm && gp[origNm]){
-    delete gp[origNm];
-    // Mettre à jour dans toutes les affaires
-    Object.values(STORE.projects).forEach(function(p){
-      (p.persons||[]).forEach(function(pp){if(pp.name===origNm)pp.name=newNm;});
-      (p.data||[]).filter(function(r){return r.t==='act';}).forEach(function(a){
-        (a.p||[]).forEach(function(pp){if(pp.name===origNm)pp.name=newNm;});
-      });
-      if(p.fh&&p.fh[origNm]){p.fh[newNm]=p.fh[origNm];delete p.fh[origNm];}
-    });
-    // Renommer dans fiches d'heure globales
-    if(STORE.fh&&STORE.fh[origNm]){STORE.fh[newNm]=STORE.fh[origNm];delete STORE.fh[origNm];}
-    // Renommer dans weekPlan
-    Object.values(STORE.weekPlan||{}).forEach(function(wk){
-      Object.keys(wk).forEach(function(key){
-        if(key.split('::')[0]===origNm){
-          var newKey=newNm+'::'+key.split('::')[1];
-          wk[newKey]=wk[key];delete wk[key];
-        }
-      });
-    });
-    if(STORE.absences&&STORE.absences[origNm]){
-      STORE.absences[newNm]=STORE.absences[origNm];
-      delete STORE.absences[origNm];
-    }
+  // (03/11/2026) Retrouver la VRAIE fiche d'origine, même si son nom dans l'annuaire a des espaces en trop
+  // ou une autre casse : avant, la fiche n'était pas retrouvée et une 2e était créée à côté (doublon).
+  var origKey=null;
+  if(rawOrig&&gp[rawOrig])origKey=rawOrig;
+  else if(origNm&&gp[origNm])origKey=origNm;
+  else if(origNm)origKey=Object.keys(gp).filter(function(k){return _pnNorm(k)===_pnNorm(origNm);})[0]||null;
+  // Nom déjà pris par une AUTRE fiche (même nom, à la casse / aux espaces près) : on fusionne au lieu d'en créer une 2e
+  var sameKey=Object.keys(gp).filter(function(k){return k!==origKey&&_pnNorm(k)===_pnNorm(newNm);})[0]||null;
+  if(sameKey){
+    if(origKey&&!confirm('« '+sameKey+' » existe déjà dans l’annuaire.\n\nFusionner les deux fiches en une seule « '+newNm+' » ? (heures, planning, absences regroupés)'))return;
+    if(!origKey){origKey=sameKey;sameKey=null;} // ajout d'une personne qui existe déjà : on met à jour sa fiche
   }
+  // Renommage (ou fusion) : tout ce qui est au nom d'origine passe au nouveau nom
+  var _mv=[origKey,sameKey].filter(function(k){return k&&k!==newNm;});
+  if(_mv.length)_renamePersonData(_mv,newNm);
+  _mv.forEach(function(k){
+    var src=gp[k];delete gp[k];
+    if(src&&!gp[newNm])gp[newNm]=Object.assign({},src);
+    if(!STORE._deletedPersons)STORE._deletedPersons={};
+    // Marque « supprimée » sur l'ANCIEN nom : sans elle, la synchro (serveur, postes des collègues,
+    // copie locale GP_KEY) faisait revenir l'ancienne fiche → la personne apparaissait en double.
+    STORE._deletedPersons[k]=Date.now();
+  });
   if(!gp[newNm])gp[newNm]={};
   gp[newNm].name=newNm;
   gp[newNm].type=type||'';
   gp[newNm].habilitations=habsArr||[];
   if(service!==undefined)gp[newNm].service=service||'';
   if(email!==undefined)gp[newNm].email=(email||'').trim();
+  gp[newNm]._modAt=Date.now(); // (03/11/2026) la fiche modifiée gagne la fusion chez les collègues
   // Ajouter dans l'affaire courante si pas déjà présent
   var aff=STORE.current;
   if(aff&&STORE.projects[aff]){
@@ -5226,10 +5287,7 @@ function saveGlobalPerson(origNm, newNm, type, habsArr, service, email){
   if(STORE._deletedPersons&&STORE._deletedPersons[newNm]){
     delete STORE._deletedPersons[newNm];
   }
-  // Pareil pour origNm si renommage
-  if(origNm&&STORE._deletedPersons&&STORE._deletedPersons[origNm]){
-    delete STORE._deletedPersons[origNm];
-  }
+  // (03/11/2026) On NE retire PLUS la marque de l'ancien nom après un renommage : c'était la cause des doublons.
   localStorage.setItem('plan26v5',JSON.stringify(STORE));
   // Sauvegarder globalPersons séparément pour survivre aux rechargements STORE
   localStorage.setItem(GP_KEY,JSON.stringify(STORE.globalPersons||{}));
@@ -20731,6 +20789,19 @@ function fhTelecharger(){
 // Génère un document combiné : une feuille par personne, pour UNE semaine
 // donnée (celle affichée dans la grille) — toutes les personnes présentes,
 // à la suite, avec saut de page entre chacune. Pas besoin de choisir qui.
+// Une personne a-t-elle quelque chose sur sa feuille d'heure cette semaine ? (heures / affaire / sous-phase /
+// commentaire sur une ligne, panier, GD, trajet, zone, véhicule, lieu, ou congé / formation / absence / école)
+function _fhPersonWeekHasData(nm,wk){
+  for(var di=0;di<5;di++){
+    var ls=fhGetAllAff(nm,wk,di)||[];
+    if(ls.some(function(l){return l&&(l.actId||l.affId||(+(l.hours||l.h)>0)||l.cmt);}))return true;
+    var m=fhMetaGet(wk,nm,di)||{};
+    if(m.panier||m.gd||(+m.trajetH>0)||(m.zone&&String(m.zone).trim())||(m.vehicule&&String(m.vehicule).trim())||(m.lieu&&String(m.lieu).trim()))return true;
+    var dd=weekDayToDate(wk,di),dk=dd?(dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0')):null;
+    if(_personDayStatus(nm,dk,wk))return true;
+  }
+  return false;
+}
 function fhGenerateWeekHTML(wk,cb){
   var persons=fhWeekPersons(wk);
   // Ajouter aussi les personnes en congé/formation/absence/école cette
@@ -20748,8 +20819,11 @@ function fhGenerateWeekHTML(wk,cb){
       if(_personDayStatus(nm,_dk,wk)){persons.push(nm);break;}
     }
   });
+  // (03/11/2026, demande de l'utilisateur) une personne qui n'a RIEN sur sa feuille d'heure cette semaine
+  // (ex. tout juste ajoutée à l'annuaire : elle apparaît à l'écran pour qu'on la remplisse) n'est pas dans l'export
+  persons=persons.filter(function(nm){return _fhPersonWeekHasData(nm,wk);});
   persons.sort();
-  if(!persons.length){alert('Aucune personne pour la semaine S'+isoWeekOf(wk)+'.');return;}
+  if(!persons.length){alert('Aucune feuille d’heure remplie pour la semaine S'+isoWeekOf(wk)+'.');return;}
   var fhAff=window._fhAff||STORE.current;
   function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   function getAct(aff,actId){
@@ -24009,6 +24083,8 @@ window.QRFeuille=(function(){
   function sbEnsOf(s){if(!s)return '';if(s.e!=null)return s.e;var p=String(s.g||'').split(' ▸ ');return p.length>1?p.slice(1).join(' ▸ '):'';}
   function sbEns(a,id){if(!a||!id)return '';var l=a.sbs||[];for(var i=0;i<l.length;i++)if(l[i].id===id)return sbEnsOf(l[i]);return '';}
   function sbFull(s){var e=sbEnsOf(s);return (e?e+' › ':'')+(s.lb||'');}
+  // Sous-phase de la phase Chantier ? (listes publiées avant le 03/11/2026 : pas de « c », on lit le groupe « CHANTIER ▸ … »)
+  function sbIsCh(s){if(!s)return false;if(s.c!=null)return !!s.c;return /^CHANTIER/i.test(String(s.g||''));}
   function dayTotal(d){var t=0;(d.lines||[]).forEach(function(l){var h=num(l.hours);if(h>0)t+=h;});var tr=num(d.trajetH);if(tr>0)t+=tr;return r1(t);}
   function dayHas(d){return !!(d.panier||d.gd||num(d.trajetH)>0||d.zone||d.vehicule||(d.lieu&&String(d.lieu).trim())||(d.lines||[]).some(function(l){return l.affId||l.actId||num(l.hours)>0;}));}
   function dataTotal(data){var t=0;if(data&&data.days)Object.keys(data.days).forEach(function(k){t+=dayTotal(normData({days:{0:data.days[k]}}).days[0]);});return r1(t);}
@@ -24074,6 +24150,14 @@ window.QRFeuille=(function(){
     }
     var h='';
     if(b)h+='<div class="qrf-badge" style="background:#EDE9FE;color:#6D28D9;margin-bottom:10px">'+esc(b.i+' '+b.l)+' — remplissez quand même les heures et options</div>';
+    // (03/11/2026, demande de l'utilisateur) reprendre une autre journée déjà remplie (journée similaire = plus rapide)
+    if(!ro){
+      var src=[];for(var sd=0;sd<5;sd++){if(sd===di||isOff(ctx,sd))continue;if(dayHas(ctx.data.days[sd]))src.push(sd);}
+      if(src.length)h+='<div class="qrf-card" style="padding:12px 14px"><div class="qrf-lbl">⧉ COPIER UNE JOURNÉE DÉJÀ SAISIE SUR '+esc(DAYS[di].toUpperCase())+'</div><div class="qrf-row">'
+        +src.map(function(sd){var dt=(ctx.payload&&ctx.payload.days&&ctx.payload.days[sd])?ddmmK(ctx.payload.days[sd].date):'';
+          return '<button type="button" class="qrf-tog" onclick="QRFeuille._copyDay('+q(id)+','+sd+','+di+')">'+esc(DAYS[sd])+(dt?' '+esc(dt):'')+'</button>';}).join('')
+        +'</div><div style="font-size:12px;color:#6B6790;margin-top:6px">Chantiers, heures et options du jour choisi, modifiables ensuite.</div></div>';
+    }
     h+='<div class="qrf-card"><div class="qrf-lbl">OPTIONS DU JOUR</div>';
     h+='<div class="qrf-row" style="margin-bottom:12px">'+tog(id,di,'panier','🍽 Panier',d.panier,ro)+tog(id,di,'gd','🚗 Grand dépl.',d.gd,ro)+'</div>';
     h+='<div class="qrf-lbl">HEURES DE TRAJET</div><input class="qrf-in" inputmode="decimal" autocomplete="off" placeholder="0" value="'+esc(d.trajetH)+'"'+dis+' oninput="QRFeuille._set('+q(id)+','+di+','+q('trajetH')+',this.value)" style="margin-bottom:12px">';
@@ -24100,7 +24184,9 @@ window.QRFeuille=(function(){
       +(ctx.payload.affaires||[]).map(function(x){return '<option value="'+esc(x.k)+'"'+(x.k===l.affId?' selected':'')+'>'+esc(affLbl(x))+'</option>';}).join('')+'</select>';
     if(l.affId){
       var groups={},order=[];
-      ((a&&a.sbs)||[]).forEach(function(s){var g=s.g||'';if(!groups[g]){groups[g]=[];order.push(g);}groups[g].push(s);});
+      // (03/11/2026, demande de l'utilisateur) seulement les sous-phases de la phase CHANTIER (les seuls à utiliser
+      // le QR pour l'instant) ; une sous-phase d'une autre phase déjà choisie reste affichée pour ne pas la perdre
+      ((a&&a.sbs)||[]).filter(function(s){return sbIsCh(s)||s.id===l.actId;}).forEach(function(s){var g=s.g||'';if(!groups[g]){groups[g]=[];order.push(g);}groups[g].push(s);});
       // l'option porte « PAE 5 › Raccordement » : sur téléphone, la liste fermée n'affiche que l'option choisie
       var _ens=sbEns(a,l.actId);
       h+='<div class="qrf-lbl">SOUS-PHASE</div><select class="qrf-in"'+dis+' onchange="QRFeuille._lineSb('+q(id)+','+di+','+li+',this.value)" style="margin-bottom:'+(_ens?'6':'10')+'px"><option value="">Pas de sous-phase</option>'
@@ -24124,6 +24210,15 @@ window.QRFeuille=(function(){
   function _delLine(id,di,li){var c=_ok(id);if(!c)return;c.data.days[di].lines.splice(li,1);after(id,di,true);}
   function _lineAff(id,di,li,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l.affId=v;l.actId='';after(id,di,true);}
   function _line(id,di,li,f,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l[f]=v;after(id,di,false);}
+  // Recopier la journée `from` sur la journée `to` (chantiers, heures, panier, GD, trajet, zone, véhicule, lieu)
+  function _copyDay(id,from,to){
+    var c=_ok(id);if(!c||from===to||isOff(c,to))return;
+    var s=c.data.days[from],d=c.data.days[to];if(!s||!d)return;
+    if(dayHas(d)&&!confirm('Remplacer ce qui est déjà rempli '+DAYS[to].toLowerCase()+' par la journée de '+DAYS[from].toLowerCase()+' ?'))return;
+    ['panier','gd','trajetH','zone','vehicule','lieu'].forEach(function(f){d[f]=s[f];});
+    d.lines=(s.lines||[]).map(function(l){return {affId:l.affId||'',actId:l.actId||'',hours:(l.hours==null?'':String(l.hours))};});
+    after(id,to,true);
+  }
   function _lineSb(id,di,li,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l.actId=v;after(id,di,true);} // redessine : étiquette du sous-ensemble
 
   // ══ 1) TÉLÉPHONE (lien ?qr=...) : connexion puis sa feuille ═════════
@@ -24449,7 +24544,7 @@ window.QRFeuille=(function(){
         if(r.t==='ph'){ph=r.pk||r.lb||'';ens='';}
         else if(r.t==='ens'){ens=r.lb||'';}
         else if(r.t==='ensend'){ens='';} // fin de sous-ensemble : les sous-phases suivantes sont hors PAE
-        else if(r.t==='sb'){sbs.push({id:r.id,lb:r.lb||'',g:ph+(ens?' ▸ '+ens:''),e:ens});}
+        else if(r.t==='sb'){sbs.push({id:r.id,lb:r.lb||'',g:ph+(ens?' ▸ '+ens:''),e:ens,c:(typeof _phCat==='function'&&_phCat(ph)==='CHANTIER')?1:0});}
       });
       affaires.push({k:k,n:parts.numero,l:parts.libelle,sbs:sbs});
     });
@@ -24974,7 +25069,7 @@ window.QRFeuille=(function(){
 
   return {
     render:render,startPublic:startPublic,publish:publish,
-    _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,_lineSb:_lineSb,
+    _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,_lineSb:_lineSb,_copyDay:_copyDay,
     _pubLogin:_pubLogin,_pubLogout:_pubLogout,_pubEnd:_pubEnd,_pubWeek:_pubWeek,_pubWeeks:chooseWeek,_pubDays:_pubDays,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
     _tab:_tab,_pubNow:_pubNow,_print:_print,_copy:_copy,
     _idFilter:_idFilter,_idReload:_idReload,_idGen:_idGen,_idActive:_idActive,_idDel:_idDel,_credCopy:_credCopy,_credPrint:_credPrint,
