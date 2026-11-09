@@ -27576,6 +27576,7 @@ window.PunchList=(function(){
       Object.keys(d).forEach(function(k){ if(k.indexOf('p:')===0&&d[k]){ if(d[k].path) paths.push(d[k].path); if(d[k].thumb) paths.push(d[k].thumb); } });
       await DB.remove(id);
       if(paths.length){ try{ await FILES.remove(paths); }catch(e){ console.warn('Punch list : photos non effacées',e); } }
+      if(d._src&&d._src.path){ try{ await srcB().remove([d._src.path]); }catch(e){ console.warn('Punch list : fichier du client non effacé',e); } }
       S.list=S.list.filter(function(x){ return x.id!==id; });
       if(S.cur&&S.cur.id===id){ S.cur=null; D={}; S.dirty={}; }
       drawList();
@@ -27728,7 +27729,7 @@ window.PunchList=(function(){
       var title=(cv.docNo||String(file.name).replace(/\.[^.]+$/,'')).trim();
       var tmp={order:[]};res.lines.forEach(function(l,ix){ tmp['i:'+ix]=Object.assign({},l); tmp.order.push(String(ix)); });
       var st=stats(tmp);
-      IMP={res:res,fname:file.name};
+      IMP={res:res,fname:file.name,file:file};
       var A=ENV.affaires();
       modal('<div style="font-size:16px;font-weight:900;margin-bottom:6px">Import d’une punch list</div>'
         +'<div style="font-size:12.5px;color:#6B6790;margin-bottom:12px">« '+esc(file.name)+' »'+(cv.project||cv.company?' · '+esc([cv.project,cv.company].filter(Boolean).join(' · ')):'')+(cv.projectNo?' · projet '+esc(cv.projectNo):'')+(cv.rev?' · révision '+esc(cv.rev)+(cv.revDate?' du '+esc(fr(cv.revDate)):''):'')+'</div>'
@@ -27750,7 +27751,7 @@ window.PunchList=(function(){
     var aff=($('pl-i-aff')||{}).value||'',title=(($('pl-i-title')||{}).value||'').trim()||'Punch list';
     if(!aff){ alert('Choisissez l’affaire.'); return; }
     var b=$('pl-i-go'); if(b){ b.disabled=true; b.textContent='Création…'; }
-    var res=IMP.res,today=todayIso(),data={_title:title,_aff:aff,_cover:res.cover||{},_lists:res.lists||{},_file:IMP.fname,_imp:today,order:[]};
+    var IMPF=IMP.file||null,res=IMP.res,today=todayIso(),data={_title:title,_aff:aff,_cover:res.cover||{},_lists:res.lists||{},_file:IMP.fname,_imp:today,order:[]};
     res.lines.forEach(function(l){ var k=uid()+Math.random().toString(36).slice(2,4); data['i:'+k]=Object.assign({add:today},l); data.order.push(k); });
     try{
       var me=ENV.who();
@@ -27758,6 +27759,8 @@ window.PunchList=(function(){
       closeModal();
       S.list.unshift(liteOf(row));
       openRow(row);
+      // (09/11/2026) copie du fichier du client, pour un export identique au document (buildClientXlsx)
+      if(IMPF&&IMPF.size){ try{ setVal('_src',await srcUpload(row.id,IMPF)); scheduleSave(50); }catch(e){ console.warn('Punch list : fichier du client non gardé',e); } }
     }catch(e){ if(b){ b.disabled=false; b.textContent='Créer la punch list'; } alert('Création impossible : '+(e&&e.message||e)+(/punch_lists|relation|does not exist/i.test(String(e&&e.message||e))?'\n\nLe script punch_list_supabase.sql n’a sans doute pas encore été lancé dans Supabase.':'')); }
   }
 
@@ -27837,7 +27840,7 @@ window.PunchList=(function(){
       +'<b style="font-size:17px">'+esc(D._title||c.title||'Punch list')+'</b>'+(cv.rev?'<span class="plx-tag">Rév. '+esc(cv.rev)+'</span>':'')
       +'<span style="font-size:12.5px;color:#6B6790">'+esc(affLabel(D._aff||c.aff))+(cv.project||cv.company?' · '+esc([cv.project,cv.company].filter(Boolean).join(' · ')):'')+'</span>'
       +'<span style="flex:1"></span><span id="pl-savest" style="font-size:12px;color:#6B6790"></span>'
-      +'<button id="pl-xls" class="dcu-btn" onclick="PunchList.exportXlsx()" title="Télécharger la punch list avec nos réponses et les photos, à envoyer au client">⬇ Excel</button>'
+      +'<button id="pl-xls" class="dcu-btn" onclick="PunchList.exportClient()" title="Le fichier Excel du client, identique, avec vos statuts, vos réponses (colonne Comments) et vos photos">⬇ Excel</button>'
       +'</div>';
     var chip=function(f,n,l){ return '<button type="button" class="plx-chip'+(S.f===f?' on':'')+'" onclick="PunchList._f(\'f\',\''+f+'\')">'+l+' <span style="opacity:.75">'+n+'</span></button>'; };
     h+='<div class="plx-chips" style="margin-top:10px">'+chip('all',st.n,'Toutes')+chip('open',st.open,'Ouvertes')+chip('ours',st.ours,'À nous (ELS)')+chip('snf',st.snf,'Côté SNF')+chip('late',st.late,'En retard')+chip('closed',st.closed+st.na,'Fermées / N/A')+'</div>'
@@ -28091,6 +28094,251 @@ window.PunchList=(function(){
     }catch(e){ if(asFile) throw e; alert('Export Excel impossible : '+(e&&e.message||e)); }
     finally{ if(btn){ btn.disabled=false; btn.textContent='⬇ Excel'; } }
   }
+  // ═════════ EXPORT « COMME LE FICHIER DU CLIENT » (09/11/2026, demande de l'utilisateur) ═════════
+  // « J'importe, je modifie sur le site, j'exporte : le document ne change pas visuellement, à part ce que j'ai
+  // modifié, et les photos sont dans la case Comments. » On repart donc du FICHIER D'ORIGINE (copie gardée à
+  // l'import dans le stockage « planning », punch_sources/<id>.xlsx : le dossier photos n'accepte que des images)
+  // et on ne change, dans le XML de la feuille, que : le Status modifié sur le site (avec le style d'une autre case
+  // du même statut dans le fichier : vert Closed / rouge Open…), Comments = la réponse ELS si elle existe (choix
+  // de l'utilisateur : elle REMPLACE le commentaire), et les photos posées dans la case Comments, sous le texte
+  // (la ligne est agrandie, la case alignée en haut). Tout le reste (page de garde, logos, largeurs, listes,
+  // mise en page, images « dans la cellule ») est recopié tel quel.
+  var SRC_DIR='punch_sources/';
+  function srcB(){ if(!window.supa) throw new Error('Pas de connexion au serveur'); return window.supa.storage.from('planning'); }
+  async function srcUpload(listId,file){
+    var path=SRC_DIR+listId+'.xlsx';
+    var r=await srcB().upload(path,file,{upsert:true,contentType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    if(r.error) throw r.error;
+    return {path:path,name:file.name||'punch_list.xlsx',size:file.size||0,at:new Date().toISOString(),by:ENV.who()};
+  }
+  async function srcDownload(path){ var r=await srcB().download(path); if(r.error) throw r.error; return r.data; }
+  var _srcResolve=null;
+  function askSource(){
+    return new Promise(function(res){
+      _srcResolve=res;
+      modal('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Fichier du client</div>'
+        +'<div style="font-size:13px;color:#4A4766;line-height:1.5">Pour exporter un document identique au fichier du client, le site a besoin de ce fichier.<br>Cette punch list a été importée avant que le site ne le garde : choisissez le fichier Excel du client (celui qui a été importé). Il sera gardé pour les prochains exports.</div>'
+        +'<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px"><button class="dcu-btn2" onclick="PunchList._srcAns(null)">Annuler</button><button class="dcu-btn2" onclick="PunchList._srcAns(\'simple\')">Export simple (nouveau tableau)</button><button class="dcu-btn" onclick="PunchList._srcPick()">Choisir le fichier…</button></div>');
+    });
+  }
+  function _srcAns(v){ var r=_srcResolve; _srcResolve=null; closeModal(); if(r) r(v); }
+  function _srcPick(){ var i=document.createElement('input'); i.type='file'; i.accept='.xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; i.onchange=function(){ _srcAns((i.files&&i.files[0])||null); }; i.click(); }
+
+  async function exportClient(){
+    if(!S.cur) return;
+    if(Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); }
+    var btn=$('pl-xls'),lbl=function(t){ if(btn) btn.textContent=t; };
+    if(btn) btn.disabled=true; lbl('Préparation…');
+    try{
+      var src=null,s=D._src;
+      if(s&&s.path){ try{ src=await srcDownload(s.path); }catch(e){ console.warn('Punch list : fichier du client introuvable',e); src=null; } }
+      if(!src){
+        if(btn){ btn.disabled=false; lbl('⬇ Excel'); }
+        var f=await askSource();
+        if(f==='simple'){ return await exportXlsx(); }
+        if(!f) return;
+        src=f;
+        if(btn) btn.disabled=true; lbl('Préparation…');
+        try{ setVal('_src',await srcUpload(S.cur.id,f)); scheduleSave(50); }catch(e){ console.warn('Punch list : fichier du client non gardé',e); }
+      }
+      var out=await buildClientXlsx(src,D,lbl);
+      var url=URL.createObjectURL(out.blob),a=document.createElement('a'); a.href=url; a.download=out.fn; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); },15000);
+      if(out.warn.length) alert(out.warn.join('\n'));
+      return {fn:out.fn,size:out.blob.size,changed:out.changed,photos:out.photos};
+    }catch(e){ alert('Export impossible : '+(e&&e.message||e)); }
+    finally{ if(btn){ btn.disabled=false; btn.textContent='⬇ Excel'; } }
+  }
+
+  function xe(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function normT(s){ return noAcc(String(s==null?'':s)).toLowerCase().replace(/\s+/g,' ').trim(); }
+  function colPx(w){ return Math.floor(w*7+5); } // largeur de colonne Excel (caractères) → pixels (police Calibri 11)
+
+  async function buildClientXlsx(src,d,lbl){
+    var X=await loadXlsx(),buf=await src.arrayBuffer(),warn=[];
+    var wb=X.read(buf,{type:'array',cellDates:false});
+    // 1) feuille et colonnes, même règle que l'import
+    var L=null;
+    wb.SheetNames.forEach(function(sn){
+      if(L) return; var ws=wb.Sheets[sn]; if(!ws||!ws['!ref']) return;
+      var rg=X.utils.decode_range(ws['!ref']);
+      for(var r=rg.s.r;r<=Math.min(rg.e.r,rg.s.r+40)&&!L;r++){
+        var hd={};
+        for(var c=rg.s.c;c<=rg.e.c;c++){ var cl=ws[X.utils.encode_cell({r:r,c:c})]; hd[c]=normT(cl?cl.v:''); }
+        var vals=Object.keys(hd).map(function(c){ return hd[c]; });
+        if(vals.some(function(v){ return /description|libelle/.test(v); })&&vals.some(function(v){ return /^(item|status|statut|n°)/.test(v); })){
+          var map={};
+          Object.keys(hd).forEach(function(c){ var v=hd[c]; if(!v) return; for(var j=0;j<COLS.length;j++){ if(map[COLS[j][0]]==null&&COLS[j][1].test(v)){ map[COLS[j][0]]=+c; break; } } });
+          L={sn:sn,ws:ws,rg:rg,hr:r,map:map};
+        }
+      }
+    });
+    if(!L) throw new Error('le fichier du client ne contient pas de ligne de titres « Item … Description … Status ».');
+    if(L.map.des==null) throw new Error('colonne « Description » introuvable dans le fichier du client.');
+    var val=function(r,c){ if(c==null) return ''; var cl=L.ws[X.utils.encode_cell({r:r,c:c})]; return cl?cellTxt(cl.v):''; };
+    var frows=[];
+    for(var r=L.hr+1;r<=L.rg.e.r;r++){ var des=val(r,L.map.des); if(!des) continue; frows.push({r:r,n:val(r,L.map.n),des:des,cst:val(r,L.map.cst),ccom:val(r,L.map.ccom),used:false}); }
+    // 2) chaque ligne du site → sa ligne du fichier (description + n°, dans l'ordre ; doublons de n° gérés)
+    var K=keys(d),pairs=[],lost=0;
+    K.forEach(function(k){
+      var i=d['i:'+k]||{},nd=normT(i.des),nn=String(i.n||'').trim();
+      var f=frows.filter(function(x){ return !x.used&&normT(x.des)===nd&&String(x.n).trim()===nn; })[0]
+        ||frows.filter(function(x){ return !x.used&&normT(x.des)===nd; })[0];
+      if(!f){ lost++; return; }
+      f.used=true; pairs.push({k:k,f:f});
+    });
+    if(!pairs.length) throw new Error('aucun point de cette punch list n’a été retrouvé dans le fichier choisi (est-ce le bon fichier ?).');
+    if(lost) warn.push(lost+' point(s) du site n’ont pas été retrouvés dans le fichier du client : ils ne sont pas dans l’export.');
+    // 3) le fichier lui-même (zip) : feuille, styles, dessins
+    var z=await JSZip.loadAsync(buf);
+    var wbx=await z.file('xl/workbook.xml').async('string');
+    var se=L.sn.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    var sm=wbx.match(new RegExp('<sheet\\b[^>]*name="'+se+'"[^>]*/>'));
+    var rid=sm&&(sm[0].match(/r:id="([^"]+)"/)||[])[1];
+    var wrels=await z.file('xl/_rels/workbook.xml.rels').async('string');
+    var tg=rid&&(wrels.match(new RegExp('<Relationship\\b[^>]*Id="'+rid+'"[^>]*/>'))||[''])[0].match(/Target="([^"]+)"/);
+    if(!tg) throw new Error('feuille « '+L.sn+' » introuvable dans le fichier.');
+    var sheetPath=tg[1].replace(/^\//,'').replace(/^xl\//,''); sheetPath='xl/'+sheetPath;
+    var sx=await z.file(sheetPath).async('string');
+    var stylesX=await z.file('xl/styles.xml').async('string');
+    var CL=function(c){ return X.utils.encode_col(c); };
+    var rowRe=function(n){ return new RegExp('<row\\b[^>]*\\br="'+n+'"(?:[^>]*?/>|[^>]*>[\\s\\S]*?</row>)'); };
+    var cellRe=function(ref){ return new RegExp('<c\\b[^>]*\\br="'+ref+'"(?:[^>]*?/>|[^>]*>[\\s\\S]*?</c>)'); };
+    function cellStyle(ref){ var m=sx.match(cellRe(ref)); var s=m&&m[0].match(/^<c\b[^>]*\bs="(\d+)"/); return s?s[1]:null; }
+    function setCell(rowN,col,text,s){
+      var ref=CL(col)+rowN,rm=sx.match(rowRe(rowN)); if(!rm) return false;
+      var row=rm[0],cell='<c r="'+ref+'"'+(s!=null?' s="'+s+'"':'')+' t="inlineStr"><is><t xml:space="preserve">'+xe(text)+'</t></is></c>',nr;
+      if(cellRe(ref).test(row)) nr=row.replace(cellRe(ref),function(){ return cell; });
+      else if(/\/>$/.test(row)) nr=row.replace(/\/>$/,'>'+cell+'</row>');
+      else{ // insérer à sa place (cases dans l'ordre des colonnes)
+        var re=/<c\b[^>]*\br="([A-Z]+)\d+"/g,m,at=-1;
+        while((m=re.exec(row))){ if(X.utils.decode_col(m[1])>col){ at=m.index; break; } }
+        nr=at<0?row.replace(/<\/row>$/,cell+'</row>'):row.slice(0,at)+cell+row.slice(at);
+      }
+      sx=sx.replace(row,function(){ return nr; }); return true;
+    }
+    function setRowHeight(rowN,pt){
+      var rm=sx.match(rowRe(rowN)); if(!rm) return;
+      var tag=rm[0].match(/^<row\b[^>]*?(\/?)>/)[0],nt=tag;
+      nt=/\bht="/.test(nt)?nt.replace(/\bht="[^"]*"/,'ht="'+pt+'"'):nt.replace(/^<row\b/,'<row ht="'+pt+'"');
+      if(!/\bcustomHeight="/.test(nt)) nt=nt.replace(/^<row\b/,'<row customHeight="1"'); else nt=nt.replace(/\bcustomHeight="[^"]*"/,'customHeight="1"');
+      sx=sx.replace(tag,function(){ return nt; });
+    }
+    function rowHeightPx(rowN){ var rm=sx.match(rowRe(rowN)),h=rm&&rm[0].match(/^<row\b[^>]*\bht="([\d.]+)"/); return h?(+h[1])/0.75:20; }
+    var topXf={};
+    function topStyle(s){ // copie du style de la case, alignée en haut (texte au-dessus des photos)
+      if(s==null) s='0'; if(topXf[s]!=null) return topXf[s];
+      var cm=stylesX.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/); if(!cm) return s;
+      var xfs=cm[1].match(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)||[],xf=xfs[+s]; if(!xf) return s;
+      var nx;
+      if(/<alignment\b/.test(xf)) nx=xf.replace(/<alignment\b[^>]*?\/?>/,function(a){ return /\bvertical="/.test(a)?a.replace(/\bvertical="[^"]*"/,'vertical="top"'):a.replace(/^<alignment\b/,'<alignment vertical="top"'); });
+      else nx=(/\/>$/.test(xf)?xf.replace(/\/>$/,'><alignment vertical="top" wrapText="1"/></xf>'):xf.replace(/<\/xf>$/,'<alignment vertical="top" wrapText="1"/></xf>'));
+      if(!/\bapplyAlignment="/.test(nx)) nx=nx.replace(/^<xf\b/,'<xf applyAlignment="1"');
+      var idx=xfs.length;
+      stylesX=stylesX.replace(/<cellXfs\b([^>]*)>([\s\S]*?)<\/cellXfs>/,function(all,attrs,body){ return '<cellXfs'+attrs.replace(/\bcount="\d+"/,'count="'+(idx+1)+'"')+'>'+body+nx+'</cellXfs>'; });
+      topXf[s]=String(idx); return topXf[s];
+    }
+    var plainXf={};
+    function plainStyle(s){ // statut absent du fichier (ex. N/A) : même case, sans couleur de fond (pas le vert / rouge de l'ancien statut)
+      if(s==null) return s; if(plainXf[s]!=null) return plainXf[s];
+      var cm=stylesX.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/); if(!cm) return s;
+      var xfs=cm[1].match(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)||[],xf=xfs[+s]; if(!xf) return s;
+      if(!/\bfillId="(?!0")\d+"/.test(xf)){ plainXf[s]=s; return s; }
+      var nx=xf.replace(/\bfillId="\d+"/,'fillId="0"').replace(/\s*\bapplyFill="1"/,''),idx=xfs.length;
+      stylesX=stylesX.replace(/<cellXfs\b([^>]*)>([\s\S]*?)<\/cellXfs>/,function(all,attrs,body){ return '<cellXfs'+attrs.replace(/\bcount="\d+"/,'count="'+(idx+1)+'"')+'>'+body+nx+'</cellXfs>'; });
+      plainXf[s]=String(idx); return plainXf[s];
+    }
+    // styles des statuts tels qu'ils sont dans le fichier (ex. Closed = vert, Open = rouge)
+    var stStyle={};
+    if(L.map.cst!=null) frows.forEach(function(f){ var key=normT(f.cst); if(key&&stStyle[key]==null){ var s=cellStyle(CL(L.map.cst)+(f.r+1)); if(s!=null) stStyle[key]=s; } });
+    // largeur de la case Comments (fusionnée sur plusieurs colonnes : M:N)
+    var colsW={}; (sx.match(/<col\b[^>]*\/>/g)||[]).forEach(function(c){ var mn=+(c.match(/\bmin="(\d+)"/)||[])[1],mx=+(c.match(/\bmax="(\d+)"/)||[])[1],w=+(c.match(/\bwidth="([\d.]+)"/)||[])[1]; for(var q=mn;q<=mx;q++) colsW[q-1]=w; });
+    var defW=+((sx.match(/<sheetFormatPr\b[^>]*\bdefaultColWidth="([\d.]+)"/)||[])[1]||8.43);
+    var wOf=function(c){ return colPx(colsW[c]!=null?colsW[c]:defW); };
+    function mergeSpan(rowN,col){ // colonnes couvertes par la case (fusion éventuelle)
+      var re=/<mergeCell ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"/g,m;
+      while((m=re.exec(sx))){ var c1=X.utils.decode_col(m[1]),c2=X.utils.decode_col(m[3]),r1=+m[2],r2=+m[4]; if(rowN>=r1&&rowN<=r2&&col>=c1&&col<=c2){ var a=[]; for(var c=c1;c<=c2;c++) a.push(c); return a; } }
+      return [col];
+    }
+    // 4) modifications ligne par ligne
+    var changed=0,photoJobs=[];
+    pairs.forEach(function(p){
+      var rowN=p.f.r+1,s=d['s:'+p.k],t=d['t:'+p.k],ph=photosOf(d,p.k);
+      if(L.map.cst!=null&&s&&s.st&&normT(s.st)!==normT(p.f.cst)){
+        var ref=CL(L.map.cst)+rowN,cur=cellStyle(ref),ns=stStyle[normT(s.st)];
+        if(setCell(rowN,L.map.cst,s.st,ns!=null?ns:plainStyle(cur))) changed++;
+      }
+      var ans=t&&String(t.txt||'').trim(),comTxt=p.f.ccom;
+      if(L.map.ccom!=null){
+        var cref=CL(L.map.ccom)+rowN,cs=cellStyle(cref);
+        if(ans&&ans!==String(p.f.ccom||'').trim()){ comTxt=ans; if(setCell(rowN,L.map.ccom,ans,ph.length?topStyle(cs):cs)) changed++; }
+        else if(ph.length&&comTxt){ setCell(rowN,L.map.ccom,comTxt,topStyle(cs)); }
+        if(ph.length) photoJobs.push({rowN:rowN,col:L.map.ccom,ph:ph,txt:comTxt||''});
+      }
+    });
+    // 5) photos dans la case Comments : 2 par rangée, sous le texte, la ligne agrandie juste ce qu'il faut
+    var nPh=0;
+    if(photoJobs.length){
+      var rels=await z.file(sheetPath.replace(/worksheets\//,'worksheets/_rels/')+'.rels');
+      var relsPath=sheetPath.replace(/worksheets\//,'worksheets/_rels/')+'.rels',relsX=rels?await rels.async('string'):'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+      var drel=relsX.match(/<Relationship\b[^>]*Type="[^"]*\/drawing"[^>]*\/>/),drawPath,drawX;
+      if(drel){
+        drawPath='xl/'+drel[0].match(/Target="([^"]+)"/)[1].replace(/^\.\.\//,'').replace(/^\/xl\//,'');
+        drawX=await z.file(drawPath).async('string');
+      }else{ // la feuille n'a pas encore de dessin : on en crée un
+        var dn=1; while(z.file('xl/drawings/drawing'+dn+'.xml')) dn++;
+        drawPath='xl/drawings/drawing'+dn+'.xml';
+        drawX='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"></xdr:wsDr>';
+        var rn=1; while(new RegExp('Id="rId'+rn+'"').test(relsX)) rn++;
+        relsX=relsX.replace('</Relationships>','<Relationship Id="rId'+rn+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing'+dn+'.xml"/></Relationships>');
+        var dtag='<drawing r:id="rId'+rn+'"/>',before=sx.search(/<(legacyDrawing|legacyDrawingHF|drawingHF|picture|oleObjects|controls|webPublishItems|tableParts|extLst)\b/);
+        sx=before>=0?sx.slice(0,before)+dtag+sx.slice(before):sx.replace('</worksheet>',dtag+'</worksheet>');
+        if(!/xmlns:r=/.test(sx.slice(0,600))) sx=sx.replace(/<worksheet\b/,'<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"');
+        var ctx0=await z.file('[Content_Types].xml').async('string');
+        z.file('[Content_Types].xml',ctx0.replace('</Types>','<Override PartName="/'+drawPath+'" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>'));
+      }
+      var drelsPath=drawPath.replace(/drawings\//,'drawings/_rels/')+'.rels',drf=z.file(drelsPath);
+      var drelsX=drf?await drf.async('string'):'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+      var nextId=1; (drawX.match(/<xdr:cNvPr\b[^>]*\bid="(\d+)"/g)||[]).forEach(function(m){ var v=+m.match(/id="(\d+)"/)[1]; if(v>=nextId) nextId=v+1; });
+      var rIdN=1; var freeRid=function(){ while(new RegExp('Id="rId'+rIdN+'"').test(drelsX)) rIdN++; return 'rId'+(rIdN++); };
+      var EMU=9525,anchors='',done=0,total=photoJobs.reduce(function(a,j){ return a+j.ph.length; },0),mi=1;
+      for(var ji=0;ji<photoJobs.length;ji++){
+        var J=photoJobs[ji],span=mergeSpan(J.rowN,J.col),avail=span.reduce(function(a,c){ return a+wOf(c); },0)-6;
+        var cpl=Math.max(8,Math.floor(avail/7)),tl=0;
+        String(J.txt||'').split('\n').forEach(function(line){ tl+=Math.max(1,Math.ceil(line.length/cpl)); });
+        var textH=J.txt?tl*20+4:0,boxW=Math.floor((avail-4)/2),boxH=Math.min(110,Math.max(70,boxW)),lines=Math.ceil(J.ph.length/2);
+        var needPx=textH+4+lines*(boxH+4)+2,curPx=rowHeightPx(J.rowN);
+        if(needPx>curPx) setRowHeight(J.rowN,Math.round(needPx*0.75*100)/100);
+        for(var pj=0;pj<J.ph.length;pj++){
+          done++; if(lbl) lbl('Photos '+done+' / '+total+'…');
+          var im; try{ im=await photoForExport(J.ph[pj]); }catch(e){ warn.push('Une photo n’a pas pu être récupérée (ligne '+J.rowN+').'); continue; }
+          var w=boxW,h=Math.round(boxW*im.h/im.w); if(h>boxH){ h=boxH; w=Math.round(boxH*im.w/im.h); }
+          var x=3+(pj%2)*(boxW+4)+Math.floor((boxW-w)/2),y=textH+4+Math.floor(pj/2)*(boxH+4);
+          // colonne de départ réelle dans la case fusionnée
+          var ci=0,acc=0; while(ci<span.length-1&&x>=acc+wOf(span[ci])){ acc+=wOf(span[ci]); ci++; }
+          var media='plphoto_'+Date.now().toString(36)+'_'+(mi++)+'.jpeg',rid2=freeRid();
+          z.file('xl/media/'+media,im.data.split(',')[1],{base64:true});
+          drelsX=drelsX.replace('</Relationships>','<Relationship Id="'+rid2+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/'+media+'"/></Relationships>');
+          var id=nextId++;
+          anchors+='<xdr:oneCellAnchor><xdr:from><xdr:col>'+span[ci]+'</xdr:col><xdr:colOff>'+Math.round((x-acc)*EMU)+'</xdr:colOff><xdr:row>'+(J.rowN-1)+'</xdr:row><xdr:rowOff>'+Math.round(y*EMU)+'</xdr:rowOff></xdr:from>'
+            +'<xdr:ext cx="'+(w*EMU)+'" cy="'+(h*EMU)+'"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="'+id+'" name="Photo '+id+'"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>'
+            +'<xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="'+rid2+'"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>'
+            +'<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="'+(w*EMU)+'" cy="'+(h*EMU)+'"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>';
+          nPh++;
+        }
+      }
+      drawX=drawX.replace(/<\/xdr:wsDr>\s*$/,anchors+'</xdr:wsDr>');
+      z.file(drawPath,drawX); z.file(drelsPath,drelsX); z.file(relsPath,relsX);
+      var ctx=await z.file('[Content_Types].xml').async('string');
+      if(!/Extension="jpeg"/i.test(ctx)) z.file('[Content_Types].xml',ctx.replace(/<Types\b[^>]*>/,function(m){ return m+'<Default Extension="jpeg" ContentType="image/jpeg"/>'; }));
+    }
+    z.file(sheetPath,sx); z.file('xl/styles.xml',stylesX);
+    var blob=await z.generateAsync({type:'blob',compression:'DEFLATE',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var fn=String((d._src&&d._src.name)||d._file||((d._title||'Punch list')+'.xlsx')).replace(/[\\\/:*?"<>|\r\n]+/g,'_');
+    if(!/\.xls[xm]$/i.test(fn)) fn+='.xlsx';
+    return {blob:blob,fn:fn,warn:warn,changed:changed,photos:nPh};
+  }
+
   // Dossier de fin d'affaire : toutes les punch lists d'une affaire, en .xlsx avec photos
   async function exportAff(aff){
     var r=await DB._c().select('*').eq('aff',aff); if(r.error) throw r.error;
@@ -28190,7 +28438,7 @@ window.PunchList=(function(){
   window.addEventListener('pagehide',function(){ if(S.cur&&Object.keys(S.dirty).length) keepLocal(); });
 
   return {
-    render:render, open:open, back:back, leave:leave, del:del, importer:importer, exportXlsx:exportXlsx, exportAff:exportAff,
+    render:render, open:open, back:back, leave:leave, del:del, importer:importer, exportXlsx:exportXlsx, exportClient:exportClient, _srcAns:_srcAns, _srcPick:_srcPick, _buildClientXlsx:buildClientXlsx, exportAff:exportAff,
     canView:function(){ return ENV.canView(); },
     pending:function(){ return !!(S.cur&&Object.keys(S.dirty).length)||S.queue.length>0; },
     _f:function(k,v){ S[k]=v; if(S.cur) drawDetail(); else drawList(); },
