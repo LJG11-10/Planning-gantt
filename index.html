@@ -3148,6 +3148,7 @@ function downloadDXF(text, filename) {
       '.petool-app .petool-num{display:inline-block;min-width:22px;text-align:center;color:#fff;font-weight:800;border-radius:999px;padding:1px 6px;font-size:11px;}',
       '.petool-app .petool-warn{font-size:10.5px;font-weight:700;color:#B45309;background:#FEF3C7;border-radius:5px;padding:0 5px;}',
       '.petool-app .petool-grp{font-size:10.5px;font-weight:800;color:#2563EB;background:#DBEAFE;border-radius:5px;padding:0 5px;}',
+      '.petool-app .petool-nin{width:46px;text-align:center;font-weight:800;font-size:12px;border:1.5px solid;border-radius:999px;padding:2px 2px;background:#fff;}',
       '.petool-app .petool-unhook{background:none;border:none;color:#9A96B3;cursor:pointer;font-size:13px;}',
       '.petool-app .petool-hookrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:#5A5675;}',
       '.petool-app .petool-hookrow select{background:#F6F5FB;border:1px solid #E4E1F0;border-radius:8px;padding:6px 8px;font-size:12.5px;max-width:280px;}'
@@ -3410,6 +3411,24 @@ function downloadDXF(text, filename) {
         saveState(); paint();
       });
     });
+    // Changer un numéro à la main : les deux PE échangent leur numéro (ordre gardé dans plate.order)
+    container.querySelectorAll(".petool-nin").forEach(function (inp) {
+      inp.addEventListener("change", function () {
+        const p = plates[activeIndex]; if (!p || ro) return;
+        const m = plateMap(p, cabIndex(cabList(folderAff))), keys = [];
+        m.used.forEach(function (s) { if (keys.indexOf(s.key) < 0) keys.push(s.key); });
+        const from = keys.indexOf(inp.getAttribute("data-k")), v = parseInt(inp.value, 10);
+        if (from < 0 || !(v >= 1 && v <= keys.length)) { paint(); return; }
+        const tmp = keys[v - 1]; keys[v - 1] = keys[from]; keys[from] = tmp;
+        p.order = keys; saveState(); paint();
+      });
+      inp.addEventListener("keydown", function (ev) { if (ev.key === "Enter") inp.blur(); });
+    });
+    const numAuto = document.getElementById("petool-num-auto");
+    if (numAuto) numAuto.addEventListener("click", function () {
+      const p = plates[activeIndex]; if (!p || ro) return;
+      p.order = []; saveState(); paint();
+    });
     const hookOk = document.getElementById("petool-hook-ok");
     if (hookOk) hookOk.addEventListener("click", function () {
       const p = plates[activeIndex]; if (!p || ro) return;
@@ -3546,13 +3565,17 @@ function downloadDXF(text, filename) {
   }
   function cabIndex(cl) { const o = {}; (cl ? cl.rows : []).forEach(function (r) { if (r.t && !o[r.t]) o[r.t] = r; }); return o; }
   // Le câble passe par le skid S ? → sens vu de S ('out' = il sort de S, 'in' = il y entre)
+  // (09/11/2026, règle de l'utilisateur) un câble vers « SKID 1 EXT » (éclairage extérieur…) ne passe PAS par une plaque :
+  // il reste sur son skid. Seul un câble entre deux skids DIFFÉRENTS passe par la plaque de chacun (un bout EXT ne compte pas).
   function dirFor(c, S) {
     if (!S) return null;
     const f = normSkid(c.fl), t = normSkid(c.tl);
-    if (f === S) return "out";
-    if (t === S) return "in";
+    if (f === t) return null;
+    if (f === S && !isExtLoc(c.fl)) return "out";
+    if (t === S && !isExtLoc(c.tl)) return "in";
     return null;
   }
+  function passesPlate(c) { return !!(dirFor(c, normSkid(c.fl)) || dirFor(c, normSkid(c.tl))); }
   function otherEnd(c, dir) {
     return dir === "out" ? { loc: c.tl, tag: c.tt, item: c.ti } : { loc: c.fl, tag: c.ft, item: c.fi };
   }
@@ -3604,7 +3627,15 @@ function downloadDXF(text, filename) {
       else rows.push({ side: side(s.kind), y: s.y, items: [s] });
     });
     let n = 0;
-    rows.forEach(function (r) { r.items.sort(function (a, b) { return a.x - b.x; }).forEach(function (s) { s.n = ++n; }); });
+    const auto = [];
+    rows.forEach(function (r) { r.items.sort(function (a, b) { return a.x - b.x; }).forEach(function (s) { auto.push(s); }); });
+    // (09/11/2026) numéros changés à la main : plate.order = clés des PE dans l'ordre voulu ; les PE absentes de la liste suivent, dans l'ordre automatique
+    const byKey = {};
+    auto.forEach(function (s) { byKey[s.key] = s; });
+    const fin = [];
+    (Array.isArray(p.order) ? p.order : []).forEach(function (k) { if (byKey[k] && fin.indexOf(byKey[k]) < 0) fin.push(byKey[k]); });
+    auto.forEach(function (s) { if (fin.indexOf(s) < 0) fin.push(s); });
+    fin.forEach(function (s) { s.n = ++n; });
     const used = [];
     usedS.sort(function (a, b) { return a.n - b.n; }).forEach(function (s) {
       s.cables.forEach(function (c) { used.push({ i: s.i, key: s.key, kind: s.kind, sizeId: s.sizeId, x: s.x, y: s.y, n: s.n, cable: c, dir: dirFor(c, S), nIn: s.cables.length }); });
@@ -3679,7 +3710,7 @@ function downloadDXF(text, filename) {
     const idx = cabIndex(cl), list = peek(aff), out = {};
     cl.rows.forEach(function (c) {
       [normSkid(c.fl), normSkid(c.tl)].forEach(function (S) {
-        if (!S || (out[S] && out[S].all[c.t])) return;
+        if (!S || !dirFor(c, S) || (out[S] && out[S].all[c.t])) return;
         out[S] = out[S] || { S: S, all: {}, rows: [] };
         out[S].all[c.t] = true;
         out[S].rows.push({ c: c, dir: dirFor(c, S), where: null });
@@ -3762,8 +3793,9 @@ function downloadDXF(text, filename) {
     P.cableList = { name: file.name, at: Date.now(), by: (window.CURRENT_USER_NOM || (window.CURRENT_USER && CURRENT_USER.email) || ""), total: res.total, rows: res.rows };
     const a = autoAssign(folderAff);
     saveState(); paint();
-    const nE = res.rows.filter(function (c) { return kindOfCable(c) === "E"; }).length;
-    let msg = "Carnet importé : " + res.rows.length + " câbles interco (" + nE + " puissance, " + (res.rows.length - nE) + " instrum) sur " + res.total + " câbles.";
+    const thru = res.rows.filter(passesPlate), nE = thru.filter(function (c) { return kindOfCable(c) === "E"; }).length;
+    let msg = "Carnet importé : " + thru.length + " câbles passent par les plaques (" + nE + " puissance, " + (thru.length - nE) + " instrum) sur " + res.total + " câbles." +
+      (res.rows.length > thru.length ? "\n" + (res.rows.length - thru.length) + " câble(s) « Interco OK » vers « EXT » restent sur leur skid : pas sur une plaque." : "");
     if (a.pending.length) { alert(msg + "\n\n" + a.pending.length + " câble(s) n'ont pas trouvé de presse-étoupe libre de leur taille : choisissez où les raccrocher."); askPending(); }
     else alert(msg + "\n\nTous les câbles sont raccrochés.");
   }
@@ -3857,7 +3889,7 @@ function downloadDXF(text, filename) {
     } else {
       const ck = checkSkids(folderAff);
       const d = new Date(cl.at || 0);
-      h += '<div class="petool-carnet-h"><span>🔌 <b>' + escapeHtml(cl.name) + '</b> · ' + cl.rows.length + ' câbles interco · ' + (cl.at ? d.toLocaleDateString("fr-FR") : "") + '</span><span class="petool-carnet-b">' +
+      h += '<div class="petool-carnet-h"><span>🔌 <b>' + escapeHtml(cl.name) + '</b> · ' + cl.rows.filter(passesPlate).length + ' câbles interco · ' + (cl.at ? d.toLocaleDateString("fr-FR") : "") + '</span><span class="petool-carnet-b">' +
         (!ro ? '<button class="petool-btn-secondary" id="petool-cab-imp" title="Remplacer par une nouvelle version du carnet">⬆ Remplacer</button>' : '') +
         '<button class="petool-btn-primary" id="petool-cab-pdf">⬇ PDF des plaques</button></span></div><div class="petool-skids">';
       ck.forEach(function (o) {
@@ -3891,10 +3923,16 @@ function downloadDXF(text, filename) {
       (spare.length ? ' <span class="petool-hint" style="margin:0 0 0 6px">+ ' + spare.length + ' spare</span>' : '') + '</div>';
     if (!m.used.length) h += '<p class="petool-hint">Aucun câble raccroché.</p>';
     else {
+      if (!ro) h += '<p class="petool-hint" style="margin:0 0 6px">Pour changer un numéro, tapez le nouveau dans la colonne N° : les deux PE échangent leur numéro.' +
+        (Array.isArray(p.order) && p.order.length ? ' <button class="petool-addlink" id="petool-num-auto" style="padding:0">↺ Numérotation automatique</button>' : '') + '</p>';
       h += '<table class="petool-ctab"><thead><tr><th>N°</th><th>PE</th><th>Repère</th><th>Câble</th><th>Sens</th>' + (!ro ? '<th></th>' : '') + '</tr></thead><tbody>';
+      let lastKey = null;
       m.used.forEach(function (s) {
         const c = s.cable, k = kindOfCable(c), oe = otherEnd(c, s.dir), wp = wantPe(c), bad = wp && wp !== s.sizeId;
-        h += '<tr><td><span class="petool-num" style="background:' + KCOL[k] + '">' + s.n + '</span></td>' +
+        const first = s.key !== lastKey; lastKey = s.key;
+        h += '<tr><td>' + (!ro && first
+            ? '<input class="petool-nin" type="number" min="1" max="' + m.nPE + '" value="' + s.n + '" data-k="' + escapeHtml(s.key) + '" style="border-color:' + KCOL[k] + ';color:' + KCOL[k] + '" title="Changer le numéro de cette PE">'
+            : '<span class="petool-num" style="background:' + KCOL[k] + '">' + s.n + '</span>') + '</td>' +
           '<td>' + escapeHtml(peName(s.sizeId)) + (s.nIn > 1 ? ' <span class="petool-grp" title="' + s.nIn + ' câbles regroupés dans cette PE">×' + s.nIn + '</span>' : '') +
           (bad ? ' <span class="petool-warn" title="' + (grpOf(c) ? 'Ce câble se regroupe en ' : 'Le carnet indique ') + escapeHtml(peName(wp)) + '">≠ ' + escapeHtml(peName(wp)) + '</span>' : '') + '</td>' +
           '<td><b>' + escapeHtml(c.t) + '</b></td><td>' + escapeHtml([c.ty, c.sec].filter(Boolean).join(" ")) + '</td>' +
@@ -3935,7 +3973,7 @@ function downloadDXF(text, filename) {
       s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + sp.perc + '" fill="#fff" stroke="' + (used ? "#1E293B" : "#CBD5E1") + '" stroke-width="0.8"/>';
       if (used) s += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(sp.perc * 1.15, 16) + '" font-weight="800" fill="' + col + '">' + sl.n + '</text>';
       if (used && sl.cables.length > 1) s += '<text x="' + cx + '" y="' + (cy + (sp.perc + sp.enc2) / 2) + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min((sp.enc2 - sp.perc) * 0.8, 7) + '" font-weight="800" fill="' + col + '">×' + sl.cables.length + '</text>';
-      else s += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(sp.perc * 0.62, 8) + '" fill="#94A3B8">spare</text>';
+      // (09/11/2026, demande de l'utilisateur) plus de mot « spare » dans le dessin : la PE libre reste en pointillés gris (voir la légende)
     });
     return s + '</svg>';
   }
@@ -3975,7 +4013,7 @@ function downloadDXF(text, filename) {
       pn += m.used.length > 22 ? chunks : 1;
     });
     sum += '</tbody></table>';
-    const totC = cl.rows.length, totOk = ck.reduce(function (s, o) { return s + o.nOk; }, 0), totRows = ck.reduce(function (s, o) { return s + o.rows.length; }, 0);
+    const totC = cl.rows.filter(passesPlate).length, totOk = ck.reduce(function (s, o) { return s + o.nOk; }, 0), totRows = ck.reduce(function (s, o) { return s + o.rows.length; }, 0);
     pages.push('<section class="page cover">' + head("Plaques presse-étoupes", "Câbles d’interconnexion entre skids") +
       '<div class="kpis"><div><b>' + ready.length + '</b><span>plaques</span></div><div><b>' + totC + '</b><span>câbles interco</span></div>' +
       '<div><b>' + ck.length + '</b><span>skids</span></div><div class="' + (totOk === totRows ? 'ok' : 'ko') + '"><b>' + totOk + ' / ' + totRows + '</b><span>passages raccrochés</span></div></div>' +
