@@ -17035,6 +17035,7 @@ window._gcSel=null;
 try{window._gcShowCmt=localStorage.getItem('gcShowCmt')!=='0';}catch(e){window._gcShowCmt=true;}
 try{window._gcShowWE=localStorage.getItem('gcShowWE')==='1';}catch(e){window._gcShowWE=false;}
 try{window._gcShowH=localStorage.getItem('gcShowH')==='1';}catch(e){window._gcShowH=false;}
+try{window._gcHidePrev=localStorage.getItem('gcHidePrev')==='1';}catch(e){window._gcHidePrev=false;}
 window._gcColl=(function(){try{return JSON.parse(localStorage.getItem('gcColl')||'{}')||{};}catch(e){return {};}})();
 function gcWEW(DW){return window._gcShowWE?DW:0;}
 function gcWeekW(DW){return 5*DW+2*gcWEW(DW);}
@@ -17106,6 +17107,8 @@ function _gcActRowHtml(row,DW,NC,_MG,winStart,winEnd,lvl,path){
   var prevSet=_pv?_pv.prev:getTaskDays5(row,'prev'),reelSet=_pv?_pv.reel:getTaskDays5(row,'reel');
   var pS={},rS={};prevSet.forEach(function(x){pS[x]=1;});reelSet.forEach(function(x){rS[x]=1;});
   var st=gcActState(row),C=GC_ST[st.st],sel=window._gcSel===row.id,paint=!!window._gcPaint;
+  // (09/11/2026) interrupteur « Prévu » coupé : barres Prévu non dessinées (sauf en mode peinture, pour voir ce qu'on peint)
+  if(window._gcHidePrev&&!paint)pS={};
   var todayAbs=gcTodayAbs(),tw=(typeof TODAY!=='undefined'&&TODAY)?TODAY.w:-1;
   var showCmt=window._gcShowCmt!==false;
   if(typeof winStart!=='number')winStart=0;
@@ -17227,7 +17230,9 @@ function gcGroupRowHtml(e,DW,NC,acts){
     return '<tr class="gc-row" data-gid="'+r.id+'">'+lbl+cells+'</tr>';
   }
   // Barre de résumé : de la première à la dernière barre Prévu des tâches, remplie selon le %
-  var days=[];acts.forEach(function(a){days=days.concat(getTaskDays5(a,'prev'));});
+  // (09/11/2026) Prévu masqué : la barre de résumé suit les barres Réel
+  var _sumMode=(window._gcHidePrev&&!window._gcPaint)?'reel':'prev';
+  var days=[];acts.forEach(function(a){days=days.concat(getTaskDays5(a,_sumMode));});
   var bar='';
   if(days.length){
     var mn=Math.min.apply(null,days),mx=Math.max.apply(null,days);
@@ -17414,11 +17419,11 @@ function gcRenderToolbar(compact){
       +'<button type="button" onclick="printGanttPlanning()" title="Imprimer le planning par jour, découpé proprement en pages A4 / A3 paysage" style="height:32px;padding:0 12px;border-radius:8px;border:1px solid #E4E1F0;background:#fff;color:#4A4766;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap">🖨 Imprimer</button>'
       +(view==='week'?'<div style="display:flex;gap:6px;flex-wrap:wrap">'+fl+'</div>':'')
       +'<div style="flex-grow:1"></div>'+leg;
-    var tgs=view==='week'?tg('gcToggleCmt()',window._gcShowCmt!==false,'Commentaires','Texte des commentaires à côté des barres')+tg('gcToggleWE()',!!window._gcShowWE,'Week-ends','Afficher les samedis et dimanches (pour marquer un week-end travaillé)')
+    var tgs=view==='week'?tg('gcTogglePrev()',!window._gcHidePrev,'Barres Prévu','Afficher les barres Prévu (décocher pour ne voir que le Réel)')+tg('gcToggleCmt()',window._gcShowCmt!==false,'Commentaires','Texte des commentaires à côté des barres')+tg('gcToggleWE()',!!window._gcShowWE,'Week-ends','Afficher les samedis et dimanches (pour marquer un week-end travaillé)')
         +((typeof hasView==='function'&&hasView('budget_gantt'))?tg('gcToggleH()',!!window._gcShowH,'Heures','Heures des feuilles d’heure / budget, sur chaque sous-phase'):''):'';
     // Pas la place sur une ligne (détail de tâche ouvert, petit écran) : les interrupteurs passent dans « Affichage ▾ »
     if(compact&&tgs){
-      var nOn=(window._gcShowCmt!==false?1:0)+(window._gcShowWE?1:0)+(window._gcShowH&&typeof hasView==='function'&&hasView('budget_gantt')?1:0);
+      var nOn=(!window._gcHidePrev?1:0)+(window._gcShowCmt!==false?1:0)+(window._gcShowWE?1:0)+(window._gcShowH&&typeof hasView==='function'&&hasView('budget_gantt')?1:0);
       h+='<div style="position:relative"><button type="button" onclick="event.stopPropagation();gcDispMenu()" style="height:32px;padding:0 12px;border-radius:9px;border:1px solid #E4E1F0;background:'+(window._gcDispOpen?'#F1EFFC':'#fff')+';color:#4A4766;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">Affichage'+(nOn?' ('+nOn+')':'')+' ▾</button>'
         +(window._gcDispOpen?'<div id="gc-dispmenu" onclick="event.stopPropagation()" style="position:absolute;right:0;top:38px;z-index:60;background:#fff;border:1px solid #E4E1F0;border-radius:12px;box-shadow:0 12px 32px rgba(30,20,90,.18);padding:8px 12px;display:flex;flex-direction:column;gap:4px;min-width:190px">'+tgs+'</div>':'')+'</div>';
     }else h+=tgs;
@@ -17447,6 +17452,7 @@ function gcSetPaint(on){window._gcPaint=!!on;if(on){window._gcSel=null;}_reRende
 function gcSetFilter(f){window._gcFilter=f;_reRenderGanttKeepScroll();}
 function gcToggleWE(){window._gcShowWE=!window._gcShowWE;try{localStorage.setItem('gcShowWE',window._gcShowWE?'1':'0');}catch(e){}renderGantt();}
 function gcToggleH(){window._gcShowH=!window._gcShowH;try{localStorage.setItem('gcShowH',window._gcShowH?'1':'0');}catch(e){}_reRenderGanttKeepScroll();}
+function gcTogglePrev(){window._gcHidePrev=!window._gcHidePrev;try{localStorage.setItem('gcHidePrev',window._gcHidePrev?'1':'0');}catch(e){}_reRenderGanttKeepScroll();gcRenderToolbar();}
 function gcToggleCmt(){window._gcShowCmt=!(window._gcShowCmt!==false);try{localStorage.setItem('gcShowCmt',window._gcShowCmt?'1':'0');}catch(e){}_reRenderGanttKeepScroll();gcRenderToolbar();}
 // Bouton « Créer la structure » (affaire vide) — remplacé par le mode « Modifier la structure » quand il est prêt
 function gcStartStructure(){if(typeof gcSetStructure==='function')gcSetStructure(true);else openPlanEditor();}
