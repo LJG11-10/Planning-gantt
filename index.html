@@ -3043,14 +3043,15 @@ function downloadDXF(text, filename) {
         if (!spec) return;
         const sl = cm && cm.byI[pi], cab = sl && sl.cable;
         const col = cab ? KCOL[kindOfCable(cab)] : "#e2793a";
-        const tip = cab ? '<title>' + escapeHtml(sl.n + " · " + cab.t + " · " + [cab.ty, cab.sec].filter(Boolean).join(" ") + " · " + peName(p.sizeId)) + '</title>'
+        const tip = cab ? '<title>' + escapeHtml(sl.n + " · " + sl.cables.map(function (c) { return c.t; }).join(", ") + " · " + [cab.ty, cab.sec].filter(Boolean).join(" ") + " · " + peName(p.sizeId) + (sl.cables.length > 1 ? " (" + sl.cables.length + " câbles regroupés)" : ""))+ '</title>'
                         : (cm ? '<title>' + escapeHtml(peName(p.sizeId) + " · spare") + '</title>' : '');
         svg += '<g class="petool-pe" data-i="' + pi + '" transform="translate(' + p.x + ',' + (H - p.y) + ')">' + tip +
                  '<circle class="petool-hit" r="' + spec.enc2 + '" fill="rgba(226,121,58,0.001)" stroke="none"/>' +
                  '<circle r="' + spec.enc2 + '" fill="' + (cab ? col + '22' : 'none') + '" stroke="' + (cm && !cab ? '#6b7280' : col) + '" stroke-width="1.1" opacity="0.9"' + (cm && !cab ? ' stroke-dasharray="3 2"' : '') + '/>' +
                  '<circle r="' + spec.enc1 + '" fill="none" stroke="' + (cm && !cab ? '#6b7280' : col) + '" stroke-width="0.6" opacity="0.5"/>' +
                  '<circle r="' + spec.perc + '" fill="none" stroke="#c9cdd3" stroke-width="1.1"/>' +
-                 (cab ? '<text text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(spec.perc * 1.1, 14) + '" font-weight="800" fill="#fff">' + sl.n + '</text>'
+                 (cab ? '<text text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(spec.perc * 1.1, 14) + '" font-weight="800" fill="#fff">' + sl.n + '</text>' +
+                        (sl.cables.length > 1 ? '<text y="' + ((spec.perc + spec.enc2) / 2) + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min((spec.enc2 - spec.perc) * 0.8, 7) + '" font-weight="800" fill="' + col + '">×' + sl.cables.length + '</text>' : '')
                       : '<text text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(spec.enc2 * 0.55, 11) + '" fill="' + (cm ? '#6b7280' : '#c9cdd3') + '">' + spec.name.replace('ISO ', '') + '</text>') +
                '</g>';
       });
@@ -3146,6 +3147,7 @@ function downloadDXF(text, filename) {
       '.petool-app .petool-ctab td{padding:5px 6px;border-bottom:1px solid #F1EFF8;vertical-align:middle;}',
       '.petool-app .petool-num{display:inline-block;min-width:22px;text-align:center;color:#fff;font-weight:800;border-radius:999px;padding:1px 6px;font-size:11px;}',
       '.petool-app .petool-warn{font-size:10.5px;font-weight:700;color:#B45309;background:#FEF3C7;border-radius:5px;padding:0 5px;}',
+      '.petool-app .petool-grp{font-size:10.5px;font-weight:800;color:#2563EB;background:#DBEAFE;border-radius:5px;padding:0 5px;}',
       '.petool-app .petool-unhook{background:none;border:none;color:#9A96B3;cursor:pointer;font-size:13px;}',
       '.petool-app .petool-hookrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:#5A5675;}',
       '.petool-app .petool-hookrow select{background:#F6F5FB;border:1px solid #E4E1F0;border-radius:8px;padding:6px 8px;font-size:12.5px;max-width:280px;}'
@@ -3403,7 +3405,8 @@ function downloadDXF(text, filename) {
     container.querySelectorAll(".petool-unhook").forEach(function (b) {
       b.addEventListener("click", function () {
         const p = plates[activeIndex]; if (!p || ro || !p.cab) return;
-        delete p.cab[b.getAttribute("data-k")];
+        const k = b.getAttribute("data-k"), t = b.getAttribute("data-t");
+        setTags(p.cab, k, tagsAt(p.cab, k).filter(function (x) { return x !== t; })); // PE regroupée : seulement ce câble
         saveState(); paint();
       });
     });
@@ -3412,9 +3415,12 @@ function downloadDXF(text, filename) {
       const p = plates[activeIndex]; if (!p || ro) return;
       const t = document.getElementById("petool-hook-c").value, ss = document.getElementById("petool-hook-s");
       const key = ss.value, sk = ss.options[ss.selectedIndex] && ss.options[ss.selectedIndex].getAttribute("data-k");
-      const c = cabIndex(cabList(folderAff))[t]; if (!c || !key) return;
+      const idx = cabIndex(cabList(folderAff)), c = idx[t]; if (!c || !key) return;
       if (sk && sk !== kindOfCable(c)) { alert("« " + t + " » est un câble " + KLBL[kindOfCable(c)].toLowerCase() + " : choisissez une PE du côté " + KLBL[kindOfCable(c)] + "."); return; }
-      p.cab = p.cab || {}; p.cab[key] = t;
+      p.cab = p.cab || {};
+      const slot = slotsOf(p).find(function (s) { return s.key === key; });
+      if (!slot || !canAdd(p.cab, slot, c, idx)) { alert("Cette PE contient déjà un câble : seuls les câbles " + GROUPS.map(function (g) { return g.id; }).join(", ") + " se regroupent (" + GROUPS.map(function (g) { return g.max + " max en " + peName(g.pe); }).join(", ") + ")."); return; }
+      setTags(p.cab, key, tagsAt(p.cab, key).concat([t]));
       saveState(); paint();
     });
   }
@@ -3563,28 +3569,49 @@ function downloadDXF(text, filename) {
       return { i: i, key: pl.sizeId + "#" + cnt[pl.sizeId], kind: kind, sizeId: pl.sizeId, x: pl.x, y: pl.y };
     });
   }
-  // Numérotation : seulement les PE qui ont un câble, dans l'ordre de lecture (instrum à gauche puis puissance), les spares sans n°
+  // (09/11/2026, demande de l'utilisateur) câbles REGROUPÉS dans une même PE : réseau 6XV1840-2AH10 = 4 maximum par ISO 32
+  // (quelle que soit la taille écrite dans le carnet, quelle que soit leur destination).
+  const GROUPS = [{ id: "6XV1840", re: /6XV1840-?2AH10/i, pe: "ISO32", max: 4 }];
+  function grpOf(c) { const s = (c.ty || "") + " " + (c.sec || ""); return GROUPS.find(function (g) { return g.re.test(s); }) || null; }
+  function wantPe(c) { const g = grpOf(c); return g ? g.pe : peIdOf(c.pe); }
+  // plate.cab[clé] = un repère, ou une liste de repères pour une PE regroupée
+  function tagsAt(cab, k) { const v = cab && cab[k]; return v == null || v === "" ? [] : Array.isArray(v) ? v.slice() : [v]; }
+  function setTags(cab, k, a) { if (!a.length) delete cab[k]; else cab[k] = a.length === 1 ? a[0] : a; }
+  function canAdd(cab, s, c, idx) {
+    if (s.kind !== kindOfCable(c)) return false;
+    const tags = tagsAt(cab, s.key);
+    if (!tags.length) return true;
+    const g = grpOf(c);
+    if (!g || s.sizeId !== g.pe || tags.length >= g.max || tags.indexOf(c.t) >= 0) return false;
+    return tags.every(function (t) { const o = idx[t]; return o && grpOf(o) === g; });
+  }
+  // Numérotation : seulement les PE qui ont un câble, dans l'ordre de lecture (instrum à gauche puis puissance), les spares sans n°.
+  // used = une ligne PAR CÂBLE (les câbles d'une PE regroupée ont le même n°).
   function plateMap(p, idx) {
     const slots = slotsOf(p), cab = p.cab || {}, S = skidOfPlate(p);
-    const used = [];
+    const usedS = [];
     slots.forEach(function (s) {
-      const t = cab[s.key], c = t && idx[t];
-      if (c && eligible(c, p)) { s.cable = c; s.dir = dirFor(c, S); used.push(s); }
+      const cs = tagsAt(cab, s.key).map(function (t) { return idx[t]; }).filter(function (c) { return c && eligible(c, p); });
+      if (cs.length) { s.cables = cs; s.cable = cs[0]; s.dir = dirFor(cs[0], S); usedS.push(s); }
     });
     const side = function (k) { return p.content === "both" ? (k === "I" ? 0 : 1) : 0; };
-    used.sort(function (a, b) { return side(a.kind) - side(b.kind) || (b.y - a.y) || (a.x - b.x); });
+    usedS.sort(function (a, b) { return side(a.kind) - side(b.kind) || (b.y - a.y) || (a.x - b.x); });
     // regroupement par rangée (tolérance 5 mm sur la hauteur)
     const rows = [];
-    used.forEach(function (s) {
+    usedS.forEach(function (s) {
       const last = rows[rows.length - 1];
       if (last && last.side === side(s.kind) && Math.abs(last.y - s.y) <= 5) last.items.push(s);
       else rows.push({ side: side(s.kind), y: s.y, items: [s] });
     });
     let n = 0;
     rows.forEach(function (r) { r.items.sort(function (a, b) { return a.x - b.x; }).forEach(function (s) { s.n = ++n; }); });
+    const used = [];
+    usedS.sort(function (a, b) { return a.n - b.n; }).forEach(function (s) {
+      s.cables.forEach(function (c) { used.push({ i: s.i, key: s.key, kind: s.kind, sizeId: s.sizeId, x: s.x, y: s.y, n: s.n, cable: c, dir: dirFor(c, S), nIn: s.cables.length }); });
+    });
     const byI = {};
     slots.forEach(function (s) { byI[s.i] = s; });
-    return { slots: slots, used: used.sort(function (a, b) { return a.n - b.n; }), byI: byI, S: S };
+    return { slots: slots, used: used, nPE: usedS.length, byI: byI, S: S };
   }
 
   // Raccroche automatiquement les câbles du carnet (garde ce qui est déjà raccroché et toujours valable).
@@ -3594,7 +3621,7 @@ function downloadDXF(text, filename) {
     const idx = cabIndex(cl), list = peek(aff);
     const placed = {}; // skid → { repère: true }
     let changed = false;
-    // 1. nettoyage : repère disparu, plus concerné, PE inexistante, ou déjà sur une autre plaque du même skid
+    // 1. nettoyage : repère disparu, plus concerné, PE inexistante, déjà sur une autre plaque du même skid, PE trop remplie
     list.forEach(function (p) {
       if (!p.cab) return;
       const S = skidOfPlate(p), slots = slotsOf(p), keys = {};
@@ -3602,12 +3629,21 @@ function downloadDXF(text, filename) {
       slots.forEach(function (s) { keys[s.key] = s; });
       placed[S] = placed[S] || {};
       Object.keys(p.cab).forEach(function (k) {
-        const t = p.cab[k], c = idx[t], s = keys[k];
-        if (!c || !s || !eligible(c, p) || s.kind !== kindOfCable(c) || placed[S][t]) { delete p.cab[k]; changed = true; return; }
-        placed[S][t] = true;
+        const s = keys[k], keep = [];
+        tagsAt(p.cab, k).forEach(function (t) {
+          const c = idx[t];
+          if (!c || !s || !eligible(c, p) || placed[S][t]) return;
+          const tmp = {}; setTags(tmp, k, keep);
+          if (!canAdd(tmp, s, c, idx)) return;
+          keep.push(t); placed[S][t] = true;
+        });
+        const before = JSON.stringify(p.cab[k]);
+        setTags(p.cab, k, keep);
+        if (JSON.stringify(p.cab[k]) !== before) changed = true;
       });
     });
-    // 2. câbles pas encore raccrochés → PE libre de la même taille, même côté, sur une plaque du skid
+    // 2. câbles pas encore raccrochés → PE de la bonne taille, même côté, sur une plaque du skid
+    //    (câble regroupé : d'abord une PE de son groupe pas encore pleine, sinon une PE vide)
     const pending = [];
     const skids = {};
     cl.rows.forEach(function (c) { [normSkid(c.fl), normSkid(c.tl)].forEach(function (S) { if (S) skids[S] = true; }); });
@@ -3615,16 +3651,22 @@ function downloadDXF(text, filename) {
       const plS = list.filter(function (p) { return skidOfPlate(p) === S && p.result && p.result.ok; });
       cl.rows.forEach(function (c) {
         if (!dirFor(c, S) || (placed[S] && placed[S][c.t])) return;
-        const want = peIdOf(c.pe), k = kindOfCable(c);
-        let done = false;
-        for (let pi = 0; pi < plS.length && !done; pi++) {
-          const p = plS[pi];
-          if (kindsOfPlate(p).indexOf(k) < 0) continue;
-          p.cab = p.cab || {};
-          const s = slotsOf(p).find(function (s) { return s.sizeId === want && s.kind === k && !p.cab[s.key]; });
-          if (s) { p.cab[s.key] = c.t; placed[S] = placed[S] || {}; placed[S][c.t] = true; done = true; changed = true; }
-        }
-        if (!done) pending.push({ c: c, S: S });
+        const want = wantPe(c), k = kindOfCable(c);
+        let target = null;
+        [true, false].forEach(function (partial) {
+          for (let pi = 0; pi < plS.length && !target; pi++) {
+            const p = plS[pi];
+            if (kindsOfPlate(p).indexOf(k) < 0) continue;
+            const cab = p.cab || {};
+            const s = slotsOf(p).find(function (s) { return s.sizeId === want && (tagsAt(cab, s.key).length > 0) === partial && canAdd(cab, s, c, idx); });
+            if (s) target = { p: p, s: s };
+          }
+        });
+        if (target) {
+          target.p.cab = target.p.cab || {};
+          setTags(target.p.cab, target.s.key, tagsAt(target.p.cab, target.s.key).concat([c.t]));
+          placed[S] = placed[S] || {}; placed[S][c.t] = true; changed = true;
+        } else pending.push({ c: c, S: S });
       });
     });
     if (changed) saveState();
@@ -3728,17 +3770,21 @@ function downloadDXF(text, filename) {
 
   // ── Fenêtre « câbles à raccrocher » ──
   function freeSlotsFor(c, S) {
-    const k = kindOfCable(c), want = peIdOf(c.pe), out = [];
+    const k = kindOfCable(c), want = wantPe(c), out = [], idx = cabIndex(cabList(folderAff));
     peek(folderAff).forEach(function (p) {
       if (skidOfPlate(p) !== S || kindsOfPlate(p).indexOf(k) < 0) return;
       const cab = p.cab || {};
-      slotsOf(p).forEach(function (s) { if (s.kind === k && !cab[s.key]) out.push({ p: p, s: s }); });
+      slotsOf(p).forEach(function (s) { if (canAdd(cab, s, c, idx)) out.push({ p: p, s: s, fill: tagsAt(cab, s.key).length }); });
     });
     const d = function (id) { return Math.abs(diamOf(id) - diamOf(want)); };
-    out.sort(function (a, b) { return d(a.s.sizeId) - d(b.s.sizeId) || String(a.p.name).localeCompare(String(b.p.name)); });
-    // une seule ligne par plaque et par taille (la 1re PE libre), avec le nombre de PE libres
+    out.sort(function (a, b) { return (b.fill > 0) - (a.fill > 0) || d(a.s.sizeId) - d(b.s.sizeId) || String(a.p.name).localeCompare(String(b.p.name)); });
+    // PE vides : une seule ligne par plaque et par taille (la 1re), avec le nombre de PE libres ; PE regroupée pas pleine : sa propre ligne
     const seen = {}, uniq = [];
-    out.forEach(function (f) { const k = f.p.id + "|" + f.s.sizeId; if (seen[k]) { seen[k].n++; return; } f.n = 1; seen[k] = f; uniq.push(f); });
+    out.forEach(function (f) {
+      f.v = f.p.id + "|" + f.s.sizeId + "|" + (f.fill ? f.s.key : "");
+      if (seen[f.v]) { seen[f.v].n++; return; }
+      f.n = 1; seen[f.v] = f; uniq.push(f);
+    });
     return uniq;
   }
   function askPending() {
@@ -3752,11 +3798,12 @@ function downloadDXF(text, filename) {
     a.pending.forEach(function (x, i) {
       const c = x.c, k = kindOfCable(c), dir = dirFor(c, x.S), oe = otherEnd(c, dir), fr = freeSlotsFor(c, x.S);
       h += '<div class="pecm-row"><div class="pecm-c"><div><span class="pecm-k" style="background:' + KCOL[k] + '">' + escapeHtml(KLBL[k]) + '</span><b>' + escapeHtml(c.t) + '</b></div>' +
-        '<small>' + escapeHtml([c.ty, c.sec].filter(Boolean).join(" ")) + ' · carnet : <b>' + escapeHtml(c.pe ? peName(peIdOf(c.pe)) : "PE non précisée") + '</b></small>' +
+        '<small>' + escapeHtml([c.ty, c.sec].filter(Boolean).join(" ")) + ' · ' + (grpOf(c) ? '<b>regroupé par ' + grpOf(c).max + ' en ' + escapeHtml(peName(grpOf(c).pe)) + '</b>' : 'carnet : <b>' + escapeHtml(c.pe ? peName(peIdOf(c.pe)) : "PE non précisée") + '</b>') + '</small>' +
         '<small>' + escapeHtml(x.S) + (dir === "out" ? " → " : " ← ") + escapeHtml(oe.loc || "?") + (oe.tag ? " (" + escapeHtml(oe.tag) + ")" : "") + '</small></div>';
       if (fr.length) {
         h += '<select class="pecm-sel" data-i="' + i + '"><option value="">— Laisser de côté —</option>' + fr.map(function (f, j) {
-          return '<option value="' + escapeHtml(f.p.id + "|" + f.s.sizeId) + '">' + escapeHtml(f.p.name) + ' — ' + escapeHtml(peName(f.s.sizeId)) + ' (' + f.n + ' libre' + (f.n > 1 ? 's' : '') + ')</option>';
+          return '<option value="' + escapeHtml(f.v) + '">' + escapeHtml(f.p.name) + ' — ' + escapeHtml(peName(f.s.sizeId)) +
+            (f.fill ? ' (avec ' + f.fill + ' câble' + (f.fill > 1 ? 's' : '') + ' du même type, ' + f.fill + '/' + grpOf(x.c).max + ')' : ' (' + f.n + ' libre' + (f.n > 1 ? 's' : '') + ')') + '</option>';
         }).join("") + '</select>';
       } else {
         h += '<div class="pecm-none">Aucune PE libre sur une plaque ' + escapeHtml(KLBL[k]) + ' du ' + escapeHtml(x.S) + '. Ajoutez-en une sur la plaque, ou créez la plaque.</div>';
@@ -3789,9 +3836,9 @@ function downloadDXF(text, filename) {
         if (sel.value === "") return;
         const x = a.pending[+sel.getAttribute("data-i")], v = String(sel.value).split("|");
         // 1re PE encore libre de cette taille sur cette plaque (recalculée : plusieurs câbles peuvent viser la même taille)
-        const f = freeSlotsFor(x.c, x.S).find(function (f) { return f.p.id === v[0] && f.s.sizeId === v[1]; });
+        const f = freeSlotsFor(x.c, x.S).find(function (f) { return f.p.id === v[0] && f.s.sizeId === v[1] && (!v[2] || f.s.key === v[2]); });
         if (!f) { left.push(x.c.t); return; }
-        f.p.cab = f.p.cab || {}; f.p.cab[f.s.key] = x.c.t;
+        f.p.cab = f.p.cab || {}; setTags(f.p.cab, f.s.key, tagsAt(f.p.cab, f.s.key).concat([x.c.t]));
       });
       if (left.length) alert("Plus de PE libre de la taille choisie pour : " + left.join(", ") + ". Ces câbles restent à raccrocher.");
       saveState(); close();
@@ -3846,20 +3893,28 @@ function downloadDXF(text, filename) {
     else {
       h += '<table class="petool-ctab"><thead><tr><th>N°</th><th>PE</th><th>Repère</th><th>Câble</th><th>Sens</th>' + (!ro ? '<th></th>' : '') + '</tr></thead><tbody>';
       m.used.forEach(function (s) {
-        const c = s.cable, k = kindOfCable(c), oe = otherEnd(c, s.dir), bad = peIdOf(c.pe) && peIdOf(c.pe) !== s.sizeId;
+        const c = s.cable, k = kindOfCable(c), oe = otherEnd(c, s.dir), wp = wantPe(c), bad = wp && wp !== s.sizeId;
         h += '<tr><td><span class="petool-num" style="background:' + KCOL[k] + '">' + s.n + '</span></td>' +
-          '<td>' + escapeHtml(peName(s.sizeId)) + (bad ? ' <span class="petool-warn" title="Le carnet indique ' + escapeHtml(peName(peIdOf(c.pe))) + '">≠ ' + escapeHtml(peName(peIdOf(c.pe))) + '</span>' : '') + '</td>' +
+          '<td>' + escapeHtml(peName(s.sizeId)) + (s.nIn > 1 ? ' <span class="petool-grp" title="' + s.nIn + ' câbles regroupés dans cette PE">×' + s.nIn + '</span>' : '') +
+          (bad ? ' <span class="petool-warn" title="' + (grpOf(c) ? 'Ce câble se regroupe en ' : 'Le carnet indique ') + escapeHtml(peName(wp)) + '">≠ ' + escapeHtml(peName(wp)) + '</span>' : '') + '</td>' +
           '<td><b>' + escapeHtml(c.t) + '</b></td><td>' + escapeHtml([c.ty, c.sec].filter(Boolean).join(" ")) + '</td>' +
           '<td>' + (s.dir === "out" ? '↗ vers ' : '↘ de ') + escapeHtml(isExtLoc(oe.loc) ? oe.loc : normSkid(oe.loc) || oe.loc || "?") + '</td>' +
-          (!ro ? '<td><button class="petool-unhook" data-k="' + escapeHtml(s.key) + '" title="Décrocher ce câble (la PE devient spare)">✕</button></td>' : '') + '</tr>';
+          (!ro ? '<td><button class="petool-unhook" data-k="' + escapeHtml(s.key) + '" data-t="' + escapeHtml(c.t) + '" title="Décrocher ce câble">✕</button></td>' : '') + '</tr>';
       });
       h += '</tbody></table>';
     }
-    if (!ro && spare.length && free.length) {
+    // PE où l'on peut encore raccrocher : vides, ou regroupées pas encore pleines
+    const room = m.slots.filter(function (s) {
+      if (!s.cable) return true;
+      const g = grpOf(s.cable);
+      return g && s.sizeId === g.pe && s.cables.length < g.max;
+    });
+    if (!ro && room.length && free.length) {
       h += '<div class="petool-hookrow"><span>Raccrocher</span><select id="petool-hook-c">' + free.map(function (c) {
-        return '<option value="' + escapeHtml(c.t) + '">' + escapeHtml(kindOfCable(c) + " · " + c.t + " (" + (c.pe ? peName(peIdOf(c.pe)) : "PE ?") + ")") + '</option>';
-      }).join("") + '</select><span>sur</span><select id="petool-hook-s">' + spare.map(function (s) {
-        return '<option value="' + escapeHtml(s.key) + '" data-k="' + s.kind + '">' + escapeHtml(peName(s.sizeId)) + (p.content === "both" ? " (" + KLBL[s.kind] + ")" : "") + '</option>';
+        const w = wantPe(c);
+        return '<option value="' + escapeHtml(c.t) + '">' + escapeHtml(kindOfCable(c) + " · " + c.t + " (" + (w ? peName(w) : "PE ?") + (grpOf(c) ? " regroupé" : "") + ")") + '</option>';
+      }).join("") + '</select><span>sur</span><select id="petool-hook-s">' + room.map(function (s) {
+        return '<option value="' + escapeHtml(s.key) + '" data-k="' + s.kind + '">' + escapeHtml(peName(s.sizeId)) + (s.cable ? " n° " + s.n + " (" + s.cables.length + "/" + grpOf(s.cable).max + ")" : "") + (p.content === "both" ? " (" + KLBL[s.kind] + ")" : "") + '</option>';
       }).join("") + '</select><button class="petool-btn-secondary" id="petool-hook-ok">OK</button></div>';
     }
     return h + '</div>';
@@ -3879,6 +3934,7 @@ function downloadDXF(text, filename) {
       s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + sp.enc2 + '" fill="' + (used ? col + "14" : "none") + '" stroke="' + col + '" stroke-width="0.9"' + (used ? '' : ' stroke-dasharray="3 2"') + '/>';
       s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + sp.perc + '" fill="#fff" stroke="' + (used ? "#1E293B" : "#CBD5E1") + '" stroke-width="0.8"/>';
       if (used) s += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(sp.perc * 1.15, 16) + '" font-weight="800" fill="' + col + '">' + sl.n + '</text>';
+      if (used && sl.cables.length > 1) s += '<text x="' + cx + '" y="' + (cy + (sp.perc + sp.enc2) / 2) + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min((sp.enc2 - sp.perc) * 0.8, 7) + '" font-weight="800" fill="' + col + '">×' + sl.cables.length + '</text>';
       else s += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(sp.perc * 0.62, 8) + '" fill="#94A3B8">spare</text>';
     });
     return s + '</svg>';
@@ -3915,7 +3971,7 @@ function downloadDXF(text, filename) {
       const m = plateMap(p, idx), chunks = Math.max(1, Math.ceil(Math.max(0, m.used.length - 22) / 30) + 1);
       plPages.push({ p: p, m: m, page: pn, chunks: m.used.length > 22 ? chunks : 1 });
       const ps = getPlateSize(p);
-      sum += '<tr><td><b>' + E(skidOfPlate(p)) + '</b></td><td>' + E(p.name) + '</td><td>' + kindChips(p) + '</td><td>' + Math.round(ps.width) + ' × ' + Math.round(ps.height) + ' mm</td><td class="n">' + m.used.length + '</td><td class="n">' + (m.slots.length - m.used.length) + '</td><td class="n">' + pn + '</td></tr>';
+      sum += '<tr><td><b>' + E(skidOfPlate(p)) + '</b></td><td>' + E(p.name) + '</td><td>' + kindChips(p) + '</td><td>' + Math.round(ps.width) + ' × ' + Math.round(ps.height) + ' mm</td><td class="n">' + m.used.length + '</td><td class="n">' + m.slots.filter(function (s) { return !s.cable; }).length + '</td><td class="n">' + pn + '</td></tr>';
       pn += m.used.length > 22 ? chunks : 1;
     });
     sum += '</tbody></table>';
@@ -3946,8 +4002,8 @@ function downloadDXF(text, filename) {
       const p = x.p, m = x.m, ps = getPlateSize(p);
       const rowHtml = function (s) {
         const c = s.cable, k = kindOfCable(c), oe = otherEnd(c, s.dir);
-        const cp = peIdOf(c.pe), diff = cp && cp !== s.sizeId;
-        return '<tr><td class="n"><span class="num" style="background:' + KCOL[k] + '">' + s.n + '</span></td><td style="white-space:nowrap">' + E(peName(s.sizeId)) + (diff ? ' <small style="color:#B45309">(carnet ' + E(peName(cp)) + ')</small>' : '') + '</td><td><b>' + E(c.t) + '</b></td><td>' + E(c.ty) + '</td><td>' + E(c.sec) + '</td>' +
+        const cp = wantPe(c), diff = cp && cp !== s.sizeId;
+        return '<tr><td class="n"><span class="num" style="background:' + KCOL[k] + '">' + s.n + '</span></td><td style="white-space:nowrap">' + E(peName(s.sizeId)) + (s.nIn > 1 ? ' <small style="color:#2563EB;font-weight:700">×' + s.nIn + ' regroupés</small>' : '') + (diff ? ' <small style="color:#B45309">(carnet ' + E(peName(cp)) + ')</small>' : '') + '</td><td><b>' + E(c.t) + '</b></td><td>' + E(c.ty) + '</td><td>' + E(c.sec) + '</td>' +
           '<td class="dl">' + (s.dir === "out" ? '<span class="dir out">↗ ' : '<span class="dir in">↘ ') + E(isExtLoc(oe.loc) ? oe.loc : normSkid(oe.loc) || "?") + '</span>' + (oe.tag ? ' <small>' + E(oe.tag) + '</small>' : '') + '</td></tr>';
       };
       const thead = '<thead><tr><th>N°</th><th>PE</th><th>Repère</th><th>Type</th><th>Section</th><th>Vers / depuis</th></tr></thead>';
