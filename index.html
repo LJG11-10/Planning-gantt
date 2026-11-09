@@ -1886,7 +1886,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
         <div class="petro-tile-ico" style="background:#4B3FC7">📁</div>
         <div class="petro-tile-t">Affaires</div>
         <div class="petro-tile-s">Tout ce qui concerne une affaire, choisie dans le menu de gauche</div>
-        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Bilan</span><span>Heures</span><span>Modifications</span><span id="petro-hub-chip-cmd">Commandes</span><span id="petro-hub-chip-docch">Doc chantier</span></div>
+        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Bilan</span><span>Heures</span><span>Modifications</span><span id="petro-hub-chip-cmd">Commandes</span><span id="petro-hub-chip-docch">Document</span></div>
       </div>
       <div id="petro-hub-tile-equipe" class="petro-tile" onclick="petroHubEnterEquipe()">
         <div class="petro-tile-ico" style="background:#0F766E">👥</div>
@@ -2836,7 +2836,7 @@ function downloadDXF(text, filename) {
     if (!container) return;
     container.innerHTML = renderHTML();
     attachEvents();
-    try { _lastSig = folderAff && folderAff !== LOCAL ? JSON.stringify(peek(folderAff)) : ""; } catch (e) {}
+    try { _lastSig = folderAff && folderAff !== LOCAL ? JSON.stringify(peek(folderAff)) + "|" + ((cabList(folderAff) || {}).at || "") : ""; } catch (e) {}
   }
 
   function folders() {
@@ -2880,9 +2880,9 @@ function downloadDXF(text, filename) {
 
     let main;
     if (!folderAff) main = '<p class="petool-hint">Créez d’abord une affaire.</p>';
-    else if (!plate) main = '<div class="petool-empty"><b>' + escapeHtml(affLbl(folderAff)) + '</b><br>Aucune plaque dans ce dossier.' +
+    else if (!plate) main = carnetHtml(ro) + '<div class="petool-empty"><b>' + escapeHtml(affLbl(folderAff)) + '</b><br>Aucune plaque dans ce dossier.' +
       (!ro && folderAff !== LOCAL ? '<br><button id="petool-add-plate2" class="petool-btn-primary" style="margin-top:12px">+ Nouvelle plaque</button>' : '') + '</div>';
-    else main = actionBarHtml(plate, ro) + '<fieldset class="petool-fs"' + (ro ? ' disabled' : '') + '>' + renderPlateForm(plate, ro) + '</fieldset>';
+    else main = carnetHtml(ro) + actionBarHtml(plate, ro) + '<fieldset class="petool-fs"' + (ro ? ' disabled' : '') + '>' + renderPlateForm(plate, ro) + '</fieldset>' + plateCablesHtml(plate, ro);
 
     return (
       '<div class="petool-app">' +
@@ -2923,6 +2923,15 @@ function downloadDXF(text, filename) {
     html += '<div><label>Nom de la plaque</label><input id="petool-name" type="text" value="' + escapeHtml(plate.name) + '"/></div>';
     html += '<div><label>Taille de plaque</label><select id="petool-size"' + (plate.useCustomSize ? ' disabled' : '') + '>' + sizeOptions + '</select></div>';
     html += '</div>';
+    // (09/11/2026) skid de la plaque : sert à y raccrocher les câbles du carnet (sinon lu dans le nom « Skid 1 », « SK2 »…)
+    if (folderAff && folderAff !== LOCAL) {
+      const cl = cabList(folderAff), sk = {};
+      if (cl) cl.rows.forEach(function (c) { [normSkid(c.fl), normSkid(c.tl)].forEach(function (S) { if (S) sk[S] = 1; }); });
+      const auto = nameSkid(plate.name);
+      html += '<div class="petool-row"><div><label>Skid</label><input id="petool-skid" type="text" list="petool-skid-list" value="' + escapeHtml(plate.skid || "") + '" placeholder="' + (auto ? 'auto : ' + escapeHtml(auto) : 'ex. SKID 1') + '"/>' +
+        '<datalist id="petool-skid-list">' + Object.keys(sk).sort().map(function (s) { return '<option value="' + escapeHtml(s) + '">'; }).join("") + '</datalist></div>' +
+        '<div class="petool-skidinfo">' + (skidOfPlate(plate) ? 'Câbles interco du <b>' + escapeHtml(skidOfPlate(plate)) + '</b>' + (cl ? '' : ' (après import du carnet)') : 'Skid non reconnu dans le nom') + '</div></div>';
+    }
 
     html += '<label class="petool-checkbox"><input type="checkbox" id="petool-custom-size"' + (plate.useCustomSize ? ' checked' : '') + '/> Dimensions personnalisees (au lieu d\'une taille standard)</label>';
     if (plate.useCustomSize) {
@@ -3027,15 +3036,22 @@ function downloadDXF(text, filename) {
         const dx = plate.result.margin + plate.result.wLeft + plate.result.divider / 2;
         svg += '<line x1="' + dx + '" y1="0" x2="' + dx + '" y2="' + H + '" stroke="#d9695f" stroke-dasharray="4 3"/>';
       }
+      // (09/11/2026) câbles du carnet : n° dans la PE (orange = puissance, bleu = instrum), spares en gris
+      const cl = cabList(folderAff), cm = cl && skidOfPlate(plate) ? plateMap(plate, cabIndex(cl)) : null;
       plate.result.placements.forEach(function (p, pi) {
         const spec = config.peSizes.find(function (s) { return s.id === p.sizeId; });
         if (!spec) return;
-        svg += '<g class="petool-pe" data-i="' + pi + '" transform="translate(' + p.x + ',' + (H - p.y) + ')">' +
+        const sl = cm && cm.byI[pi], cab = sl && sl.cable;
+        const col = cab ? KCOL[kindOfCable(cab)] : "#e2793a";
+        const tip = cab ? '<title>' + escapeHtml(sl.n + " · " + cab.t + " · " + [cab.ty, cab.sec].filter(Boolean).join(" ") + " · " + peName(p.sizeId)) + '</title>'
+                        : (cm ? '<title>' + escapeHtml(peName(p.sizeId) + " · spare") + '</title>' : '');
+        svg += '<g class="petool-pe" data-i="' + pi + '" transform="translate(' + p.x + ',' + (H - p.y) + ')">' + tip +
                  '<circle class="petool-hit" r="' + spec.enc2 + '" fill="rgba(226,121,58,0.001)" stroke="none"/>' +
-                 '<circle r="' + spec.enc2 + '" fill="none" stroke="#e2793a" stroke-width="1.1" opacity="0.9"/>' +
-                 '<circle r="' + spec.enc1 + '" fill="none" stroke="#e2793a" stroke-width="0.6" opacity="0.5"/>' +
+                 '<circle r="' + spec.enc2 + '" fill="' + (cab ? col + '22' : 'none') + '" stroke="' + (cm && !cab ? '#6b7280' : col) + '" stroke-width="1.1" opacity="0.9"' + (cm && !cab ? ' stroke-dasharray="3 2"' : '') + '/>' +
+                 '<circle r="' + spec.enc1 + '" fill="none" stroke="' + (cm && !cab ? '#6b7280' : col) + '" stroke-width="0.6" opacity="0.5"/>' +
                  '<circle r="' + spec.perc + '" fill="none" stroke="#c9cdd3" stroke-width="1.1"/>' +
-                 '<text text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(spec.enc2 * 0.55, 11) + '" fill="#c9cdd3">' + spec.name.replace('ISO ', '') + '</text>' +
+                 (cab ? '<text text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(spec.perc * 1.1, 14) + '" font-weight="800" fill="#fff">' + sl.n + '</text>'
+                      : '<text text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(spec.enc2 * 0.55, 11) + '" fill="' + (cm ? '#6b7280' : '#c9cdd3') + '">' + spec.name.replace('ISO ', '') + '</text>') +
                '</g>';
       });
     }
@@ -3110,7 +3126,29 @@ function downloadDXF(text, filename) {
       '.petool-app .petool-drag .petool-pe.petool-moving{cursor:grabbing;}',
       '.petool-app .petool-pe.petool-moving circle:not(.petool-hit){stroke:#22C55E;}',
       '.petool-app .petool-pe.petool-bad circle:not(.petool-hit){stroke:#EF4444 !important;}',
-      '.petool-app .petool-preview{touch-action:none;}'
+      '.petool-app .petool-preview{touch-action:none;}',
+      // (09/11/2026) carnet de câbles
+      '.petool-app .petool-main{max-width:760px;}',
+      '.petool-app .petool-carnet{border:1px solid #E4E1F0;background:#FBFAFF;border-radius:12px;padding:10px 12px;margin-bottom:12px;}',
+      '.petool-app .petool-carnet-h{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:#4A4766;}',
+      '.petool-app .petool-carnet-b{display:flex;gap:6px;}',
+      '.petool-app .petool-skids{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
+      '.petool-app .petool-skid{display:flex;flex-direction:column;gap:1px;border-radius:9px;padding:6px 10px;font-size:11.5px;color:#4A4766;border:1px solid #E4E1F0;background:#fff;min-width:150px;}',
+      '.petool-app .petool-skid b{font-size:12.5px;color:#1C1A33;}',
+      '.petool-app .petool-skid.ok .petool-skid-st{color:#15803D;font-weight:800;}',
+      '.petool-app .petool-skid.bad{border-color:#FECACA;background:#FEF2F2;}',
+      '.petool-app .petool-skid.bad .petool-skid-st{color:#B91C1C;font-weight:800;}',
+      '.petool-app .petool-skid small{color:#B91C1C;}',
+      '.petool-app .petool-cab-ask{margin-top:8px;color:#B91C1C;border-color:#FECACA;}',
+      '.petool-app .petool-skidinfo{font-size:12px;color:#6B6790;align-self:end;padding-bottom:9px;}',
+      '.petool-app .petool-ctab{width:100%;border-collapse:collapse;font-size:12px;}',
+      '.petool-app .petool-ctab th{text-align:left;font-size:10.5px;color:#9A96B3;text-transform:uppercase;letter-spacing:.03em;padding:4px 6px;border-bottom:1px solid #E4E1F0;}',
+      '.petool-app .petool-ctab td{padding:5px 6px;border-bottom:1px solid #F1EFF8;vertical-align:middle;}',
+      '.petool-app .petool-num{display:inline-block;min-width:22px;text-align:center;color:#fff;font-weight:800;border-radius:999px;padding:1px 6px;font-size:11px;}',
+      '.petool-app .petool-warn{font-size:10.5px;font-weight:700;color:#B45309;background:#FEF3C7;border-radius:5px;padding:0 5px;}',
+      '.petool-app .petool-unhook{background:none;border:none;color:#9A96B3;cursor:pointer;font-size:13px;}',
+      '.petool-app .petool-hookrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:#5A5675;}',
+      '.petool-app .petool-hookrow select{background:#F6F5FB;border:1px solid #E4E1F0;border-radius:8px;padding:6px 8px;font-size:12.5px;max-width:280px;}'
     ].join('\n');
     return '<style>' + css + '</style>';
   }
@@ -3177,7 +3215,7 @@ function downloadDXF(text, filename) {
       const p = plates[activeIndex]; if (!p || ro) return;
       const list = ensure(folderAff);
       const c = JSON.parse(JSON.stringify(p));
-      c.id = uid(); c.name = p.name + " (copie)";
+      c.id = uid(); c.name = p.name + " (copie)"; c.cab = {}; // un câble ne passe que par une plaque de son skid
       list.splice(list.indexOf(p) + 1, 0, c); activeId = c.id;
       saveState(); paint();
     });
@@ -3219,6 +3257,12 @@ function downloadDXF(text, filename) {
       // pas de repaint complet ici pour ne pas perdre le focus du champ
       const item = container.querySelector('.petool-plate-item[data-id="' + activeId + '"] .petool-pname');
       if (item) item.textContent = nameInput.value;
+    });
+    // en quittant le champ : le skid lu dans le nom a pu changer → câbles du carnet raccrochés de nouveau
+    if (nameInput) nameInput.addEventListener("change", function () {
+      const p = plates[activeIndex];
+      if (!p || p.skid || !cabList(folderAff)) return;
+      autoAssign(folderAff); paint();
     });
 
     // ── Déplacer un presse-étoupe à la main sur l'aperçu (09/11/2026) ──
@@ -3334,7 +3378,44 @@ function downloadDXF(text, filename) {
       const p = plates[activeIndex];
       if (p && p.result && p.result.manual && !confirm("Les presse-étoupes ont été déplacés à la main.\n\nRecalculer le rangement annule ces déplacements. Continuer ?")) return;
       calculatePlate(p);
+      if (cabList(folderAff)) autoAssign(folderAff); // câbles du carnet raccrochés aux nouvelles PE
       paint();
+    });
+
+    // ── Carnet de câbles (09/11/2026) ──
+    const cabFile = document.getElementById("petool-cab-file");
+    const cabImp = document.getElementById("petool-cab-imp");
+    if (cabImp && cabFile) cabImp.addEventListener("click", function () { cabFile.value = ""; cabFile.click(); });
+    if (cabFile) cabFile.addEventListener("change", function () { const f = cabFile.files && cabFile.files[0]; if (f) importCarnet(f); });
+    const cabPdf = document.getElementById("petool-cab-pdf");
+    if (cabPdf) cabPdf.addEventListener("click", function () { exportPdf(); });
+    const cabAsk = document.getElementById("petool-cab-ask");
+    if (cabAsk) cabAsk.addEventListener("click", function () { askPending(); });
+    const skidIn = document.getElementById("petool-skid");
+    if (skidIn) skidIn.addEventListener("change", function () {
+      const p = plates[activeIndex]; if (!p || ro) return;
+      const v = String(skidIn.value || "").trim();
+      p.skid = v ? normSkid(v) : "";
+      p.cab = {}; // autre skid = autres câbles
+      if (cabList(folderAff)) autoAssign(folderAff);
+      saveState(); paint();
+    });
+    container.querySelectorAll(".petool-unhook").forEach(function (b) {
+      b.addEventListener("click", function () {
+        const p = plates[activeIndex]; if (!p || ro || !p.cab) return;
+        delete p.cab[b.getAttribute("data-k")];
+        saveState(); paint();
+      });
+    });
+    const hookOk = document.getElementById("petool-hook-ok");
+    if (hookOk) hookOk.addEventListener("click", function () {
+      const p = plates[activeIndex]; if (!p || ro) return;
+      const t = document.getElementById("petool-hook-c").value, ss = document.getElementById("petool-hook-s");
+      const key = ss.value, sk = ss.options[ss.selectedIndex] && ss.options[ss.selectedIndex].getAttribute("data-k");
+      const c = cabIndex(cabList(folderAff))[t]; if (!c || !key) return;
+      if (sk && sk !== kindOfCable(c)) { alert("« " + t + " » est un câble " + KLBL[kindOfCable(c)].toLowerCase() + " : choisissez une PE du côté " + KLBL[kindOfCable(c)] + "."); return; }
+      p.cab = p.cab || {}; p.cab[key] = t;
+      saveState(); paint();
     });
   }
 
@@ -3423,11 +3504,506 @@ function downloadDXF(text, filename) {
       if (!c || !c.offsetParent || !folderAff || folderAff === LOCAL) return;
       if (c.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
       if (c.querySelector(".petool-moving")) return;
-      const sig = JSON.stringify(peek(folderAff));
+      const sig = JSON.stringify(peek(folderAff)) + "|" + ((cabList(folderAff) || {}).at || "");
       if (_lastSig && sig !== _lastSig) paint();
       _lastSig = sig;
     } catch (e) {}
   }, 3000);
+
+  /* ==========================================================
+     CARNET DE CÂBLES (09/11/2026, demande de l'utilisateur)
+     On importe le carnet de câbles de l'affaire (Excel). Les câbles « Interco Skids = OK »
+     (ceux qui ENTRENT dans un skid ou en SORTENT) sont raccrochés aux presse-étoupes des plaques
+     de leur skid : même taille de PE, plaque Puissance (E) ou Instrum (I). Ce qui ne colle pas
+     est demandé à l'utilisateur. Données : STORE.projects[aff].cableList = {name, at, by, rows:[…]}
+     et, sur chaque plaque, skid (sinon lu dans le nom) + cab = { "ISO25#2": repère }.
+     ========================================================== */
+
+  const KCOL = { E: "#E8590C", I: "#2563EB" };
+  const KLBL = { E: "Puissance", I: "Instrum" };
+  function normSkid(s) {
+    s = String(s || "").toUpperCase().replace(/\bEXT(?:ERIEUR|ERNAL|ERIOR)?\b/g, " ").replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
+    const m = s.match(/^SK(?:ID)?\s*-?\s*(\d+)\b/);
+    return m ? "SKID " + parseInt(m[1], 10) : s;
+  }
+  function isExtLoc(s) { return /\bEXT/i.test(String(s || "")); }
+  function nameSkid(n) { const m = String(n || "").match(/\bsk(?:id)?\s*[-_ ]?\s*(\d+)/i); return m ? "SKID " + parseInt(m[1], 10) : ""; }
+  function skidOfPlate(p) { return p && p.skid && String(p.skid).trim() ? normSkid(p.skid) : nameSkid(p && p.name); }
+  function peIdOf(s) { const m = String(s || "").match(/(\d+)/); return m ? "ISO" + parseInt(m[1], 10) : ""; }
+  function peName(id) { const s = config.peSizes.find(function (x) { return x.id === id; }); return s ? s.name : (id ? String(id).replace(/^ISO/, "ISO ") : "?"); }
+  function kindOfCable(c) { return String(c.ei || "").trim().toUpperCase() === "E" ? "E" : "I"; }
+  function kindsOfPlate(p) { return p.content === "puissance" ? ["E"] : p.content === "instrumentation" ? ["I"] : ["E", "I"]; }
+  function cabList(aff) {
+    if (!aff || aff === LOCAL || typeof STORE === "undefined" || !STORE.projects[aff]) return null;
+    const cl = STORE.projects[aff].cableList;
+    return cl && Array.isArray(cl.rows) ? cl : null;
+  }
+  function cabIndex(cl) { const o = {}; (cl ? cl.rows : []).forEach(function (r) { if (r.t && !o[r.t]) o[r.t] = r; }); return o; }
+  // Le câble passe par le skid S ? → sens vu de S ('out' = il sort de S, 'in' = il y entre)
+  function dirFor(c, S) {
+    if (!S) return null;
+    const f = normSkid(c.fl), t = normSkid(c.tl);
+    if (f === S) return "out";
+    if (t === S) return "in";
+    return null;
+  }
+  function otherEnd(c, dir) {
+    return dir === "out" ? { loc: c.tl, tag: c.tt, item: c.ti } : { loc: c.fl, tag: c.ft, item: c.fi };
+  }
+  function eligible(c, p) { const S = skidOfPlate(p); return !!S && !!dirFor(c, S) && kindsOfPlate(p).indexOf(kindOfCable(c)) >= 0; }
+  // Emplacements de PE d'une plaque calculée : clé stable « ISO25#2 » (2e ISO 25 de la plaque), côté E / I
+  function slotsOf(p) {
+    const r = p && p.result;
+    if (!r || !r.ok) return [];
+    const dx = r.divider != null ? r.margin + r.wLeft + r.divider / 2 : null;
+    const cnt = {};
+    return r.placements.map(function (pl, i) {
+      cnt[pl.sizeId] = (cnt[pl.sizeId] || 0) + 1;
+      const kind = dx != null ? (pl.x < dx ? "I" : "E") : (p.content === "puissance" ? "E" : "I");
+      return { i: i, key: pl.sizeId + "#" + cnt[pl.sizeId], kind: kind, sizeId: pl.sizeId, x: pl.x, y: pl.y };
+    });
+  }
+  // Numérotation : seulement les PE qui ont un câble, dans l'ordre de lecture (instrum à gauche puis puissance), les spares sans n°
+  function plateMap(p, idx) {
+    const slots = slotsOf(p), cab = p.cab || {}, S = skidOfPlate(p);
+    const used = [];
+    slots.forEach(function (s) {
+      const t = cab[s.key], c = t && idx[t];
+      if (c && eligible(c, p)) { s.cable = c; s.dir = dirFor(c, S); used.push(s); }
+    });
+    const side = function (k) { return p.content === "both" ? (k === "I" ? 0 : 1) : 0; };
+    used.sort(function (a, b) { return side(a.kind) - side(b.kind) || (b.y - a.y) || (a.x - b.x); });
+    // regroupement par rangée (tolérance 5 mm sur la hauteur)
+    const rows = [];
+    used.forEach(function (s) {
+      const last = rows[rows.length - 1];
+      if (last && last.side === side(s.kind) && Math.abs(last.y - s.y) <= 5) last.items.push(s);
+      else rows.push({ side: side(s.kind), y: s.y, items: [s] });
+    });
+    let n = 0;
+    rows.forEach(function (r) { r.items.sort(function (a, b) { return a.x - b.x; }).forEach(function (s) { s.n = ++n; }); });
+    const byI = {};
+    slots.forEach(function (s) { byI[s.i] = s; });
+    return { slots: slots, used: used.sort(function (a, b) { return a.n - b.n; }), byI: byI, S: S };
+  }
+
+  // Raccroche automatiquement les câbles du carnet (garde ce qui est déjà raccroché et toujours valable).
+  // Renvoie les câbles restants par skid.
+  function autoAssign(aff) {
+    const cl = cabList(aff); if (!cl) return { pending: [], skids: {} };
+    const idx = cabIndex(cl), list = peek(aff);
+    const placed = {}; // skid → { repère: true }
+    let changed = false;
+    // 1. nettoyage : repère disparu, plus concerné, PE inexistante, ou déjà sur une autre plaque du même skid
+    list.forEach(function (p) {
+      if (!p.cab) return;
+      const S = skidOfPlate(p), slots = slotsOf(p), keys = {};
+      if (!p.result || !p.result.ok) return; // plaque pas calculée : on garde ses choix pour plus tard
+      slots.forEach(function (s) { keys[s.key] = s; });
+      placed[S] = placed[S] || {};
+      Object.keys(p.cab).forEach(function (k) {
+        const t = p.cab[k], c = idx[t], s = keys[k];
+        if (!c || !s || !eligible(c, p) || s.kind !== kindOfCable(c) || placed[S][t]) { delete p.cab[k]; changed = true; return; }
+        placed[S][t] = true;
+      });
+    });
+    // 2. câbles pas encore raccrochés → PE libre de la même taille, même côté, sur une plaque du skid
+    const pending = [];
+    const skids = {};
+    cl.rows.forEach(function (c) { [normSkid(c.fl), normSkid(c.tl)].forEach(function (S) { if (S) skids[S] = true; }); });
+    Object.keys(skids).forEach(function (S) {
+      const plS = list.filter(function (p) { return skidOfPlate(p) === S && p.result && p.result.ok; });
+      cl.rows.forEach(function (c) {
+        if (!dirFor(c, S) || (placed[S] && placed[S][c.t])) return;
+        const want = peIdOf(c.pe), k = kindOfCable(c);
+        let done = false;
+        for (let pi = 0; pi < plS.length && !done; pi++) {
+          const p = plS[pi];
+          if (kindsOfPlate(p).indexOf(k) < 0) continue;
+          p.cab = p.cab || {};
+          const s = slotsOf(p).find(function (s) { return s.sizeId === want && s.kind === k && !p.cab[s.key]; });
+          if (s) { p.cab[s.key] = c.t; placed[S] = placed[S] || {}; placed[S][c.t] = true; done = true; changed = true; }
+        }
+        if (!done) pending.push({ c: c, S: S });
+      });
+    });
+    if (changed) saveState();
+    return { pending: pending, skids: skids };
+  }
+
+  // Bilan par skid pour l'écran et le PDF
+  function checkSkids(aff) {
+    const cl = cabList(aff); if (!cl) return [];
+    const idx = cabIndex(cl), list = peek(aff), out = {};
+    cl.rows.forEach(function (c) {
+      [normSkid(c.fl), normSkid(c.tl)].forEach(function (S) {
+        if (!S || (out[S] && out[S].all[c.t])) return;
+        out[S] = out[S] || { S: S, all: {}, rows: [] };
+        out[S].all[c.t] = true;
+        out[S].rows.push({ c: c, dir: dirFor(c, S), where: null });
+      });
+    });
+    list.forEach(function (p) {
+      const S = skidOfPlate(p); if (!out[S]) return;
+      plateMap(p, idx).used.forEach(function (s) {
+        const r = out[S].rows.find(function (r) { return r.c.t === s.cable.t; });
+        if (r && !r.where) r.where = { plate: p, n: s.n, sizeId: s.sizeId };
+      });
+    });
+    return Object.keys(out).sort(function (a, b) { return a.localeCompare(b, "fr", { numeric: true }); }).map(function (S) {
+      const o = out[S];
+      o.rows.sort(function (a, b) { return (a.dir === b.dir ? 0 : a.dir === "out" ? -1 : 1) || kindOfCable(a.c).localeCompare(kindOfCable(b.c)) || String(a.c.t).localeCompare(String(b.c.t), "fr", { numeric: true }); });
+      o.nOut = o.rows.filter(function (r) { return r.dir === "out"; }).length;
+      o.nIn = o.rows.length - o.nOut;
+      o.nOk = o.rows.filter(function (r) { return r.where; }).length;
+      o.plates = list.filter(function (p) { return skidOfPlate(p) === S; });
+      return o;
+    });
+  }
+
+  // ── Lecture du carnet (Excel) ──
+  function loadXlsxPE() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise(function (res, rej) {
+      const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      s.onload = function () { window.XLSX ? res(window.XLSX) : rej(new Error("lecteur Excel indisponible")); };
+      s.onerror = function () { rej(new Error("lecteur Excel indisponible (connexion internet ?)")); };
+      document.head.appendChild(s);
+    });
+  }
+  function nrm(s) { return String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim(); }
+  async function readCarnet(file) {
+    const X = await loadXlsxPE();
+    const wb = X.read(await file.arrayBuffer(), { type: "array" });
+    for (let si = 0; si < wb.SheetNames.length; si++) {
+      const rows = X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[si]], { header: 1, raw: false, defval: "" });
+      let h = -1;
+      for (let r = 0; r < Math.min(rows.length, 40); r++) {
+        const cells = rows[r].map(nrm);
+        if (cells.some(function (v) { return /^(tag|repere)$/.test(v); }) && cells.some(function (v) { return /interco/.test(v); })) { h = r; break; }
+      }
+      if (h < 0) continue;
+      const hd = rows[h].map(nrm);
+      const all = function (re) { const o = []; hd.forEach(function (v, i) { if (re.test(v)) o.push(i); }); return o; };
+      const one = function (re) { const a = all(re); return a.length ? a[0] : -1; };
+      const tags = all(/^(tag|repere)\.?$/), items = all(/item|description|designation/), locs = all(/location|localisation|emplacement/);
+      let ic = one(/interco.*skid/); if (ic < 0) ic = one(/interco/);
+      const C = {
+        ei: one(/^e ?\/ ?i$/), t: tags[0], ty: one(/^type/), sec: one(/core|section|conducteur/), pe: one(/gland|presse/),
+        fi: items[0], ft: tags[1], fl: locs[0], ti: items[1], tt: tags[2], tl: locs[1], len: one(/lenght|length|longueur/), ic: ic
+      };
+      if (C.t == null || C.fl == null || C.tl == null) throw new Error("colonnes FROM / TO (Location) introuvables");
+      const g = function (row, k) { return C[k] == null || C[k] < 0 ? "" : String(row[C[k]] == null ? "" : row[C[k]]).replace(/\s+/g, " ").trim(); };
+      const out = [], seen = {};
+      let total = 0;
+      for (let r = h + 1; r < rows.length; r++) {
+        const t = g(rows[r], "t"); if (!t) continue;
+        total++;
+        if (!/^ok/i.test(g(rows[r], "ic"))) continue;
+        if (seen[t]) continue; seen[t] = true;
+        out.push({ t: t, ei: g(rows[r], "ei").toUpperCase(), ty: g(rows[r], "ty"), sec: g(rows[r], "sec"), pe: g(rows[r], "pe"),
+          fi: g(rows[r], "fi"), ft: g(rows[r], "ft"), fl: g(rows[r], "fl"), ti: g(rows[r], "ti"), tt: g(rows[r], "tt"), tl: g(rows[r], "tl"), len: g(rows[r], "len") });
+      }
+      return { rows: out, total: total, sheet: wb.SheetNames[si] };
+    }
+    throw new Error("aucune feuille avec les colonnes TAG et Interco");
+  }
+  async function importCarnet(file) {
+    if (!folderAff || folderAff === LOCAL || roOf(folderAff)) return;
+    let res;
+    try { res = await readCarnet(file); } catch (e) { alert("Lecture du carnet impossible : " + (e && e.message || e)); return; }
+    if (!res.rows.length) { alert("Aucun câble « Interco = OK » trouvé dans ce fichier (" + res.total + " câbles lus)."); return; }
+    bind();
+    const P = STORE.projects[folderAff];
+    const old = cabList(folderAff);
+    if (old && !confirm("Remplacer le carnet « " + old.name + " » par « " + file.name + " » ?\n\nLes câbles déjà raccrochés et toujours présents restent à leur place.")) return;
+    P.cableList = { name: file.name, at: Date.now(), by: (window.CURRENT_USER_NOM || (window.CURRENT_USER && CURRENT_USER.email) || ""), total: res.total, rows: res.rows };
+    const a = autoAssign(folderAff);
+    saveState(); paint();
+    const nE = res.rows.filter(function (c) { return kindOfCable(c) === "E"; }).length;
+    let msg = "Carnet importé : " + res.rows.length + " câbles interco (" + nE + " puissance, " + (res.rows.length - nE) + " instrum) sur " + res.total + " câbles.";
+    if (a.pending.length) { alert(msg + "\n\n" + a.pending.length + " câble(s) n'ont pas trouvé de presse-étoupe libre de leur taille : choisissez où les raccrocher."); askPending(); }
+    else alert(msg + "\n\nTous les câbles sont raccrochés.");
+  }
+
+  // ── Fenêtre « câbles à raccrocher » ──
+  function freeSlotsFor(c, S) {
+    const k = kindOfCable(c), want = peIdOf(c.pe), out = [];
+    peek(folderAff).forEach(function (p) {
+      if (skidOfPlate(p) !== S || kindsOfPlate(p).indexOf(k) < 0) return;
+      const cab = p.cab || {};
+      slotsOf(p).forEach(function (s) { if (s.kind === k && !cab[s.key]) out.push({ p: p, s: s }); });
+    });
+    const d = function (id) { return Math.abs(diamOf(id) - diamOf(want)); };
+    out.sort(function (a, b) { return d(a.s.sizeId) - d(b.s.sizeId) || String(a.p.name).localeCompare(String(b.p.name)); });
+    // une seule ligne par plaque et par taille (la 1re PE libre), avec le nombre de PE libres
+    const seen = {}, uniq = [];
+    out.forEach(function (f) { const k = f.p.id + "|" + f.s.sizeId; if (seen[k]) { seen[k].n++; return; } f.n = 1; seen[k] = f; uniq.push(f); });
+    return uniq;
+  }
+  function askPending() {
+    bind();
+    const a = autoAssign(folderAff);
+    const old = document.getElementById("pe-cab-modal"); if (old) old.remove();
+    if (!a.pending.length) { alert("Tous les câbles interco sont raccrochés."); paint(); return; }
+    const ov = document.createElement("div"); ov.id = "pe-cab-modal";
+    let h = '<div class="pecm-box"><div class="pecm-h">🔌 Câbles à raccrocher <span>' + a.pending.length + '</span></div>' +
+      '<p class="pecm-p">Pas de presse-étoupe libre de la taille indiquée dans le carnet. Choisissez une PE encore disponible sur une plaque du même skid, ou laissez-le de côté pour l’instant.</p><div class="pecm-list">';
+    a.pending.forEach(function (x, i) {
+      const c = x.c, k = kindOfCable(c), dir = dirFor(c, x.S), oe = otherEnd(c, dir), fr = freeSlotsFor(c, x.S);
+      h += '<div class="pecm-row"><div class="pecm-c"><div><span class="pecm-k" style="background:' + KCOL[k] + '">' + escapeHtml(KLBL[k]) + '</span><b>' + escapeHtml(c.t) + '</b></div>' +
+        '<small>' + escapeHtml([c.ty, c.sec].filter(Boolean).join(" ")) + ' · carnet : <b>' + escapeHtml(c.pe ? peName(peIdOf(c.pe)) : "PE non précisée") + '</b></small>' +
+        '<small>' + escapeHtml(x.S) + (dir === "out" ? " → " : " ← ") + escapeHtml(oe.loc || "?") + (oe.tag ? " (" + escapeHtml(oe.tag) + ")" : "") + '</small></div>';
+      if (fr.length) {
+        h += '<select class="pecm-sel" data-i="' + i + '"><option value="">— Laisser de côté —</option>' + fr.map(function (f, j) {
+          return '<option value="' + escapeHtml(f.p.id + "|" + f.s.sizeId) + '">' + escapeHtml(f.p.name) + ' — ' + escapeHtml(peName(f.s.sizeId)) + ' (' + f.n + ' libre' + (f.n > 1 ? 's' : '') + ')</option>';
+        }).join("") + '</select>';
+      } else {
+        h += '<div class="pecm-none">Aucune PE libre sur une plaque ' + escapeHtml(KLBL[k]) + ' du ' + escapeHtml(x.S) + '. Ajoutez-en une sur la plaque, ou créez la plaque.</div>';
+      }
+      h += '</div>';
+    });
+    h += '</div><div class="pecm-f"><button class="petool-btn-secondary" id="pecm-cancel">Plus tard</button><button class="petool-btn-primary" id="pecm-ok">Raccrocher</button></div></div>';
+    ov.innerHTML = h + '<style>' +
+      '#pe-cab-modal{position:fixed;inset:0;z-index:10050;background:rgba(17,16,40,.45);display:flex;align-items:center;justify-content:center;padding:16px;font-family:"Plus Jakarta Sans",system-ui,Arial,sans-serif}' +
+      '#pe-cab-modal .pecm-box{background:#fff;border-radius:16px;max-width:680px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)}' +
+      '#pe-cab-modal .pecm-h{padding:16px 18px 6px;font-size:16px;font-weight:800;color:#1C1A33}#pe-cab-modal .pecm-h span{background:#FEE2E2;color:#B91C1C;border-radius:999px;padding:1px 9px;font-size:12px;margin-left:6px}' +
+      '#pe-cab-modal .pecm-p{margin:0 18px 10px;font-size:12.5px;color:#5A5675}' +
+      '#pe-cab-modal .pecm-list{overflow:auto;padding:0 18px;display:flex;flex-direction:column;gap:8px}' +
+      '#pe-cab-modal .pecm-row{border:1px solid #E4E1F0;border-radius:10px;padding:9px 11px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}' +
+      '#pe-cab-modal .pecm-c{flex:1;min-width:220px;display:flex;flex-direction:column;gap:2px;font-size:13px}#pe-cab-modal .pecm-c small{color:#6B6790;font-size:11.5px}' +
+      '#pe-cab-modal .pecm-k{display:inline-block;color:#fff;font-weight:800;font-size:10px;border-radius:4px;padding:0 5px;margin-right:6px}' +
+      '#pe-cab-modal .pecm-sel{min-width:230px;border:1px solid #E4E1F0;border-radius:8px;padding:7px;font-size:12.5px;background:#F6F5FB}' +
+      '#pe-cab-modal .pecm-none{font-size:12px;color:#B91C1C;max-width:250px}' +
+      '#pe-cab-modal .pecm-f{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid #EFEDF7;margin-top:10px}' +
+      '#pe-cab-modal .petool-btn-primary{background:#6457F4;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer}' +
+      '#pe-cab-modal .petool-btn-secondary{background:transparent;border:1px solid #E4E1F0;color:#5A5675;border-radius:8px;padding:8px 12px;cursor:pointer}' +
+      '</style>';
+    document.body.appendChild(ov);
+    const close = function () { ov.remove(); paint(); };
+    ov.querySelector("#pecm-cancel").onclick = close;
+    ov.querySelector("#pecm-ok").onclick = function () {
+      bind();
+      const left = [];
+      ov.querySelectorAll(".pecm-sel").forEach(function (sel) {
+        if (sel.value === "") return;
+        const x = a.pending[+sel.getAttribute("data-i")], v = String(sel.value).split("|");
+        // 1re PE encore libre de cette taille sur cette plaque (recalculée : plusieurs câbles peuvent viser la même taille)
+        const f = freeSlotsFor(x.c, x.S).find(function (f) { return f.p.id === v[0] && f.s.sizeId === v[1]; });
+        if (!f) { left.push(x.c.t); return; }
+        f.p.cab = f.p.cab || {}; f.p.cab[f.s.key] = x.c.t;
+      });
+      if (left.length) alert("Plus de PE libre de la taille choisie pour : " + left.join(", ") + ". Ces câbles restent à raccrocher.");
+      saveState(); close();
+    };
+  }
+
+  // ── Bloc « carnet de câbles » en haut du dossier ──
+  function carnetHtml(ro) {
+    if (!folderAff || folderAff === LOCAL) return "";
+    const cl = cabList(folderAff);
+    let h = '<div class="petool-carnet">';
+    if (!cl) {
+      h += '<div class="petool-carnet-h"><span>🔌 <b>Carnet de câbles</b> — pas encore importé</span>' +
+        (!ro ? '<button class="petool-btn-secondary" id="petool-cab-imp">⬆ Importer le carnet (Excel)</button>' : '') + '</div>' +
+        '<p class="petool-hint" style="margin:6px 0 0">Nommez vos plaques « Skid 1 », « Skid 2 »… (ou remplissez le champ Skid) : les câbles interco qui entrent et sortent de chaque skid y sont raccrochés automatiquement.</p>';
+    } else {
+      const ck = checkSkids(folderAff);
+      const d = new Date(cl.at || 0);
+      h += '<div class="petool-carnet-h"><span>🔌 <b>' + escapeHtml(cl.name) + '</b> · ' + cl.rows.length + ' câbles interco · ' + (cl.at ? d.toLocaleDateString("fr-FR") : "") + '</span><span class="petool-carnet-b">' +
+        (!ro ? '<button class="petool-btn-secondary" id="petool-cab-imp" title="Remplacer par une nouvelle version du carnet">⬆ Remplacer</button>' : '') +
+        '<button class="petool-btn-primary" id="petool-cab-pdf">⬇ PDF des plaques</button></span></div><div class="petool-skids">';
+      ck.forEach(function (o) {
+        const miss = o.rows.length - o.nOk;
+        h += '<div class="petool-skid' + (miss ? ' bad' : ' ok') + '"><b>' + escapeHtml(o.S) + '</b>' +
+          '<span>↗ ' + o.nOut + ' sortants · ↘ ' + o.nIn + ' entrants</span>' +
+          '<span class="petool-skid-st">' + (miss ? '⚠ ' + miss + ' à raccrocher' : '✓ ' + o.nOk + ' / ' + o.rows.length) + '</span>' +
+          (!o.plates.length ? '<small>Aucune plaque pour ce skid</small>' : '') + '</div>';
+      });
+      h += '</div>';
+      const tot = ck.reduce(function (s, o) { return s + o.rows.length - o.nOk; }, 0);
+      if (tot && !ro) h += '<button class="petool-btn-secondary petool-cab-ask" id="petool-cab-ask">Raccrocher les ' + tot + ' câble(s) restant(s)…</button>';
+    }
+    h += '<input type="file" id="petool-cab-file" accept=".xlsx,.xlsm,.xls" style="display:none"></div>';
+    return h;
+  }
+
+  // Tableau des câbles de la plaque ouverte (sous l'aperçu), avec changement possible PE par PE
+  function plateCablesHtml(p, ro) {
+    const cl = cabList(folderAff); if (!cl) return "";
+    const S = skidOfPlate(p);
+    if (!S) return '<div class="petool-alert petool-alert-error">Indiquez le skid de cette plaque (champ « Skid », ou un nom comme « Skid 1 ») pour y raccrocher les câbles du carnet.</div>';
+    if (!p.result || !p.result.ok) return '<p class="petool-hint">Calculez le rangement pour raccrocher les câbles du ' + escapeHtml(S) + '.</p>';
+    const idx = cabIndex(cl), m = plateMap(p, idx);
+    // câbles du skid pas encore sur une plaque du skid (pour les listes de choix)
+    const onSkid = {};
+    peek(folderAff).forEach(function (q) { if (skidOfPlate(q) === S) plateMap(q, idx).used.forEach(function (s) { onSkid[s.cable.t] = true; }); });
+    const free = cl.rows.filter(function (c) { return eligible(c, p) && !onSkid[c.t]; });
+    const spare = m.slots.filter(function (s) { return !s.cable; });
+    let h = '<div class="petool-cabs"><div class="petool-editor-title" style="margin:12px 0 6px">Câbles de la plaque · ' + escapeHtml(S) + ' <span class="petool-fn">' + m.used.length + '</span>' +
+      (spare.length ? ' <span class="petool-hint" style="margin:0 0 0 6px">+ ' + spare.length + ' spare</span>' : '') + '</div>';
+    if (!m.used.length) h += '<p class="petool-hint">Aucun câble raccroché.</p>';
+    else {
+      h += '<table class="petool-ctab"><thead><tr><th>N°</th><th>PE</th><th>Repère</th><th>Câble</th><th>Sens</th>' + (!ro ? '<th></th>' : '') + '</tr></thead><tbody>';
+      m.used.forEach(function (s) {
+        const c = s.cable, k = kindOfCable(c), oe = otherEnd(c, s.dir), bad = peIdOf(c.pe) && peIdOf(c.pe) !== s.sizeId;
+        h += '<tr><td><span class="petool-num" style="background:' + KCOL[k] + '">' + s.n + '</span></td>' +
+          '<td>' + escapeHtml(peName(s.sizeId)) + (bad ? ' <span class="petool-warn" title="Le carnet indique ' + escapeHtml(peName(peIdOf(c.pe))) + '">≠ ' + escapeHtml(peName(peIdOf(c.pe))) + '</span>' : '') + '</td>' +
+          '<td><b>' + escapeHtml(c.t) + '</b></td><td>' + escapeHtml([c.ty, c.sec].filter(Boolean).join(" ")) + '</td>' +
+          '<td>' + (s.dir === "out" ? '↗ vers ' : '↘ de ') + escapeHtml(isExtLoc(oe.loc) ? oe.loc : normSkid(oe.loc) || oe.loc || "?") + '</td>' +
+          (!ro ? '<td><button class="petool-unhook" data-k="' + escapeHtml(s.key) + '" title="Décrocher ce câble (la PE devient spare)">✕</button></td>' : '') + '</tr>';
+      });
+      h += '</tbody></table>';
+    }
+    if (!ro && spare.length && free.length) {
+      h += '<div class="petool-hookrow"><span>Raccrocher</span><select id="petool-hook-c">' + free.map(function (c) {
+        return '<option value="' + escapeHtml(c.t) + '">' + escapeHtml(kindOfCable(c) + " · " + c.t + " (" + (c.pe ? peName(peIdOf(c.pe)) : "PE ?") + ")") + '</option>';
+      }).join("") + '</select><span>sur</span><select id="petool-hook-s">' + spare.map(function (s) {
+        return '<option value="' + escapeHtml(s.key) + '" data-k="' + s.kind + '">' + escapeHtml(peName(s.sizeId)) + (p.content === "both" ? " (" + KLBL[s.kind] + ")" : "") + '</option>';
+      }).join("") + '</select><button class="petool-btn-secondary" id="petool-hook-ok">OK</button></div>';
+    }
+    return h + '</div>';
+  }
+
+  // ── Document PDF (page imprimable, A4 paysage) ──
+  function plateSvgDoc(p, m) {
+    const ps = getPlateSize(p), W = ps.width, H = ps.height, pad = Math.max(W, H) * 0.04;
+    let s = '<svg viewBox="' + (-pad) + ' ' + (-pad) + ' ' + (W + 2 * pad) + ' ' + (H + 2 * pad) + '" xmlns="http://www.w3.org/2000/svg" class="pl">';
+    s += '<rect x="0" y="0" width="' + W + '" height="' + H + '" rx="' + Math.min(W, H) * 0.02 + '" fill="#F8FAFC" stroke="#334155" stroke-width="' + Math.max(W, H) * 0.003 + '"/>';
+    const r = p.result;
+    if (r && r.divider != null) { const dx = r.margin + r.wLeft + r.divider / 2; s += '<line x1="' + dx + '" y1="4" x2="' + dx + '" y2="' + (H - 4) + '" stroke="#94A3B8" stroke-dasharray="4 3" stroke-width="0.8"/>'; }
+    (r && r.placements || []).forEach(function (pl, i) {
+      const sp = config.peSizes.find(function (x) { return x.id === pl.sizeId; }); if (!sp) return;
+      const sl = m.byI[i], used = sl && sl.cable, col = used ? KCOL[kindOfCable(sl.cable)] : "#94A3B8";
+      const cx = pl.x, cy = H - pl.y;
+      s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + sp.enc2 + '" fill="' + (used ? col + "14" : "none") + '" stroke="' + col + '" stroke-width="0.9"' + (used ? '' : ' stroke-dasharray="3 2"') + '/>';
+      s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + sp.perc + '" fill="#fff" stroke="' + (used ? "#1E293B" : "#CBD5E1") + '" stroke-width="0.8"/>';
+      if (used) s += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(sp.perc * 1.15, 16) + '" font-weight="800" fill="' + col + '">' + sl.n + '</text>';
+      else s += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(sp.perc * 0.62, 8) + '" fill="#94A3B8">spare</text>';
+    });
+    return s + '</svg>';
+  }
+  function exportPdf() {
+    bind();
+    const aff = folderAff, cl = cabList(aff);
+    if (!cl) { alert("Importez d'abord le carnet de câbles."); return; }
+    const idx = cabIndex(cl), list = peek(aff).filter(function (p) { return skidOfPlate(p); });
+    if (!list.length) { alert("Aucune plaque avec un skid (nommez-les « Skid 1 », « Skid 2 »… ou remplissez le champ Skid)."); return; }
+    const notCalc = list.filter(function (p) { return !p.result || !p.result.ok; });
+    if (notCalc.length && !confirm("Ces plaques ne sont pas calculées et seront absentes du document :\n- " + notCalc.map(function (p) { return p.name; }).join("\n- ") + "\n\nContinuer ?")) return;
+    const ready = list.filter(function (p) { return p.result && p.result.ok; });
+    const P = STORE.projects[aff] || {}, inf = P.infos || {};
+    const lbl = typeof getAffLabel === "function" ? getAffLabel(aff) : aff;
+    const nCli = inf.numeroClient || "";
+    const today = new Date().toLocaleDateString("fr-FR");
+    const E = escapeHtml;
+    const logo = typeof LOGO_ELS_B64 !== "undefined" ? LOGO_ELS_B64 : "";
+    const ck = checkSkids(aff);
+    const skOrder = function (a, b) { return skidOfPlate(a).localeCompare(skidOfPlate(b), "fr", { numeric: true }) || kindsOfPlate(b).length - kindsOfPlate(a).length || (kindsOfPlate(a)[0] === "E" ? -1 : 1); };
+    ready.sort(skOrder);
+    const head = function (title, sub) {
+      return '<header><div class="hl">' + (logo ? '<img src="' + logo + '">' : '') + '<div><div class="t">' + E(title) + '</div><div class="s">' + E(sub || "") + '</div></div></div>' +
+        '<div class="hr"><div><b>' + E(aff) + '</b>' + (nCli ? ' · ' + E(nCli) : '') + '</div><div>' + E(lbl) + '</div></div></header>';
+    };
+    const kindChips = function (p) { return kindsOfPlate(p).map(function (k) { return '<span class="chip" style="background:' + KCOL[k] + '">' + KLBL[k] + '</span>'; }).join(""); };
+    let pages = [], pg = 0;
+    // page de garde + sommaire
+    let sum = '<table class="sum"><thead><tr><th>Skid</th><th>Plaque</th><th>Contenu</th><th>Dimensions</th><th>Câbles</th><th>Spares</th><th>Page</th></tr></thead><tbody>';
+    const plPages = [];
+    let pn = 3; // 1 = garde, 2 = contrôle
+    ready.forEach(function (p) {
+      const m = plateMap(p, idx), chunks = Math.max(1, Math.ceil(Math.max(0, m.used.length - 22) / 30) + 1);
+      plPages.push({ p: p, m: m, page: pn, chunks: m.used.length > 22 ? chunks : 1 });
+      const ps = getPlateSize(p);
+      sum += '<tr><td><b>' + E(skidOfPlate(p)) + '</b></td><td>' + E(p.name) + '</td><td>' + kindChips(p) + '</td><td>' + Math.round(ps.width) + ' × ' + Math.round(ps.height) + ' mm</td><td class="n">' + m.used.length + '</td><td class="n">' + (m.slots.length - m.used.length) + '</td><td class="n">' + pn + '</td></tr>';
+      pn += m.used.length > 22 ? chunks : 1;
+    });
+    sum += '</tbody></table>';
+    const totC = cl.rows.length, totOk = ck.reduce(function (s, o) { return s + o.nOk; }, 0), totRows = ck.reduce(function (s, o) { return s + o.rows.length; }, 0);
+    pages.push('<section class="page cover">' + head("Plaques presse-étoupes", "Câbles d’interconnexion entre skids") +
+      '<div class="kpis"><div><b>' + ready.length + '</b><span>plaques</span></div><div><b>' + totC + '</b><span>câbles interco</span></div>' +
+      '<div><b>' + ck.length + '</b><span>skids</span></div><div class="' + (totOk === totRows ? 'ok' : 'ko') + '"><b>' + totOk + ' / ' + totRows + '</b><span>passages raccrochés</span></div></div>' +
+      '<h2>Sommaire</h2>' + sum +
+      '<div class="leg"><span><i style="background:' + KCOL.E + '"></i>Puissance</span><span><i style="background:' + KCOL.I + '"></i>Instrumentation</span><span><i class="sp"></i>Spare (sans câble)</span><span>↗ sort du skid · ↘ entre dans le skid</span></div>' +
+      '<div class="src">Carnet de câbles : ' + E(cl.name) + ' · édité le ' + today + '</div></section>');
+    // page de contrôle entrants / sortants
+    let ctl = '<div class="ctl">';
+    ck.forEach(function (o) {
+      ctl += '<div class="ck"><div class="ckh"><b>' + E(o.S) + '</b><span>↗ ' + o.nOut + ' sortants · ↘ ' + o.nIn + ' entrants</span><span class="' + (o.nOk === o.rows.length ? 'ok' : 'ko') + '">' + (o.nOk === o.rows.length ? '✓ complet' : '⚠ ' + (o.rows.length - o.nOk) + ' non raccroché(s)') + '</span></div>' +
+        '<table><thead><tr><th></th><th>Repère</th><th>Sens</th><th>Plaque</th><th>N°</th><th>PE</th></tr></thead><tbody>';
+      o.rows.forEach(function (r) {
+        const k = kindOfCable(r.c), oe = otherEnd(r.c, r.dir);
+        ctl += '<tr' + (r.where ? '' : ' class="miss"') + '><td><span class="k" style="background:' + KCOL[k] + '">' + k + '</span></td><td><b>' + E(r.c.t) + '</b></td>' +
+          '<td>' + (r.dir === "out" ? '↗ ' : '↘ ') + E(isExtLoc(oe.loc) ? oe.loc : normSkid(oe.loc) || "?") + '</td>' +
+          (r.where ? '<td>' + E(r.where.plate.name) + '</td><td class="n"><b>' + r.where.n + '</b></td><td>' + E(peName(r.where.sizeId)) + '</td>' : '<td colspan="3">NON RACCROCHÉ</td>') + '</tr>';
+      });
+      ctl += '</tbody></table></div>';
+    });
+    ctl += '</div>';
+    pages.push('<section class="page flow">' + head("Contrôle des câbles interco", "Chaque câble doit apparaître sur la plaque des DEUX skids qu’il relie") + ctl + '</section>');
+    // une page par plaque (+ suite si beaucoup de câbles)
+    plPages.forEach(function (x) {
+      const p = x.p, m = x.m, ps = getPlateSize(p);
+      const rowHtml = function (s) {
+        const c = s.cable, k = kindOfCable(c), oe = otherEnd(c, s.dir);
+        const cp = peIdOf(c.pe), diff = cp && cp !== s.sizeId;
+        return '<tr><td class="n"><span class="num" style="background:' + KCOL[k] + '">' + s.n + '</span></td><td style="white-space:nowrap">' + E(peName(s.sizeId)) + (diff ? ' <small style="color:#B45309">(carnet ' + E(peName(cp)) + ')</small>' : '') + '</td><td><b>' + E(c.t) + '</b></td><td>' + E(c.ty) + '</td><td>' + E(c.sec) + '</td>' +
+          '<td class="dl">' + (s.dir === "out" ? '<span class="dir out">↗ ' : '<span class="dir in">↘ ') + E(isExtLoc(oe.loc) ? oe.loc : normSkid(oe.loc) || "?") + '</span>' + (oe.tag ? ' <small>' + E(oe.tag) + '</small>' : '') + '</td></tr>';
+      };
+      const thead = '<thead><tr><th>N°</th><th>PE</th><th>Repère</th><th>Type</th><th>Section</th><th>Vers / depuis</th></tr></thead>';
+      const groups = function (arr) {
+        let h = "";
+        ["I", "E"].forEach(function (k) {
+          const a = arr.filter(function (s) { return kindOfCable(s.cable) === k; });
+          if (!a.length) return;
+          if (kindsOfPlate(p).length > 1) h += '<tr class="grp"><td colspan="6" style="color:' + KCOL[k] + '">' + KLBL[k] + '</td></tr>';
+          h += a.map(rowHtml).join("");
+        });
+        return h;
+      };
+      const spares = {};
+      m.slots.forEach(function (s) { if (!s.cable) spares[s.sizeId] = (spares[s.sizeId] || 0) + 1; });
+      const cnt = {};
+      m.slots.forEach(function (s) { cnt[s.sizeId] = (cnt[s.sizeId] || 0) + 1; });
+      const bom = Object.keys(cnt).sort(function (a, b) { return diamOf(a) - diamOf(b); }).map(function (id) {
+        return '<span><b>' + cnt[id] + ' ×</b> ' + E(peName(id)) + (spares[id] ? ' <em>(' + spares[id] + ' spare)</em>' : '') + '</span>';
+      }).join("");
+      const first = m.used.slice(0, x.chunks > 1 ? 22 : m.used.length);
+      pages.push('<section class="page">' + head(p.name, skidOfPlate(p) + " · " + kindsOfPlate(p).map(function (k) { return KLBL[k]; }).join(" + ")) +
+        '<div class="plg"><div class="dw">' + plateSvgDoc(p, m) + '<div class="dims">' + kindChips(p) + '<span>Plaque ' + Math.round(ps.width) + ' × ' + Math.round(ps.height) + ' mm</span></div><div class="bom">' + bom + '</div></div>' +
+        '<div class="tb">' + (m.used.length ? '<table class="ct">' + thead + '<tbody>' + groups(first) + '</tbody></table>' : '<p class="empty">Aucun câble raccroché sur cette plaque.</p>') +
+        (x.chunks > 1 ? '<p class="cont">Suite page suivante →</p>' : '') + '</div></div></section>');
+      for (let ci = 1; ci < x.chunks; ci++) {
+        const part = m.used.slice(22 + (ci - 1) * 30, 22 + ci * 30);
+        pages.push('<section class="page">' + head(p.name + " (suite)", skidOfPlate(p)) + '<table class="ct wide">' + thead + '<tbody>' + groups(part) + '</tbody></table></section>');
+      }
+    });
+    const total = pages.length;
+    pages = pages.map(function (h, i) { return h.replace(/<\/section>$/, '<footer><span>' + E(aff) + ' — Plaques presse-étoupes</span><span>Page ' + (i + 1) + ' / ' + total + '</span></footer></section>'); });
+    const css = '@page{size:A4 landscape;margin:0}*{box-sizing:border-box}body{margin:0;background:#E2E8F0;font-family:"Segoe UI",Arial,sans-serif;color:#0F172A}' +
+      '.bar{position:sticky;top:0;z-index:5;background:#0F172A;color:#fff;padding:10px 16px;display:flex;gap:12px;align-items:center;font-size:13px}.bar button{background:#6457F4;color:#fff;border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}' +
+      '.page{width:297mm;height:210mm;margin:10mm auto;background:#fff;padding:11mm 13mm 14mm;position:relative;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.12);page-break-after:always;break-after:page}' +
+      'header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0F172A;padding-bottom:4mm;margin-bottom:5mm}.hl{display:flex;align-items:center;gap:4mm}.hl img{height:13mm}.t{font-size:19px;font-weight:800}.s{font-size:11.5px;color:#475569;margin-top:1px}.hr{text-align:right;font-size:11px;color:#334155;line-height:1.5}' +
+      'footer{position:absolute;left:13mm;right:13mm;bottom:6mm;display:flex;justify-content:space-between;font-size:9px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:2mm}' +
+      '.cover .t{font-size:24px}.kpis{display:flex;gap:4mm;margin:2mm 0 6mm}.kpis div{flex:1;border:1px solid #E2E8F0;border-radius:3mm;padding:3mm 4mm;background:#F8FAFC}.kpis b{display:block;font-size:20px}.kpis span{font-size:10.5px;color:#64748B}.kpis .ok b{color:#15803D}.kpis .ko b{color:#B91C1C}' +
+      'h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#475569;margin:0 0 2mm}table{border-collapse:collapse;width:100%}th{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;text-align:left;border-bottom:1.5px solid #CBD5E1;padding:1.6mm 2mm}td{font-size:10.5px;padding:1.3mm 2mm;border-bottom:1px solid #EEF2F7;vertical-align:middle}td.n{text-align:center}' +
+      '.chip{display:inline-block;color:#fff;font-size:9px;font-weight:700;border-radius:999px;padding:.4mm 2.4mm;margin-right:1mm}' +
+      '.leg{display:flex;gap:6mm;margin-top:6mm;font-size:10.5px;color:#475569;flex-wrap:wrap}.leg i{display:inline-block;width:3mm;height:3mm;border-radius:50%;margin-right:1.5mm;vertical-align:-.3mm}.leg i.sp{border:1px dashed #94A3B8}.src{position:absolute;bottom:13mm;left:13mm;font-size:10px;color:#64748B}' +
+      '.ctl{columns:2;column-gap:7mm}.ck{break-inside:avoid;margin-bottom:5mm;border:1px solid #E2E8F0;border-radius:3mm;padding:2.5mm 3mm}.ckh{display:flex;gap:3mm;align-items:baseline;margin-bottom:1.5mm;font-size:11px;color:#475569}.ckh b{font-size:13px;color:#0F172A}.ckh .ok{color:#15803D;font-weight:700;margin-left:auto}.ckh .ko{color:#B91C1C;font-weight:700;margin-left:auto}.ck td{font-size:9.5px;padding:.9mm 1.5mm}.ck th{font-size:8.5px;padding:1mm 1.5mm}tr.miss td{color:#B91C1C;background:#FEF2F2;font-weight:700}' +
+      '.k{display:inline-block;color:#fff;font-size:8.5px;font-weight:800;border-radius:1mm;padding:0 1.3mm}' +
+      '.plg{display:flex;gap:7mm;height:158mm}.dw{flex:0 0 46%;display:flex;flex-direction:column;gap:3mm}.dw svg{width:100%;max-height:118mm;flex:1}.dims{font-size:10.5px;color:#475569;display:flex;gap:2mm;align-items:center}.bom{display:flex;flex-wrap:wrap;gap:1.5mm 4mm;font-size:10px;color:#334155;border-top:1px solid #E2E8F0;padding-top:2mm}.bom em{color:#94A3B8;font-style:normal}' +
+      '.tb{flex:1;min-width:0}.ct td{font-size:9.8px;padding:1mm 1.6mm}.ct th{padding:1.2mm 1.6mm}.ct small{color:#94A3B8;font-size:8.5px;margin-left:1mm}.ct td.dl{white-space:nowrap}.num{display:inline-block;min-width:5.5mm;color:#fff;font-weight:800;border-radius:999px;padding:.2mm 1.2mm;font-size:9.5px}.dir{font-weight:600}.dir.out{color:#0F766E}.dir.in{color:#7C3AED}tr.grp td{font-weight:800;font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1.5px solid currentColor;padding-top:2.5mm}' +
+      '.cont{text-align:right;font-size:10px;color:#64748B}.empty{color:#94A3B8;font-size:12px}.ct.wide td{font-size:10.5px}' +
+      '.page.flow{height:auto;min-height:210mm;overflow:visible;padding-bottom:18mm}' +
+      '@media print{body{background:#fff}.bar{display:none}.page{margin:0;box-shadow:none}}';
+    const html = '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>' + E(aff) + ' - Plaques presse-etoupes</title><style>' + css + '</style></head><body>' +
+      '<div class="bar"><b>Plaques presse-étoupes — ' + E(aff) + '</b><span style="opacity:.7">' + total + ' pages · A4 paysage</span><button onclick="print()">🖨 Imprimer / Enregistrer en PDF</button></div>' + pages.join("") + '</body></html>';
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    return html;
+  }
 
   /* ==========================================================
      API PUBLIQUE
@@ -3435,6 +4011,8 @@ function downloadDXF(text, filename) {
 
   return {
     render: render,
+    _readCarnet: readCarnet, _autoAssign: function (aff) { return autoAssign(aff || folderAff); }, _checkSkids: function (aff) { return checkSkids(aff || folderAff); },
+    _exportPdf: exportPdf, _askPending: askPending, _importCarnet: importCarnet,
   };
 })();
 
@@ -3991,7 +4569,7 @@ window.DroitsAcces = (function () {
   <button class="nb" data-tab="personnel" onclick="switchPersonnelTab(window._personnelTab||'equipe')">👤 Personnel</button>
   <button class="nb" data-tab="modifications" onclick="switchTab('modifications')">📄 Modifications</button>
   <button class="nb" data-tab="commandes" onclick="switchTab('commandes')" style="display:none">📦 Commandes</button>
-  <button class="nb" data-tab="docch" onclick="switchTab('docch')" style="display:none">📋 Doc chantier</button>
+  <button class="nb" data-tab="docch" onclick="switchTab('docch')" style="display:none">📋 Document</button>
   <div class="nav-r">
     <span id="sv" class="sv">✓ Sauvegardé</span>
     <button id="btn-undo" onclick="undoAction()" title="Annuler la dernière action (Ctrl+Z)" style="background:var(--bg3);color:var(--tx3);border:1px solid var(--bd);font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit;opacity:.4;pointer-events:none">↩ Annuler</button>
@@ -28680,7 +29258,7 @@ window.PetroNav=(function(){
         on:function(){return nbOn()==='commandes';},
         go:function(){switchTab('commandes');}},
       // Doc chantier de l'affaire (08/10/2026) : fiches de contrôle pétrochimie + punch lists de cette affaire
-      {k:'docch',lbl:'Doc chantier',vis:function(){return typeof _docchSubs==='function'&&_docchSubs().length>0;},
+      {k:'docch',lbl:'Document',vis:function(){return typeof _docchSubs==='function'&&_docchSubs().length>0;},
         on:function(){return nbOn()==='docch';},
         go:function(){switchTab('docch');}}
     ],
