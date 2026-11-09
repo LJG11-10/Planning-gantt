@@ -653,6 +653,8 @@
       if(f==='documents'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f],_m3doc);return;}
       // heures Automatisme saisies (Avancement / Modifications, 12/10/2026) : saisie par saisie
       if(f==='autHours'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
+      // (09/11/2026) plaques PE de l'affaire : plaque par plaque (deux personnes sur deux plaques ne s'écrasent pas)
+      if(f==='plaquesPE'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
       // (19/10/2026) Modifications v2 : fiches des demandes (titre, qui, dates, heures prévues) et historique, élément par élément
       if((f==='modReqs'||f==='modHist')&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
       var v=_pick3(baseP[f],localP[f],remoteP[f]);
@@ -2324,29 +2326,77 @@ window.PresseEtoupe = (function () {
     return config.plateSizes.find(function (p) { return p.id === plate.plateSizeId; }) || config.plateSizes[0];
   }
 
+  /* (09/11/2026, demande de l'utilisateur) Plaques rangées PAR AFFAIRE (dossiers), dans les données
+     partagées du site : STORE.projects[aff].plaquesPE = [plaque…] (fusion plaque par plaque, _m3list).
+     Les plaques d'avant (seulement sur ce poste, localStorage) sont dans le dossier « Non classées »,
+     d'où on les déplace vers une affaire. L'état d'écran (dossier / plaque ouverts) reste sur le poste. */
+  const UI_KEY = "presseEtoupe_ui_v2";
+  const LOCAL = "__local";
+  let localPlates = [];
+  let folderAff = null, activeId = null, openFolders = {}, moveOpen = false;
+
+  function peek(aff) {
+    if (aff === LOCAL) return localPlates;
+    const p = typeof STORE !== "undefined" && STORE.projects ? STORE.projects[aff] : null;
+    return p && Array.isArray(p.plaquesPE) ? p.plaquesPE : [];
+  }
+  function ensure(aff) { // liste réelle (créée si besoin) pour y ajouter une plaque
+    if (aff === LOCAL) return localPlates;
+    const p = STORE.projects[aff];
+    if (!p) return [];
+    if (!Array.isArray(p.plaquesPE)) p.plaquesPE = [];
+    return p.plaquesPE;
+  }
+  function affOk(aff) { return aff === LOCAL ? localPlates.length > 0 : !!(typeof STORE !== "undefined" && STORE.projects && STORE.projects[aff]); }
+  function roOf(aff) { return aff !== LOCAL && !!(STORE.projects[aff] && STORE.projects[aff].closed); } // affaire archivée = lecture seule
+  function affLbl(aff) { return aff === LOCAL ? "Non classées (sur ce poste)" : (typeof getAffLabel === "function" ? getAffLabel(aff) : aff); }
+  function defaultAff() {
+    if (typeof STORE !== "undefined" && STORE.current && STORE.projects[STORE.current]) return STORE.current;
+    const ks = typeof STORE !== "undefined" ? Object.keys(STORE.projects || {}).sort() : [];
+    return ks[0] || (localPlates.length ? LOCAL : null);
+  }
+  // À appeler avant chaque lecture / écriture : la synchro peut avoir remplacé STORE entre-temps
+  function bind() {
+    if (!folderAff || !affOk(folderAff)) folderAff = defaultAff();
+    plates = folderAff ? peek(folderAff) : [];
+    activeIndex = plates.findIndex(function (p) { return p.id === activeId; });
+    if (activeIndex < 0) activeIndex = 0;
+    activeId = plates[activeIndex] ? plates[activeIndex].id : null;
+  }
+
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed.config) config = parsed.config;
-        if (parsed.plates) plates = parsed.plates;
-        if (typeof parsed.activeIndex === "number") activeIndex = parsed.activeIndex;
+        // anciennes plaques du poste : gardées seulement si elles contiennent quelque chose
+        localPlates = (parsed.plates || []).filter(function (p) {
+          return p && ((p.itemsPuissance || []).length || (p.itemsInstrumentation || []).length || p.result);
+        });
       }
     } catch (e) {
       console.warn("PresseEtoupe: lecture localStorage impossible", e);
     }
-    if (plates.length === 0) plates.push(emptyPlate(1));
+    try {
+      const ui = JSON.parse(localStorage.getItem(UI_KEY) || "null");
+      if (ui) { folderAff = ui.aff || null; activeId = ui.id || null; openFolders = ui.open || {}; }
+    } catch (e) {}
+    bind();
   }
 
-  function saveState() {
+  let _saveT = null;
+  function saveState(dataChanged) {
     try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ config: config, plates: plates, activeIndex: activeIndex })
-      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ config: config, plates: localPlates, activeIndex: 0 }));
+      localStorage.setItem(UI_KEY, JSON.stringify({ aff: folderAff, id: activeId, open: openFolders }));
     } catch (e) {
       console.warn("PresseEtoupe: ecriture localStorage impossible", e);
+    }
+    // données partagées de l'affaire : enregistrées (et envoyées aux collègues) 0,5 s après la dernière modification
+    if (dataChanged !== false && folderAff && folderAff !== LOCAL) {
+      clearTimeout(_saveT);
+      _saveT = setTimeout(function () { try { if (typeof saveNow === "function") saveNow(); } catch (e) {} }, 500);
     }
   }
 
@@ -2786,33 +2836,83 @@ function downloadDXF(text, filename) {
     if (!container) return;
     container.innerHTML = renderHTML();
     attachEvents();
+    try { _lastSig = folderAff && folderAff !== LOCAL ? JSON.stringify(peek(folderAff)) : ""; } catch (e) {}
+  }
+
+  function folders() {
+    const ks = Object.keys(STORE.projects || {}).filter(function (k) {
+      const p = STORE.projects[k];
+      return p && (!p.closed || (p.plaquesPE || []).length); // affaire archivée : seulement si elle a des plaques
+    }).sort();
+    const out = ks.map(function (k) { return { k: k, n: peek(k).length }; });
+    if (localPlates.length) out.push({ k: LOCAL, n: localPlates.length });
+    return out;
+  }
+  function plateItemHtml(aff, p) {
+    const status = p.result ? (p.result.ok ? '<span style="color:#15803D">&#10003;</span>' : '<span style="color:#DC2626">&#9888;</span>') : '<span style="color:#CBC7DE">&#9675;</span>';
+    return '<div class="petool-plate-item' + (aff === folderAff && p.id === activeId ? ' active' : '') + '" data-aff="' + escapeHtml(aff) + '" data-id="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '">' +
+             status + '<span class="petool-pname">' + escapeHtml(p.name) + '</span></div>';
   }
 
   function renderHTML() {
-    const plate = plates[activeIndex];
+    bind();
+    const plate = plates[activeIndex], ro = folderAff ? roOf(folderAff) : true;
+    const fl = folders();
+    let side = '<div class="petool-folders">';
+    if (!fl.length) side += '<p class="petool-hint">Aucune affaire.</p>';
+    fl.forEach(function (f) {
+      const open = f.k === folderAff || !!openFolders[f.k];
+      side += '<div class="petool-folder' + (f.k === folderAff ? ' cur' : '') + '" data-aff="' + escapeHtml(f.k) + '" title="' + escapeHtml(affLbl(f.k)) + '">' +
+                '<span class="petool-chev">' + (open ? '&#9662;' : '&#9656;') + '</span>' +
+                '<span class="petool-fname">' + (f.k === LOCAL ? '&#128194; ' : (roOf(f.k) ? '&#128452; ' : '&#128193; ')) + escapeHtml(affLbl(f.k)) + '</span>' +
+                '<span class="petool-fn">' + f.n + '</span></div>';
+      if (open) {
+        const list = peek(f.k);
+        side += '<div class="petool-plate-list">' + list.map(function (p) { return plateItemHtml(f.k, p); }).join('');
+        if (!list.length) side += '<div class="petool-hint" style="margin:2px 0 4px 26px">Aucune plaque.</div>';
+        if (f.k === folderAff && f.k !== LOCAL && !roOf(f.k)) side += '<button id="petool-add-plate" class="petool-addlink">+ Nouvelle plaque</button>';
+        side += '</div>';
+      }
+    });
+    side += '</div>';
+    const okN = plates.filter(function (p) { return p.result && p.result.ok; }).length;
+    if (plates.length) side += '<button id="petool-export-all" class="petool-btn-primary" title="Toutes les plaques calculées de ce dossier, dans un seul fichier">&#11015; DXF du dossier (' + okN + '/' + plates.length + ')</button>';
+
+    let main;
+    if (!folderAff) main = '<p class="petool-hint">Créez d’abord une affaire.</p>';
+    else if (!plate) main = '<div class="petool-empty"><b>' + escapeHtml(affLbl(folderAff)) + '</b><br>Aucune plaque dans ce dossier.' +
+      (!ro && folderAff !== LOCAL ? '<br><button id="petool-add-plate2" class="petool-btn-primary" style="margin-top:12px">+ Nouvelle plaque</button>' : '') + '</div>';
+    else main = actionBarHtml(plate, ro) + '<fieldset class="petool-fs"' + (ro ? ' disabled' : '') + '>' + renderPlateForm(plate, ro) + '</fieldset>';
+
     return (
       '<div class="petool-app">' +
-        '<div class="petool-sidebar">' +
-          '<div class="petool-plate-list">' +
-            plates.map(function (p, i) {
-              const status = p.result ? (p.result.ok ? '&#10003;' : '&#9888;') : '';
-              return '<div class="petool-plate-item' + (i === activeIndex ? ' active' : '') + '" data-idx="' + i + '">' +
-                       '<span>' + status + ' ' + escapeHtml(p.name) + '</span>' +
-                       '<button class="petool-remove-plate" data-idx="' + i + '" title="Supprimer">&times;</button>' +
-                     '</div>';
-            }).join('') +
-          '</div>' +
-          '<button id="petool-add-plate" class="petool-btn-secondary">+ Ajouter une plaque</button>' +
-          '<button id="petool-export-all" class="petool-btn-primary">Exporter DXF (' +
-            plates.filter(function(p){return p.result && p.result.ok;}).length + '/' + plates.length + ')</button>' +
-        '</div>' +
-        '<div class="petool-main">' + (plate ? renderPlateForm(plate) : '<p>Aucune plaque.</p>') + '</div>' +
+        '<div class="petool-sidebar">' + side + '</div>' +
+        '<div class="petool-main">' + main + '</div>' +
       '</div>' +
       renderStyles()
     );
   }
 
-  function renderPlateForm(plate) {
+  function actionBarHtml(plate, ro) {
+    let h = '<div class="petool-actions">' +
+      '<div class="petool-crumb">' + escapeHtml(affLbl(folderAff)) + ' <span>&rsaquo;</span> <b>' + escapeHtml(plate.name) + '</b>' + (ro ? ' <span class="petool-ro">&#128274; affaire archivée : lecture seule</span>' : '') + '</div>' +
+      '<div class="petool-actbtns">' +
+        (!ro ? '<button class="petool-btn-secondary" id="petool-rename" title="Renommer la plaque">&#9998; Renommer</button>' : '') +
+        (!ro && folderAff !== LOCAL ? '<button class="petool-btn-secondary" id="petool-dup" title="Créer une copie de cette plaque dans le même dossier">&#10697; Dupliquer</button>' : '') +
+        (!ro ? '<button class="petool-btn-secondary" id="petool-move" title="Ranger cette plaque dans une autre affaire">&#8644; ' + (folderAff === LOCAL ? 'Ranger dans une affaire' : 'Déplacer') + '</button>' : '') +
+        '<button class="petool-btn-secondary" id="petool-dxf1"' + (plate.result && plate.result.ok ? '' : ' disabled') + ' title="Exporter cette plaque seule en DXF">&#11015; DXF</button>' +
+        (!ro ? '<button class="petool-btn-secondary petool-danger" id="petool-del" title="Supprimer la plaque">&#128465;</button>' : '') +
+      '</div></div>';
+    if (moveOpen && !ro) {
+      const targets = Object.keys(STORE.projects || {}).filter(function (k) { return k !== folderAff && !STORE.projects[k].closed; }).sort();
+      h += '<div class="petool-moverow"><span>Déplacer « ' + escapeHtml(plate.name) + ' » vers :</span>' +
+        '<select id="petool-move-sel">' + targets.map(function (k) { return '<option value="' + escapeHtml(k) + '"' + (k === STORE.current ? ' selected' : '') + '>' + escapeHtml(affLbl(k)) + '</option>'; }).join('') + '</select>' +
+        '<button class="petool-btn-primary" id="petool-move-ok">Déplacer</button><button class="petool-btn-secondary" id="petool-move-cancel">Annuler</button></div>';
+    }
+    return h;
+  }
+
+  function renderPlateForm(plate, ro) {
     const plateSize = getPlateSize(plate);
     const sizeOptions = config.plateSizes.map(function (ps) {
       return '<option value="' + ps.id + '"' + (ps.id === plate.plateSizeId ? ' selected' : '') + '>' + ps.name + '</option>';
@@ -2863,7 +2963,7 @@ function downloadDXF(text, filename) {
     if (plate.result) {
       if (plate.result.ok) {
         var _modeLbl = plate.result.mode === "compact" ? " (rangement compact, pas aligné en lignes)" : "";
-        html += '<div class="petool-alert petool-alert-ok">Rangement trouve — marge ' + plate.result.margin + 'mm, jeu ' + plate.result.gap + 'mm' + (plate.useCustomGap ? ' (ecartement fixe)' : '') + _modeLbl + '. ' + plate.result.placements.length + ' presse-etoupe places.</div>';
+        html += '<div class="petool-alert petool-alert-ok">Rangement trouve — marge ' + plate.result.margin + 'mm, jeu ' + plate.result.gap + 'mm' + (plate.useCustomGap ? ' (ecartement fixe)' : '') + _modeLbl + '. ' + plate.result.placements.length + ' presse-etoupe places.' + (plate.result.manual ? ' <b>Positions ajustées à la main.</b>' : '') + '</div>' + (!ro ? '<p class="petool-hint">Astuce : glissez un presse-étoupe sur l’aperçu pour le déplacer (il ne peut pas toucher ses voisins ni dépasser du bord).</p>' : '');
       } else {
         var _gapMsg = plate.result.fixedGap != null
           ? 'Ca ne rentre pas avec un ecartement fixe de ' + plate.result.fixedGap + 'mm entre presse-etoupes. '
@@ -2872,7 +2972,7 @@ function downloadDXF(text, filename) {
       }
     }
 
-    html += renderPreview(plate, plateSize);
+    html += renderPreview(plate, plateSize, ro);
     return html;
   }
 
@@ -2911,13 +3011,14 @@ function downloadDXF(text, filename) {
     return html;
   }
 
-  function renderPreview(plate, plateSize) {
+  function renderPreview(plate, plateSize, ro) {
     const W = plateSize.width, H = plateSize.height;
     const pad = 24;
     const vbW = W + pad * 2, vbH = H + pad * 2 + 20;
-    let svg = '<svg viewBox="0 0 ' + vbW + ' ' + vbH + '" class="petool-preview">';
+    const drag = !ro && plate.result && plate.result.ok; // (09/11/2026) presse-étoupes déplaçables à la main
+    let svg = '<svg id="petool-svg" viewBox="0 0 ' + vbW + ' ' + vbH + '" class="petool-preview' + (drag ? ' petool-drag' : '') + '" data-w="' + W + '" data-h="' + H + '">';
     svg += '<rect x="0" y="0" width="' + vbW + '" height="' + vbH + '" fill="#12151a"/>';
-    svg += '<g transform="translate(' + pad + ',' + (pad + 20) + ')">';
+    svg += '<g id="petool-plate-g" transform="translate(' + pad + ',' + (pad + 20) + ')">';
     svg += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="none" stroke="#5b8dd9" stroke-width="2"/>';
     svg += '<text x="0" y="-8" fill="#8b93a1" font-size="11">' + W.toFixed(1) + ' x ' + H.toFixed(1) + ' mm</text>';
 
@@ -2926,10 +3027,11 @@ function downloadDXF(text, filename) {
         const dx = plate.result.margin + plate.result.wLeft + plate.result.divider / 2;
         svg += '<line x1="' + dx + '" y1="0" x2="' + dx + '" y2="' + H + '" stroke="#d9695f" stroke-dasharray="4 3"/>';
       }
-      plate.result.placements.forEach(function (p) {
+      plate.result.placements.forEach(function (p, pi) {
         const spec = config.peSizes.find(function (s) { return s.id === p.sizeId; });
         if (!spec) return;
-        svg += '<g transform="translate(' + p.x + ',' + (H - p.y) + ')">' +
+        svg += '<g class="petool-pe" data-i="' + pi + '" transform="translate(' + p.x + ',' + (H - p.y) + ')">' +
+                 '<circle class="petool-hit" r="' + spec.enc2 + '" fill="rgba(226,121,58,0.001)" stroke="none"/>' +
                  '<circle r="' + spec.enc2 + '" fill="none" stroke="#e2793a" stroke-width="1.1" opacity="0.9"/>' +
                  '<circle r="' + spec.enc1 + '" fill="none" stroke="#e2793a" stroke-width="0.6" opacity="0.5"/>' +
                  '<circle r="' + spec.perc + '" fill="none" stroke="#c9cdd3" stroke-width="1.1"/>' +
@@ -2977,7 +3079,38 @@ function downloadDXF(text, filename) {
       '.petool-app .petool-alert{border-radius:8px;padding:9px 11px;font-size:12.5px;margin-bottom:12px;}',
       '.petool-app .petool-alert-ok{background:rgba(22,163,74,0.08);border:1px solid rgba(22,163,74,0.3);color:#15803D;}',
       '.petool-app .petool-alert-error{background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.3);color:#DC2626;}',
-      '.petool-app .petool-preview{width:100%;height:auto;max-height:380px;border-radius:8px;border:1px solid #E4E1F0;}'
+      '.petool-app .petool-preview{width:100%;height:auto;max-height:380px;border-radius:8px;border:1px solid #E4E1F0;}',
+      // (09/11/2026) dossiers par affaire, barre d'actions, déplacement à la main
+      '.petool-app .petool-sidebar{width:270px;}',
+      '.petool-app .petool-folders{display:flex;flex-direction:column;gap:2px;max-height:62vh;overflow-y:auto;padding-right:2px;}',
+      '.petool-app .petool-folder{display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:12.5px;color:#4A4766;font-weight:600;}',
+      '.petool-app .petool-folder:hover{background:#F6F5FB;}',
+      '.petool-app .petool-folder.cur{background:#F1EFFC;color:#3A2EAE;font-weight:800;}',
+      '.petool-app .petool-chev{width:12px;color:#9A96B3;font-size:11px;flex-shrink:0;}',
+      '.petool-app .petool-fname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+      '.petool-app .petool-fn{font-size:11px;font-weight:800;color:#6B6790;background:#EFEDF7;border-radius:999px;padding:1px 7px;flex-shrink:0;}',
+      '.petool-app .petool-plate-list{max-height:none;overflow:visible;margin:2px 0 6px;}',
+      '.petool-app .petool-plate-item{justify-content:flex-start;gap:7px;padding:6px 10px 6px 26px;font-size:12.5px;}',
+      '.petool-app .petool-pname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+      '.petool-app .petool-addlink{background:none;border:none;color:#6457F4;font-weight:700;font-size:12px;cursor:pointer;padding:5px 10px 5px 26px;text-align:left;font-family:inherit;}',
+      '.petool-app .petool-main{max-width:620px;}',
+      '.petool-app .petool-actions{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #EFEDF7;}',
+      '.petool-app .petool-crumb{font-size:12.5px;color:#6B6790;}',
+      '.petool-app .petool-crumb b{color:#1C1A33;font-size:14px;}',
+      '.petool-app .petool-ro{display:inline-block;margin-left:6px;font-size:11px;font-weight:800;color:#475569;background:#F1F5F9;border-radius:6px;padding:1px 7px;}',
+      '.petool-app .petool-actbtns{display:flex;gap:6px;flex-wrap:wrap;}',
+      '.petool-app .petool-actbtns button:disabled{opacity:.45;cursor:default;}',
+      '.petool-app .petool-danger{color:#B91C1C;border-color:#FECACA;}',
+      '.petool-app .petool-moverow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:#F6F5FB;border:1px solid #E4E1F0;border-radius:10px;padding:8px 10px;margin-bottom:12px;font-size:12.5px;}',
+      '.petool-app .petool-moverow select{flex:1;min-width:180px;background:#fff;border:1px solid #E4E1F0;border-radius:8px;padding:6px 8px;font-size:12.5px;}',
+      '.petool-app .petool-fs{border:0;margin:0;padding:0;min-width:0;}',
+      '.petool-app .petool-fs:disabled{opacity:.75;}',
+      '.petool-app .petool-empty{text-align:center;padding:40px 16px;color:#6B6790;font-size:13px;line-height:1.6;}',
+      '.petool-app .petool-drag .petool-pe{cursor:grab;}',
+      '.petool-app .petool-drag .petool-pe.petool-moving{cursor:grabbing;}',
+      '.petool-app .petool-pe.petool-moving circle:not(.petool-hit){stroke:#22C55E;}',
+      '.petool-app .petool-pe.petool-bad circle:not(.petool-hit){stroke:#EF4444 !important;}',
+      '.petool-app .petool-preview{touch-action:none;}'
     ].join('\n');
     return '<style>' + css + '</style>';
   }
@@ -2995,47 +3128,101 @@ function downloadDXF(text, filename) {
   function attachEvents() {
     const container = document.getElementById(containerId);
     if (!container) return;
+    // Avant tout traitement d'un clic / d'une saisie : relier aux données ACTUELLES (la synchro remplace STORE)
+    if (!container._peBound) {
+      container._peBound = true;
+      ["click", "input", "change", "pointerdown"].forEach(function (t) { container.addEventListener(t, function () { bind(); }, true); });
+    }
+    const ro = folderAff ? roOf(folderAff) : true;
 
+    container.querySelectorAll(".petool-folder").forEach(function (el) {
+      el.addEventListener("click", function () {
+        const k = el.getAttribute("data-aff");
+        if (k === folderAff) return; // dossier déjà ouvert
+        folderAff = k; openFolders[k] = true; activeId = (peek(k)[0] || {}).id || null; moveOpen = false;
+        saveState(false); paint();
+      });
+    });
     container.querySelectorAll(".petool-plate-item").forEach(function (el) {
-      el.addEventListener("click", function (e) {
-        if (e.target.classList.contains("petool-remove-plate")) return;
-        activeIndex = parseInt(el.getAttribute("data-idx"), 10);
-        saveState();
-        paint();
-      });
-    });
-    container.querySelectorAll(".petool-remove-plate").forEach(function (el) {
-      el.addEventListener("click", function (e) {
-        e.stopPropagation();
-        const idx = parseInt(el.getAttribute("data-idx"), 10);
-        plates.splice(idx, 1);
-        if (plates.length === 0) plates.push(emptyPlate(1));
-        activeIndex = Math.max(0, Math.min(activeIndex, plates.length - 1));
-        saveState();
-        paint();
+      el.addEventListener("click", function () {
+        folderAff = el.getAttribute("data-aff"); activeId = el.getAttribute("data-id"); moveOpen = false;
+        saveState(false); paint();
       });
     });
 
-    const addBtn = document.getElementById("petool-add-plate");
-    if (addBtn) addBtn.addEventListener("click", function () {
-      plates.push(emptyPlate(plates.length + 1));
-      activeIndex = plates.length - 1;
-      saveState();
-      paint();
-    });
+    function addPlate() {
+      if (!folderAff || folderAff === LOCAL || roOf(folderAff)) return;
+      const list = ensure(folderAff);
+      const p = emptyPlate(list.length + 1);
+      list.push(p); activeId = p.id; openFolders[folderAff] = true;
+      saveState(); paint();
+    }
+    ["petool-add-plate", "petool-add-plate2"].forEach(function (id) { const b = document.getElementById(id); if (b) b.addEventListener("click", addPlate); });
 
     const exportBtn = document.getElementById("petool-export-all");
     if (exportBtn) exportBtn.addEventListener("click", exportAll);
+    const dxf1 = document.getElementById("petool-dxf1");
+    if (dxf1) dxf1.addEventListener("click", function () { const p = plates[activeIndex]; if (p) exportList([p], fileBase() + "_" + safeName(p.name) + ".dxf"); });
 
+    // ── Actions sur la plaque ouverte ──
+    const renBtn = document.getElementById("petool-rename");
+    if (renBtn) renBtn.addEventListener("click", function () {
+      const p = plates[activeIndex]; if (!p || ro) return;
+      const v = prompt("Nouveau nom de la plaque :", p.name);
+      if (v == null || !String(v).trim()) return;
+      p.name = String(v).trim(); saveState(); paint();
+    });
+    const dupBtn = document.getElementById("petool-dup");
+    if (dupBtn) dupBtn.addEventListener("click", function () {
+      const p = plates[activeIndex]; if (!p || ro) return;
+      const list = ensure(folderAff);
+      const c = JSON.parse(JSON.stringify(p));
+      c.id = uid(); c.name = p.name + " (copie)";
+      list.splice(list.indexOf(p) + 1, 0, c); activeId = c.id;
+      saveState(); paint();
+    });
+    const delBtn = document.getElementById("petool-del");
+    if (delBtn) delBtn.addEventListener("click", function () {
+      const p = plates[activeIndex]; if (!p || ro) return;
+      if (!confirm("Supprimer la plaque « " + p.name + " » ?")) return;
+      const list = folderAff === LOCAL ? localPlates : ensure(folderAff);
+      const i = list.indexOf(p); if (i >= 0) list.splice(i, 1);
+      activeId = (list[Math.max(0, i - 1)] || {}).id || null;
+      const wasLocal = folderAff === LOCAL;
+      if (wasLocal && !localPlates.length) folderAff = defaultAff();
+      saveState(!wasLocal); paint();
+    });
+    const moveBtn = document.getElementById("petool-move");
+    if (moveBtn) moveBtn.addEventListener("click", function () { moveOpen = !moveOpen; paint(); });
+    const moveCancel = document.getElementById("petool-move-cancel");
+    if (moveCancel) moveCancel.addEventListener("click", function () { moveOpen = false; paint(); });
+    const moveOk = document.getElementById("petool-move-ok");
+    if (moveOk) moveOk.addEventListener("click", function () {
+      const sel = document.getElementById("petool-move-sel"), dest = sel && sel.value;
+      const p = plates[activeIndex]; if (!p || !dest || dest === folderAff || roOf(dest) || ro) return;
+      const src = folderAff === LOCAL ? localPlates : ensure(folderAff);
+      const i = src.indexOf(p); if (i < 0) return;
+      src.splice(i, 1);
+      ensure(dest).push(p);
+      const from = folderAff;
+      folderAff = dest; activeId = p.id; openFolders[dest] = true; moveOpen = false;
+      saveState(); // enregistre aussi l'affaire d'origine (tout STORE est enregistré)
+      if (from === LOCAL) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ config: config, plates: localPlates, activeIndex: 0 })); } catch (e) {} }
+      paint();
+    });
+
+    // Le nom se change aussi dans le formulaire (sans refaire le calcul : un nom ne change pas le rangement)
     const nameInput = document.getElementById("petool-name");
     if (nameInput) nameInput.addEventListener("input", function () {
       plates[activeIndex].name = nameInput.value;
-      plates[activeIndex].result = null;
       saveState();
       // pas de repaint complet ici pour ne pas perdre le focus du champ
-      const item = container.querySelectorAll(".petool-plate-item")[activeIndex];
-      if (item) item.querySelector("span").textContent = nameInput.value;
+      const item = container.querySelector('.petool-plate-item[data-id="' + activeId + '"] .petool-pname');
+      if (item) item.textContent = nameInput.value;
     });
+
+    // ── Déplacer un presse-étoupe à la main sur l'aperçu (09/11/2026) ──
+    attachDrag(container, ro);
 
     const sizeSelect = document.getElementById("petool-size");
     if (sizeSelect) sizeSelect.addEventListener("change", function () {
@@ -3144,21 +3331,103 @@ function downloadDXF(text, filename) {
 
     const calcBtn = document.getElementById("petool-calculate");
     if (calcBtn) calcBtn.addEventListener("click", function () {
-      calculatePlate(plates[activeIndex]);
+      const p = plates[activeIndex];
+      if (p && p.result && p.result.manual && !confirm("Les presse-étoupes ont été déplacés à la main.\n\nRecalculer le rangement annule ces déplacements. Continuer ?")) return;
+      calculatePlate(p);
       paint();
     });
   }
 
-  function exportAll() {
-    const ready = plates.filter(function (p) { return p.result && p.result.ok; });
-    if (ready.length === 0) return;
+  // Glisser un presse-étoupe : il suit la souris (pas de 0,5 mm), rouge s'il touche un voisin (écartement
+  // mini 0,5 mm) ou dépasse du bord de la plaque ; au lâcher, position gardée si elle est libre, sinon il revient.
+  function attachDrag(container, ro) {
+    const svg = document.getElementById("petool-svg");
+    if (!svg || ro || !svg.classList.contains("petool-drag")) return;
+    const W = parseFloat(svg.getAttribute("data-w")), H = parseFloat(svg.getAttribute("data-h"));
+    const g0 = document.getElementById("petool-plate-g");
+    const MIN_GAP = 0.5, STEP = 0.5;
+    function toPlate(ev) { // coordonnées écran → mm sur la plaque (y vers le haut, comme le DXF)
+      const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+      const m = g0.getScreenCTM(); if (!m) return null;
+      const q = pt.matrixTransform(m.inverse());
+      return { x: q.x, y: H - q.y };
+    }
+    function rOf(sizeId) { const s = config.peSizes.find(function (x) { return x.id === sizeId; }); return s ? s.enc2 : 15; }
+    function freeAt(list, i, x, y) {
+      const r = rOf(list[i].sizeId);
+      if (x - r < 0 || x + r > W || y - r < 0 || y + r > H) return false;
+      for (let k = 0; k < list.length; k++) {
+        if (k === i) continue;
+        const o = list[k], d = r + rOf(o.sizeId) + MIN_GAP, dx = x - o.x, dy = y - o.y;
+        if (dx * dx + dy * dy < d * d - 1e-6) return false;
+      }
+      return true;
+    }
+    let drag = null;
+    svg.querySelectorAll(".petool-pe").forEach(function (g) {
+      g.addEventListener("pointerdown", function (ev) {
+        const p = plates[activeIndex]; if (!p || !p.result || !p.result.ok) return;
+        const i = parseInt(g.getAttribute("data-i"), 10), pl = p.result.placements[i]; if (!pl) return;
+        const at = toPlate(ev); if (!at) return;
+        drag = { g: g, i: i, dx: pl.x - at.x, dy: pl.y - at.y, x: pl.x, y: pl.y, ok: true };
+        try { g.setPointerCapture(ev.pointerId); } catch (e) {}
+        g.classList.add("petool-moving");
+        ev.preventDefault();
+      });
+      g.addEventListener("pointermove", function (ev) {
+        if (!drag || drag.g !== g) return;
+        const p = plates[activeIndex]; if (!p || !p.result) return;
+        const at = toPlate(ev); if (!at) return;
+        const x = Math.round((at.x + drag.dx) / STEP) * STEP, y = Math.round((at.y + drag.dy) / STEP) * STEP;
+        drag.x = x; drag.y = y; drag.ok = freeAt(p.result.placements, drag.i, x, y);
+        g.setAttribute("transform", "translate(" + x + "," + (H - y) + ")");
+        g.classList.toggle("petool-bad", !drag.ok);
+      });
+      function end() {
+        if (!drag || drag.g !== g) return;
+        const d = drag; drag = null;
+        const p = plates[activeIndex];
+        if (p && p.result && p.result.placements[d.i]) {
+          const pl = p.result.placements[d.i];
+          if (d.ok && (Math.abs(pl.x - d.x) > 1e-6 || Math.abs(pl.y - d.y) > 1e-6)) {
+            pl.x = d.x; pl.y = d.y; p.result.manual = true; saveState();
+          }
+        }
+        paint(); // position gardée, ou retour à l'ancienne si elle n'était pas libre
+      }
+      g.addEventListener("pointerup", end);
+      g.addEventListener("pointercancel", end);
+    });
+  }
+
+  function safeName(s) { return String(s || "plaque").replace(/[\\\/:*?"<>|\r\n]+/g, "_").trim().slice(0, 60) || "plaque"; }
+  function fileBase() { return folderAff && folderAff !== LOCAL ? safeName(folderAff) : "plaques"; }
+  // (09/11/2026) dimensions RÉELLES de chaque plaque (getPlateSize) : avant, une plaque en dimensions
+  // personnalisées était exportée avec la taille standard de la liste.
+  function exportList(list, filename) {
+    const ready = list.filter(function (p) { return p.result && p.result.ok; });
+    if (ready.length === 0) { alert("Aucune plaque calculée à exporter. Cliquez d’abord sur « Calculer le rangement »."); return; }
     const withDims = ready.map(function (p) {
-      const ps = config.plateSizes.find(function (x) { return x.id === p.plateSizeId; });
+      const ps = getPlateSize(p);
       return { name: p.name, width: ps.width, height: ps.height, result: p.result };
     });
-    const dxf = buildDXF(withDims, config.peSizes);
-    downloadDXF(dxf, "presse_etoupe_export.dxf");
+    downloadDXF(buildDXF(withDims, config.peSizes), filename);
   }
+  function exportAll() { exportList(plates, fileBase() + "_plaques_PE.dxf"); }
+
+  // Un collègue a modifié les plaques de ce dossier : on redessine (sauf pendant une saisie ou un déplacement)
+  let _lastSig = "";
+  setInterval(function () {
+    try {
+      const c = containerId && document.getElementById(containerId);
+      if (!c || !c.offsetParent || !folderAff || folderAff === LOCAL) return;
+      if (c.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+      if (c.querySelector(".petool-moving")) return;
+      const sig = JSON.stringify(peek(folderAff));
+      if (_lastSig && sig !== _lastSig) paint();
+      _lastSig = sig;
+    } catch (e) {}
+  }, 3000);
 
   /* ==========================================================
      API PUBLIQUE
@@ -28301,7 +28570,8 @@ window.PetroNav=(function(){
     if(!closed&&(secVis('#sbar .btn-da[onclick*="openModal(\'del\')"]')||secVis('#sbar .btn-da[onclick*="openModal("]')))more.push(['PetroNav.archive()','🗄 Archiver l’affaire…']);
     if(closed&&isAdm)more.push(['PetroNav.unarchive()','✓ Désarchiver l’affaire']);
     // (27/10/2026) affaire créée par l'ancienne copie : retirer ce qui a été recopié (admin, avec aperçu)
-    if(!closed&&isAdm){try{var _cc=_copyCleanScan(k);if(_cc&&(_cc.days.length||(_cc.sure&&_cc.unsure)||(_cc.copyLike&&(_cc.prog.length||_cc.buds.length||_cc.projBud||_cc.autOld.length))))more.push(['affCopyCleanAsk()','🧹 Nettoyer une copie d’affaire…']);}catch(e){}}
+    // (09/11/2026, lenteur) le scan relit TOUTES les feuilles d'heure : seulement quand le menu ⋯ est ouvert
+    if(!closed&&isAdm&&S.menu==='more'){try{var _cc=_copyCleanScan(k);if(_cc&&(_cc.days.length||(_cc.sure&&_cc.unsure)||(_cc.copyLike&&(_cc.prog.length||_cc.buds.length||_cc.projBud||_cc.autOld.length))))more.push(['affCopyCleanAsk()','🧹 Nettoyer une copie d’affaire…']);}catch(e){}}
     if(secVis('#sbar .btn-da[onclick*="openModal(\'del\')"]')||secVis('#sbar .btn-da[onclick*="openModal("]'))more.push(['openModal(\'del\')','🗑 Supprimer l’affaire',1]);
     var canEdit=secVis('#nav [onclick="openPlanEditor()"]')&&!closed;
     var bi=document.getElementById('inp-bud');if(bi)bi.disabled=!hasEdit('budget_toolbar'); // H vendues : grisé si archivée
@@ -28450,7 +28720,9 @@ window.PetroNav=(function(){
     var ae=document.activeElement;
     if(ae&&(ae.id==='sec-side-q'||ae.id==='inp-bud'))return; // jamais reconstruire pendant une saisie
     var k=curAff(),p=k?STORE.projects[k]:null,hd=[];
-    if(p&&S.sec==='affaire'){var u=0;try{u=typeof _rcFhHours==='function'?_rcFhHours(k).total:0;}catch(e){}hd=[p.budget,u,p.dstart,p.dend,(p.infos||{}).dateCreation,($('inp-dstart')||{}).value,($('inp-dend')||{}).value,secVis('#inp-bud'),!!window._gcStruct,TABS.affaire.filter(function(x){return x.badge;}).map(function(x){return x.badge();})];}
+    // (09/11/2026, lenteur) l'en-tête n'affiche plus d'heures (case CONSOMMÉ retirée le 06/10) : on ne relit plus
+    // toutes les feuilles d'heure de toutes les affaires toutes les 1,5 s pour rien
+    if(p&&S.sec==='affaire'){var u=0;hd=[p.budget,u,p.dstart,p.dend,(p.infos||{}).dateCreation,($('inp-dstart')||{}).value,($('inp-dend')||{}).value,secVis('#inp-bud'),!!window._gcStruct,TABS.affaire.filter(function(x){return x.badge;}).map(function(x){return x.badge();})];}
     var sig=JSON.stringify([affList().map(function(a){return [a.k,a.lbl,a.closed];}),typeof STORE!=='undefined'?STORE.current:'',nbOn(),window._tdbTab,window._personnelTab,typeof GANTT_VIEW!=='undefined'?GANTT_VIEW:'',qrOpen(),hd]);
     if(sig!==S.sig){S.sig=sig;renderAll();}
   }
