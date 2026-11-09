@@ -1886,7 +1886,7 @@ body{font-family:'Plus Jakarta Sans',system-ui,-apple-system,sans-serif;backgrou
         <div class="petro-tile-ico" style="background:#4B3FC7">📁</div>
         <div class="petro-tile-t">Affaires</div>
         <div class="petro-tile-s">Tout ce qui concerne une affaire, choisie dans le menu de gauche</div>
-        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Bilan</span><span>Heures</span><span>Modifications</span><span id="petro-hub-chip-cmd">Commandes</span><span id="petro-hub-chip-docch">Document</span></div>
+        <div class="petro-tile-chips"><span>Vue d’ensemble</span><span>Planning</span><span>Avancement</span><span>Bilan</span><span>Heures</span><span>Modifications</span><span id="petro-hub-chip-cmd">Commandes</span><span id="petro-hub-chip-docch">Documents</span></div>
       </div>
       <div id="petro-hub-tile-equipe" class="petro-tile" onclick="petroHubEnterEquipe()">
         <div class="petro-tile-ico" style="background:#0F766E">👥</div>
@@ -4625,7 +4625,7 @@ window.DroitsAcces = (function () {
   <button class="nb" data-tab="personnel" onclick="switchPersonnelTab(window._personnelTab||'equipe')">👤 Personnel</button>
   <button class="nb" data-tab="modifications" onclick="switchTab('modifications')">📄 Modifications</button>
   <button class="nb" data-tab="commandes" onclick="switchTab('commandes')" style="display:none">📦 Commandes</button>
-  <button class="nb" data-tab="docch" onclick="switchTab('docch')" style="display:none">📋 Document</button>
+  <button class="nb" data-tab="docch" onclick="switchTab('docch')" style="display:none">📋 Documents</button>
   <div class="nav-r">
     <span id="sv" class="sv">✓ Sauvegardé</span>
     <button id="btn-undo" onclick="undoAction()" title="Annuler la dernière action (Ctrl+Z)" style="background:var(--bg3);color:var(--tx3);border:1px solid var(--bd);font-size:11px;font-weight:700;border-radius:var(--r);padding:5px 10px;cursor:pointer;font-family:inherit;opacity:.4;pointer-events:none">↩ Annuler</button>
@@ -29314,7 +29314,7 @@ window.PetroNav=(function(){
         on:function(){return nbOn()==='commandes';},
         go:function(){switchTab('commandes');}},
       // Doc chantier de l'affaire (08/10/2026) : fiches de contrôle pétrochimie + punch lists de cette affaire
-      {k:'docch',lbl:'Document',vis:function(){return typeof _docchSubs==='function'&&_docchSubs().length>0;},
+      {k:'docch',lbl:'Documents',vis:function(){return typeof _docchSubs==='function'&&_docchSubs().length>0;},
         on:function(){return nbOn()==='docch';},
         go:function(){switchTab('docch');}}
     ],
