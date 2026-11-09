@@ -3973,7 +3973,8 @@ function downloadDXF(text, filename) {
       s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + sp.perc + '" fill="#fff" stroke="' + (used ? "#1E293B" : "#CBD5E1") + '" stroke-width="0.8"/>';
       if (used) s += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(sp.perc * 1.15, 16) + '" font-weight="800" fill="' + col + '">' + sl.n + '</text>';
       if (used && sl.cables.length > 1) s += '<text x="' + cx + '" y="' + (cy + (sp.perc + sp.enc2) / 2) + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min((sp.enc2 - sp.perc) * 0.8, 7) + '" font-weight="800" fill="' + col + '">×' + sl.cables.length + '</text>';
-      // (09/11/2026, demande de l'utilisateur) plus de mot « spare » dans le dessin : la PE libre reste en pointillés gris (voir la légende)
+      // (09/11/2026, demande de l'utilisateur) « SPARE » écrit SEULEMENT dans une PE sans numéro (jamais sur une PE numérotée)
+      if (!used) s += '<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" font-size="' + Math.min(sp.perc * 0.55, 7) + '" font-weight="700" letter-spacing="0.3" fill="#94A3B8">SPARE</text>';
     });
     return s + '</svg>';
   }
