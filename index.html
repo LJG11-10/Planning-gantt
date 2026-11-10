@@ -2805,6 +2805,9 @@ function downloadDXF(text, filename) {
      CALCUL D'UNE PLAQUE
      ========================================================== */
 
+  // Côté gauche d'une plaque « Les deux » : "I" (instrum, par défaut et anciennes plaques) ou "E" (puissance, côtés échangés)
+  function leftKindOf(r) { return r && r.leftKind === "E" ? "E" : "I"; }
+
   function calculatePlate(plate) {
     const plateSize = getPlateSize(plate);
     const itemsP = applyBonusPerItem(plate.itemsPuissance);
@@ -2812,7 +2815,10 @@ function downloadDXF(text, filename) {
     const fixedGap = (plate.useCustomGap && plate.customGap != null && !isNaN(plate.customGap)) ? plate.customGap : null;
     let result;
     if (plate.content === "both") {
-      result = findBestFitSplit(itemsI, itemsP, plateSize.width, plateSize.height, fixedGap);
+      // (10/11/2026) plate.swapSides : puissance à gauche, instrum à droite (par défaut l'inverse)
+      result = plate.swapSides ? findBestFitSplit(itemsP, itemsI, plateSize.width, plateSize.height, fixedGap)
+                               : findBestFitSplit(itemsI, itemsP, plateSize.width, plateSize.height, fixedGap);
+      if (result && result.ok) result.leftKind = plate.swapSides ? "E" : "I";
     } else {
       const items = plate.content === "puissance" ? itemsP : itemsI;
       result = findBestFit(items, plateSize.width, plateSize.height, fixedGap);
@@ -2957,7 +2963,11 @@ function downloadDXF(text, filename) {
     });
     html += '</div>';
     if (plate.content === "both") {
-      html += '<p class="petool-hint">Instrumentation &rarr; a gauche &middot; Puissance &rarr; a droite (automatique)</p>';
+      const _lk = (plate.result && plate.result.ok && plate.result.divider != null) ? leftKindOf(plate.result) : (plate.swapSides ? "E" : "I");
+      html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px">'
+        + '<p class="petool-hint" style="margin:0;flex:1;min-width:200px">' + (_lk === "E" ? 'Puissance &rarr; à gauche &middot; Instrumentation &rarr; à droite' : 'Instrumentation &rarr; à gauche &middot; Puissance &rarr; à droite') + '</p>'
+        + (!ro ? '<button type="button" id="petool-swap-sides" class="petool-btn-secondary" title="Échanger les côtés de l’instrumentation et de la puissance (le rangement est retourné, les câbles raccrochés suivent)">⇄ Inverser les côtés</button>' : '')
+        + '</div>';
     }
 
     html += '<p class="petool-hint">Le +20% se règle individuellement, taille par taille, ci-dessous.</p>';
@@ -3378,6 +3388,25 @@ function downloadDXF(text, filename) {
       });
     });
 
+    // (10/11/2026) plaque « Les deux » : échanger les côtés instrum / puissance. Le rangement déjà calculé est RETOURNÉ
+    // (miroir gauche-droite) : positions ajustées à la main et câbles raccrochés gardés, pas de recalcul.
+    const swapBtn = document.getElementById("petool-swap-sides");
+    if (swapBtn) swapBtn.addEventListener("click", function () {
+      const p = plates[activeIndex];
+      if (!p || p.content !== "both") return;
+      p.swapSides = !p.swapSides;
+      const r = p.result;
+      if (r && r.ok && r.divider != null) {
+        const W = getPlateSize(p).width, ndx = W - (r.margin + r.wLeft + r.divider / 2), wl = r.wLeft;
+        r.placements.forEach(function (pl) { pl.x = Math.round((W - pl.x) * 1000) / 1000; });
+        r.wLeft = ndx - r.margin - r.divider / 2; r.wRight = wl;
+        r.leftKind = leftKindOf(r) === "E" ? "I" : "E";
+        p.swapSides = r.leftKind === "E";
+      }
+      saveState();
+      paint();
+    });
+
     const calcBtn = document.getElementById("petool-calculate");
     if (calcBtn) calcBtn.addEventListener("click", function () {
       const p = plates[activeIndex];
@@ -3587,10 +3616,11 @@ function downloadDXF(text, filename) {
     const r = p && p.result;
     if (!r || !r.ok) return [];
     const dx = r.divider != null ? r.margin + r.wLeft + r.divider / 2 : null;
+    const lk = leftKindOf(r), rk = lk === "I" ? "E" : "I";
     const cnt = {};
     return r.placements.map(function (pl, i) {
       cnt[pl.sizeId] = (cnt[pl.sizeId] || 0) + 1;
-      const kind = dx != null ? (pl.x < dx ? "I" : "E") : (p.content === "puissance" ? "E" : "I");
+      const kind = dx != null ? (pl.x < dx ? lk : rk) : (p.content === "puissance" ? "E" : "I");
       return { i: i, key: pl.sizeId + "#" + cnt[pl.sizeId], kind: kind, sizeId: pl.sizeId, x: pl.x, y: pl.y };
     });
   }
@@ -3619,7 +3649,9 @@ function downloadDXF(text, filename) {
       const cs = tagsAt(cab, s.key).map(function (t) { return idx[t]; }).filter(function (c) { return c && eligible(c, p); });
       if (cs.length) { s.cables = cs; s.cable = cs[0]; s.dir = dirFor(cs[0], S); usedS.push(s); }
     });
-    const side = function (k) { return p.content === "both" ? (k === "I" ? 0 : 1) : 0; };
+    // côté gauche numéroté d'abord (ordre de lecture), qu'il soit instrum ou puissance (10/11/2026 : côtés échangeables)
+    const lk = leftKindOf(p.result);
+    const side = function (k) { return p.content === "both" ? (k === lk ? 0 : 1) : 0; };
     usedS.sort(function (a, b) { return side(a.kind) - side(b.kind) || (b.y - a.y) || (a.x - b.x); });
     // regroupement par rangée (tolérance 5 mm sur la hauteur)
     const rows = [];
@@ -4044,16 +4076,16 @@ function downloadDXF(text, filename) {
       const rowHtml = function (s) {
         const c = s.cable, k = kindOfCable(c), oe = otherEnd(c, s.dir);
         const cp = wantPe(c), diff = cp && cp !== s.sizeId;
-        return '<tr><td class="n"><span class="num" style="background:' + KCOL[k] + '">' + s.n + '</span></td><td style="white-space:nowrap">' + E(peName(s.sizeId)) + (s.nIn > 1 ? ' <small style="color:#2563EB;font-weight:700">×' + s.nIn + ' regroupés</small>' : '') + (diff ? ' <small style="color:#B45309">(carnet ' + E(peName(cp)) + ')</small>' : '') + '</td><td><b>' + E(c.t) + '</b></td><td>' + E(c.ty) + '</td><td>' + E(c.sec) + '</td>' +
-          '<td class="dl">' + (s.dir === "out" ? '<span class="dir out">↗ ' : '<span class="dir in">↘ ') + E(isExtLoc(oe.loc) ? oe.loc : normSkid(oe.loc) || "?") + '</span>' + (oe.tag ? ' <small>' + E(oe.tag) + '</small>' : '') + '</td></tr>';
+        return '<tr><td class="n"><span class="num" style="background:' + KCOL[k] + '">' + s.n + '</span></td><td style="white-space:nowrap">' + E(peName(s.sizeId)) + (s.nIn > 1 ? ' <small style="color:#2563EB;font-weight:700">×' + s.nIn + ' regroupés</small>' : '') + (diff ? ' <small style="color:#B45309">(carnet ' + E(peName(cp)) + ')</small>' : '') + '</td><td><b>' + E(c.t) + '</b></td><td>' + E(c.ty) + '</td><td>' + E(c.sec) + '</td></tr>';
       };
-      const thead = '<thead><tr><th>N°</th><th>PE</th><th>Repère</th><th>Type</th><th>Section</th><th>Vers / depuis</th></tr></thead>';
+      // (10/11/2026, demande de l'utilisateur) plus de colonne « Vers / depuis » sur la page d'une plaque (le sens reste sur la page de contrôle)
+      const thead = '<thead><tr><th>N°</th><th>PE</th><th>Repère</th><th>Type</th><th>Section</th></tr></thead>';
       const groups = function (arr) {
         let h = "";
         ["I", "E"].forEach(function (k) {
           const a = arr.filter(function (s) { return kindOfCable(s.cable) === k; });
           if (!a.length) return;
-          if (kindsOfPlate(p).length > 1) h += '<tr class="grp"><td colspan="6" style="color:' + KCOL[k] + '">' + KLBL[k] + '</td></tr>';
+          if (kindsOfPlate(p).length > 1) h += '<tr class="grp"><td colspan="5" style="color:' + KCOL[k] + '">' + KLBL[k] + '</td></tr>';
           h += a.map(rowHtml).join("");
         });
         return h;
@@ -4067,7 +4099,9 @@ function downloadDXF(text, filename) {
       }).join("");
       const first = m.used.slice(0, x.chunks > 1 ? 22 : m.used.length);
       pages.push('<section class="page">' + head(p.name, skidOfPlate(p) + " · " + kindsOfPlate(p).map(function (k) { return KLBL[k]; }).join(" + ")) +
-        '<div class="plg"><div class="dw">' + plateSvgDoc(p, m) + '<div class="dims">' + kindChips(p) + '<span>Plaque ' + Math.round(ps.width) + ' × ' + Math.round(ps.height) + ' mm</span></div><div class="bom">' + bom + '</div></div>' +
+        '<div class="plg"><div class="dw">' + plateSvgDoc(p, m) +
+        '<p style="margin:4px 0 6px;font-size:10.5px;font-style:italic;font-weight:700;color:#B45309;text-align:center">⚠ Dessin estimatif</p>' + // (10/11/2026, demande de l'utilisateur)
+        '<div class="dims">' + kindChips(p) + '<span>Plaque ' + Math.round(ps.width) + ' × ' + Math.round(ps.height) + ' mm</span></div><div class="bom">' + bom + '</div></div>' +
         '<div class="tb">' + (m.used.length ? '<table class="ct">' + thead + '<tbody>' + groups(first) + '</tbody></table>' : '<p class="empty">Aucun câble raccroché sur cette plaque.</p>') +
         (x.chunks > 1 ? '<p class="cont">Suite page suivante →</p>' : '') + '</div></div></section>');
       for (let ci = 1; ci < x.chunks; ci++) {
