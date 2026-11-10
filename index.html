@@ -655,6 +655,8 @@
       if(f==='autHours'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
       // (09/11/2026) plaques PE de l'affaire : plaque par plaque (deux personnes sur deux plaques ne s'écrasent pas)
       if(f==='plaquesPE'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
+      // (10/11/2026) dossiers des punch lists de l'affaire : dossier par dossier
+      if(f==='plFolders'&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
       // (19/10/2026) Modifications v2 : fiches des demandes (titre, qui, dates, heures prévues) et historique, élément par élément
       if((f==='modReqs'||f==='modHist')&&(Array.isArray(localP[f])||Array.isArray(remoteP[f]))){remoteP[f]=_m3list(baseP[f],localP[f],remoteP[f]);return;}
       var v=_pick3(baseP[f],localP[f],remoteP[f]);
@@ -7984,7 +7986,7 @@ async function affBuildDossier(k,kind,st){
     +fiches.map(function(f){var m=f.meta||{};return '<tr><td>'+esc(m.skid||f.title||'—')+'</td><td>'+esc(m.date||'')+'</td><td>'+(f.status==='locked'?'<span class="vg">✓ signée</span>':'<span class="vo">non signée</span>')+'</td></tr>';}).join('')+'</table></div></div>';
   // 3 · Punch list
   if(pls.length)h+='<div class="sec">'+secT('Punch list du client — état final',badge(plOpen?'warn':'ok',plOpen+' ouverte'+(plOpen>1?'s':'')))
-    +pls.map(function(x){var m=x.meta||{};return '<div style="font-size:13px;margin-bottom:4px">'+esc(x.title||m.title||'Punch list')+(m.rev?' · Rév. '+esc(m.rev):'')+' · <b>'+(+m.n||0)+' ligne'+((+m.n||0)>1?'s':'')+'</b> : '+(+m.closed||0)+' Closed · '+(+m.na||0)+' N/A'+(+m.open?' · <span class="vo">'+(+m.open)+' Open</span>':'')+(+m.photos?' · '+(+m.photos)+' photos':'')+'</div>';}).join('')+'</div>';
+    +pls.map(function(x){var m=x.meta||{},fn=(m.folder&&window.PunchList&&PunchList._folderName)?PunchList._folderName(k,m.folder):'';return '<div style="font-size:13px;margin-bottom:4px">'+(fn?'<b>'+esc(fn)+'</b> › ':'')+esc(x.title||m.title||'Punch list')+(m.rev?' · Rév. '+esc(m.rev):'')+' · <b>'+(+m.n||0)+' ligne'+((+m.n||0)>1?'s':'')+'</b> : '+(+m.closed||0)+' Closed · '+(+m.na||0)+' N/A'+(+m.open?' · <span class="vo">'+(+m.open)+' Open</span>':'')+(+m.photos?' · '+(+m.photos)+' photos':'')+'</div>';}).join('')+'</div>';
   // (09/10/2026) Couleur d'une phase : la variable CSS du site est remplacée par sa valeur (le fichier n'a pas ces variables)
   var phCol=function(pk){var c=(PH_get(pk)||{}).h||'#4B3FC7',vm=String(c).match(/^var\((--[^),]+)/);if(vm)c=getComputedStyle(document.documentElement).getPropertyValue(vm[1]).trim()||'#4B3FC7';return c;};
   // 4 · Planning réalisé : une ligne par phase, Prévu (clair) et Réel (plein) sur la même échelle de temps
@@ -28061,6 +28063,10 @@ window.ChantierNav=(function(){
 .plx-st{display:inline-block;font-size:11.5px;font-weight:900;padding:3px 10px;border-radius:999px;white-space:nowrap}
 .plx-st.Open{background:#FEF3C7;color:#92400E}.plx-st.Closed{background:#DCFCE7;color:#15803D}.plx-st.NA{background:#E2E8F0;color:#334155}
 .plx-head{position:sticky;top:0;z-index:5}
+.plx-fold{border:1px solid #E4E1F0;border-radius:12px;margin-bottom:10px;overflow:hidden;background:#fff}
+.plx-fh{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#FAF9FF;cursor:pointer;flex-wrap:wrap;user-select:none}
+.plx-fh:hover{background:#F3F1FD}.plx-fh b{font-size:14.5px;color:#1C1A33}
+.plx-fb{padding:4px 8px 8px;border-top:1px solid #EEECF6}
 /* téléphone : en-tête qui défile avec la page (sinon il cache la moitié de l'écran), filtres sur une ligne qu'on fait glisser */
 @media(max-width:700px){.plx-head{position:static}.plx-chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}.plx-kv b{min-width:0;width:100%}.plx-wrap{padding:10px 8px 70px}}
 </style>
@@ -28132,6 +28138,7 @@ window.PunchList=(function(){
       if(st==='Open'){ o.open++; if(ours(i)) o.ours++; if(snf(i)) o.snf++; if(isLate(d,k)) o.late++; } else if(st==='Closed') o.closed++; else o.na++; });
     o.photos=Object.keys(d).filter(function(x){ return x.indexOf('p:')===0&&d[x]; }).length;
     o.title=d._title||''; o.imp=d._imp||''; o.rev=(d._cover&&d._cover.rev)||'';
+    o.folder=d._folder||''; // (10/11/2026) dossier de l'affaire (plFolders) où la punch list est rangée
     return o;
   }
   function stPill(st){ return '<span class="plx-st '+(st==='N/A'?'NA':st)+'">'+st+'</span>'; }
@@ -28158,23 +28165,48 @@ window.PunchList=(function(){
     h+='<div class="dcu-card">';
     if(!ctx&&Object.keys(affs).length>1) h+='<div style="margin-bottom:10px"><select class="dcu-in" aria-label="Affaire" style="min-width:260px;font-weight:700" onchange="PunchList._f(\'filterAff\',this.value)"><option value="">Toutes les affaires — '+S.list.length+'</option>'
       +Object.keys(affs).sort().map(function(a){ return '<option value="'+esc(a)+'"'+(S.filterAff===a?' selected':'')+'>'+esc(a?affLabel(a):'(sans affaire)')+' — '+affs[a]+'</option>'; }).join('')+'</select></div>';
-    if(!rows.length){
-      h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?'Aucune punch list pour cette affaire.':'Aucune punch list pour l’instant.'+(ed?' Cliquez sur « ⬆ Importer une punch list ».':''))+'</div>';
-    }else{
-      h+='<div style="overflow:auto"><table class="dcu-tbl"><tr><th>Punch list</th><th>Affaire</th><th>Ouvertes</th><th>À nous</th><th>En retard</th><th>Fermées</th><th class="dcu-hide-sm">Mise à jour</th><th></th></tr>';
-      rows.forEach(function(r){ var m=r.meta||{};
-        h+='<tr class="dcu-row" onclick="PunchList.open(\''+js(r.id)+'\')">'
+    // (10/11/2026) dans une affaire : punch lists rangées par DOSSIER (ex. une par PAE)
+    var FL=ctx?folders(S.ctxAff):[];
+    var tbl=function(list){
+      var t='<div style="overflow:auto"><table class="dcu-tbl"><tr><th>Punch list</th>'+(ctx?'':'<th>Affaire</th>')+'<th>Ouvertes</th><th>À nous</th><th>En retard</th><th>Fermées</th><th class="dcu-hide-sm">Mise à jour</th><th></th></tr>';
+      list.forEach(function(r){ var m=r.meta||{};
+        t+='<tr class="dcu-row" onclick="PunchList.open(\''+js(r.id)+'\')">'
           +'<td><b>'+esc(r.title||m.title||'Punch list')+'</b>'+(m.rev?' <span class="plx-tag">Rév. '+esc(m.rev)+'</span>':'')+'</td>'
-          +'<td>'+esc(affLabel(r.aff))+'</td>'
+          +(ctx?'':'<td>'+esc(affLabel(r.aff))+'</td>')
           +'<td><b style="color:'+(m.open?'#B45309':'#15803D')+'">'+(m.open||0)+'</b> / '+(m.n||0)+'</td>'
           +'<td>'+(m.ours||0)+'</td>'
           +'<td>'+(m.late?'<b style="color:#B91C1C">'+m.late+'</b>':'0')+'</td>'
           +'<td style="color:#15803D;font-weight:700">'+(m.closed||0)+'</td>'
           +'<td class="dcu-hide-sm" style="font-size:12px;color:#6B6790">'+esc(fmtDT(r.updated_at))+'</td>'
-          +'<td style="text-align:right">'+(adm?'<button class="cmu-ico red" title="Supprimer la punch list" aria-label="Supprimer la punch list" onclick="event.stopPropagation();PunchList.del(\''+js(r.id)+'\')">🗑</button>':'')+'</td></tr>';
+          +'<td style="text-align:right;white-space:nowrap">'
+          +(ctx&&ed&&FL.length?'<button class="cmu-ico" title="Ranger dans un dossier" aria-label="Ranger dans un dossier" onclick="event.stopPropagation();PunchList._move(\''+js(r.id)+'\')">📁</button>':'')
+          +(adm?'<button class="cmu-ico red" title="Supprimer la punch list" aria-label="Supprimer la punch list" onclick="event.stopPropagation();PunchList.del(\''+js(r.id)+'\')">🗑</button>':'')+'</td></tr>';
       });
-      h+='</table></div>';
-    }
+      return t+'</table></div>';
+    };
+    if(ctx&&ed) h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><button class="dcu-btn2" onclick="PunchList._fNew()">📁 Nouveau dossier</button>'
+      +(FL.length?'':'<span style="font-size:12px;color:#9A96B3">Un dossier par PAE (ou par zone) pour ranger les punch lists du client.</span>')+'</div>';
+    if(FL.length){
+      var ids={},cl=foldClosed(); FL.forEach(function(f){ ids[f.id]=1; });
+      FL.forEach(function(f){
+        var inF=rows.filter(function(r){ return (r.meta||{}).folder===f.id; }),op=inF.reduce(function(s,r){ return s+(+((r.meta||{}).open)||0); },0),shut=!!cl[f.id];
+        h+='<div class="plx-fold"><div class="plx-fh" role="button" tabindex="0" aria-expanded="'+(!shut)+'" onclick="PunchList._fToggle(\''+js(f.id)+'\')" onkeydown="if(event.key===\'Enter\')PunchList._fToggle(\''+js(f.id)+'\')">'
+          +'<span style="width:12px;color:#6B6790">'+(shut?'▸':'▾')+'</span><b>📁 '+esc(f.name)+'</b>'
+          +'<span class="plx-tag">'+inF.length+' punch list'+(inF.length>1?'s':'')+'</span>'
+          +(inF.length?(op?'<span class="plx-tag" style="background:#FEF3C7;color:#92400E">'+op+' ouverte'+(op>1?'s':'')+'</span>':'<span class="plx-tag" style="background:#DCFCE7;color:#15803D">✓ tout fermé</span>'):'')
+          +'<span style="flex:1"></span>'
+          +(ed?'<button class="dcu-btn2" style="padding:5px 10px;font-size:12px" onclick="event.stopPropagation();PunchList._impHere(\''+js(f.id)+'\')">⬆ Importer ici</button>'
+            +'<button class="cmu-ico" title="Renommer le dossier" aria-label="Renommer le dossier" onclick="event.stopPropagation();PunchList._fRen(\''+js(f.id)+'\')">✎</button>'
+            +'<button class="cmu-ico red" title="Supprimer le dossier" aria-label="Supprimer le dossier" onclick="event.stopPropagation();PunchList._fDel(\''+js(f.id)+'\')">🗑</button>':'')
+          +'</div>';
+        if(!shut) h+='<div class="plx-fb">'+(inF.length?tbl(inF):'<div style="padding:14px;text-align:center;color:#9A96B3;font-size:12.5px">Dossier vide.'+(ed?' « ⬆ Importer ici », ou 📁 sur une punch list pour l’y ranger.':'')+'</div>')+'</div>';
+        h+='</div>';
+      });
+      var loose=rows.filter(function(r){ return !ids[(r.meta||{}).folder]; });
+      if(loose.length) h+='<div style="font-size:12px;font-weight:800;color:#6B6790;letter-spacing:.3px;margin:14px 0 6px">SANS DOSSIER ('+loose.length+')</div>'+tbl(loose);
+    }else if(!rows.length){
+      h+='<div style="padding:26px;text-align:center;color:#9A96B3;font-size:13px">'+(S.list.length?'Aucune punch list pour cette affaire.':'Aucune punch list pour l’instant.'+(ed?' Cliquez sur « ⬆ Importer une punch list ».':''))+'</div>';
+    }else h+=tbl(rows);
     h+='</div>';
     // (09/10/2026) L'écran Chantier (toutes les affaires) est retiré de l'accueil : les punch lists d'une
     // affaire qui n'existe plus sur le site (ou sans affaire) sont proposées ici pour être rangées.
@@ -28256,6 +28288,91 @@ window.PunchList=(function(){
     }catch(e){ alert('Suppression impossible : '+(e&&e.message||e)); }
   }
 
+  // ═════════ DOSSIERS (10/11/2026, demande de l'utilisateur : sur un chantier à plusieurs PAE, le client fait une punch list par PAE) ═════════
+  // Dossiers de l'affaire : STORE.projects[aff].plFolders = [{id, name, at, by}] (data.json, fusion élément par élément _m3list).
+  // Une punch list est rangée par data._folder = id du dossier (recopié dans meta.folder par stats, lu par la liste).
+  // Dossier inconnu (supprimé entre-temps) = « Sans dossier ». Repli d'un dossier : retenu sur le poste (pl_fold_closed).
+  function folders(aff){
+    try{ var p=STORE.projects[aff],a=(p&&Array.isArray(p.plFolders))?p.plFolders.filter(function(f){ return f&&f.id; }):[];
+      return a.slice().sort(function(x,y){ return String(x.name).localeCompare(String(y.name),'fr',{numeric:true,sensitivity:'base'}); }); }
+    catch(e){ return []; }
+  }
+  function folderOf(aff,fid){ return fid?folders(aff).filter(function(f){ return f.id===fid; })[0]||null:null; }
+  function folderSave(){ try{ if(typeof window.saveNow==='function') window.saveNow(); }catch(e){ console.warn('Punch list : dossiers non enregistrés',e); } }
+  function foldClosed(){ try{ return JSON.parse(localStorage.getItem('pl_fold_closed')||'{}')||{}; }catch(e){ return {}; } }
+  function foldToggle(fid){ var c=foldClosed(); if(c[fid]) delete c[fid]; else c[fid]=1; try{ localStorage.setItem('pl_fold_closed',JSON.stringify(c)); }catch(e){} drawList(); }
+  // Noms proposés : les sous-ensembles du planning de l'affaire (PAE 1, PAE 2…) qui n'ont pas encore de dossier
+  function folderSuggest(aff){
+    var used={},out=[],seen={}; folders(aff).forEach(function(f){ used[normK(f.name)]=1; });
+    try{ ((STORE.projects[aff]||{}).data||[]).forEach(function(r){ if(r&&r.t==='ens'&&r.lb){ var n=normK(r.lb); if(n&&!used[n]&&!seen[n]){ seen[n]=1; out.push(String(r.lb).trim()); } } }); }catch(e){}
+    return out.sort(function(a,b){ return a.localeCompare(b,'fr',{numeric:true}); });
+  }
+  function folderNameDup(aff,name,exceptId){ var n=normK(name); return folders(aff).some(function(f){ return f.id!==exceptId&&normK(f.name)===n; }); }
+  function folderForm(fid){
+    var aff=S.ctxAff; if(!aff||!ENV.canEdit()) return;
+    var f=folderOf(aff,fid),sug=f?[]:folderSuggest(aff);
+    modal('<div style="font-size:16px;font-weight:900;margin-bottom:10px">'+(f?'Renommer le dossier':'Nouveau dossier')+'</div>'
+      +'<label class="cmu-lbl">NOM DU DOSSIER</label><input id="pl-f-name" class="dcu-in cmu-fld" list="pl-f-sug" placeholder="ex. PAE 1" value="'+esc(f?f.name:'')+'" onkeydown="if(event.key===\'Enter\')PunchList._fOk(\''+js(fid||'')+'\')">'
+      +'<datalist id="pl-f-sug">'+sug.map(function(s){ return '<option value="'+esc(s)+'">'; }).join('')+'</datalist>'
+      +(sug.length?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+sug.slice(0,12).map(function(s){ return '<button type="button" class="plx-chip" onclick="document.getElementById(\'pl-f-name\').value=this.textContent">'+esc(s)+'</button>'; }).join('')+'</div>'
+        +'<div style="font-size:11.5px;color:#9A96B3;margin-top:4px">Sous-ensembles du planning de l’affaire.</div>':'')
+      +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="dcu-btn2" onclick="PunchList._closeModal()">Annuler</button><button class="dcu-btn" onclick="PunchList._fOk(\''+js(fid||'')+'\')">'+(f?'Renommer':'Créer le dossier')+'</button></div>');
+    setTimeout(function(){ var i=$('pl-f-name'); if(i){ i.focus(); i.select(); } },30);
+  }
+  function folderOk(fid){
+    var aff=S.ctxAff; if(!aff||!ENV.canEdit()) return;
+    var name=(($('pl-f-name')||{}).value||'').replace(/\s+/g,' ').trim();
+    if(!name){ alert('Donnez un nom au dossier.'); return; }
+    if(folderNameDup(aff,name,fid)){ alert('Un dossier « '+name+' » existe déjà dans cette affaire.'); return; }
+    var P=STORE.projects[aff]; if(!P) return;
+    if(!Array.isArray(P.plFolders)) P.plFolders=[];
+    if(fid){ var f=P.plFolders.filter(function(x){ return x&&x.id===fid; })[0]; if(!f){ closeModal(); drawList(); return; } f.name=name; f.at=Date.now(); }
+    else{ var nf={id:'plf_'+uid(),name:name,at:Date.now(),by:ENV.who()}; P.plFolders.push(nf); var c=foldClosed(); delete c[nf.id]; try{ localStorage.setItem('pl_fold_closed',JSON.stringify(c)); }catch(e){} }
+    folderSave(); closeModal(); drawList();
+  }
+  // Range une punch list dans un dossier ('' = sans dossier). Ouverte à l'écran : par la saisie normale ; sinon écriture conditionnelle (rev).
+  async function setFolder(id,fid){
+    if(S.cur&&S.cur.id===id){ setVal('_folder',fid||''); return true; }
+    for(var i=0;i<4;i++){
+      var row=await DB.get(id); if(!row) throw new Error('punch list introuvable (supprimée ?)');
+      var data=Object.assign({},row.data||{}); if(fid) data._folder=fid; else delete data._folder;
+      if(sameV(data._folder,(row.data||{})._folder)){ syncListRow(row); return true; }
+      var saved=await DB.update(id,row.rev,{data:data,meta:stats(data),rev:row.rev+1,updated_by:ENV.who()});
+      if(saved){ syncListRow(saved); return true; }
+    }
+    throw new Error('la punch list est modifiée en ce moment, réessayez');
+  }
+  async function folderDel(fid){
+    var aff=S.ctxAff,f=folderOf(aff,fid); if(!f||!ENV.canEdit()) return;
+    var inF=S.list.filter(function(r){ return (r.meta||{}).folder===fid; });
+    if(!confirm('Supprimer le dossier « '+f.name+' » ?'+(inF.length?'\n\nSes '+inF.length+' punch list(s) ne sont pas supprimées : elles passent dans « Sans dossier ».':''))) return;
+    try{ for(var i=0;i<inF.length;i++) await setFolder(inF[i].id,''); }
+    catch(e){ alert('Impossible de sortir les punch lists du dossier : '+(e&&e.message||e)+'\nLe dossier est gardé.'); await loadList(); drawList(); return; }
+    var P=STORE.projects[aff]; if(P&&Array.isArray(P.plFolders)) P.plFolders=P.plFolders.filter(function(x){ return !x||x.id!==fid; });
+    folderSave(); drawList();
+  }
+  function moveAsk(id){
+    var r=(S.cur&&S.cur.id===id)?{title:D._title,aff:D._aff||S.cur.aff,meta:{folder:D._folder}}:S.list.filter(function(x){ return x.id===id; })[0];
+    if(!r||!ENV.canEdit()) return;
+    var aff=r.aff||S.ctxAff,FL=folders(aff),curF=(r.meta||{}).folder||'';
+    if(!folderOf(aff,curF)) curF='';
+    modal('<div style="font-size:16px;font-weight:900;margin-bottom:4px">Ranger dans un dossier</div>'
+      +'<div style="font-size:12.5px;color:#6B6790;margin-bottom:12px">« '+esc(r.title||(r.meta||{}).title||'Punch list')+' »</div>'
+      +'<div style="display:grid;gap:6px">'+[{id:'',name:'— Sans dossier —'}].concat(FL).map(function(f){
+        return '<label style="display:flex;gap:10px;align-items:center;padding:9px 12px;border:1.5px solid '+(f.id===curF?'#6457F4':'#E4E1F0')+';border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:700">'
+          +'<input type="radio" name="pl-mv" value="'+esc(f.id)+'"'+(f.id===curF?' checked':'')+'>'+(f.id?'📁 ':'')+esc(f.name)+(f.id===curF?' <span style="font-size:11px;color:#6B6790;font-weight:600">(actuel)</span>':'')+'</label>'; }).join('')+'</div>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="dcu-btn2" onclick="PunchList._closeModal()">Annuler</button><button class="dcu-btn" onclick="PunchList._moveOk(\''+js(id)+'\')">Ranger</button></div>');
+  }
+  async function moveOk(id){
+    var c=document.querySelector('#pl-modal input[name="pl-mv"]:checked'),fid=c?c.value:'';
+    closeModal();
+    try{ await setFolder(id,fid); }catch(e){ alert('Impossible de ranger la punch list : '+(e&&e.message||e)); }
+    if(S.cur) drawDetail(); else drawList();
+  }
+  function folderOpts(aff,sel){
+    return '<option value="">— Sans dossier —</option>'+folders(aff).map(function(f){ return '<option value="'+esc(f.id)+'"'+(f.id===sel?' selected':'')+'>📁 '+esc(f.name)+'</option>'; }).join('');
+  }
+
   // ═════════ IMPORT DE L'EXCEL DU CLIENT ═════════
   var XLSXJS='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
   function loadXlsx(){
@@ -28308,7 +28425,12 @@ window.PunchList=(function(){
     for(var r=best.hr+1;r<best.rows.length;r++){
       var row=best.rows[r],des=cellTxt(g(row,'des')),n=cellTxt(g(row,'n'));
       if(!des&&!n) continue;
-      if(!des){ warn.push('Ligne '+(r+1)+' : item '+n+' sans description, ignorée.'); continue; }
+      if(!des){
+        // (10/11/2026) ligne du modèle déjà numérotée mais vide (ex. items 12 à 42) : ignorée sans avertissement
+        var other=Object.keys(M).some(function(f){ return f!=='n'&&f!=='des'&&cellTxt(g(row,f)); });
+        if(other) warn.push('Ligne '+(r+1)+' : item '+n+' sans description, ignorée.');
+        continue;
+      }
       lines.push({n:n,cls:cellTxt(g(row,'cls')),phase:cellTxt(g(row,'phase')),disc:cellTxt(g(row,'disc')),by:cellTxt(g(row,'by')),
         dt:toIso(g(row,'dt')),des:des,eq:cellTxt(g(row,'eq')),prop:cellTxt(g(row,'prop')),pic:cellTxt(g(row,'pic')),
         cst:cellTxt(g(row,'cst')),tgt:toIso(g(row,'tgt')),ccom:cellTxt(g(row,'ccom'))});
@@ -28387,8 +28509,10 @@ window.PunchList=(function(){
   var IMP=null;
   function modal(html,wide){ var m=$('pl-modal'); m.innerHTML='<div class="dcu" style="max-width:'+(wide?760:520)+'px;margin:6vh auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)">'+html+'</div>'; m.style.display='block'; }
   function closeModal(){ var m=$('pl-modal'); m.style.display='none'; m.innerHTML=''; IMP=null; }
-  function importer(){
+  function importHere(fid){ importer(fid); }
+  function importer(fid){
     if(!ENV.canEdit()) return;
+    S.impFolder=(typeof fid==='string')?fid:''; // « ⬆ Importer ici » d'un dossier
     var i=document.createElement('input'); i.type='file'; i.accept='.xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
     i.onchange=function(){ if(i.files&&i.files[0]) impRead(i.files[0]); };
     i.click();
@@ -28408,10 +28532,11 @@ window.PunchList=(function(){
         +'<div style="font-size:12.5px;color:#6B6790;margin-bottom:12px">« '+esc(file.name)+' »'+(cv.project||cv.company?' · '+esc([cv.project,cv.company].filter(Boolean).join(' · ')):'')+(cv.projectNo?' · projet '+esc(cv.projectNo):'')+(cv.rev?' · révision '+esc(cv.rev)+(cv.revDate?' du '+esc(fr(cv.revDate)):''):'')+'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><span class="plx-tag" style="font-size:12.5px">'+st.n+' lignes</span><span class="plx-tag" style="font-size:12.5px;background:#FEF3C7;color:#92400E">'+st.open+' ouvertes</span><span class="plx-tag" style="font-size:12.5px">'+st.ours+' à nous (ELS)</span><span class="plx-tag" style="font-size:12.5px;background:#DCFCE7;color:#15803D">'+st.closed+' fermées</span></div>'
         +'<label class="cmu-lbl">TITRE</label><input id="pl-i-title" class="dcu-in cmu-fld" value="'+esc(title)+'">'
-        +'<label class="cmu-lbl">AFFAIRE *</label><select id="pl-i-aff" class="dcu-in cmu-fld"><option value="">— Choisir l’affaire —</option>'
+        +'<label class="cmu-lbl">AFFAIRE *</label><select id="pl-i-aff" class="dcu-in cmu-fld" onchange="PunchList._impAff(this.value)"><option value="">— Choisir l’affaire —</option>'
         +A.filter(function(a){ return !a.closed||a.id===aff||a.id===guess; }).map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===aff?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>'
         +(S.ctxAff&&guess&&guess!==S.ctxAff?'<div style="font-size:11.5px;color:#B45309;margin-top:4px">⚠ D’après son n° de projet, ce fichier semble plutôt appartenir à '+esc(affLabel(guess))+'. Vérifiez l’affaire choisie.</div>'
           :(S.ctxAff?'':(aff?'<div style="font-size:11.5px;color:#15803D;margin-top:4px">✓ Affaire trouvée d’après le n° de projet du client.</div>':'')))
+        +'<div id="pl-i-fold-w"'+(aff&&folders(aff).length?'':' style="display:none"')+'><label class="cmu-lbl">DOSSIER</label><select id="pl-i-fold" class="dcu-in cmu-fld">'+(aff?folderOpts(aff,aff===S.ctxAff?S.impFolder:''):'')+'</select></div>'
         +(res.warn&&res.warn.length?'<div class="dcu-msg" style="background:#FFFBEB;border:1px solid #FCD34D;color:#92400E;max-width:none;margin:12px 0 0">'+res.warn.map(esc).join('<br>')+'</div>':'')
         +'<div style="font-size:11.5px;color:#9A96B3;margin-top:10px">Colonnes reconnues : '+esc((res.cols||[]).map(function(c){ return {n:'Item',cls:'Classification',phase:'Phase',disc:'Discipline',by:'Émis par',dt:'Date',des:'Description',eq:'Équipement',prop:'Action proposée',pic:'PIC',cst:'Status',tgt:'Date cible',ccom:'Commentaires'}[c]||c; }).join(', '))+'. Le fichier est lu sur cet appareil et n’est pas gardé.</div>'
         +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="dcu-btn2" onclick="PunchList._closeModal()">Annuler</button><button id="pl-i-go" class="dcu-btn" onclick="PunchList._impCreate()">Créer la punch list</button></div>');
@@ -28425,6 +28550,7 @@ window.PunchList=(function(){
     if(!aff){ alert('Choisissez l’affaire.'); return; }
     var b=$('pl-i-go'); if(b){ b.disabled=true; b.textContent='Création…'; }
     var IMPF=IMP.file||null,res=IMP.res,today=todayIso(),data={_title:title,_aff:aff,_cover:res.cover||{},_lists:res.lists||{},_file:IMP.fname,_imp:today,order:[]};
+    var fid=($('pl-i-fold')||{}).value||''; if(fid&&folderOf(aff,fid)) data._folder=fid;
     res.lines.forEach(function(l){ var k=uid()+Math.random().toString(36).slice(2,4); data['i:'+k]=Object.assign({add:today},l); data.order.push(k); });
     try{
       var me=ENV.who();
@@ -28510,6 +28636,8 @@ window.PunchList=(function(){
     var h='<div class="dcu"><div class="plx-wrap">';
     h+='<div class="dcu-card plx-head"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
       +'<button class="dcu-btn2" onclick="PunchList.back()">← Punch lists</button>'
+      +(function(){ var a=D._aff||c.aff,f=folderOf(a,D._folder),n=folders(a).length; if(!f&&!(ed&&n)) return '';
+          return ed&&n?'<button class="plx-chip" title="Ranger dans un dossier" onclick="PunchList._move(\''+js(c.id)+'\')">📁 '+(f?esc(f.name):'Sans dossier')+' ▾</button>':'<span class="plx-tag">📁 '+esc(f.name)+'</span>'; })()
       +'<b style="font-size:17px">'+esc(D._title||c.title||'Punch list')+'</b>'+(cv.rev?'<span class="plx-tag">Rév. '+esc(cv.rev)+'</span>':'')
       +'<span style="font-size:12.5px;color:#6B6790">'+esc(affLabel(D._aff||c.aff))+(cv.project||cv.company?' · '+esc([cv.project,cv.company].filter(Boolean).join(' · ')):'')+'</span>'
       +'<span style="flex:1"></span><span id="pl-savest" style="font-size:12px;color:#6B6790"></span>'
@@ -28979,14 +29107,16 @@ window.PunchList=(function(){
         var J=photoJobs[ji],span=mergeSpan(J.rowN,J.col),avail=span.reduce(function(a,c){ return a+wOf(c); },0)-6;
         var cpl=Math.max(8,Math.floor(avail/7)),tl=0;
         String(J.txt||'').split('\n').forEach(function(line){ tl+=Math.max(1,Math.ceil(line.length/cpl)); });
-        var textH=J.txt?tl*20+4:0,boxW=Math.floor((avail-4)/2),boxH=Math.min(110,Math.max(70,boxW)),lines=Math.ceil(J.ph.length/2);
+        // (10/11/2026) case Comments étroite (ex. 231S0069 PIU6, M:N ≈ 130 px) : 1 photo par rangée au lieu de 2 minuscules
+        var nc=((avail-4)/2>=100)?2:1;
+        var textH=J.txt?tl*20+4:0,boxW=Math.floor((avail-4*nc)/nc),boxH=Math.min(110,Math.max(70,boxW)),lines=Math.ceil(J.ph.length/nc);
         var needPx=textH+4+lines*(boxH+4)+2,curPx=rowHeightPx(J.rowN);
         if(needPx>curPx) setRowHeight(J.rowN,Math.round(needPx*0.75*100)/100);
         for(var pj=0;pj<J.ph.length;pj++){
           done++; if(lbl) lbl('Photos '+done+' / '+total+'…');
           var im; try{ im=await photoForExport(J.ph[pj]); }catch(e){ warn.push('Une photo n’a pas pu être récupérée (ligne '+J.rowN+').'); continue; }
           var w=boxW,h=Math.round(boxW*im.h/im.w); if(h>boxH){ h=boxH; w=Math.round(boxH*im.w/im.h); }
-          var x=3+(pj%2)*(boxW+4)+Math.floor((boxW-w)/2),y=textH+4+Math.floor(pj/2)*(boxH+4);
+          var x=3+(pj%nc)*(boxW+4)+Math.floor((boxW-w)/2),y=textH+4+Math.floor(pj/nc)*(boxH+4);
           // colonne de départ réelle dans la case fusionnée
           var ci=0,acc=0; while(ci<span.length-1&&x>=acc+wOf(span[ci])){ acc+=wOf(span[ci]); ci++; }
           var media='plphoto_'+Date.now().toString(36)+'_'+(mi++)+'.jpeg',rid2=freeRid();
@@ -29117,6 +29247,9 @@ window.PunchList=(function(){
     _f:function(k,v){ S[k]=v; if(S.cur) drawDetail(); else drawList(); },
     _q:function(v){ S.q=v; var pos=null,a=document.activeElement; if(a&&a.selectionStart!=null) pos=a.selectionStart; drawDetail(); var i=S.host&&S.host.querySelector('input[aria-label="Rechercher"]'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
     _closeModal:closeModal, _impCreate:impCreate, _impRead:impRead, _read:readExcel, _attach:attach,
+    _fNew:function(){ folderForm(''); }, _fRen:folderForm, _fOk:folderOk, _fDel:folderDel, _fToggle:foldToggle, _move:moveAsk, _moveOk:moveOk, _impHere:importHere, _setFolder:setFolder,
+    _impAff:function(a){ var w=$('pl-i-fold-w'),s=$('pl-i-fold'); if(!w||!s) return; s.innerHTML=a?folderOpts(a,a===S.ctxAff?S.impFolder:''):''; w.style.display=(a&&folders(a).length)?'':'none'; },
+    _folderName:function(aff,fid){ var f=folderOf(aff,fid); return f?f.name:''; },
     _st:_st, _txt:_txt, _phAdd:_phAdd, _phOpen:_phOpen, _phDel:_phDel,
     _state:function(){ return {S:S,D:D}; }, _stats:stats
   };
