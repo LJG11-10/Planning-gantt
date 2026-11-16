@@ -5364,27 +5364,35 @@ function _easterSunday(year){
   var day=((h+l-7*m+114)%31)+1;
   return new Date(year,month-1,day);
 }
-var _ferieCache={};
+var _ferieCache={},_ferieNames={};
 function _frenchHolidaysForYear(year){
   if(_ferieCache[year])return _ferieCache[year];
   var easter=_easterSunday(year);
   var set=new Set();
   function key(dt){return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
-  function addFixed(m,d){set.add(year+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0'));}
-  function addOffset(days){var dt=new Date(easter);dt.setDate(dt.getDate()+days);set.add(key(dt));}
-  addFixed(1,1);   // Jour de l'an
-  addOffset(1);    // Lundi de Pâques
-  addFixed(5,1);   // Fête du Travail
-  addFixed(5,8);   // Victoire 1945
-  addOffset(39);   // Ascension
-  addOffset(50);   // Lundi de Pentecôte
-  addFixed(7,14);  // Fête Nationale
-  addFixed(8,15);  // Assomption
-  addFixed(11,1);  // Toussaint
-  addFixed(11,11); // Armistice
-  addFixed(12,25); // Noël
+  function put(k,nm){set.add(k);_ferieNames[k]=nm;}
+  function addFixed(m,d,nm){put(year+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0'),nm);}
+  function addOffset(days,nm){var dt=new Date(easter);dt.setDate(dt.getDate()+days);put(key(dt),nm);}
+  addFixed(1,1,'Jour de l’an');
+  addOffset(1,'Lundi de Pâques');
+  addFixed(5,1,'Fête du Travail');
+  addFixed(5,8,'Victoire 1945');
+  addOffset(39,'Ascension');
+  addOffset(50,'Lundi de Pentecôte');
+  addFixed(7,14,'Fête nationale');
+  addFixed(8,15,'Assomption');
+  addFixed(11,1,'Toussaint');
+  addFixed(11,11,'Armistice 1918');
+  addFixed(12,25,'Noël');
   _ferieCache[year]=set;
   return set;
+}
+// (16/11/2026) Nom du jour férié ('' si ce n'est pas un jour férié). d = Date ou 'AAAA-MM-JJ'.
+function ferieName(d){
+  var dt=d instanceof Date?d:new Date(String(d).length===10?d+'T12:00:00':d);
+  if(isNaN(dt))return '';
+  var k=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+  return _frenchHolidaysForYear(dt.getFullYear()).has(k)?(_ferieNames[k]||'Jour férié'):'';
 }
 // Année actuellement sélectionnée pour tout le planning (GANTT, Planning
 // Réunion, téléchargements...). Persistée pour rester d'une session à l'autre.
@@ -7048,7 +7056,7 @@ function fhPrintFiche(nm){
       var dayDate=new Date(dStart);dayDate.setDate(dStart.getDate()+di);
       var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
       var _dKeyP=dayDate.getFullYear()+'-'+String(dayDate.getMonth()+1).padStart(2,'0')+'-'+String(dayDate.getDate()).padStart(2,'0');
-      var _dStatusP=_personDayStatus(nm,_dKeyP,wk);
+      var _dStatusP=_fhDayMark(nm,_dKeyP,wk,di); // statut personnel, sinon jour férié (16/11/2026)
       if(_dStatusP&&_dStatusP.type!=='formation'){
         rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell" colspan="2" style="text-align:center;font-weight:800;color:'+_dStatusP.color+';background:'+_dStatusP.bg+'">'+_dStatusP.icon+' '+_dStatusP.label+'</td><td class="tot">—</td></tr>';
         return;
@@ -11249,6 +11257,26 @@ function _personDayStatus(nm,dateISO,wk){
   if(altDayStatus(nm,dateISO,wk)==='S')return {type:'ecole',icon:'🏫',label:'École',color:'#6457F4',bg:'#EFEDFE',bg2:'#DCD8FB'};
   return null;
 }
+// (16/11/2026, demande de l'utilisateur) Jours fériés marqués automatiquement sur les feuilles d'heure.
+// Un jour férié reste un jour qu'on PEUT travailler : s'il est vide → marque pleine « 🎌 Férié » (comme un congé) ;
+// s'il a des heures / options → bandeau « 🎌 Férié travaillé » (même branche que « Formation » : type 'formation').
+// Le statut personnel (congé, absence, école, formation) passe avant le férié.
+function _fhDayHasContent(nm,w,di){
+  var ls=fhGetAllAff(nm,w,di)||[];
+  if(ls.some(function(l){return l&&(l.actId||l.affId||(+(l.hours||l.h)>0)||l.cmt);}))return true;
+  var m=fhMetaGet(w,nm,di)||{};
+  return !!(m.panier||m.gd||(+m.trajetH>0)||(m.zone&&String(m.zone).trim())||(m.vehicule&&String(m.vehicule).trim())||(m.lieu&&String(m.lieu).trim()));
+}
+function _fhFerieMark(dateISO,filled){
+  var n=dateISO?ferieName(dateISO):'';if(!n)return null;
+  return filled?{type:'formation',ferie:true,icon:'🎌',label:'Férié travaillé ('+n+')',color:'#B91C1C',bg:'#FEF2F2',bg2:'#FECACA'}
+               :{type:'ferie',ferie:true,icon:'🎌',label:'Férié — '+n,color:'#B91C1C',bg:'#FEF2F2',bg2:'#FECACA'};
+}
+// Statut d'un jour pour les documents de feuille d'heure : statut personnel, sinon jour férié.
+function _fhDayMark(nm,dateISO,w,di){
+  var st=_personDayStatus(nm,dateISO,w);if(st)return st;
+  return _fhFerieMark(dateISO,_fhDayHasContent(nm,w,di));
+}
 // ── Alternants : école / entreprise JOUR PAR JOUR (05/10/2026) ──
 // ad.altDays = {'AAAA-MM-JJ':'S' (école) | 'C' (entreprise) | '-' (rien)} : le jour précis gagne.
 // Sinon on reprend l'ancienne saisie par semaine (ad.school / ad.company), toujours valable.
@@ -11844,6 +11872,21 @@ function fhBuildDayCell(nm,aff,w,di,isTD){
       +'<div style="font-size:10.5px;color:#6B6790">repris d’Absences</div>'
       +'</div>';
   }
+  // (16/11/2026, demande de l'utilisateur) jour férié marqué automatiquement. Jour vide → marque « 🎌 Férié »
+  // avec « ＋ Travaillé ce jour-là » (ouvre la saisie, mémorisé le temps de la visite) ; jour rempli → bandeau.
+  if(!_fhStatus&&_fhDKey&&ferieName(_fhDKey)){
+    var _fOpenK=nm+'|'+w+'|'+di;
+    if(!_fhDayHasContent(nm,w,di)&&!(window._fhFerieOpen&&window._fhFerieOpen[_fOpenK])){
+      var _fm=_fhFerieMark(_fhDKey,false);
+      return '<div style="min-height:160px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;padding:8px;background-image:linear-gradient(135deg,'+_fm.bg+','+_fm.bg2+')">'
+        +'<div style="font-size:26px">🎌</div>'
+        +'<div style="font-size:13px;font-weight:800;color:'+_fm.color+'">Jour férié</div>'
+        +'<div style="font-size:11px;font-weight:700;color:'+_fm.color+'">'+escHtml(ferieName(_fhDKey))+'</div>'
+        +'<button type="button" onclick="window._fhFerieOpen=window._fhFerieOpen||{};window._fhFerieOpen[this.getAttribute(\'data-k\')]=1;renderFiche()" data-k="'+escHtml(_fOpenK)+'" style="margin-top:8px;height:26px;padding:0 10px;border:1px solid #FCA5A5;border-radius:13px;background:#fff;color:#B91C1C;cursor:pointer;font-size:11px;font-weight:800;font-family:inherit">＋ Travaillé ce jour-là</button>'
+        +'</div>';
+    }
+    _fhStatus=_fhFerieMark(_fhDKey,true);
+  }
   var _fhFormationTag=(_fhStatus&&_fhStatus.type==='formation')
     ?'<div style="text-align:center;font-size:11px;font-weight:800;color:'+_fhStatus.color+';background:'+_fhStatus.bg+';border-radius:8px;padding:4px;margin-bottom:6px">'+_fhStatus.icon+' '+_fhStatus.label+'</div>'
     :'';
@@ -11989,10 +12032,11 @@ function fhBuildPersonWeekBlock(nm,w){
   var dayThs='';
   var dayCells='';
   for(var di=0;di<5;di++){
-    var isTD=isTW&&TODAY&&TODAY.di===di;
-    dayThs+='<th style="text-align:center;padding:8px 6px;border-bottom:1px solid #E4E1F0;'+(di?'border-left:1px solid #EFEDF7;':'')+'background:'+(isTD?'#FEF3C7':'#FBFAFF')+'">'
-      +'<div style="font-size:12.5px;font-weight:800;color:'+(isTD?'#B45309':'#3A2EAE')+'">'+DN[di]+'</div>'
-      +'<div style="font-size:11px;font-weight:600;color:'+(isTD?'#B45309':'#6B6790')+'">'+fmt(ddD(w,di))+'</div>'
+    var isTD=isTW&&TODAY&&TODAY.di===di,_fer=ferieName(weekDayToDate(w,di)); // (16/11/2026) jour férié dans l'en-tête
+    dayThs+='<th style="text-align:center;padding:8px 6px;border-bottom:1px solid #E4E1F0;'+(di?'border-left:1px solid #EFEDF7;':'')+'background:'+(_fer?'#FEF2F2':isTD?'#FEF3C7':'#FBFAFF')+'">'
+      +'<div style="font-size:12.5px;font-weight:800;color:'+(_fer?'#B91C1C':isTD?'#B45309':'#3A2EAE')+'">'+DN[di]+'</div>'
+      +'<div style="font-size:11px;font-weight:600;color:'+(_fer?'#B91C1C':isTD?'#B45309':'#6B6790')+'">'+fmt(ddD(w,di))+'</div>'
+      +(_fer?'<div style="font-size:9.5px;font-weight:800;color:#B91C1C">🎌 Férié</div>':'')
       +(isTD?'<div style="font-size:9.5px;font-weight:800;color:#D97706">● aujourd’hui</div>':'')
       +'</th>';
     dayCells+='<td style="vertical-align:top;padding:8px;'+(di?'border-left:1px solid #EFEDF7;':'')+'background:'+(isTD?'#FFFBEB':'#fff')+'">'+fhBuildDayCell(nm,fhAff,w,di,isTD)+'</td>';
@@ -21828,7 +21872,7 @@ function fhGenerateWeekHTML(wk,cb){
       var dayDate=new Date(dStart);dayDate.setDate(dStart.getDate()+di);
       var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
       var _dKeyW=dayDate.getFullYear()+'-'+String(dayDate.getMonth()+1).padStart(2,'0')+'-'+String(dayDate.getDate()).padStart(2,'0');
-      var _dStatusW=_personDayStatus(nm,_dKeyW,wk);
+      var _dStatusW=_fhDayMark(nm,_dKeyW,wk,di); // statut personnel, sinon jour férié (16/11/2026)
       if(_dStatusW&&_dStatusW.type!=='formation'){
         rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell" colspan="2" style="text-align:center;font-weight:800;color:'+_dStatusW.color+';background:'+_dStatusW.bg+'">'+_dStatusW.icon+' '+_dStatusW.label+'</td><td class="tot">—</td></tr>';
         return;
@@ -21937,7 +21981,7 @@ function fhGenerateHTML(nm,cb){
       var dayDate=new Date(dStart);dayDate.setDate(dStart.getDate()+di);
       var dayStr=dayDate.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'2-digit'});
       var _dKeyG=dayDate.getFullYear()+'-'+String(dayDate.getMonth()+1).padStart(2,'0')+'-'+String(dayDate.getDate()).padStart(2,'0');
-      var _dStatusG=_personDayStatus(nm,_dKeyG,wk);
+      var _dStatusG=_fhDayMark(nm,_dKeyG,wk,di); // statut personnel, sinon jour férié (16/11/2026)
       if(_dStatusG&&_dStatusG.type!=='formation'){
         rows+='<tr class="day-sep"><td class="day">'+dayStr+'</td><td class="meta-cell" colspan="2" style="text-align:center;font-weight:800;color:'+_dStatusG.color+';background:'+_dStatusG.bg+'">'+_dStatusG.icon+' '+_dStatusG.label+'</td><td class="tot">—</td></tr>';
         return;
@@ -25058,6 +25102,10 @@ window.QRFeuille=(function(){
     return d;
   }
   function blockOf(ctx,di){var b=ctx.payload.blocked&&ctx.payload.blocked[ctx.person];return b?(b[di]||b[String(di)]||null):null;}
+  // (16/11/2026) jour férié : nom publié dans payload.days[di].f (buildPayload). Ce n'est PAS un jour bloqué :
+  // on peut l'avoir travaillé. Vide → carte « 🎌 Jour férié » avec « J'ai travaillé ce jour-là ».
+  function ferOf(ctx,di){var x=ctx&&ctx.payload&&ctx.payload.days&&ctx.payload.days[di];return (x&&x.f)||'';}
+  function ferShut(ctx,di){return !!ferOf(ctx,di)&&!blockOf(ctx,di)&&!dayHas(ctx.data.days[di])&&!(ctx.ferOpen&&ctx.ferOpen[di]);}
   function isOff(ctx,di){var b=blockOf(ctx,di);return !!(b&&b.t!=='formation');}
   function affOf(ctx,k){if(!k)return null;var l=ctx.payload.affaires||[];for(var i=0;i<l.length;i++)if(l[i].k===k)return l[i];return null;}
   function affLbl(a){return a?(a.n+(a.l?' — '+a.l:'')):'';}
@@ -25132,8 +25180,14 @@ window.QRFeuille=(function(){
     if(b&&b.t!=='formation'){
       return '<div class="qrf-card" style="text-align:center;padding:24px 16px"><div style="font-size:40px">'+esc(b.i)+'</div><div style="font-size:18px;font-weight:900;margin-top:6px">'+esc(b.l)+'</div><div style="font-size:14px;color:#6B6790;margin-top:4px">Rien à remplir ce jour-là.</div></div>';
     }
+    if(ferShut(ctx,di)){
+      return '<div class="qrf-card" style="text-align:center;padding:24px 16px;background:#FEF2F2;border-color:#FECACA"><div style="font-size:40px">🎌</div><div style="font-size:18px;font-weight:900;margin-top:6px;color:#B91C1C">Jour férié</div><div style="font-size:15px;font-weight:700;color:#B91C1C">'+esc(ferOf(ctx,di))+'</div>'
+        +'<div style="font-size:14px;color:#6B6790;margin-top:6px">Rien à remplir si vous n’avez pas travaillé.</div>'
+        +(ro?'':'<button type="button" class="qrf-btn2" style="margin-top:14px" onclick="QRFeuille._ferOpen('+q(id)+','+di+')">J’ai travaillé ce jour-là</button>')+'</div>';
+    }
     var h='';
     if(b)h+='<div class="qrf-badge" style="background:#EDE9FE;color:#6D28D9;margin-bottom:10px">'+esc(b.i+' '+b.l)+' — remplissez quand même les heures et options</div>';
+    if(!b&&ferOf(ctx,di))h+='<div class="qrf-badge" style="background:#FEE2E2;color:#B91C1C;margin-bottom:10px">🎌 Jour férié ('+esc(ferOf(ctx,di))+') — travaillé</div>';
     // (03/11/2026, demande de l'utilisateur) reprendre une autre journée déjà remplie (journée similaire = plus rapide)
     if(!ro){
       var src=[];for(var sd=0;sd<5;sd++){if(sd===di||isOff(ctx,sd))continue;if(dayHas(ctx.data.days[sd]))src.push(sd);}
@@ -25204,6 +25258,7 @@ window.QRFeuille=(function(){
     after(id,to,true);
   }
   function _lineSb(id,di,li,v){var c=_ok(id);if(!c)return;var l=c.data.days[di].lines[li];if(!l)return;l.actId=v;after(id,di,true);} // redessine : étiquette du sous-ensemble
+  function _ferOpen(id,di){var c=_ok(id);if(!c)return;c.ferOpen=c.ferOpen||{};c.ferOpen[di]=true;var el=document.getElementById('qrf-ed-'+id+'-'+di);if(el)el.innerHTML=editorHtml(id,di);}
 
   // ══ 1) TÉLÉPHONE (lien ?qr=...) : connexion puis sa feuille ═════════
   var P=null; // {session, person, weeks:[...], wk:semaine ouverte}
@@ -25383,7 +25438,9 @@ window.QRFeuille=(function(){
       if(off)info='<span class="qrf-badge" style="background:#F3F4F6;color:#4B5563">'+esc(b.i+' '+b.l)+'</span>';
       else if(dayHas(d)){var nl=d.lines.filter(function(l){return l.affId&&num(l.hours)>0;}).length;tot+=dayTotal(d);
         info='<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ '+fr(dayTotal(d))+' H'+(nl?' · '+nl+' chantier'+(nl>1?'s':''):'')+'</span>';}
+      else if(ferOf(c,di)&&!b)info='<span class="qrf-badge" style="background:#FEE2E2;color:#B91C1C">🎌 Férié · '+esc(ferOf(c,di))+'</span>';
       else info='<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">À remplir</span>';
+      if(ferOf(c,di)&&!b&&dayHas(d))info+='<span class="qrf-badge" style="background:#FEE2E2;color:#B91C1C">🎌 Férié</span>';
       if(b&&!off)info+='<span class="qrf-badge" style="background:#EDE9FE;color:#6D28D9">'+esc(b.i+' '+b.l)+'</span>';
       h+='<button type="button" class="qrf-day"'+(off?' disabled style="opacity:.75;cursor:default"':' onclick="QRFeuille._pubDay('+di+')"')+'>'
         +'<div style="flex:1"><div style="font-size:17px;font-weight:800">'+DAYS[di]+' <span style="font-weight:600;color:#6B6790">'+ddmmK(c.payload.days[di].date)+'</span></div><div style="margin-top:5px">'+info+'</div></div>'
@@ -25419,8 +25476,8 @@ window.QRFeuille=(function(){
       if(b&&b.t!=='formation'){h+='<span class="qrf-badge" style="background:#F3F4F6;color:#4B5563">'+esc(b.i+' '+b.l)+'</span></div></div>';continue;}
       var t=dayTotal(d);tot+=t;
       h+='<div style="font-size:16px;font-weight:900;color:#3A2EAE">'+fr(t)+' H</div></div>';
-      if(!dayHas(d)){h+='<div style="font-size:13px;color:#9A96B3;margin-top:4px">Rien de rempli</div></div>';continue;}
-      var o=[];if(b)o.push(b.i+' '+b.l);if(d.panier)o.push('🍽 Panier');if(d.gd)o.push('🚗 Grand dépl.');if(num(d.trajetH)>0)o.push('Trajet '+fr(num(d.trajetH))+' H');if(d.zone)o.push(d.zone);if(d.vehicule)o.push(d.vehicule);if(d.lieu&&String(d.lieu).trim())o.push('📍 '+String(d.lieu).trim());
+      if(!dayHas(d)){h+='<div style="font-size:13px;color:'+(ferOf(c,di)&&!b?'#B91C1C':'#9A96B3')+';margin-top:4px">'+(ferOf(c,di)&&!b?'🎌 Jour férié ('+esc(ferOf(c,di))+')':'Rien de rempli')+'</div></div>';continue;}
+      var o=[];if(b)o.push(b.i+' '+b.l);else if(ferOf(c,di))o.push('🎌 Férié travaillé');if(d.panier)o.push('🍽 Panier');if(d.gd)o.push('🚗 Grand dépl.');if(num(d.trajetH)>0)o.push('Trajet '+fr(num(d.trajetH))+' H');if(d.zone)o.push(d.zone);if(d.vehicule)o.push(d.vehicule);if(d.lieu&&String(d.lieu).trim())o.push('📍 '+String(d.lieu).trim());
       if(o.length)h+='<div style="font-size:13px;color:#4B5563;margin-top:6px">'+o.map(esc).join(' · ')+'</div>';
       d.lines.forEach(function(l){
         if(!l.affId&&!l.actId&&!(num(l.hours)>0))return;
@@ -25517,7 +25574,8 @@ window.QRFeuille=(function(){
   function buildPayload(w){
     var persons=[];try{persons=fhWeekPersons(w).slice();}catch(x){}
     persons.sort(function(a,b){return a.localeCompare(b,'fr');});
-    var dys=[];for(var di=0;di<5;di++)dys.push({di:di,date:dkey(weekDayToDate(w,di))});
+    // (16/11/2026) f = nom du jour férié (seulement s'il y en a un : les autres jours restent identiques)
+    var dys=[];for(var di=0;di<5;di++){var _dd=weekDayToDate(w,di),_o={di:di,date:dkey(_dd)},_fn=(typeof ferieName==='function')?ferieName(_dd):'';if(_fn)_o.f=_fn;dys.push(_o);}
     var blocked={};
     persons.forEach(function(nm){var b=blockedFor(nm,w);if(b)blocked[nm]=b;});
     var affaires=[];
@@ -25651,7 +25709,7 @@ window.QRFeuille=(function(){
       if(r.error)throw r.error;
       A.list=r.data||[];A.err='';
     }catch(e){A.err=errMsg(e);}
-    if(S.tab==='ids'||S.tab==='qr')draw();
+    if(S.tab==='ids'||S.tab==='qr'||S.tab==='valid')draw(); // valid : « pas d'identifiant QR code » sur les feuilles pas remplies
   }
   function chantierPersons(){
     var gp=STORE.globalPersons||{},del=STORE._deletedPersons||{};
@@ -25805,29 +25863,81 @@ window.QRFeuille=(function(){
     if(t==='validated')return '<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">✓ Validée</span>';
     return '<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">⏳ En attente de validation</span>';
   }
+  // (16/11/2026, demande de l'utilisateur) Qui n'a PAS rempli sa feuille d'une semaine ?
+  // Personnes attendues = celles de la Feuille d'heure de la semaine (fhWeekPersons, sans les masquées).
+  // Une personne est EN RÈGLE si : feuille QR envoyée (en attente ou validée), OU des heures / options dans
+  // l'onglet Feuille d'heure (saisie à la main par le chef), OU toute la semaine en congé / absence / école / férié.
+  // Sinon : « draft » si une feuille QR est commencée mais pas envoyée, « missing » s'il n'y a rien du tout.
+  function missingFor(w){
+    var out={missing:[],draft:[]};
+    if(typeof STORE==='undefined'||!STORE||!STORE.projects)return out;
+    var exp=[];try{exp=fhWeekPersons(w).slice();}catch(x){return out;}
+    var hid=(STORE.fhWeekHidden&&STORE.fhWeekHidden[w])||{};
+    var subsOf={};(S.subs||[]).forEach(function(s){if(s.week===w)(subsOf[s.person]=subsOf[s.person]||[]).push(s);});
+    exp.filter(function(nm){return !hid[nm];}).sort(function(a,b){return a.localeCompare(b,'fr');}).forEach(function(nm){
+      var ss=subsOf[nm]||[];
+      if(ss.some(function(s){var t=stOf(s);return t==='pending'||t==='validated';}))return;
+      var filled=false,allOff=true;
+      for(var di=0;di<5;di++){
+        if(_fhDayHasContent(nm,w,di)){filled=true;break;}
+        var dk=dkey(weekDayToDate(w,di)),st=null;try{st=_personDayStatus(nm,dk,w);}catch(x){}
+        if(!((st&&st.type!=='formation')||ferieName(dk)))allOff=false;
+      }
+      if(filled||allOff)return;
+      (ss.some(isDraftSt)?out.draft:out.missing).push(nm);
+    });
+    return out;
+  }
+  function missRowHtml(nm,w){
+    var acc=(A.list||[]).filter(function(a){return a.person===nm;})[0];
+    var hint=A.list==null?'':(!acc?' · <b style="color:#B45309">pas d’identifiant QR code</b>':(acc.active===false?' · identifiant QR désactivé':''));
+    var cur=w===((TODAY&&TODAY.w)||0); // semaine en cours : pas encore en retard
+    return '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #F0EEF7;flex-wrap:wrap;background:'+(cur?'#FFFCF5':'#FFF7F7')+'"><span class="qrf-av" style="background:'+(cur?'#FEF3C7':'#FEE2E2')+';color:'+(cur?'#B45309':'#B91C1C')+'">'+esc(initials(nm))+'</span>'
+      +'<div style="flex:1;min-width:170px"><div style="font-size:14px;font-weight:800">'+esc(nm)+'</div><div style="font-size:12px;color:#6B6790">Rien reçu par QR code et rien dans l’onglet Feuille d’heure'+hint+'</div></div>'
+      +(cur?'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">Pas encore commencée</span>':'<span class="qrf-badge" style="background:#FEE2E2;color:#B91C1C">✕ Pas remplie</span>')+'</div>';
+  }
   function validHtml(){
-    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:900">Feuilles reçues par QR code</div><div style="font-size:12px;color:#6B6790">Tant qu’une feuille n’est pas validée, ses heures ne comptent nulle part. Les feuilles « en cours » se remplissent au fil de la semaine et n’ont pas encore été envoyées.</div></div>'
+    var h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:900">Feuilles reçues par QR code</div><div style="font-size:12px;color:#6B6790">Tant qu’une feuille n’est pas validée, ses heures ne comptent nulle part. Les feuilles « en cours » se remplissent au fil de la semaine et n’ont pas encore été envoyées. Les personnes qui n’ont rien rempli apparaissent en haut de chaque semaine.</div></div>'
       +'<button type="button" onclick="QRFeuille._reload()" style="'+btnSt(false)+'">↻ Actualiser</button></div>';
     if(S.vErr)return h+'<div class="qrf-err">'+S.vErr+'</div>';
     if(S.subs==null)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790">⏳ Chargement…</div>';
-    if(!S.subs.length)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790;padding:30px">Aucune feuille pour le moment.</div>';
+    var cw=(TODAY&&TODAY.w)||0,lw=cw-1,miss={};
+    // semaines TERMINÉES récentes (la semaine dernière et les 3 d'avant) : on calcule qui manque.
+    // Pas la semaine en cours : tout le monde y serait « pas remplie » dès le lundi.
+    for(var mw=lw;mw>=Math.max(1,cw-4);mw--)miss[mw]=missingFor(mw);
+    // ── Encadré « semaine dernière » ──
+    if(lw>=1&&miss[lw]){
+      var M=miss[lw],per='Semaine '+isoWeekOf(lw)+' · du '+ddmm(weekDayToDate(lw,0))+' au '+ddmm(weekDayToDate(lw,4));
+      var chips=function(a,bg,fg){return a.map(function(n){return '<span class="qrf-badge" style="background:'+bg+';color:'+fg+';font-size:12.5px">'+esc(n)+'</span>';}).join(' ');};
+      if(!M.missing.length&&!M.draft.length)h+='<div class="qrf-card" style="background:#F0FDF4;border-color:#BBF7D0;padding:12px 16px"><div style="font-size:14px;font-weight:900;color:#15803D">✓ Semaine dernière : tout le monde a rempli sa feuille d’heure</div><div style="font-size:12px;color:#166534;margin-top:2px">'+per+'</div></div>';
+      else h+='<div class="qrf-card" style="background:#FEF2F2;border-color:#FECACA;padding:12px 16px"><div style="font-size:15px;font-weight:900;color:#B91C1C">⚠ Semaine dernière : '+(M.missing.length+M.draft.length)+' feuille'+((M.missing.length+M.draft.length)>1?'s':'')+' d’heure pas remplie'+((M.missing.length+M.draft.length)>1?'s':'')+'</div><div style="font-size:12px;color:#7F1D1D;margin:2px 0 8px">'+per+'</div>'
+        +(M.missing.length?'<div style="font-size:11px;font-weight:800;color:#7F1D1D;letter-spacing:.3px;margin-bottom:4px">RIEN REMPLI ('+M.missing.length+')</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+chips(M.missing,'#FEE2E2','#B91C1C')+'</div>':'')
+        +(M.draft.length?'<div style="font-size:11px;font-weight:800;color:#1E3A8A;letter-spacing:.3px;margin-bottom:4px">COMMENCÉE PAR QR CODE, PAS ENVOYÉE ('+M.draft.length+')</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+chips(M.draft,'#DBEAFE','#1D4ED8')+'</div>':'')
+        +'</div>';
+    }
     var byW={},order=[];
     S.subs.forEach(function(s){if(!byW[s.week]){byW[s.week]=[];order.push(s.week);}byW[s.week].push(s);});
+    Object.keys(miss).forEach(function(k){var w=+k;if(miss[w].missing.length&&!byW[w]){byW[w]=[];order.push(w);}});
+    order.sort(function(a,b){return b-a;});
+    if(!order.length)return h+'<div class="qrf-card" style="text-align:center;color:#6B6790;padding:30px">Aucune feuille pour le moment.</div>';
     order.forEach(function(w){
-      // Ordre dans une semaine : à valider, puis en cours, puis validées.
-      var rank={pending:0,reopened:1,draft:2,validated:3};
+      // Ordre dans une semaine (16/11/2026) : pas remplie (en haut), en cours / rouverte, à valider, validées.
+      var rank={reopened:1,draft:1,pending:2,validated:3};
       var list=byW[w].slice().sort(function(a,b){return (rank[stOf(a)]-rank[stOf(b)])||String(a.person).localeCompare(String(b.person),'fr');});
+      var ms=(miss[w]&&miss[w].missing)||[];
       var np=list.filter(function(s){return stOf(s)==='pending';}).length;
       var nd=list.filter(isDraftSt).length;
       var nv=list.filter(function(s){return stOf(s)==='validated';}).length;
-      var open=(S.open[w]!=null)?S.open[w]:(np+nd)>0;
+      var open=(S.open[w]!=null)?S.open[w]:(np+nd+ms.length)>0;
       h+='<details class="qrf-card" style="padding:0;overflow:hidden"'+(open?' open':'')+' ontoggle="QRFeuille._wtog('+w+',this.open)">'
         +'<summary style="cursor:pointer;padding:14px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:18px">📁</span>'
-        +'<span style="font-size:15px;font-weight:900">Semaine '+isoWeekOf(w)+' · '+yearOfW(w)+'</span><span style="font-size:12px;color:#6B6790">du '+ddmm(weekDayToDate(w,0))+' au '+ddmm(weekDayToDate(w,4))+'</span><span style="flex:1"></span>'
-        +(np?'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">'+np+' en attente de validation</span>':'')
+        +'<span style="font-size:15px;font-weight:900">Semaine '+isoWeekOf(w)+' · '+yearOfW(w)+'</span><span style="font-size:12px;color:#6B6790">du '+ddmm(weekDayToDate(w,0))+' au '+ddmm(weekDayToDate(w,4))+(w===cw?' · en cours':w===lw?' · semaine dernière':'')+'</span><span style="flex:1"></span>'
+        +(ms.length?(w===cw?'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">'+ms.length+' pas encore commencée'+(ms.length>1?'s':'')+'</span>'
+                           :'<span class="qrf-badge" style="background:#FEE2E2;color:#B91C1C">'+ms.length+' pas remplie'+(ms.length>1?'s':'')+'</span>'):'')
         +(nd?'<span class="qrf-badge" style="background:#DBEAFE;color:#1D4ED8">'+nd+' en cours · pas encore envoyée'+(nd>1?'s':'')+'</span>':'')
+        +(np?'<span class="qrf-badge" style="background:#FEF3C7;color:#B45309">'+np+' en attente de validation</span>':'')
         +(nv?'<span class="qrf-badge" style="background:#DCFCE7;color:#15803D">'+nv+' validée'+(nv>1?'s':'')+'</span>':'')+'</summary>'
-        +'<div style="border-top:1px solid #E4E1F0">'+list.map(subRowHtml).join('')+'</div></details>';
+        +'<div style="border-top:1px solid #E4E1F0">'+ms.map(function(nm){return missRowHtml(nm,w);}).join('')+list.map(subRowHtml).join('')+'</div></details>';
     });
     return h;
   }
@@ -25880,7 +25990,7 @@ window.QRFeuille=(function(){
   // (dépliable si le chef veut le compléter) ; les autres sont modifiables.
   function revDayHtml(di){
     var c=ctxs.rev;
-    if(isOff(c,di)||dayHas(c.data.days[di])||(c.expanded&&c.expanded[di]))return editorHtml('rev',di);
+    if(isOff(c,di)||dayHas(c.data.days[di])||(c.expanded&&c.expanded[di])||ferShut(c,di))return editorHtml('rev',di);
     return '<div class="qrf-card" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px"><span style="font-size:13px;color:#9A96B3">Rien de rempli</span>'
       +(c.readOnly?'':'<button type="button" onclick="QRFeuille._revExpand('+di+')" style="'+btnSt(false)+'">+ Compléter ce jour</button>')+'</div>';
   }
@@ -26053,12 +26163,12 @@ window.QRFeuille=(function(){
 
   return {
     render:render,startPublic:startPublic,publish:publish,
-    _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,_lineSb:_lineSb,_copyDay:_copyDay,
+    _set:_set,_tog:_tog,_veh:_veh,_addLine:_addLine,_delLine:_delLine,_lineAff:_lineAff,_line:_line,_lineSb:_lineSb,_copyDay:_copyDay,_ferOpen:_ferOpen,
     _pubLogin:_pubLogin,_pubLogout:_pubLogout,_pubEnd:_pubEnd,_pubWeek:_pubWeek,_pubWeeks:chooseWeek,_pubDays:_pubDays,_pubDay:_pubDay,_pubRecap:_pubRecap,_pubSend:_pubSend,
     _tab:_tab,_pubNow:_pubNow,_print:_print,_copy:_copy,
     _idFilter:_idFilter,_idReload:_idReload,_idGen:_idGen,_idActive:_idActive,_idDel:_idDel,_credCopy:_credCopy,_credPrint:_credPrint,
     _reload:_reload,_wtog:_wtog,_open:_open,_close:_close,_validate:_validate,_unlock:_unlock,_delete:_delete,_revExpand:_revExpand,
-    _test:{buildPayload:buildPayload,applyToStore:applyToStore,check:check,clean:clean,ctxs:ctxs,S:S,A:A,PUB:PUB,stable:stable,reqWeeks:reqWeeks}
+    _test:{buildPayload:buildPayload,applyToStore:applyToStore,check:check,clean:clean,ctxs:ctxs,S:S,A:A,PUB:PUB,stable:stable,reqWeeks:reqWeeks,missingFor:missingFor}
   };
 })();
 if(window._QR_TOKEN){window.QRFeuille.startPublic();}
