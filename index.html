@@ -1312,6 +1312,10 @@
         // du collègue). Attend la fin d'une saisie en cours (_wpSafeRebuild).
         if(document.getElementById('db-grid')&&typeof _wpSafeRebuild==='function')_wpSafeRebuild();
       }
+      // (16/11/2026) Pas de message pendant les 10 s qui suivent la connexion / le chargement, ni pendant la
+      // transition du logo : c'est le premier enregistrement de ce poste (fusion avant envoi), pas un collègue.
+      // Il surgissait pile quand le menu apparaissait après la connexion.
+      if(document.getElementById('pi-ov')||(window._appStartAt&&Date.now()-window._appStartAt<10000))return;
       var n=document.createElement('div');
       n.style.cssText='position:fixed;bottom:16px;right:16px;background:#1F4E79;color:#fff;padding:10px 16px;border-radius:10px;font-size:12px;font-weight:700;z-index:9999';
       n.textContent='Planning mis a jour par un collegue';
@@ -4950,9 +4954,12 @@ var _petroIntro=(function(){
       // Au départ elle se confond avec la carte blanche de connexion.
       var pd=Math.round(fw*.12),tw=fw+2*pd,th=fh+2*pd;
       var lg=document.createElement('div');
-      lg.style.cssText='position:absolute;left:'+(cx-tw/2)+'px;top:'+(cy-th/2)+'px;width:'+tw+'px;height:'+th+'px;box-sizing:border-box;padding:'+pd+'px;background:#fff;border-radius:'+Math.round(tw*.2)+'px;box-shadow:0 18px 50px rgba(20,10,80,.28);transform-origin:50% 50%;will-change:transform,opacity;transform:scale('+(1/S)+')';
-      var li=document.createElement('img');li.src=img.src;li.alt='';li.decoding='sync';li.style.cssText='display:block;width:'+fw+'px;height:'+fh+'px;image-rendering:auto';
-      lg.appendChild(li);
+      lg.style.cssText='position:absolute;left:'+(cx-tw/2)+'px;top:'+(cy-th/2)+'px;width:'+tw+'px;height:'+th+'px;box-sizing:border-box;padding:'+pd+'px;background:#fff;border-radius:'+Math.round(tw*.2)+'px;transform-origin:50% 50%;will-change:transform,opacity;transform:scale('+(1/S)+')';
+      // ombre = calque à part dont on anime seulement l'opacité : une ombre animée (box-shadow) faisait tourner toute
+      // l'animation du logo sur le fil principal, qui saccadait pendant le chargement du site (16/11/2026)
+      var shd=document.createElement('div');shd.style.cssText='position:absolute;inset:0;border-radius:inherit;box-shadow:0 18px 50px rgba(20,10,80,.28);opacity:0;will-change:opacity;pointer-events:none';
+      var li=document.createElement('img');li.src=img.src;li.alt='';li.decoding='sync';li.style.cssText='position:relative;display:block;width:'+fw+'px;height:'+fh+'px;image-rendering:auto';
+      lg.appendChild(shd);lg.appendChild(li);
       var rings=[0,1].map(function(){var d=document.createElement('div');var sz=Math.max(tw,th)*1.05;
         d.style.cssText='position:absolute;left:'+(innerWidth/2-sz/2)+'px;top:'+(innerHeight/2-sz/2)+'px;width:'+sz+'px;height:'+sz+'px;border-radius:50%;border:2px solid rgba(255,255,255,.75);box-shadow:0 0 24px rgba(255,255,255,.35);opacity:0;pointer-events:none;will-change:transform,opacity';return d;});
       el.appendChild(bg);el.appendChild(cc);rings.forEach(function(d){el.appendChild(d);});el.appendChild(lg);
@@ -4964,11 +4971,12 @@ var _petroIntro=(function(){
         var dx=innerWidth/2-cx,dy=innerHeight/2-cy,s0=1/S;
         cc.animate([{opacity:1,transform:'scale(1)'},{opacity:0,transform:'scale(.94)'}],{duration:300,easing:'ease-out',fill:'forwards'});
         lg.animate([
-          {transform:'translate(0,0) scale('+s0+')',opacity:1,boxShadow:'0 0 0 rgba(20,10,80,0)',easing:'cubic-bezier(.22,.8,.3,1)'},
-          {transform:'translate('+dx+'px,'+dy+'px) scale(1)',opacity:1,boxShadow:'0 18px 50px rgba(20,10,80,.28)',offset:.5},
+          {transform:'translate(0,0) scale('+s0+')',opacity:1,easing:'cubic-bezier(.22,.8,.3,1)'},
+          {transform:'translate('+dx+'px,'+dy+'px) scale(1)',opacity:1,offset:.5},
           {transform:'translate('+dx+'px,'+dy+'px) scale(1.02)',opacity:1,offset:.68,easing:'cubic-bezier(.5,0,.75,0)'},
           {transform:'translate('+dx+'px,'+dy+'px) scale(1.12)',opacity:0}
         ],{duration:D,fill:'forwards'});
+        shd.animate([{opacity:0},{opacity:1,offset:.5},{opacity:1}],{duration:D,easing:'ease-out',fill:'forwards'});
         rings.forEach(function(d,i){
           d.animate([{opacity:0,transform:'scale(.7)'},{opacity:.9,transform:'scale(.95)',offset:.25},{opacity:0,transform:'scale(3.2)'}],
             {duration:D*.5,delay:D*(.38+i*.1),easing:'cubic-bezier(.2,.7,.3,1)',fill:'both'});
@@ -5109,6 +5117,7 @@ function _roleLabel(r){if(_BUILTIN_ROLES[r])return _BUILTIN_ROLES[r];var d=_cust
 
 async function loadRoleAndStart() {
   window._appBootstrapped = true;
+  window._appStartAt = Date.now(); // (16/11/2026) pas de « mis à jour par un collègue » pendant le démarrage (applySync)
   try {
     var email = CURRENT_USER.email;
     var res = await supa.from('roles').select('role,nom').eq('email', email).single();
