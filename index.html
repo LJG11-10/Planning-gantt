@@ -4939,22 +4939,41 @@ var _petroIntro=(function(){
       var cc=card.cloneNode(true);cc.removeAttribute('id');cc.querySelectorAll('[id]').forEach(function(x){x.removeAttribute('id');});
       cc.querySelectorAll('img').forEach(function(x){x.style.visibility='hidden';});
       cc.style.position='absolute';cc.style.left=cr.left+'px';cc.style.top=cr.top+'px';cc.style.width=cr.width+'px';cc.style.margin='0';cc.style.boxSizing='border-box';
-      var lg=document.createElement('img');lg.src=img.src;lg.alt='';
-      lg.style.cssText='position:absolute;left:'+r.left+'px;top:'+r.top+'px;width:'+r.width+'px;height:'+r.height+'px;transform-origin:50% 50%;will-change:transform,opacity';
-      el.appendChild(bg);el.appendChild(cc);el.appendChild(lg);
+      // (16/11/2026, l'utilisateur : « quand il se rapproche il est flouté ») Le logo est une image de 286 × 260 px :
+      // l'agrandir ×14 l'étirait jusqu'à ~2 100 px, d'où le flou. Maintenant il ne dépasse jamais (ou presque) sa vraie
+      // résolution (S, selon l'écran) et l'élément est créé directement à sa taille FINALE (le navigateur le dessine net),
+      // réduit au départ par transform. L'effet « il se rapproche » vient d'anneaux dessinés en CSS (toujours nets).
+      var nw=img.naturalWidth||286,dpr=window.devicePixelRatio||1;
+      var S=Math.max(1.35,Math.min(2.1,nw/(r.width*dpr)*1.15));
+      var fw=r.width*S,fh=r.height*S,cx=r.left+r.width/2,cy=r.top+r.height/2;
+      // pastille blanche arrondie derrière le logo (comme sur l'accueil) : sur le fond violet, le gris du logo ressortait mal.
+      // Au départ elle se confond avec la carte blanche de connexion.
+      var pd=Math.round(fw*.12),tw=fw+2*pd,th=fh+2*pd;
+      var lg=document.createElement('div');
+      lg.style.cssText='position:absolute;left:'+(cx-tw/2)+'px;top:'+(cy-th/2)+'px;width:'+tw+'px;height:'+th+'px;box-sizing:border-box;padding:'+pd+'px;background:#fff;border-radius:'+Math.round(tw*.2)+'px;box-shadow:0 18px 50px rgba(20,10,80,.28);transform-origin:50% 50%;will-change:transform,opacity;transform:scale('+(1/S)+')';
+      var li=document.createElement('img');li.src=img.src;li.alt='';li.decoding='sync';li.style.cssText='display:block;width:'+fw+'px;height:'+fh+'px;image-rendering:auto';
+      lg.appendChild(li);
+      var rings=[0,1].map(function(){var d=document.createElement('div');var sz=Math.max(tw,th)*1.05;
+        d.style.cssText='position:absolute;left:'+(innerWidth/2-sz/2)+'px;top:'+(innerHeight/2-sz/2)+'px;width:'+sz+'px;height:'+sz+'px;border-radius:50%;border:2px solid rgba(255,255,255,.75);box-shadow:0 0 24px rgba(255,255,255,.35);opacity:0;pointer-events:none;will-change:transform,opacity';return d;});
+      el.appendChild(bg);el.appendChild(cc);rings.forEach(function(d){el.appendChild(d);});el.appendChild(lg);
       el.addEventListener('click',stop);
       document.body.appendChild(el);
-      var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches,D=reduce?350:1250;
+      var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches,D=reduce?350:1400;
       if(reduce){el.animate([{opacity:1},{opacity:0}],{duration:D,easing:'ease',fill:'forwards'});}
       else{
-        var dx=innerWidth/2-(r.left+r.width/2),dy=innerHeight/2-(r.top+r.height/2);
+        var dx=innerWidth/2-cx,dy=innerHeight/2-cy,s0=1/S;
         cc.animate([{opacity:1,transform:'scale(1)'},{opacity:0,transform:'scale(.94)'}],{duration:300,easing:'ease-out',fill:'forwards'});
         lg.animate([
-          {transform:'translate(0,0) scale(1)',opacity:1},
-          {transform:'translate('+dx+'px,'+dy+'px) scale(1.8)',opacity:1,offset:.38},
-          {transform:'translate('+dx+'px,'+dy+'px) scale(14)',opacity:0}
-        ],{duration:D,easing:'cubic-bezier(.55,0,.75,.35)',fill:'forwards'});
-        bg.animate([{opacity:1},{opacity:1,offset:.45},{opacity:0}],{duration:D,easing:'ease-in',fill:'forwards'});
+          {transform:'translate(0,0) scale('+s0+')',opacity:1,boxShadow:'0 0 0 rgba(20,10,80,0)',easing:'cubic-bezier(.22,.8,.3,1)'},
+          {transform:'translate('+dx+'px,'+dy+'px) scale(1)',opacity:1,boxShadow:'0 18px 50px rgba(20,10,80,.28)',offset:.5},
+          {transform:'translate('+dx+'px,'+dy+'px) scale(1.02)',opacity:1,offset:.68,easing:'cubic-bezier(.5,0,.75,0)'},
+          {transform:'translate('+dx+'px,'+dy+'px) scale(1.12)',opacity:0}
+        ],{duration:D,fill:'forwards'});
+        rings.forEach(function(d,i){
+          d.animate([{opacity:0,transform:'scale(.7)'},{opacity:.9,transform:'scale(.95)',offset:.25},{opacity:0,transform:'scale(3.2)'}],
+            {duration:D*.5,delay:D*(.38+i*.1),easing:'cubic-bezier(.2,.7,.3,1)',fill:'both'});
+        });
+        bg.animate([{opacity:1},{opacity:1,offset:.6},{opacity:0}],{duration:D,easing:'ease-in',fill:'forwards'});
       }
       tm=setTimeout(remove,D+60);
     }catch(e){remove();}
@@ -6898,8 +6917,7 @@ function dbEquipe(){
     var nm=parts[0], di=+parts[1];
     if(isNaN(di)||di<0||di>4)return;
     // Ne pas afficher une personne cochée "masquée" dans Planning réunion
-    var _gpHide=STORE.globalPersons&&STORE.globalPersons[nm];
-    if(_gpHide&&_gpHide.hiddenEquipe)return;
+    if(wpIsHidden(nm,selWk))return; // (16/11/2026) masquée CETTE semaine-là
     var entries=wp[key]; if(!Array.isArray(entries))entries=[entries];
     var valid=entries.filter(function(e){return e&&e.aff;});
     if(!valid.length)return;
@@ -10656,7 +10674,9 @@ function dbBuildPlanningGrid(){
     var nm=cb.dataset.nm;
     if(!STORE.globalPersons)STORE.globalPersons={};
     if(!STORE.globalPersons[nm])STORE.globalPersons[nm]={name:nm};
-    STORE.globalPersons[nm].hiddenEquipe=cb.checked;
+    // (16/11/2026) masquée pour CETTE semaine (et les suivantes non réglées), plus pour toutes les semaines : wpIsHidden
+    var _g=STORE.globalPersons[nm];if(!_g.hiddenWeeks||typeof _g.hiddenWeeks!=='object')_g.hiddenWeeks={};
+    _g.hiddenWeeks[selWk]=!!cb.checked;
     localStorage.setItem(SK,JSON.stringify(STORE));
     try{localStorage.setItem('plan26v5_gp',JSON.stringify(STORE.globalPersons));}catch(e){}
     scheduleSupa();
@@ -10668,8 +10688,8 @@ function dbBuildPlanningGrid(){
   // Regrouper les personnes masquées tout en bas — évite les lignes "Masqué"
   // dispersées au milieu du tableau (visible seulement pour la partie personne,
   // les cases jour sont déjà masquées séparément plus bas dans le rendu).
-  persons=persons.filter(function(n){var _g=STORE.globalPersons&&STORE.globalPersons[n];return !(_g&&_g.hiddenEquipe);})
-    .concat(persons.filter(function(n){var _g=STORE.globalPersons&&STORE.globalPersons[n];return !!(_g&&_g.hiddenEquipe);}));
+  persons=persons.filter(function(n){return !wpIsHidden(n,selWk);})
+    .concat(persons.filter(function(n){return wpIsHidden(n,selWk);}));
   var html='<div style="background:var(--bg2);border-radius:var(--r2);padding:20px 24px">';
   var _activeTasks=[];
   Object.keys(STORE.projects).forEach(function(affT){
@@ -10740,7 +10760,7 @@ function dbBuildPlanningGrid(){
   persons.forEach(function(nm,pi){
     var nmKey=nm.replace(/[^a-z0-9]/gi,'_');var nmEsc=nm.replace(/"/g,'&quot;');
     var _gp2=STORE.globalPersons&&STORE.globalPersons[nm];
-    var _isHidden=!!(_gp2&&_gp2.hiddenEquipe);
+    var _isHidden=wpIsHidden(nm,selWk); // (16/11/2026) semaine par semaine
     if(_isHidden&&!_hiddenSepShown){
       _hiddenSepShown=true;
       html+='<tr><td colspan="'+(DN.length+1)+'" style="padding:8px 16px;background:var(--bg3);font-size:10px;font-weight:800;color:var(--tx3);letter-spacing:.5px;border-bottom:1px solid var(--bd)">\u{1F507} MASQU\u00C9(E)S CETTE SEMAINE</td></tr>';
@@ -11256,6 +11276,21 @@ function _personDayStatus(nm,dateISO,wk){
   if(dateISO&&(ad.absenceDays||[]).indexOf(dateISO)>=0)return {type:'absence',icon:'🚫',label:'Absence',color:'#374151',bg:'#F3F4F6',bg2:'#E5E7EB'};
   if(altDayStatus(nm,dateISO,wk)==='S')return {type:'ecole',icon:'🏫',label:'École',color:'#6457F4',bg:'#EFEDFE',bg2:'#DCD8FB'};
   return null;
+}
+// (16/11/2026, demande de l'utilisateur) Case « masquer » de Planning réunion SEMAINE PAR SEMAINE.
+// Avant : gp.hiddenEquipe = une seule case pour toutes les semaines (malgré le libellé « cette semaine »).
+// Maintenant : gp.hiddenWeeks = {semaine: true|false}. Une semaine sans réglage reprend la dernière semaine
+// réglée AVANT elle (une personne masquée le reste les semaines suivantes tant qu'on ne la démasque pas),
+// sinon l'ancienne case hiddenEquipe (rien n'est converti). Synchro : dans la fiche de la personne (_mergeGlobalPersons).
+function wpIsHidden(nm,w){
+  var g=STORE.globalPersons&&STORE.globalPersons[nm];if(!g)return false;
+  var hw=g.hiddenWeeks;
+  if(hw&&w!=null){
+    if(hw[w]!=null)return !!hw[w];
+    var best=null;Object.keys(hw).forEach(function(k){var n=+k;if(n<w&&(best===null||n>best))best=n;});
+    if(best!==null)return !!hw[best];
+  }
+  return !!g.hiddenEquipe;
 }
 // (16/11/2026, demande de l'utilisateur) Jours fériés marqués automatiquement sur les feuilles d'heure.
 // Un jour férié reste un jour qu'on PEUT travailler : s'il est vide → marque pleine « 🎌 Férié » (comme un congé) ;
@@ -21248,7 +21283,7 @@ function fhWeekPersons(wk){
     Object.keys(_gpChantier).forEach(function(nm){
       if(!nm||_delP[nm]||names[nm])return;
       var pInfo=_gpChantier[nm];
-      if(!pInfo||pInfo.service!=='els_chantier'||pInfo.hiddenEquipe)return;
+      if(!pInfo||pInfo.service!=='els_chantier'||wpIsHidden(nm,wk))return; // (16/11/2026) masquée cette semaine-là
       names[nm]=true;
     });
   }
@@ -25872,9 +25907,11 @@ window.QRFeuille=(function(){
     var out={missing:[],draft:[]};
     if(typeof STORE==='undefined'||!STORE||!STORE.projects)return out;
     var exp=[];try{exp=fhWeekPersons(w).slice();}catch(x){return out;}
-    var hid=(STORE.fhWeekHidden&&STORE.fhWeekHidden[w])||{};
+    var hid=(STORE.fhWeekHidden&&STORE.fhWeekHidden[w])||{},gp=STORE.globalPersons||{};
     var subsOf={};(S.subs||[]).forEach(function(s){if(s.week===w)(subsOf[s.person]=subsOf[s.person]||[]).push(s);});
-    exp.filter(function(nm){return !hid[nm];}).sort(function(a,b){return a.localeCompare(b,'fr');}).forEach(function(nm){
+    // (16/11/2026, règle de l'utilisateur) masqué dans Planning réunion CETTE semaine-là (wpIsHidden) = pas sur le
+    // chantier → jamais « pas remplie » ; pas masqué cette semaine-là → compté normalement.
+    exp.filter(function(nm){return !hid[nm]&&!wpIsHidden(nm,w);}).sort(function(a,b){return a.localeCompare(b,'fr');}).forEach(function(nm){
       var ss=subsOf[nm]||[];
       if(ss.some(function(s){var t=stOf(s);return t==='pending'||t==='validated';}))return;
       var filled=false,allOff=true;
