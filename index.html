@@ -28739,6 +28739,7 @@ window.PunchList=(function(){
     var aff=($('pl-i-aff')||{}).value||'',title=(($('pl-i-title')||{}).value||'').trim()||'Punch list';
     if(!aff){ alert('Choisissez l’affaire.'); return; }
     var b=$('pl-i-go'); if(b){ b.disabled=true; b.textContent='Création…'; }
+    var trP=trCreate(); // (16/11/2026) traducteur demandé PENDANT le clic (Chrome l'exige la 1re fois), utilisé après la création
     var IMPF=IMP.file||null,res=IMP.res,today=todayIso(),data={_title:title,_aff:aff,_cover:res.cover||{},_lists:res.lists||{},_file:IMP.fname,_imp:today,order:[]};
     var fid=($('pl-i-fold')||{}).value||''; if(fid&&folderOf(aff,fid)) data._folder=fid;
     res.lines.forEach(function(l){ var k=uid()+Math.random().toString(36).slice(2,4); data['i:'+k]=Object.assign({add:today},l); data.order.push(k); });
@@ -28748,10 +28749,78 @@ window.PunchList=(function(){
       closeModal();
       S.list.unshift(liteOf(row));
       openRow(row);
+      translateAll(trP); // (16/11/2026) traduction en français, en arrière-plan (voir TRADUCTION)
       // (09/11/2026) copie du fichier du client, pour un export identique au document (buildClientXlsx)
       if(IMPF&&IMPF.size){ try{ setVal('_src',await srcUpload(row.id,IMPF)); scheduleSave(50); }catch(e){ console.warn('Punch list : fichier du client non gardé',e); } }
     }catch(e){ if(b){ b.disabled=false; b.textContent='Créer la punch list'; } alert('Création impossible : '+(e&&e.message||e)+(/punch_lists|relation|does not exist/i.test(String(e&&e.message||e))?'\n\nLe script punch_list_supabase.sql n’a sans doute pas encore été lancé dans Supabase.':'')); }
   }
+
+  // ═════════ TRADUCTION EN FRANÇAIS (16/11/2026, demande de l'utilisateur) ═════════
+  // À l'import, le site traduit en français la description, l'action proposée et le commentaire du client, avec le
+  // traducteur INTÉGRÉ à Google Chrome (sur l'ordinateur, rien n'est envoyé ailleurs ; Chrome récent sur ordinateur seulement).
+  // Gardé dans data['tr:<k>'] = {des, prop, ccom, at} : tout le monde voit le français ensuite, téléphones compris.
+  // Bouton FR / EN pour basculer (retenu sur le poste, pl_lang). L'EXPORT ne change pas : fichier du client en anglais
+  // + nos statuts / réponses / photos (les tr: ne sont jamais écrits dans le fichier). Phase / discipline : petit dictionnaire.
+  var TRF=['des','prop','ccom'];
+  var TRDICT={'general':'Général','project management':'Gestion de projet','process':'Procédé','equipment':'Équipement','mechanical':'Mécanique','piping':'Tuyauterie',
+    'instrumentation':'Instrumentation','automation':'Automatisme','electricity':'Électricité','electrical':'Électricité','hse':'HSE','hvac':'CVC','operation':'Exploitation',
+    'logistic':'Logistique','logistics':'Logistique','design':'Conception','procurement':'Approvisionnement','contruction':'Construction','construction':'Construction',
+    'shipment':'Expédition','installation zone fat':'Installation zone FAT','pre-com / com':'Pré-mise en service / mise en service','start-up':'Démarrage','startup':'Démarrage',
+    'assistance':'Assistance','civil':'Génie civil','structure':'Structure','painting':'Peinture','documentation':'Documentation','quality':'Qualité','safety':'Sécurité'};
+  S.lang=(function(){ try{ return localStorage.getItem('pl_lang')==='en'?'en':'fr'; }catch(e){ return 'fr'; } })();
+  function frOn(){ return S.lang!=='en'; }
+  function trList(v){ if(!v||!frOn()) return v; var x=TRDICT[String(v).toLowerCase().replace(/\s+/g,' ').trim()]; return x||v; }
+  function trTxt(k,f){ var i=D['i:'+k]||{},t=D['tr:'+k]; return (frOn()&&t&&t[f])?t[f]:i[f]; }
+  function needTr(d,k){ var i=d['i:'+k]||{},t=d['tr:'+k]; return TRF.some(function(f){ return i[f]&&!(t&&t[f]!=null); }); }
+  function trMissing(){ return keys(D).filter(function(k){ return needTr(D,k); }).length; }
+  function trApi(){ try{ return typeof self!=='undefined'&&('Translator' in self); }catch(e){ return false; } }
+  var TR={busy:false,done:0,total:0,err:'',dl:null,id:null};
+  // À appeler PENDANT le clic (la 1re fois, Chrome télécharge le modèle de langue et demande un geste de l'utilisateur)
+  function trCreate(){
+    if(!trApi()) return null;
+    try{
+      var p=self.Translator.create({sourceLanguage:'en',targetLanguage:'fr',monitor:function(m){ try{ m.addEventListener('downloadprogress',function(e){ TR.dl=Math.round((e.loaded||0)*100); updTr(); }); }catch(x){} }});
+      if(p&&p.catch) p.catch(function(){}); // erreur traitée par translateAll
+      return p;
+    }catch(e){ return Promise.reject(e); }
+  }
+  function trStatusHtml(){
+    if(TR.busy&&TR.id===(S.cur&&S.cur.id)) return '🌐 Traduction… '+TR.done+' / '+TR.total+(TR.dl!=null&&TR.dl<100?' (téléchargement du traducteur '+TR.dl+' %)':'');
+    if(TR.err&&TR.id===(S.cur&&S.cur.id)) return '<span style="color:#B45309">⚠ '+esc(TR.err)+'</span>';
+    return '';
+  }
+  function updTr(){ var e=$('pl-trst'); if(e) e.innerHTML=trStatusHtml(); }
+  async function translateAll(pr){
+    if(!S.cur||TR.busy) return;
+    var id=S.cur.id,K=keys(D).filter(function(k){ return needTr(D,k); });
+    if(!K.length) return;
+    TR.id=id; TR.err=''; TR.dl=null;
+    if(!pr){ TR.err='Traduction impossible dans ce navigateur : il faut Google Chrome (version récente) sur ordinateur. Vous pourrez cliquer « 🌐 Traduire » depuis un PC.'; if(!typing()) drawDetail(); return; }
+    TR.busy=true; TR.done=0; TR.total=K.length; if(!typing()) drawDetail(); else updTr();
+    // délai maximum : sur certains postes, Chrome ne répond jamais (modèle de langue indisponible) → ne pas rester bloqué.
+    // Préparation du traducteur : 30 s, prolongé tant que Chrome télécharge son modèle (TR.dl bouge) ; chaque texte : 30 s.
+    var tmo=function(p,ms,lbl){ return new Promise(function(res,rej){ var last=TR.dl,t0=Date.now(),iv=setInterval(function(){ if(TR.dl!==last){ last=TR.dl; t0=Date.now(); } if(Date.now()-t0>ms){ clearInterval(iv); rej(new Error(lbl)); } },500); p.then(function(v){ clearInterval(iv); res(v); },function(e){ clearInterval(iv); rej(e); }); }); };
+    try{
+      var tr=await tmo(Promise.resolve(pr),30000,'le traducteur de Chrome ne répond pas sur ce poste');
+      for(var j=0;j<K.length;j++){
+        if(!S.cur||S.cur.id!==id) break; // punch list quittée : le reste se fera avec « 🌐 Traduire »
+        var k=K[j],i=D['i:'+k]||{},o=Object.assign({},D['tr:'+k]||{});
+        for(var fi=0;fi<TRF.length;fi++){ var f=TRF[fi]; if(i[f]&&o[f]==null) o[f]=String(await tmo(tr.translate(String(i[f])),30000,'le traducteur de Chrome ne répond pas sur ce poste')||''); }
+        o.at=new Date().toISOString();
+        setVal('tr:'+k,o);
+        TR.done=j+1; updTr();
+      }
+    }catch(e){
+      var m=String(e&&e.message||e);
+      TR.err=/user activation|gesture/i.test(m)?'Cliquez « 🌐 Traduire » pour lancer la traduction (Chrome doit d’abord télécharger son traducteur).'
+        :/unavailable|not supported|NotSupported/i.test(m)?'La traduction anglais → français n’est pas disponible dans ce navigateur.'
+        :'Traduction interrompue : '+m;
+    }
+    TR.busy=false;
+    if(S.cur&&S.cur.id===id){ if(typing()) S.needDraw=true; else drawDetail(); }
+  }
+  function trNow(){ if(!ENV.canEdit()||!S.cur) return; translateAll(trCreate()); }
+  function setLang(l){ S.lang=l==='en'?'en':'fr'; try{ localStorage.setItem('pl_lang',S.lang); }catch(e){} if(S.cur) drawDetail(); }
 
   // ═════════ DÉTAIL D'UNE PUNCH LIST ═════════
   async function open(id){
@@ -28780,7 +28849,7 @@ window.PunchList=(function(){
     if(S.f==='late'&&!isLate(D,k)) return false;
     if(S.f==='closed'&&st==='Open') return false;
     if(S.disc&&(i.disc||'')!==S.disc) return false;
-    if(S.q){ var s=noAcc([i.n,i.des,i.eq,i.prop,i.ccom,i.pic,(D['t:'+k]||{}).txt].join(' ')).toLowerCase(); if(s.indexOf(noAcc(S.q).toLowerCase())<0) return false; }
+    if(S.q){ var _tr=D['tr:'+k]||{}; var s=noAcc([i.n,i.des,i.eq,i.prop,i.ccom,i.pic,(D['t:'+k]||{}).txt,_tr.des,_tr.prop,_tr.ccom].join(' ')).toLowerCase(); if(s.indexOf(noAcc(S.q).toLowerCase())<0) return false; } // recherche en anglais ET en français
     return true;
   }
   function lineHtml(k){
@@ -28788,13 +28857,14 @@ window.PunchList=(function(){
     var kv=function(lb,v){ return v?'<div class="plx-kv"><b>'+lb+'</b><span style="flex:1;min-width:180px;white-space:pre-wrap">'+esc(v)+'</span></div>':''; };
     var h='<div class="plx-line'+(st!=='Open'?' closed':'')+(late?' late':'')+'" id="plx-'+esc(k)+'">'
       +'<div class="plx-top"><span class="plx-n">'+(i.n?'#'+esc(i.n):'—')+'</span>'+stPill(st)
-      +(i.disc?'<span class="plx-tag">'+esc(i.disc)+'</span>':'')+(i.phase?'<span class="plx-tag" style="background:#fff;border:1px solid #E4E1F0">'+esc(i.phase)+'</span>':'')
+      +(i.disc?'<span class="plx-tag" title="'+esc(i.disc)+'">'+esc(trList(i.disc))+'</span>':'')+(i.phase?'<span class="plx-tag" style="background:#fff;border:1px solid #E4E1F0" title="'+esc(i.phase)+'">'+esc(trList(i.phase))+'</span>':'')
       +(i.pic?'<span class="plx-tag" style="background:'+(ours(i)?'#EEF2FF;color:#4338CA':'#FEF3C7;color:#92400E')+'">PIC : '+esc(i.pic)+'</span>':'')
       +'<span style="flex:1"></span>'
       +(i.tgt?'<span style="font-size:12px;font-weight:800;color:'+(late?'#B91C1C':'#6B6790')+'">'+(late?'⚠ En retard · ':'')+'cible '+esc(fr(i.tgt))+'</span>':'')
       +'</div>'
-      +'<div class="plx-des">'+esc(i.des)+'</div>'
-      +kv('ÉQUIPEMENT',i.eq)+kv('ACTION PROPOSÉE',i.prop)+kv('COMMENTAIRE CLIENT',i.ccom)
+      // (16/11/2026) texte traduit en français si le bouton FR est choisi (anglais d'origine au survol)
+      +'<div class="plx-des"'+(frOn()&&trTxt(k,'des')!==i.des?' title="'+esc(i.des)+'"':'')+'>'+esc(trTxt(k,'des'))+'</div>'
+      +kv('ÉQUIPEMENT',i.eq)+kv('ACTION PROPOSÉE',trTxt(k,'prop'))+kv('COMMENTAIRE CLIENT',trTxt(k,'ccom'))
       +'<div class="plx-kv" style="font-size:11.5px;color:#9A96B3">'+[i.by?'émis par '+esc(i.by):'',i.dt?'le '+esc(fr(i.dt)):'',i.cst&&i.cst!==st?'statut client : '+esc(i.cst):''].filter(Boolean).join(' · ')+'</div>';
     h+='<div class="plx-ans">';
     if(ed){
@@ -28831,12 +28901,18 @@ window.PunchList=(function(){
       +'<b style="font-size:17px">'+esc(D._title||c.title||'Punch list')+'</b>'+(cv.rev?'<span class="plx-tag">Rév. '+esc(cv.rev)+'</span>':'')
       +'<span style="font-size:12.5px;color:#6B6790">'+esc(affLabel(D._aff||c.aff))+(cv.project||cv.company?' · '+esc([cv.project,cv.company].filter(Boolean).join(' · ')):'')+'</span>'
       +'<span style="flex:1"></span><span id="pl-savest" style="font-size:12px;color:#6B6790"></span>'
+      // (16/11/2026) bouton FR / EN + « 🌐 Traduire » s'il reste des lignes pas traduites
+      +'<div class="plx-seg" role="group" aria-label="Langue" title="Langue d’affichage (l’export reste en anglais, comme le fichier du client)">'
+        +'<button type="button" class="'+(frOn()?'on-closed':'')+'" aria-pressed="'+frOn()+'" onclick="PunchList._lang(\'fr\')">FR</button>'
+        +'<button type="button" class="'+(!frOn()?'on-na':'')+'" aria-pressed="'+(!frOn())+'" onclick="PunchList._lang(\'en\')">EN</button></div>'
+      +(ed&&trMissing()&&!(TR.busy&&TR.id===c.id)?'<button class="dcu-btn2" onclick="PunchList._trNow()" title="Traduire en français les lignes pas encore traduites (Google Chrome sur ordinateur)">🌐 Traduire ('+trMissing()+')</button>':'')
       +'<button id="pl-xls" class="dcu-btn" onclick="PunchList.exportClient()" title="Le fichier Excel du client, identique, avec vos statuts, vos réponses (colonne Comments) et vos photos">⬇ Excel</button>'
       +'</div>';
     var chip=function(f,n,l){ return '<button type="button" class="plx-chip'+(S.f===f?' on':'')+'" onclick="PunchList._f(\'f\',\''+f+'\')">'+l+' <span style="opacity:.75">'+n+'</span></button>'; };
+    h+='<div id="pl-trst" style="font-size:12px;font-weight:700;color:#4B3FC7;margin-top:6px">'+trStatusHtml()+'</div>';
     h+='<div class="plx-chips" style="margin-top:10px">'+chip('all',st.n,'Toutes')+chip('open',st.open,'Ouvertes')+chip('ours',st.ours,'À nous (ELS)')+chip('snf',st.snf,'Côté SNF')+chip('late',st.late,'En retard')+chip('closed',st.closed+st.na,'Fermées / N/A')+'</div>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
-      +(Object.keys(discs).length>1?'<select class="dcu-in" aria-label="Discipline" onchange="PunchList._f(\'disc\',this.value)"><option value="">Toutes les disciplines</option>'+Object.keys(discs).sort().map(function(d){ return '<option'+(S.disc===d?' selected':'')+'>'+esc(d)+'</option>'; }).join('')+'</select>':'')
+      +(Object.keys(discs).length>1?'<select class="dcu-in" aria-label="Discipline" onchange="PunchList._f(\'disc\',this.value)"><option value="">Toutes les disciplines</option>'+Object.keys(discs).sort().map(function(d){ return '<option value="'+esc(d)+'"'+(S.disc===d?' selected':'')+'>'+esc(trList(d))+'</option>'; }).join('')+'</select>':'')
       +'<input class="dcu-in" style="flex:1;min-width:160px" placeholder="Rechercher (n°, description, équipement…)" aria-label="Rechercher" value="'+esc(S.q)+'" oninput="PunchList._q(this.value)">'
       +'</div>';
     if(!ed) h+='<div class="dcu-msg" style="background:#F3F4F6;border:1px solid #E5E7EB;color:#374151;max-width:none;margin:10px 0 0">Lecture seule : vous n’avez pas le droit de répondre aux punch lists.</div>';
@@ -29488,6 +29564,7 @@ window.PunchList=(function(){
     _f:function(k,v){ S[k]=v; if(S.cur) drawDetail(); else drawList(); },
     _q:function(v){ S.q=v; var pos=null,a=document.activeElement; if(a&&a.selectionStart!=null) pos=a.selectionStart; drawDetail(); var i=S.host&&S.host.querySelector('input[aria-label="Rechercher"]'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
     _closeModal:closeModal, _impCreate:impCreate, _impRead:impRead, _read:readExcel, _attach:attach,
+    _lang:setLang, _trNow:trNow, _translateAll:translateAll, _TR:TR,
     _fNew:function(){ folderForm(''); }, _fRen:folderForm, _fOk:folderOk, _fDel:folderDel, _fToggle:foldToggle, _move:moveAsk, _moveOk:moveOk, _impHere:importHere, _setFolder:setFolder,
     _impAff:function(a){ var w=$('pl-i-fold-w'),s=$('pl-i-fold'); if(!w||!s) return; s.innerHTML=a?folderOpts(a,a===S.ctxAff?S.impFolder:''):''; w.style.display=(a&&folders(a).length)?'':'none'; },
     _folderName:function(aff,fid){ var f=folderOf(aff,fid); return f?f.name:''; },
