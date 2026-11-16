@@ -28987,7 +28987,34 @@ window.PunchList=(function(){
 
   function xe(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function normT(s){ return noAcc(String(s==null?'':s)).toLowerCase().replace(/\s+/g,' ').trim(); }
-  function colPx(w){ return Math.floor(w*7+5); } // largeur de colonne Excel (caractères) → pixels (police Calibri 11)
+  // largeur de colonne Excel (caractères, attribut width qui inclut déjà la marge) → pixels (police Calibri 11, 7 px par caractère).
+  // (16/11/2026) avant : w*7+5 → 5 px de trop par colonne, la photo dépassait à droite de la case.
+  function colPx(w){ return Math.floor(w*7+0.5); }
+  // Nombre de lignes d'un texte dans une case de largeur px (retour à la ligne par mots, comme Excel), police de pt points.
+  // Largeurs de caractères Calibri un peu généreuses : mieux vaut une ligne de trop que des photos sur le texte.
+  function wrapLines(txt,px,pt){
+    var em=pt*4/3,cw=function(ch){
+      if(ch===' ') return 0.23*em;
+      if(/[iljI.,;:'!|]/.test(ch)) return 0.26*em;
+      if(/[frt()\[\]\-]/.test(ch)) return 0.34*em;
+      if(/[mwMW@%]/.test(ch)) return 0.8*em;
+      if(/[A-Z]/.test(ch)) return 0.6*em;
+      return 0.49*em;
+    };
+    var n=0;
+    String(txt).replace(/\r/g,'').split('\n').forEach(function(par){
+      var words=par.split(/ +/),cur=0,ln=1;
+      words.forEach(function(wd,wi){
+        var w=0; for(var i=0;i<wd.length;i++) w+=cw(wd[i]);
+        var sp=cur>0?cw(' '):0;
+        if(cur>0&&cur+sp+w>px){ ln++; cur=0; sp=0; }
+        while(w>px){ ln++; w-=px; } // mot plus long que la case : coupé
+        cur+=sp+w;
+      });
+      n+=ln;
+    });
+    return n;
+  }
 
   async function buildClientXlsx(src,d,lbl){
     var X=await loadXlsx(),buf=await src.arrayBuffer(),warn=[];
@@ -29083,6 +29110,16 @@ window.PunchList=(function(){
       stylesX=stylesX.replace(/<cellXfs\b([^>]*)>([\s\S]*?)<\/cellXfs>/,function(all,attrs,body){ return '<cellXfs'+attrs.replace(/\bcount="\d+"/,'count="'+(idx+1)+'"')+'>'+body+nx+'</cellXfs>'; });
       plainXf[s]=String(idx); return plainXf[s];
     }
+    // taille de police (points) d'un style de case du fichier (cellXfs → fontId → fonts), 11 par défaut
+    function cellFontPt(s){
+      try{
+        var cm=stylesX.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/),xfs=cm?(cm[1].match(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)||[]):[];
+        var xf=xfs[+(s||0)]||'',fid=+((xf.match(/\bfontId="(\d+)"/)||[])[1]||0);
+        var fm=stylesX.match(/<fonts\b[^>]*>([\s\S]*?)<\/fonts>/),fonts=fm?(fm[1].match(/<font\b[^>]*?(?:\/>|>[\s\S]*?<\/font>)/g)||[]):[];
+        var sz=+(((fonts[fid]||'').match(/<sz\b[^>]*\bval="([\d.]+)"/)||[])[1]||11);
+        return sz>4&&sz<72?sz:11;
+      }catch(e){ return 11; }
+    }
     // styles des statuts tels qu'ils sont dans le fichier (ex. Closed = vert, Open = rouge)
     var stStyle={};
     if(L.map.cst!=null) frows.forEach(function(f){ var key=normT(f.cst); if(key&&stStyle[key]==null){ var s=cellStyle(CL(L.map.cst)+(f.r+1)); if(s!=null) stStyle[key]=s; } });
@@ -29138,19 +29175,33 @@ window.PunchList=(function(){
       var rIdN=1; var freeRid=function(){ while(new RegExp('Id="rId'+rIdN+'"').test(drelsX)) rIdN++; return 'rId'+(rIdN++); };
       var EMU=9525,anchors='',done=0,total=photoJobs.reduce(function(a,j){ return a+j.ph.length; },0),mi=1;
       for(var ji=0;ji<photoJobs.length;ji++){
-        var J=photoJobs[ji],span=mergeSpan(J.rowN,J.col),avail=span.reduce(function(a,c){ return a+wOf(c); },0)-6;
-        var cpl=Math.max(8,Math.floor(avail/7)),tl=0;
-        String(J.txt||'').split('\n').forEach(function(line){ tl+=Math.max(1,Math.ceil(line.length/cpl)); });
+        // (16/11/2026, demande de l'utilisateur : « les photos dépassent de la case, il faut qu'on voie le commentaire »)
+        // case = largeur exacte des colonnes (colPx corrigé), texte mesuré mot par mot avec la vraie police de la case,
+        // photos SOUS le texte, dans la case ; la ligne est agrandie (409 pt maximum dans Excel : photos réduites au-delà).
+        var J=photoJobs[ji],span=mergeSpan(J.rowN,J.col),avail=span.reduce(function(a,c){ return a+wOf(c); },0)-8;
+        var fpt=cellFontPt(cellStyle(CL(J.col)+J.rowN)),lineH=Math.ceil(fpt*15/11/0.75);
+        var tl=J.txt?wrapLines(J.txt,avail-4,fpt):0;
+        var textH=J.txt?Math.ceil((tl+0.6)*lineH)+4:0,MAXPX=Math.floor(409/0.75),GAP=4;
         // (10/11/2026) case Comments étroite (ex. 231S0069 PIU6, M:N ≈ 130 px) : 1 photo par rangée au lieu de 2 minuscules
-        var nc=((avail-4)/2>=100)?2:1;
-        var textH=J.txt?tl*20+4:0,boxW=Math.floor((avail-4*nc)/nc),boxH=Math.min(110,Math.max(70,boxW)),lines=Math.ceil(J.ph.length/nc);
-        var needPx=textH+4+lines*(boxH+4)+2,curPx=rowHeightPx(J.rowN);
+        var lay=function(nc){
+          var bw=Math.floor((avail-GAP*(nc-1))/nc),bh=Math.min(110,Math.max(70,bw)),ln=Math.ceil(J.ph.length/nc),nd=textH+GAP+ln*(bh+GAP)+2,fits=nd<=MAXPX;
+          if(!fits){ bh=Math.max(24,Math.floor((MAXPX-textH-GAP-2)/ln)-GAP); bw=Math.min(bw,Math.round(bh*4/3)); nd=Math.min(MAXPX,textH+GAP+ln*(bh+GAP)+2); }
+          var lw=Math.min(bw,bh*4/3); // largeur d'une photo paysage 4:3 dans la boîte
+          return {nc:nc,boxW:bw,boxH:bh,lines:ln,needPx:nd,fits:fits,area:lw*lw};
+        };
+        var best=lay(((avail-GAP)/2>=100)?2:1);
+        if(!best.fits){ // trop haut pour Excel : la disposition qui garde les photos les plus grandes (souvent 1 par rangée, un peu réduites)
+          for(var tn=1;tn<=3;tn++){ var o=lay(tn); if(o.area>best.area) best=o; }
+        }
+        var nc=best.nc,boxW=best.boxW,boxH=best.boxH,lines=best.lines,needPx=best.needPx;
+        var curPx=rowHeightPx(J.rowN);
         if(needPx>curPx) setRowHeight(J.rowN,Math.round(needPx*0.75*100)/100);
+        var rowW=nc*boxW+GAP*(nc-1),x0=4+Math.max(0,Math.floor((avail-rowW)/2));
         for(var pj=0;pj<J.ph.length;pj++){
           done++; if(lbl) lbl('Photos '+done+' / '+total+'…');
           var im; try{ im=await photoForExport(J.ph[pj]); }catch(e){ warn.push('Une photo n’a pas pu être récupérée (ligne '+J.rowN+').'); continue; }
           var w=boxW,h=Math.round(boxW*im.h/im.w); if(h>boxH){ h=boxH; w=Math.round(boxH*im.w/im.h); }
-          var x=3+(pj%nc)*(boxW+4)+Math.floor((boxW-w)/2),y=textH+4+Math.floor(pj/nc)*(boxH+4);
+          var x=x0+(pj%nc)*(boxW+GAP)+Math.floor((boxW-w)/2),y=textH+GAP+Math.floor(pj/nc)*(boxH+GAP)+Math.floor((boxH-h)/2);
           // colonne de départ réelle dans la case fusionnée
           var ci=0,acc=0; while(ci<span.length-1&&x>=acc+wOf(span[ci])){ acc+=wOf(span[ci]); ci++; }
           var media='plphoto_'+Date.now().toString(36)+'_'+(mi++)+'.jpeg',rid2=freeRid();
