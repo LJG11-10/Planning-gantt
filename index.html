@@ -29829,7 +29829,7 @@ function pwRoute(S,ds,T,dt,k){
   if(hS){if(fwdS([T[0],S[1]])&&fwdT([T[0],S[1]]))return [S,[T[0],S[1]],T];return [S,A,[A[0],B[1]],B,T];}
   if(fwdS([S[0],T[1]])&&fwdT([S[0],T[1]]))return [S,[S[0],T[1]],T];return [S,A,[B[0],A[1]],B,T];
 }
-var PWG={},PWA={},PWZ={},NWA={},NWZ={},PWV={}; // du dernier grand dessin, jamais enregistrés : armoires (point cliqué), position de chaque équipement, emplacements (déplacement à la souris)
+var PWG={},PWA={},PWZ={},NWA={},NWZ={},PWVS={}; // PWVS : position des variateurs (≠ PWV = directions des côtés, utilisé par pwRoute) // du dernier grand dessin, jamais enregistrés : armoires (point cliqué), position de chaque équipement, emplacements (déplacement à la souris)
 // encombrement d'un équipement autour de son point de position (armoire : coin haut-gauche ; autres : centre du symbole)
 function pwExt(o){
   if(o.t==='armoire')return {l:0,r:(o._w||220),t:(o.alim?-44:-4),b:46+(o.txt?20:6)};
@@ -29904,7 +29904,7 @@ function drawPower(opts){
   // photo du variateur / démarreur : au milieu du plus long tronçon vertical du câble
   var midV=function(pts){var best=null,bl=0;for(var i=1;i<pts.length;i++){var a=pts[i-1],b=pts[i];if(Math.abs(a[0]-b[0])<1&&Math.abs(b[1]-a[1])>bl){bl=Math.abs(b[1]-a[1]);best=[b[0],(a[1]+b[1])/2];}}return bl>=40?best:null;};
   Z.forEach(function(z){s+=zoneBox(zg[z.id],z.n,false);});
-  if(ED){PWG={};PWA={};PWZ={};PWV={};Z.forEach(function(z){var g=zg[z.id];PWZ[z.id]={x:g.x,y:g.y,w:g.w,h:g.h};});}
+  if(ED){PWG={};PWA={};PWZ={};PWVS={};Z.forEach(function(z){var g=zg[z.id];PWZ[z.id]={x:g.x,y:g.y,w:g.w,h:g.h};});}
   panels.forEach(function(p){if(ED){PWG[p.id]={x:p._x,y:p._y,w:p._w,h:p._h};PWA[p.id]={x:p._x,y:p._y,z:zOf(p),w:p._w,h:p._h};}
     if(p.alim){s+='<line x1="'+(p._x+p._w/2)+'" y1="'+(p._y-30)+'" x2="'+(p._x+p._w/2)+'" y2="'+p._y+'" stroke="#0F172A" stroke-width="2.2"/><polygon points="'+(p._x+p._w/2-5)+','+(p._y-8)+' '+(p._x+p._w/2+5)+','+(p._y-8)+' '+(p._x+p._w/2)+','+p._y+'" fill="#0F172A"/>'+txt(p._x+p._w/2,p._y-36,p.alim,{sz:10.5,w:700});}});
   // ── CÂBLES : on trace d'abord ceux qui n'ont pas le choix, puis chaque câble coudé prend la hauteur de coude
@@ -29967,7 +29967,7 @@ function drawPower(opts){
   // photo du variateur / démarreur : à l'endroit où on l'a posé, sinon au milieu du câble ; dans le grand dessin elle sert de poignée pour le déplacer
   var vdone={};jobs.forEach(function(j){var o=j.o;if((o.t!=='moteurv'&&o.t!=='moteurd')||vdone[o.id])return;var V=o._V||midV(j.pts);if(!V)return;vdone[o.id]=1;
     s+=o.t==='moteurv'?symVsd(V[0],V[1]):symSoft(V[0],V[1]);
-    if(ED){PWV[o.id]={x:V[0],y:V[1]};hits+='<rect data-pwi="'+o.id+'" data-pwv="1" x="'+(V[0]-22)+'" y="'+(V[1]-28)+'" width="44" height="56" rx="4" fill="#fff" fill-opacity="0" style="cursor:move"><title>Variateur : restez appuyé pour le déplacer</title></rect>';}});
+    if(ED){PWVS[o.id]={x:V[0],y:V[1]};hits+='<rect data-pwi="'+o.id+'" data-pwv="1" x="'+(V[0]-22)+'" y="'+(V[1]-28)+'" width="44" height="56" rx="4" fill="#fff" fill-opacity="0" style="cursor:move"><title>Variateur : restez appuyé pour le déplacer</title></rect>';}});
   cols.forEach(function(it){var cx=it._cx,cy=it._cy;if(ED)PWA[it.id]={x:cx,y:cy,z:zOf(it)};
     s+=loadSym(it,cx,cy);hit(it.id,cx-38,cy-34,76,68,it._orph);
     it._kids.forEach(function(k){if(ED)PWA[k.id]={x:k._cx,y:k._cy,z:zOf(k)};s+=loadSym(k,k._cx,k._cy);hit(k.id,k._cx-38,k._cy-34,76,68);});});
@@ -30523,7 +30523,7 @@ document.addEventListener('pointerdown',function(ev){
     DRG={kind:'nw',id:nid,x0:ev.clientX,y0:ev.clientY,ax:na.x,ay:na.y,w:na.w,h:na.h,zx:nz.x,zy:nz.y,dx:0,dy:0,on:false,raf:0};return;}
   if(CED.kind!=='pw')return;
   var pi=t.closest('#arx-cbody [data-pwi]');if(!pi)return;var id=pi.getAttribute('data-pwi');
-  if(pi.getAttribute('data-pwv')){var V=PWV[id];if(!V||!pwItem(id))return;var vz=null;Object.keys(PWZ).forEach(function(k){var g=PWZ[k];if(V.x>=g.x&&V.x<=g.x+g.w&&V.y>=g.y&&V.y<=g.y+g.h)vz=k;});if(!vz)vz=(PWA[id]||{}).z;if(!PWZ[vz])return;
+  if(pi.getAttribute('data-pwv')){var V=PWVS[id];if(!V||!pwItem(id))return;var vz=null;Object.keys(PWZ).forEach(function(k){var g=PWZ[k];if(V.x>=g.x&&V.x<=g.x+g.w&&V.y>=g.y&&V.y<=g.y+g.h)vz=k;});if(!vz)vz=(PWA[id]||{}).z;if(!PWZ[vz])return;
     DRG={kind:'pwv',id:id,x0:ev.clientX,y0:ev.clientY,ax:V.x,ay:V.y,vz:vz,dx:0,dy:0,on:false,raf:0};return;}
   var a=PWA[id],it=pwItem(id),z=a&&PWZ[a.z];if(!a||!z||!it)return;
   DRG={id:id,x0:ev.clientX,y0:ev.clientY,ax:a.x,ay:a.y,w:a.w,zx:z.x,zy:z.y,dx:0,dy:0,on:false,raf:0};
@@ -30573,13 +30573,15 @@ function draw(){var el=document.getElementById('arx-pv');if(!el||!M)return;try{e
 // PDF : page à part (2 pages A4 paysage, photos intégrées), ouverte dans un onglet, impression lancée
 async function pdf(){
   if(!bind())return;await loadImgs();bind();
-  var name='Architecture_'+String(affNum()||S.aff||'affaire').replace(/[^\w\-]+/g,'_');
+  var name='Architecture_'+String(affNum()||S.aff||'affaire').replace(/[^\w\-]+/g,'_'),pgPw,pgNw;
+  // dessin des 2 pages d'abord : en cas d'erreur, un message (avant : rien ne se passait)
+  try{pgPw=pageSvg('pw');pgNw=pageSvg('nw');}catch(e){console.error('Architecture : export impossible',e);alert('Export impossible : le dessin a rencontré une erreur.\n\n'+(e&&e.message||e));return;}
   var html='<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>'+esc(name)+'</title><style>@page{size:A4 landscape;margin:0}*{box-sizing:border-box}body{margin:0;background:#E5E7EB;font-family:"Segoe UI",Arial,sans-serif}'
     +'.bar{position:sticky;top:0;z-index:2;background:#1C1A33;color:#fff;padding:10px 16px;display:flex;gap:10px;align-items:center}.bar button{border:none;border-radius:8px;padding:8px 14px;font:inherit;font-weight:800;cursor:pointer;background:#fff;color:#1C1A33}'
     +'.pp{width:297mm;height:210mm;margin:14px auto;background:#fff;box-shadow:0 6px 24px rgba(0,0,0,.15);overflow:hidden}.pp svg{width:297mm;height:210mm;display:block}'
     +'@media print{body{background:#fff}.bar{display:none}.pp{margin:0;box-shadow:none;break-after:page;page-break-after:always}.pp:last-child{break-after:auto;page-break-after:auto}}</style></head><body>'
     +'<div class="bar"><b>'+esc(name)+'</b><span style="flex:1"></span><button onclick="print()">🖨 Imprimer / Enregistrer en PDF</button></div>'
-    +'<div class="pp">'+pageSvg('pw')+'</div><div class="pp">'+pageSvg('nw')+'</div>'
+    +'<div class="pp">'+pgPw+'</div><div class="pp">'+pgNw+'</div>'
     +'<script>setTimeout(function(){window.print();},500);<\/script></body></html>';
   var url=URL.createObjectURL(new Blob([html],{type:'text/html'})),a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
   setTimeout(function(){URL.revokeObjectURL(url);},120000);
