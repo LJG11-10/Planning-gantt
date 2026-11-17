@@ -28256,6 +28256,28 @@ window.ChantierNav=(function(){
 .plx-st{display:inline-block;font-size:11.5px;font-weight:900;padding:3px 10px;border-radius:999px;white-space:nowrap}
 .plx-st.Open{background:#FEF3C7;color:#92400E}.plx-st.Closed{background:#DCFCE7;color:#15803D}.plx-st.NA{background:#E2E8F0;color:#334155}
 .plx-head{position:sticky;top:0;z-index:5}
+/* (17/11/2026) affichage en tableau façon Excel */
+.plx-wrap.wide{max-width:none}
+.plx-tw{background:#fff;border:1px solid #E4E1F0;border-radius:12px;overflow:auto;max-height:calc(100vh - 230px)}
+.plx-t{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;color:#1C1A33}
+.plx-t th{position:sticky;top:0;z-index:2;background:#F1EFF8;color:#4A4766;font-size:10.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;text-align:left;padding:8px;border-bottom:1.5px solid #E4E1F0;white-space:nowrap}
+.plx-t td{padding:7px 8px;border-bottom:1px solid #EFEDF7;vertical-align:top;line-height:1.4}
+.plx-t td+td,.plx-t th+th{border-left:1px solid #F3F1FA}
+.plx-t tr.r-cl td{background:#FAFEFB}.plx-t tr.r-na td{background:#FAFAFB}
+.plx-t tr.late td:first-child{box-shadow:inset 4px 0 0 #DC2626}
+.plx-t tr:hover td{background:#F8F7FF}
+.plx-t td.n{font-weight:900;white-space:nowrap}
+.plx-t td.nw{white-space:nowrap}
+.plx-t .des{font-weight:700;white-space:pre-wrap}
+.plx-t .sm{font-size:11px;color:#6B6790;margin-top:2px}
+.plx-sts{border:1.5px solid #E4E1F0;border-radius:8px;padding:5px 6px;font:inherit;font-size:12px;font-weight:800;cursor:pointer}
+.plx-sts.s-op{background:#FEF3C7;border-color:#FCD34D;color:#92400E}.plx-sts.s-cl{background:#DCFCE7;border-color:#86EFAC;color:#15803D}.plx-sts.s-na{background:#E2E8F0;border-color:#CBD5E1;color:#334155}
+.plx-ta2{width:100%;min-width:200px;box-sizing:border-box;border:1.5px solid #E4E1F0;border-radius:8px;padding:6px 8px;font:inherit;font-size:12.5px;resize:none;overflow:hidden;min-height:34px;background:#fff}
+.plx-ta2:focus{outline:none;border-color:#6457F4}
+.plx-t .phs{display:flex;gap:4px;flex-wrap:wrap;min-width:96px}
+.plx-t .plx-th{width:44px;height:44px;border-radius:7px}
+.plx-t .plx-th .x{width:17px;height:17px;line-height:17px;font-size:9px;top:2px;right:2px}
+.plx-t .plx-add{width:44px;height:44px;border-radius:7px;font-size:16px}
 .plx-fold{border:1px solid #E4E1F0;border-radius:12px;margin-bottom:10px;overflow:hidden;background:#fff}
 .plx-fh{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#FAF9FF;cursor:pointer;flex-wrap:wrap;user-select:none}
 .plx-fh:hover{background:#F3F1FD}.plx-fh b{font-size:14.5px;color:#1C1A33}
@@ -28896,9 +28918,10 @@ window.PunchList=(function(){
     var c=S.cur,st=stats(D),cv=D._cover||{},ed=ENV.canEdit(),K=keys(D);
     var discs={}; K.forEach(function(k){ var d=(D['i:'+k]||{}).disc; if(d) discs[d]=1; });
     var vis=K.filter(lineVisible);
-    var h='<div class="dcu"><div class="plx-wrap">';
+    var h='<div class="dcu"><div class="plx-wrap'+(S.view==='table'?' wide':'')+'">';
     h+='<div class="dcu-card plx-head"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
       +'<button class="dcu-btn2" onclick="PunchList.back()">← Punch lists</button>'
+      +'<div class="plx-seg" role="group" aria-label="Affichage"><button type="button" class="'+(S.view==='table'?'on-na':'')+'" aria-pressed="'+(S.view==='table')+'" onclick="PunchList._view(\'table\')" title="Tableau façon Excel">▦ Tableau</button><button type="button" class="'+(S.view!=='table'?'on-na':'')+'" aria-pressed="'+(S.view!=='table')+'" onclick="PunchList._view(\'cards\')" title="Une fiche par point (pratique sur téléphone)">☰ Fiches</button></div>'
       +(function(){ var a=D._aff||c.aff,f=folderOf(a,D._folder),n=folders(a).length; if(!f&&!(ed&&n)) return '';
           return ed&&n?'<button class="plx-chip" title="Ranger dans un dossier" onclick="PunchList._move(\''+js(c.id)+'\')">📁 '+(f?esc(f.name):'Sans dossier')+' ▾</button>':'<span class="plx-tag">📁 '+esc(f.name)+'</span>'; })()
       +'<b style="font-size:17px">'+esc(D._title||c.title||'Punch list')+'</b>'+(cv.rev?'<span class="plx-tag">Rév. '+esc(cv.rev)+'</span>':'')
@@ -28921,7 +28944,11 @@ window.PunchList=(function(){
     if(!ed) h+='<div class="dcu-msg" style="background:#F3F4F6;border:1px solid #E5E7EB;color:#374151;max-width:none;margin:10px 0 0">Lecture seule : vous n’avez pas le droit de répondre aux punch lists.</div>';
     h+='</div>';
     if(!vis.length) h+='<div class="dcu-card" style="text-align:center;color:#9A96B3;padding:26px">Aucune ligne ne correspond au filtre.</div>';
-    vis.forEach(function(k){ h+=lineHtml(k); });
+    else if(S.view==='table'){ // (17/11/2026) tableau façon Excel : une ligne par point, statut / réponse / photos dans le tableau
+      h+='<div class="plx-tw"><table class="plx-t"><thead><tr><th>N°</th><th>Statut</th><th style="min-width:240px">Description</th><th style="min-width:160px">Action proposée</th><th>Discipline</th><th>PIC</th><th>Cible</th><th style="min-width:140px">Commentaire client</th><th style="min-width:230px">Réponse ELS</th><th>Photos</th></tr></thead><tbody>'
+        +vis.map(rowHtml).join('')+'</tbody></table></div>';
+    }
+    else vis.forEach(function(k){ h+=lineHtml(k); });
     h+='<div style="font-size:11.5px;color:#9A96B3;text-align:center;margin-top:8px">'+(D._file?'Importée de « '+esc(D._file)+' »':'')+(D._imp?' le '+esc(fr(D._imp)):'')+'</div>';
     h+='</div></div>';
     return h;
@@ -28931,7 +28958,44 @@ window.PunchList=(function(){
     var sc=S.host.scrollTop;
     S.host.innerHTML=detailHtml();
     S.host.scrollTop=sc; S.needDraw=false;
-    updSaveSt(); loadThumbs();
+    growAll(); updSaveSt(); loadThumbs();
+  }
+  // ── Tableau façon Excel (17/11/2026, demande de l'utilisateur : « plus simple, comme l'Excel ») ──
+  // Même données et mêmes actions que les fiches (_st, _txt, _phAdd, _phOpen, _phDel) : seul l'affichage change.
+  // L'export (fichier du client) n'est pas touché. Choix retenu sur le poste (pl_view) ; téléphone = fiches par défaut.
+  S.view=(function(){ try{ var v=localStorage.getItem('pl_view'); if(v==='table'||v==='cards') return v; }catch(e){} return (window.innerWidth||1200)<760?'cards':'table'; })();
+  function _view(v){ S.view=v==='cards'?'cards':'table'; try{ localStorage.setItem('pl_view',S.view); }catch(e){} drawDetail(); }
+  function _grow(el){ if(!el) return; el.style.height='auto'; el.style.height=Math.max(34,el.scrollHeight+2)+'px'; }
+  function growAll(){ if(S.view!=='table'||!S.host) return; [].slice.call(S.host.querySelectorAll('.plx-ta2')).forEach(_grow); }
+  function rowHtml(k){
+    var i=D['i:'+k]||{},st=stOf(D,k),t=D['t:'+k]||{},ed=ENV.canEdit(),late=isLate(D,k),ph=photosOf(D,k);
+    var q=S.queue.filter(function(x){ return x.listId===S.cur.id&&x.k===k; }),ttl=function(f){ return frOn()&&trTxt(k,f)!==i[f]&&i[f]?' title="'+esc(i[f])+'"':''; };
+    var stc=st==='Closed'?'cl':st==='N/A'?'na':'op';
+    return '<tr id="plx-'+esc(k)+'" class="r-'+stc+(late?' late':'')+'">'
+      +'<td class="n">'+(i.n?esc(i.n):'—')+'</td>'
+      +'<td>'+(ed?'<select class="plx-sts s-'+stc+'" aria-label="Statut du point '+esc(i.n)+'" onchange="PunchList._st(\''+js(k)+'\',this.value)">'+['Open','Closed','N/A'].map(function(x){ return '<option'+(x===st?' selected':'')+'>'+x+'</option>'; }).join('')+'</select>':stPill(st))
+        +(i.cst&&stOf({['i:'+k]:i},k)!==st?'<div class="sm">client : '+esc(i.cst)+'</div>':'')+'</td>'
+      +'<td'+ttl('des')+'><div class="des">'+esc(trTxt(k,'des'))+'</div>'+(i.eq?'<div class="sm">🔧 '+esc(i.eq)+'</div>':'')+'</td>'
+      +'<td'+ttl('prop')+'>'+esc(trTxt(k,'prop'))+'</td>'
+      +'<td>'+esc(trList(i.disc))+(i.phase?'<div class="sm">'+esc(trList(i.phase))+'</div>':'')+'</td>'
+      +'<td><span class="plx-tag" style="background:'+(ours(i)?'#EEF2FF;color:#4338CA':'#FEF3C7;color:#92400E')+'">'+esc(i.pic||'—')+'</span></td>'
+      +'<td class="nw" style="'+(late?'color:#B91C1C;font-weight:800':'')+'">'+(i.tgt?esc(fr(i.tgt)):'')+(late?' ⚠':'')+'</td>'
+      +'<td'+ttl('ccom')+'>'+esc(trTxt(k,'ccom'))+'</td>'
+      +'<td>'+(ed?'<textarea class="plx-ta2" rows="1" data-t="'+esc(k)+'" placeholder="Réponse ELS…" oninput="PunchList._txt(\''+js(k)+'\',this.value);PunchList._grow(this)">'+esc(t.txt||'')+'</textarea>':esc(t.txt||''))+'</td>'
+      +'<td><div class="phs">'
+        +ph.map(function(p){ return '<div class="plx-th" title="Ouvrir la photo" onclick="PunchList._phOpen(\''+js(p.id)+'\')"><img data-thumb="'+esc(p.thumb||p.path)+'" alt="Photo du point '+esc(i.n)+'" style="display:none"><span class="w">…</span>'
+          +(ed?'<button type="button" class="x" title="Retirer la photo" aria-label="Retirer la photo" onclick="event.stopPropagation();PunchList._phDel(\''+js(p.id)+'\')">✕</button>':'')+'</div>'; }).join('')
+        +q.map(function(x){ return '<div class="plx-th" title="En attente de réseau"><img src="'+x.url+'" alt="" style="opacity:.55"><span class="w">⏳</span></div>'; }).join('')
+        +(ed?'<label class="plx-add" title="Prendre ou ajouter une photo">📷<input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="PunchList._phAdd(\''+js(k)+'\',this)"></label>':'')
+      +'</div></td></tr>';
+  }
+  function itemHtml(k){ return S.view==='table'?rowHtml(k):lineHtml(k); }
+  // redessine UN point (ligne du tableau ou fiche) sans toucher aux autres (saisie en cours gardée)
+  function refreshItem(k,keepFocus){
+    var el=$('plx-'+k); if(!el||(keepFocus&&el.contains(document.activeElement))) return;
+    var tmp=document.createElement(S.view==='table'?'tbody':'div'); tmp.innerHTML=itemHtml(k);
+    var n=tmp.firstElementChild; if(!n) return; el.replaceWith(n);
+    var ta=n.querySelector&&n.querySelector('.plx-ta2'); if(ta) _grow(ta); loadThumbs();
   }
   // Vignettes : téléchargées une fois, gardées en mémoire le temps de la visite
   async function loadThumbs(){
@@ -28965,7 +29029,7 @@ window.PunchList=(function(){
     if(!ENV.canEdit()||!S.cur) return;
     setVal('s:'+k,{st:st,by:ENV.who(),at:new Date().toISOString()});
     scheduleSave(300);
-    var el=$('plx-'+k); if(el){ var tmp=document.createElement('div'); tmp.innerHTML=lineHtml(k); el.replaceWith(tmp.firstChild); loadThumbs(); }
+    refreshItem(k);
     var keep=S.host.scrollTop; drawHeadOnly(); S.host.scrollTop=keep;
   }
   // Compteurs du haut sans redessiner les lignes (garde la saisie en cours)
@@ -29007,7 +29071,7 @@ window.PunchList=(function(){
         S.queue.push({listId:S.cur.id,k:k,id:id,big:big,small:small,path:base+'.jpg',thumb:base+'_t.jpg',url:URL.createObjectURL(small)});
       }catch(e){ alert('Photo « '+f.name+' » : '+(e&&e.message||e)); }
     }
-    var el=$('plx-'+k); if(el){ var tmp=document.createElement('div'); tmp.innerHTML=lineHtml(k); el.replaceWith(tmp.firstChild); loadThumbs(); }
+    refreshItem(k);
     flushQueue();
   }
   // Envoi des photos ; sans réseau, elles attendent (tant que la page reste ouverte) et repartent seules
@@ -29022,7 +29086,7 @@ window.PunchList=(function(){
         S.queue.shift(); S.offlinePh=false;
         S.thumbs[x.thumb]=x.url;
         var rec={k:x.k,path:x.path,thumb:x.thumb,at:new Date().toISOString(),by:ENV.who()};
-        if(S.cur&&S.cur.id===x.listId){ setVal('p:'+x.id,rec); scheduleSave(150); var el=$('plx-'+x.k); if(el&&!el.contains(document.activeElement)){ var tmp=document.createElement('div'); tmp.innerHTML=lineHtml(x.k); el.replaceWith(tmp.firstChild); loadThumbs(); } }
+        if(S.cur&&S.cur.id===x.listId){ setVal('p:'+x.id,rec); scheduleSave(150); refreshItem(x.k,true); }
         else await addPhotoTo(x.listId,x.id,rec); // la punch list a été quittée entre-temps
       }
     }finally{ S._flushing=false; updSaveSt(); }
@@ -29045,7 +29109,7 @@ window.PunchList=(function(){
     if(!confirm('Retirer cette photo ?')) return;
     try{ await FILES.remove([p.path,p.thumb].filter(Boolean)); }catch(e){ console.warn('Punch list : photo non effacée',e); }
     setVal('p:'+id,''); scheduleSave(50);
-    var el=$('plx-'+p.k); if(el){ var tmp=document.createElement('div'); tmp.innerHTML=lineHtml(p.k); el.replaceWith(tmp.firstChild); loadThumbs(); }
+    refreshItem(p.k);
   }
 
   // ═════════ EXPORT EXCEL (étape 2, 07/10/2026) ═════════
@@ -29567,7 +29631,7 @@ window.PunchList=(function(){
     _f:function(k,v){ S[k]=v; if(S.cur) drawDetail(); else drawList(); },
     _q:function(v){ S.q=v; var pos=null,a=document.activeElement; if(a&&a.selectionStart!=null) pos=a.selectionStart; drawDetail(); var i=S.host&&S.host.querySelector('input[aria-label="Rechercher"]'); if(i){ i.focus(); try{ i.setSelectionRange(pos,pos); }catch(e){} } },
     _closeModal:closeModal, _impCreate:impCreate, _impRead:impRead, _read:readExcel, _attach:attach,
-    _lang:setLang, _trNow:trNow, _translateAll:translateAll, _TR:TR,
+    _lang:setLang, _trNow:trNow, _translateAll:translateAll, _TR:TR, _view:_view, _grow:_grow,
     _fNew:function(){ folderForm(''); }, _fRen:folderForm, _fOk:folderOk, _fDel:folderDel, _fToggle:foldToggle, _move:moveAsk, _moveOk:moveOk, _impHere:importHere, _setFolder:setFolder,
     _impAff:function(a){ var w=$('pl-i-fold-w'),s=$('pl-i-fold'); if(!w||!s) return; s.innerHTML=a?folderOpts(a,a===S.ctxAff?S.impFolder:''):''; w.style.display=(a&&folders(a).length)?'':'none'; },
     _folderName:function(aff,fid){ var f=folderOf(aff,fid); return f?f.name:''; },
