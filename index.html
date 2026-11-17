@@ -29829,7 +29829,7 @@ function pwRoute(S,ds,T,dt,k){
   if(hS){if(fwdS([T[0],S[1]])&&fwdT([T[0],S[1]]))return [S,[T[0],S[1]],T];return [S,A,[A[0],B[1]],B,T];}
   if(fwdS([S[0],T[1]])&&fwdT([S[0],T[1]]))return [S,[S[0],T[1]],T];return [S,A,[B[0],A[1]],B,T];
 }
-var PWG={},PWA={},PWZ={}; // du dernier grand dessin, jamais enregistrés : armoires (point cliqué), position de chaque équipement, emplacements (déplacement à la souris)
+var PWG={},PWA={},PWZ={},NWA={},NWZ={},PWV={}; // du dernier grand dessin, jamais enregistrés : armoires (point cliqué), position de chaque équipement, emplacements (déplacement à la souris)
 // encombrement d'un équipement autour de son point de position (armoire : coin haut-gauche ; autres : centre du symbole)
 function pwExt(o){
   if(o.t==='armoire')return {l:0,r:(o._w||220),t:(o.alim?-44:-4),b:46+(o.txt?20:6)};
@@ -29885,7 +29885,7 @@ function drawPower(opts){
     var hasJ=D.items.some(function(o){return zOf(o)===z.id&&hubKid(o);});
     var hasJV=D.items.some(function(o){return zOf(o)===z.id&&o.t==='moteurv'&&hubKid(o);}); // place pour la photo du variateur sous une JB
     var g={x:16,y:y,w:W-32,top:y+(hasAlim?58:30)};g.pY=g.top;g.lY=g.top+(hasP?150:20);g.jY=g.lY+(hasJ?(hasJV?126:100):0);g.h=(g.jY+(hasL||hasJ?76:30))-y;
-    D.items.forEach(function(o){if(o.pos&&zOf(o)===z.id)g.h=Math.max(g.h,o.pos.y+pwExt(o).b+18);}); // l'emplacement s'agrandit pour garder ce qu'on y a posé
+    D.items.forEach(function(o){if(o.pos&&zOf(o)===z.id)g.h=Math.max(g.h,o.pos.y+pwExt(o).b+18);if(o.vpos&&o.vpos.z===z.id&&isFinite(o.vpos.y))g.h=Math.max(g.h,o.vpos.y+45);}); // l'emplacement s'agrandit pour garder ce qu'on y a posé
     zg[z.id]=g;y+=g.h+30;});
   var H=y-10;
   // positions réelles : automatique, ou position libre
@@ -29904,7 +29904,7 @@ function drawPower(opts){
   // photo du variateur / démarreur : au milieu du plus long tronçon vertical du câble
   var midV=function(pts){var best=null,bl=0;for(var i=1;i<pts.length;i++){var a=pts[i-1],b=pts[i];if(Math.abs(a[0]-b[0])<1&&Math.abs(b[1]-a[1])>bl){bl=Math.abs(b[1]-a[1]);best=[b[0],(a[1]+b[1])/2];}}return bl>=40?best:null;};
   Z.forEach(function(z){s+=zoneBox(zg[z.id],z.n,false);});
-  if(ED){PWG={};PWA={};PWZ={};Z.forEach(function(z){var g=zg[z.id];PWZ[z.id]={x:g.x,y:g.y,w:g.w,h:g.h};});}
+  if(ED){PWG={};PWA={};PWZ={};PWV={};Z.forEach(function(z){var g=zg[z.id];PWZ[z.id]={x:g.x,y:g.y,w:g.w,h:g.h};});}
   panels.forEach(function(p){if(ED){PWG[p.id]={x:p._x,y:p._y,w:p._w,h:p._h};PWA[p.id]={x:p._x,y:p._y,z:zOf(p),w:p._w,h:p._h};}
     if(p.alim){s+='<line x1="'+(p._x+p._w/2)+'" y1="'+(p._y-30)+'" x2="'+(p._x+p._w/2)+'" y2="'+p._y+'" stroke="#0F172A" stroke-width="2.2"/><polygon points="'+(p._x+p._w/2-5)+','+(p._y-8)+' '+(p._x+p._w/2+5)+','+(p._y-8)+' '+(p._x+p._w/2)+','+p._y+'" fill="#0F172A"/>'+txt(p._x+p._w/2,p._y-36,p.alim,{sz:10.5,w:700});}});
   // ── CÂBLES : on trace d'abord ceux qui n'ont pas le choix, puis chaque câble coudé prend la hauteur de coude
@@ -29927,11 +29927,18 @@ function drawPower(opts){
     else if(T[1]<S[1]+24)j.pts=pwRoute(S,'b',T,'t',0);
     else j.pref=pref;
     jobs.push(j);};
+  // « Moteur sur variateur / démarreur » dont on a déplacé le variateur (vpos = {z, x, y} : centre, par rapport à son skid) : armoire → variateur → moteur
+  var feedVia=function(o,src,S,T,pref,w,fixed){
+    var v=o.vpos;
+    if((o.t==='moteurv'||o.t==='moteurd')&&v&&zg[v.z]&&isFinite(v.x)&&isFinite(v.y)){var gv=zg[v.z],V=[gv.x+v.x,gv.y+v.y];o._V=V;
+      boxes.push({id:'v:'+o.id,x1:V[0]-21,y1:V[1]-27,x2:V[0]+21,y2:V[1]+27});
+      addFeed(o,src,S,[V[0],V[1]-27],S[1]+16,w);addFeed(o,'v:'+o.id,[V[0],V[1]+27],T,V[1]+41,w);}
+    else addFeed(o,src,S,T,pref,w,fixed);};
   cols.forEach(function(it){var cx=it._cx,cy=it._cy;
     if(!it._orph){var p=byId[it.p],S=[p._x+Math.max(4,Math.min(p._w-4,it._sx)),p._y+p._h],T=[cx,cy-22];
-      addFeed(it,p.id,S,T,S[1]+((it.t==='moteurv'||it.t==='moteurd')?16:Math.min(26,Math.max(10,(T[1]-S[1])/2))),2.2);}
+      feedVia(it,p.id,S,T,S[1]+((it.t==='moteurv'||it.t==='moteurd')?16:Math.min(26,Math.max(10,(T[1]-S[1])/2))),2.2);}
     if(isHub(it)){var hb=cy+(it.t==='vsd'?27:16),free=it.pos||it._kids.some(function(k){return k.pos;});
-      it._kids.forEach(function(k){addFeed(k,it.id,[cx,hb],[k._cx,k._cy-22],hb+14,2,free?null:hb+14);});}});
+      it._kids.forEach(function(k){feedVia(k,it.id,[cx,hb],[k._cx,k._cy-22],hb+14,2,(free||k.vpos)?null:hb+14);});}});
   var isH=function(a,b){return Math.abs(a[1]-b[1])<.5;};
   var addSegs=function(j){for(var i=1;i<j.pts.length;i++){var a=j.pts[i-1],b=j.pts[i];if(Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])>.5)segs.push({a:a,b:b,j:j});}};
   var cost=function(pts,j){var c=0;
@@ -29943,7 +29950,7 @@ function drawPower(opts){
           if(vx>hx1+1&&vx<hx2-1&&hy>vy1+1&&hy<vy2-1)c+=1000;}           // croisement
         else if(!sameSrc){if(h&&Math.abs(a[1]-p[1])<5&&Math.min(x2,u2)-Math.max(x1,u1)>4)c+=400; // câbles l'un sur l'autre
           if(!h&&Math.abs(a[0]-p[0])<5&&Math.min(y2,v2)-Math.max(y1,v1)>4)c+=400;}});
-      boxes.forEach(function(bb){if(bb.id===j.o.id||bb.id===j.src)return;if(x2>bb.x1+2&&x1<bb.x2-2&&y2>bb.y1+2&&y1<bb.y2-2)c+=150;});} // à travers un équipement
+      boxes.forEach(function(bb){if(bb.id===j.o.id||bb.id===j.src||bb.id==='v:'+j.o.id)return;if(x2>bb.x1+2&&x1<bb.x2-2&&y2>bb.y1+2&&y1<bb.y2-2)c+=150;});} // à travers un équipement
     return c;};
   jobs.filter(function(j){return j.pts;}).forEach(addSegs);
   jobs.filter(function(j){return !j.pts;}).sort(function(a,b){return Math.abs(a.S[0]-a.T[0])-Math.abs(b.S[0]-b.T[0]);}).forEach(function(j){
@@ -29957,7 +29964,10 @@ function drawPower(opts){
   jobs.forEach(function(j){var k=PWCK[j.o.ck];if(k)used[j.o.ck]=1;var col=k?k.c:'#0F172A';s+=pl(j.pts,col,j.w);
     if(j.dots)s+='<circle cx="'+j.pts[0][0]+'" cy="'+j.pts[0][1]+'" r="2.6" fill="'+col+'"/><circle cx="'+j.pts[j.pts.length-1][0]+'" cy="'+j.pts[j.pts.length-1][1]+'" r="2.6" fill="'+col+'"/>';
     cab(j.o.id,j.pts);});
-  jobs.forEach(function(j){if(j.o.t!=='moteurv'&&j.o.t!=='moteurd')return;var mv=midV(j.pts);if(!mv)return;s+=j.o.t==='moteurv'?symVsd(mv[0],mv[1]):symSoft(mv[0],mv[1]);});
+  // photo du variateur / démarreur : à l'endroit où on l'a posé, sinon au milieu du câble ; dans le grand dessin elle sert de poignée pour le déplacer
+  var vdone={};jobs.forEach(function(j){var o=j.o;if((o.t!=='moteurv'&&o.t!=='moteurd')||vdone[o.id])return;var V=o._V||midV(j.pts);if(!V)return;vdone[o.id]=1;
+    s+=o.t==='moteurv'?symVsd(V[0],V[1]):symSoft(V[0],V[1]);
+    if(ED){PWV[o.id]={x:V[0],y:V[1]};hits+='<rect data-pwi="'+o.id+'" data-pwv="1" x="'+(V[0]-22)+'" y="'+(V[1]-28)+'" width="44" height="56" rx="4" fill="#fff" fill-opacity="0" style="cursor:move"><title>Variateur : restez appuyé pour le déplacer</title></rect>';}});
   cols.forEach(function(it){var cx=it._cx,cy=it._cy;if(ED)PWA[it.id]={x:cx,y:cy,z:zOf(it)};
     s+=loadSym(it,cx,cy);hit(it.id,cx-38,cy-34,76,68,it._orph);
     it._kids.forEach(function(k){if(ED)PWA[k.id]={x:k._cx,y:k._cy,z:zOf(k)};s+=loadSym(k,k._cx,k._cy);hit(k.id,k._cx-38,k._cy-34,76,68);});});
@@ -30028,9 +30038,14 @@ function drawNet(opts){
   var topCh={};C.forEach(function(c){if(c._k==='down'){var z=zOf(c._eb.d);topCh[z]=(topCh[z]||0)+1;}else if(c._k==='side'){var z2=zOf(c._ea.d),z3=zOf(c._eb.d);topCh[z2]=(topCh[z2]||0)+1;if(z3!==z2)topCh[z3]=(topCh[z3]||0)+1;}});
   var TTof=function(zid){return 30+(topCh[zid]||0)*LANE+(topCh[zid]?8:0);};
   function forest(zid){
-    var N=D.devs.filter(function(d){return zOf(d)===zid;});
+    // un équipement déplacé à la main GARDE sa place dans le rangement automatique (rien d'autre ne bouge),
+    // sauf s'il est seul en haut de l'emplacement (rien dessous) : il ne laisse alors pas de trou
+    var mv=function(d){return !!(d.pos&&isFinite(d.pos.x)&&isFinite(d.pos.y));};
+    var N0=D.devs.filter(function(d){return zOf(d)===zid;});
+    var isRoot=function(n){return !n._par||zOf(n._par.d)!==zid;};
+    var N=N0.filter(function(d){return !(mv(d)&&isRoot(d)&&!N0.some(function(o){return o._par&&o._par.d===d;}));});
     var kids=function(n){return N.filter(function(o){return o._par&&o._par.d===n;});};
-    var roots=N.filter(function(n){return !n._par||zOf(n._par.d)!==zid;});
+    var roots=N.filter(isRoot);
     var rowH=[],gap=[];
     // Rangée d'enfants SOUS l'équipement. Couloirs d'un seul côté (cas courant, ex. switch) : les enfants sont
     // répartis des deux côtés des couloirs, dans l'ordre des ports (décroissant si couloirs à droite, croissant à
@@ -30090,9 +30105,20 @@ function drawNet(opts){
       z._subs.forEach(function(c){var cw=c._mw+extra;placeZone(c,sx,sy,cw,z._sh);sx+=cw+GZ;});}
   }
   tops.forEach(measZone);
+  // équipements déplacés à la souris : pos = {x,y} = coin haut-gauche de la photo, par rapport à leur skid (emplacement de 1er niveau)
+  var moved=D.devs.filter(function(d){if(d.pos&&isFinite(d.pos.x)&&isFinite(d.pos.y))return true;delete d.pos;return false;});
+  tops.forEach(function(z){moved.forEach(function(d){if(topOf(zOf(d))===z.id)z._mh=Math.max(z._mh,d.pos.y+d._h+d._bh+d._txtH+BOT+16);});});
   var W=Math.max.apply(null,tops.map(function(z){return z._mw;}).concat([600]))+32,y=30;
+  moved.forEach(function(d){W=Math.max(W,16+d.pos.x+d._w+laneW(d,'right')+40);});
   tops.forEach(function(z){placeZone(z,16,y,W-32,z._mh);y+=z._mh+34;});
   var H=y-14;
+  moved.forEach(function(d){var tz=zById[topOf(zOf(d))];d._x=tz._x+d.pos.x;d._y=tz._y+d.pos.y;
+    var z=zById[zOf(d)];if(z&&z!==tz&&z._x!=null){ // l'armoire s'agrandit pour garder ce qu'on y a posé
+      var x1=Math.min(z._x,d._x-laneW(d,'left')-14),y1=Math.min(z._y,d._y-d._tagH-14),x2=Math.max(z._x+z._w,d._x+d._w+laneW(d,'right')+14),y2=Math.max(z._y+z._h,d._y+d._h+d._bh+d._txtH+12);
+      z._x=x1;z._y=y1;z._w=x2-x1;z._h=y2-y1;}});
+  if(opts&&opts.edit){NWA={};NWZ={};
+    D.zones.forEach(function(z){if(z._x!=null)NWZ[z.id]={x:z._x,y:z._y,w:z._w,h:z._h,sub:topOf(z.id)!==z.id,top:topOf(z.id)};});
+    D.devs.forEach(function(d){NWA[d.id]={x:d._x,y:d._y,w:d._w,h:d._h,top:topOf(zOf(d))};});}
   function zoneDraw(z,sub){s+=zoneBox({x:z._x,y:z._y,w:z._w,h:z._h},z.n,sub);z._subs.forEach(function(c){zoneDraw(c,true);});}
   tops.forEach(function(z){zoneDraw(z,false);});
   // couloirs : par équipement et par côté ; câbles qui montent : le port le plus bas à l'extérieur ; qui descendent : le plus haut à l'extérieur
@@ -30118,13 +30144,34 @@ function drawNet(opts){
     var byY=function(p,q){return p._ea.p.y-q._ea.p.y;};
     out.sort(byY).forEach(function(c,i){c._Y=a._rowBottom+12+i*LANE;});
     inn.sort(byY).forEach(function(c,i){c._Y=a._rowBottom+12+(inn.length-1-i)*LANE;});});
+  var free=[];
   C.forEach(function(c){
     var lk=LK[c.lk]?c.lk:'pn',col=LK[lk].c;used[lk]=1;var ea=c._ea,eb=c._eb,Y;
+    if(ea.d.pos||eb.d.pos){c._col=col;free.push(c);return;} // équipement déplacé : tracé plus bas
     if(c._k==='tree')Y=c._Y;
     else{var zz=c._k==='down'?eb.d._zone:ea.d._zone;zc[zz.id]=(zc[zz.id]||0)+1;Y=zz._y+18+(zc[zz.id]-1)*LANE;}
     var pts=ea.path.concat([[ea.lx,Y],[eb.lx,Y]]).concat(eb.path.slice().reverse());
-    ln+=pl(pts,col,2.3);c._col=col;c._pts=pts;
+    c._col=col;c._pts=pts;
   });
+  if(free.length){ // câbles d'un équipement déplacé : même sortie de port et même couloir, canal horizontal qui croise le moins
+    var segs=[],boxes=[],isH=function(a,b){return Math.abs(a[1]-b[1])<.5;};
+    var addS=function(c){for(var i=1;i<c._pts.length;i++){var a=c._pts[i-1],b=c._pts[i];if(Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])>.5)segs.push({a:a,b:b,c:c});}};
+    C.forEach(function(c){if(c._pts)addS(c);});
+    D.devs.forEach(function(d){boxes.push({id:d.id,x1:d._x-2,y1:d._y-d._tagH,x2:d._x+d._w+2,y2:d._y+d._h+d._bh+d._txtH});});
+    var cost=function(pts,c){var k=0;
+      for(var i=1;i<pts.length;i++){var a=pts[i-1],b=pts[i],h=isH(a,b);if(Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])<.5)continue;
+        var x1=Math.min(a[0],b[0]),x2=Math.max(a[0],b[0]),y1=Math.min(a[1],b[1]),y2=Math.max(a[1],b[1]);
+        segs.forEach(function(sg){var p=sg.a,q=sg.b,h2=isH(p,q),u1=Math.min(p[0],q[0]),u2=Math.max(p[0],q[0]),v1=Math.min(p[1],q[1]),v2=Math.max(p[1],q[1]);
+          if(h!==h2){var hx1=h?x1:u1,hx2=h?x2:u2,hy=h?a[1]:p[1],vx=h?p[0]:a[0],vy1=h?v1:y1,vy2=h?v2:y2;if(vx>hx1+1&&vx<hx2-1&&hy>vy1+1&&hy<vy2-1)k+=1000;}
+          else if(h&&Math.abs(a[1]-p[1])<3&&Math.min(x2,u2)-Math.max(x1,u1)>4)k+=400;
+          else if(!h&&Math.abs(a[0]-p[0])<3&&Math.min(y2,v2)-Math.max(y1,v1)>4)k+=400;});
+        boxes.forEach(function(bb){if(bb.id===c.a||bb.id===c.b)return;if(x2>bb.x1&&x1<bb.x2&&y2>bb.y1&&y1<bb.y2)k+=150;});}
+      return k;};
+    free.forEach(function(c){var ea=c._ea,eb=c._eb,lo=Math.max(14,Math.min(ea.ay,eb.ay)-90),hi=Math.max(ea.ay,eb.ay)+90,n=Math.min(60,Math.max(1,Math.round((hi-lo)/6))),pref=(ea.ay+eb.ay)/2,best=null,bc=1e18;
+      for(var i=0;i<=n;i++){var Y=Math.round(lo+(hi-lo)*i/n),pts=ea.path.concat([[ea.lx,Y],[eb.lx,Y]]).concat(eb.path.slice().reverse()),k=cost(pts,c)+Math.abs(Y-pref)*.2;if(k<bc){bc=k;best=pts;}}
+      c._pts=best;addS(c);});
+  }
+  C.forEach(function(c){ln+=pl(c._pts,c._col,2.3);});
   // équipements (photos) puis points de port + noms par-dessus
   var dv='';D.devs.forEach(function(d){
     var r=d._r;
@@ -30143,6 +30190,7 @@ function drawNet(opts){
   var ed='';
   if(opts&&opts.edit){
     var pts2=function(p){return p.map(function(q){return q[0].toFixed(1)+','+q[1].toFixed(1);}).join(' ');};
+    D.devs.forEach(function(d){ed+='<rect data-nwd="'+d.id+'" x="'+(d._x-4)+'" y="'+(d._y-d._tagH)+'" width="'+(d._w+8)+'" height="'+(d._tagH+d._h+6)+'" fill="#fff" fill-opacity="0" style="cursor:move"/>';});
     C.forEach(function(c){
       if(c.id===CED.sel)ed+='<polyline points="'+pts2(c._pts)+'" fill="none" stroke="#DC2626" stroke-width="7" stroke-opacity=".35" stroke-linejoin="round" pointer-events="none"/>';
       ed+='<polyline points="'+pts2(c._pts)+'" fill="none" stroke="#000" stroke-opacity="0" stroke-width="12" data-cab="'+c.id+'" style="cursor:pointer"><title>'+esc((c._ea.d.tag||'')+' '+c.ap+' → '+(c._eb.d.tag||'')+' '+c.bp)+'</title></polyline>';
@@ -30359,7 +30407,7 @@ function cabDraw(){
     el.innerHTML=hp;var nbp=document.getElementById('arx-cbody');nbp.scrollLeft=sl;nbp.scrollTop=st;return;
   }
   var r=drawNet({edit:true}),z=CED.zoom,sel=CED.sel&&M.nw.cables.filter(function(c){return c.id===CED.sel;})[0];
-  var h='<div class="cbar"><b style="font-size:15px">🖱 Relier les équipements</b><span class="arx-note" style="margin-left:8px">Type de câble :</span>'
+  var h='<div class="cbar"><b style="font-size:15px">🖱 Relier les équipements</b><span class="arx-note" style="margin-left:8px">Restez appuyé sur un équipement et glissez pour le déplacer</span><button class="arx-btn" onclick="'+NS+'_pwAuto()" title="Remettre tous les équipements à leur place automatique">↺ Placement automatique</button><span class="arx-note" style="margin-left:8px">Type de câble :</span>'
     +Object.keys(LK).map(function(k){return '<button class="lkb'+(CED.lk===k?' on':'')+'" onclick="'+NS+'_cabType(\''+k+'\')"><i style="background:'+LK[k].c+'"></i>'+LK[k].l+'</button>';}).join('')
     +'<span style="flex:1"></span><button class="arx-btn" onclick="'+NS+'_cabZoom(-1)" title="Dézoomer">−</button><span class="arx-note" style="min-width:42px;text-align:center">'+Math.round(z*100)+' %</span><button class="arx-btn" onclick="'+NS+'_cabZoom(1)" title="Zoomer">＋</button><button class="arx-btn pri" onclick="'+NS+'cabClose()">✓ Terminé</button></div>';
   h+='<div class="cbar" style="padding:8px 16px;background:#FAF9FF;min-height:44px">';
@@ -30431,7 +30479,31 @@ function pwPick(id,xy){
 // ── Puissance : déplacer un équipement en restant appuyé dessus (pos = {x,y} par rapport à son emplacement) ──
 var DRG=null;
 function pwClampPos(it,pos){var e=pwExt(it);pos.x=Math.round(Math.max(-e.l+4,pos.x));pos.y=Math.round(Math.max(-e.t+22,pos.y));return pos;}
+// réseau : pos = coin haut-gauche de la photo par rapport au skid ; lâché dans une autre armoire / un autre skid → il en fait partie
+function nwDragApply(fin){
+  if(!DRG||!bind())return;var d=devOf(DRG.id);if(!d)return;
+  var nx=DRG.ax+DRG.dx,ny=DRG.ay+DRG.dy;
+  d.pos={x:Math.round(Math.max(30,nx-DRG.zx)),y:Math.round(Math.max(40,ny-DRG.zy))};
+  if(fin){var cx=nx+DRG.w/2,cy=ny+DRG.h/2,best=null;
+    Object.keys(NWZ).forEach(function(k){var g=NWZ[k];if(cx<g.x||cx>g.x+g.w||cy<g.y||cy>g.y+g.h)return;var b=best&&NWZ[best];
+      if(!b||(g.sub&&!b.sub)||(g.sub===b.sub&&g.w*g.h<b.w*b.h))best=k;});
+    if(best&&best!==d.z&&NWZ[NWZ[best].top]){var tz=NWZ[NWZ[best].top];d.z=best;d.pos={x:Math.round(Math.max(30,nx-tz.x)),y:Math.round(Math.max(40,ny-tz.y))};}
+    CED.msg='✓ '+(d.tag||refOf(d.r).lb)+' déplacé';touch();}
+  cabDraw();
+}
+// variateur d'un « Moteur sur variateur » : posé où l'on veut (vpos), le câble passe armoire → variateur → moteur
+function pwvDragApply(fin){
+  if(!DRG||!bind())return;var it=pwItem(DRG.id);if(!it)return;
+  var cx=DRG.ax+DRG.dx,cy=DRG.ay+DRG.dy,zid=DRG.vz;
+  if(fin)Object.keys(PWZ).forEach(function(k){var g=PWZ[k];if(cx>=g.x&&cx<=g.x+g.w&&cy>=g.y&&cy<=g.y+g.h)zid=k;});
+  var g=PWZ[zid];if(!g)return;
+  it.vpos={z:zid,x:Math.round(Math.max(26,cx-g.x)),y:Math.round(Math.max(40,cy-g.y))};
+  if(fin){CED.msg='✓ Variateur de '+pwTag(it)+' déplacé';touch();}
+  cabDraw();
+}
 function pwDragApply(fin){
+  if(DRG&&DRG.kind==='nw'){nwDragApply(fin);return;}
+  if(DRG&&DRG.kind==='pwv'){pwvDragApply(fin);return;}
   if(!DRG||!bind())return;var it=pwItem(DRG.id);if(!it)return;
   var nx=DRG.ax+DRG.dx,ny=DRG.ay+DRG.dy;
   it.pos=pwClampPos(it,{x:nx-DRG.zx,y:ny-DRG.zy});
@@ -30443,11 +30515,17 @@ function pwDragApply(fin){
   }
   cabDraw();
 }
-function _pwAuto(){if(!ENV.canEdit()||!bind())return;var n=M.pw.items.filter(function(o){return o.pos;}).length;if(!n){CED.msg='Tout est déjà en placement automatique';cabDraw();return;}
-  if(!confirm('Remettre les '+n+' équipement(s) déplacé(s) à leur place automatique ?'))return;M.pw.items.forEach(function(o){delete o.pos;});CED.msg='✓ Placement automatique';touch();cabDraw();}
+function _pwAuto(){if(!ENV.canEdit()||!bind())return;var L=CED.kind==='nw'?M.nw.devs:M.pw.items,n=L.filter(function(o){return o.pos||o.vpos;}).length;if(!n){CED.msg='Tout est déjà en placement automatique';cabDraw();return;}
+  if(!confirm('Remettre les '+n+' équipement(s) déplacé(s) à leur place automatique ?'))return;L.forEach(function(o){delete o.pos;delete o.vpos;});CED.msg='✓ Placement automatique';touch();cabDraw();}
 document.addEventListener('pointerdown',function(ev){
-  if(!CED.open||CED.kind!=='pw'||ev.button!==0||!ENV.canEdit())return;var t=ev.target;if(!t.closest)return;
-  var pi=t.closest('#arx-cbody [data-pwi]');if(!pi)return;var id=pi.getAttribute('data-pwi'),a=PWA[id],it=pwItem(id),z=a&&PWZ[a.z];if(!a||!z||!it)return;
+  if(!CED.open||ev.button!==0||!ENV.canEdit())return;var t=ev.target;if(!t.closest)return;
+  if(CED.kind==='nw'){var nd=t.closest('#arx-cbody [data-nwd]');if(!nd)return;var nid=nd.getAttribute('data-nwd'),na=NWA[nid],nz=na&&NWZ[na.top];if(!na||!nz)return;
+    DRG={kind:'nw',id:nid,x0:ev.clientX,y0:ev.clientY,ax:na.x,ay:na.y,w:na.w,h:na.h,zx:nz.x,zy:nz.y,dx:0,dy:0,on:false,raf:0};return;}
+  if(CED.kind!=='pw')return;
+  var pi=t.closest('#arx-cbody [data-pwi]');if(!pi)return;var id=pi.getAttribute('data-pwi');
+  if(pi.getAttribute('data-pwv')){var V=PWV[id];if(!V||!pwItem(id))return;var vz=null;Object.keys(PWZ).forEach(function(k){var g=PWZ[k];if(V.x>=g.x&&V.x<=g.x+g.w&&V.y>=g.y&&V.y<=g.y+g.h)vz=k;});if(!vz)vz=(PWA[id]||{}).z;if(!PWZ[vz])return;
+    DRG={kind:'pwv',id:id,x0:ev.clientX,y0:ev.clientY,ax:V.x,ay:V.y,vz:vz,dx:0,dy:0,on:false,raf:0};return;}
+  var a=PWA[id],it=pwItem(id),z=a&&PWZ[a.z];if(!a||!z||!it)return;
   DRG={id:id,x0:ev.clientX,y0:ev.clientY,ax:a.x,ay:a.y,w:a.w,zx:z.x,zy:z.y,dx:0,dy:0,on:false,raf:0};
 });
 document.addEventListener('pointermove',function(ev){
