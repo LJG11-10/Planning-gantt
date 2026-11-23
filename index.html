@@ -28270,6 +28270,24 @@ window.ChantierNav=(function(){
 .plx-t td.nw{white-space:nowrap}
 .plx-t .des{font-weight:700;white-space:pre-wrap}
 .plx-t .sm{font-size:11px;color:#6B6790;margin-top:2px}
+.plx-chg{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:7px;margin:0 4px 3px 0;white-space:nowrap;cursor:help;vertical-align:middle}
+.plx-chg.nw{background:#DBEAFE;color:#1D4ED8}.plx-chg.reop{background:#FEE2E2;color:#B91C1C}.plx-chg.clo{background:#DCFCE7;color:#15803D}.plx-chg.st{background:#E2E8F0;color:#334155}.plx-chg.mod{background:#FEF3C7;color:#92400E;white-space:normal}.plx-chg.back{background:#EDE9FE;color:#6D28D9}.plx-chg.gone{background:#F1F5F9;color:#64748B}
+.plx-t tr.r-gone td{opacity:.55}.plx-line.gone{opacity:.55}
+.plu-ks{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.plu-k{border-radius:12px;padding:8px 12px;min-width:88px;display:flex;flex-direction:column;gap:1px}.plu-k b{font-size:21px;line-height:1.1}.plu-k span{font-size:11.5px;font-weight:700}
+.plu-body{max-height:52vh;overflow:auto;border:1px solid #EEEAF8;border-radius:12px;padding:2px 12px 10px;background:#FCFBFF}
+.plu-sec{border-bottom:1px solid #EEEAF8;padding:10px 0 4px}.plu-sec:last-child{border-bottom:none}
+.plu-sec summary{cursor:pointer;font-weight:900;font-size:14px;list-style:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.plu-sec summary::-webkit-details-marker{display:none}
+.plu-c{background:#1C1A33;color:#fff;border-radius:10px;padding:0 8px;font-size:12px}
+.plu-sub{font-weight:600;font-size:11.5px;color:#6B6790;flex-basis:100%;padding-left:27px}
+.plu-it{background:#fff;border:1px solid #EEEAF8;border-radius:10px;padding:8px 11px;margin-top:6px}
+.plu-h{display:flex;gap:8px;align-items:baseline}.plu-n{font-weight:900;white-space:nowrap}.plu-d{font-weight:700;font-size:13px;white-space:pre-wrap}
+.plu-ch{font-size:12.5px;margin-top:5px;color:#334155;line-height:1.5}.plu-ch del{color:#B91C1C;background:#FEF2F2;border-radius:4px;padding:0 3px}.plu-ch ins{color:#15803D;background:#F0FDF4;text-decoration:none;border-radius:4px;padding:0 3px}
+.plu-sm{font-size:11.5px;color:#6B6790;font-weight:600}
+.plu-kept{display:inline-block;margin-top:6px;font-size:11px;font-weight:800;color:#15803D;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:7px;padding:1px 7px}
+.plu-ok{background:#F0FDF4;border:1px solid #86EFAC;color:#166534;border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.55;margin-bottom:10px}
+.plu-found{background:#EEF2FF;border:1.5px solid #A5B4FC;border-radius:12px;padding:12px;margin:12px 0 4px}
 .plx-sts{border:1.5px solid #E4E1F0;border-radius:8px;padding:5px 6px;font:inherit;font-size:12px;font-weight:800;cursor:pointer}
 .plx-sts.s-op{background:#FEF3C7;border-color:#FCD34D;color:#92400E}.plx-sts.s-cl{background:#DCFCE7;border-color:#86EFAC;color:#15803D}.plx-sts.s-na{background:#E2E8F0;border-color:#CBD5E1;color:#334155}
 .plx-ta2{width:100%;min-width:200px;box-sizing:border-box;border:1.5px solid #E4E1F0;border-radius:8px;padding:6px 8px;font:inherit;font-size:12.5px;resize:none;overflow:hidden;min-height:34px;background:#fff}
@@ -28348,7 +28366,7 @@ window.PunchList=(function(){
   function isLate(d,k){ var i=d['i:'+k]||{}; return stOf(d,k)==='Open'&&!!i.tgt&&i.tgt<todayIso(); }
   function photosOf(d,k){ return Object.keys(d).filter(function(x){ return x.indexOf('p:')===0&&d[x]&&d[x].k===k; }).map(function(x){ return Object.assign({id:x.slice(2)},d[x]); }).sort(function(a,b){ return String(a.at).localeCompare(String(b.at)); }); }
   function stats(d){
-    var K=keys(d),o={n:K.length,open:0,closed:0,na:0,ours:0,snf:0,late:0,photos:0};
+    var K0=keys(d),K=K0.filter(function(k){ return !isGone(d,k); }),o={n:K.length,open:0,closed:0,na:0,ours:0,snf:0,late:0,photos:0,gone:K0.length-K.length}; // (23/11/2026) points retirés par le client : hors compteurs
     K.forEach(function(k){ var i=d['i:'+k]||{},st=stOf(d,k);
       if(st==='Open'){ o.open++; if(ours(i)) o.ours++; if(snf(i)) o.snf++; if(isLate(d,k)) o.late++; } else if(st==='Closed') o.closed++; else o.na++; });
     o.photos=Object.keys(d).filter(function(x){ return x.indexOf('p:')===0&&d[x]; }).length;
@@ -28722,7 +28740,7 @@ window.PunchList=(function(){
     return '';
   }
   var IMP=null;
-  function modal(html,wide){ var m=$('pl-modal'); m.innerHTML='<div class="dcu" style="max-width:'+(wide?760:520)+'px;margin:6vh auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)">'+html+'</div>'; m.style.display='block'; }
+  function modal(html,wide){ var m=$('pl-modal'); m.innerHTML='<div class="dcu" style="max-width:'+(wide==='xl'?980:wide?760:520)+'px;margin:6vh auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25)">'+html+'</div>'; m.style.display='block'; }
   function closeModal(){ var m=$('pl-modal'); m.style.display='none'; m.innerHTML=''; IMP=null; }
   function importHere(fid){ importer(fid); }
   function importer(fid){
@@ -28751,6 +28769,7 @@ window.PunchList=(function(){
         +A.filter(function(a){ return !a.closed||a.id===aff||a.id===guess; }).map(function(a){ return '<option value="'+esc(a.id)+'"'+(a.id===aff?' selected':'')+'>'+esc(a.label)+'</option>'; }).join('')+'</select>'
         +(S.ctxAff&&guess&&guess!==S.ctxAff?'<div style="font-size:11.5px;color:#B45309;margin-top:4px">⚠ D’après son n° de projet, ce fichier semble plutôt appartenir à '+esc(affLabel(guess))+'. Vérifiez l’affaire choisie.</div>'
           :(S.ctxAff?'':(aff?'<div style="font-size:11.5px;color:#15803D;margin-top:4px">✓ Affaire trouvée d’après le n° de projet du client.</div>':'')))
+        +'<div id="pl-i-upd">'+updBoxHtml(aff,title)+'</div>'
         +'<div id="pl-i-fold-w"'+(aff&&folders(aff).length?'':' style="display:none"')+'><label class="cmu-lbl">DOSSIER</label><select id="pl-i-fold" class="dcu-in cmu-fld">'+(aff?folderOpts(aff,aff===S.ctxAff?S.impFolder:''):'')+'</select></div>'
         +(res.warn&&res.warn.length?'<div class="dcu-msg" style="background:#FFFBEB;border:1px solid #FCD34D;color:#92400E;max-width:none;margin:12px 0 0">'+res.warn.map(esc).join('<br>')+'</div>':'')
         +'<div style="font-size:11.5px;color:#9A96B3;margin-top:10px">Colonnes reconnues : '+esc((res.cols||[]).map(function(c){ return {n:'Item',cls:'Classification',phase:'Phase',disc:'Discipline',by:'Émis par',dt:'Date',des:'Description',eq:'Équipement',prop:'Action proposée',pic:'PIC',cst:'Status',tgt:'Date cible',ccom:'Commentaires'}[c]||c; }).join(', '))+'. Le fichier est lu sur cet appareil et n’est pas gardé.</div>'
@@ -28778,6 +28797,165 @@ window.PunchList=(function(){
       // (09/11/2026) copie du fichier du client, pour un export identique au document (buildClientXlsx)
       if(IMPF&&IMPF.size){ try{ setVal('_src',await srcUpload(row.id,IMPF)); scheduleSave(50); }catch(e){ console.warn('Punch list : fichier du client non gardé',e); } }
     }catch(e){ if(b){ b.disabled=false; b.textContent='Créer la punch list'; } alert('Création impossible : '+(e&&e.message||e)+(/punch_lists|relation|does not exist/i.test(String(e&&e.message||e))?'\n\nLe script punch_list_supabase.sql n’a sans doute pas encore été lancé dans Supabase.':'')); }
+  }
+
+  // ═════════ NOUVELLE VERSION DU FICHIER DU CLIENT (23/11/2026, demande de l'utilisateur) ═════════
+  // Le client renvoie sa punch list mise à jour : elle est importée DANS la punch list existante (pas une 2e liste).
+  // Sur chaque point déjà présent, le site GARDE : réponse ELS, photos, traduction (refaite seulement pour un texte
+  // que le client a changé). Le STATUT suit le nouveau fichier du client (règle de l'utilisateur : un point fermé chez
+  // nous que le client remet Open est ROUVERT). Points absents du nouveau fichier : gardés, marqués « retiré par le
+  // client » (i.gone), hors compteurs et hors export. Aperçu de tout ce qui change AVANT d'appliquer.
+  // Rapprochement : n° + description, puis n° seul (description modifiée), puis description seule (n° changé).
+  var UPF=[['n','N°'],['des','Description'],['prop','Action proposée'],['ccom','Commentaire client'],['tgt','Date cible'],['pic','PIC'],['eq','Équipement'],
+    ['disc','Discipline'],['phase','Phase'],['cls','Classification'],['by','Émis par'],['dt','Date d’émission']];
+  var UPD=null;
+  function normSt(v){ v=String(v||''); return /^clos/i.test(v)?'Closed':(/^n\/?a$/i.test(v)?'N/A':'Open'); }
+  function isGone(d,k){ return !!((d['i:'+k]||{}).gone); }
+  function lastUpdAt(d){ var h=(d||D)._hist; return h&&h.length?h[h.length-1].at:null; }
+  function updLbl(f){ var u=UPF.filter(function(x){ return x[0]===f; })[0]; return u?u[1]:f; }
+  function updPlan(d,res){
+    var nn=function(s){ return String(s==null?'':s).trim(); },nd=normT;
+    var olds=keys(d).map(function(k){ return {k:k,i:d['i:'+k]||{},used:false}; }),L=res.lines,m=[];
+    var pass=function(eqO,eqL,need){ L.forEach(function(l,ix){ if(m[ix]||(need&&!need(l))) return;
+      var c=olds.filter(function(o){ return !o.used&&eqO(o.i,l); });
+      if(c.length&&(eqL===null||(c.length===1&&L.filter(function(x,j){ return !m[j]&&eqL(x,l); }).length===1))){ c[0].used=true; m[ix]=c[0]; } }); };
+    pass(function(i,l){ return nn(i.n)===nn(l.n)&&nd(i.des)===nd(l.des); },null);                                   // même n° et même description
+    pass(function(i,l){ return nn(i.n)===nn(l.n); },function(x,l){ return nn(x.n)===nn(l.n); },function(l){ return !!nn(l.n); }); // description modifiée
+    pass(function(i,l){ return nd(i.des)===nd(l.des); },function(x,l){ return nd(x.des)===nd(l.des); });           // n° changé
+    var P={items:[],gone:[],same:0,cnt:{nw:0,reop:0,clo:0,st:0,mod:0,back:0,gone:0},active:olds.filter(function(o){ return !o.i.gone; }).length};
+    L.forEach(function(l,ix){
+      var o=m[ix];
+      if(!o){ P.items.push({kind:'nw',l:l}); P.cnt.nw++; return; }
+      var k=o.k,i=o.i,f=[];
+      UPF.forEach(function(x){ var a=x[0],va=nn(i[a]),vb=nn(l[a]); if(TRF.indexOf(a)>=0?normT(va)!==normT(vb):va!==vb) f.push({f:a,a:i[a]||'',b:l[a]||''}); });
+      var from=stOf(d,k),to=normSt(l.cst),stc=from!==to?{from:from,to:to}:null;
+      var kind=stc?(to==='Open'?'reop':(from==='Open'?'clo':'st')):(f.length?'mod':(i.gone?'back':'same'));
+      P.items.push({kind:kind,k:k,l:l,i:i,f:f,stc:stc,back:!!i.gone,t:d['t:'+k],s:d['s:'+k],ph:photosOf(d,k).length});
+      if(kind==='same') P.same++; else P.cnt[kind]++;
+    });
+    olds.forEach(function(o){ if(o.used||o.i.gone) return; P.gone.push({kind:'gone',k:o.k,i:o.i,t:d['t:'+o.k],ph:photosOf(d,o.k).length,st:stOf(d,o.k)}); P.cnt.gone++; });
+    P.matched=P.items.length-P.cnt.nw;
+    P.changes=Object.keys(P.cnt).reduce(function(a,c){ return a+P.cnt[c]; },0);
+    return P;
+  }
+  function updPreviewHtml(){
+    var P=UPD.plan,res=UPD.res,cv=res.cover||{},rOld=(D._cover||{}).rev||'',rNew=cv.rev||'',C=P.cnt;
+    var desc=function(it){ var t=it.k&&D['tr:'+it.k]; return (frOn()&&t&&t.des&&!(it.f||[]).some(function(x){ return x.f==='des'; }))?t.des:(it.l||it.i).des; };
+    var fv=function(f,v){ return (f==='tgt'||f==='dt')?fr(v):v; };
+    var kept=function(it){ var a=[]; if(it.t&&it.t.txt) a.push('💬 réponse ELS'); if(it.ph) a.push('📷 '+it.ph+' photo'+(it.ph>1?'s':'')); return a.length?'<div><span class="plu-kept">✓ Gardé : '+a.join(' · ')+'</span></div>':''; };
+    var item=function(it,body){ var i=it.l||it.i; return '<div class="plu-it"><div class="plu-h"><span class="plu-n">'+(i.n?'#'+esc(i.n):'—')+'</span><span class="plu-d">'+esc(desc(it))+'</span></div>'+(body||'')+(it.back&&it.kind!=='back'?'<div class="plu-ch plu-sm">↩ Revenu dans le fichier (il avait été retiré par le client)</div>':'')+kept(it)+'</div>'; };
+    var stLine=function(it){ var s=it.s; return '<div class="plu-ch">Statut : '+stPill(it.stc.from)+(s&&s.at&&normSt(s.st)===it.stc.from?' <span class="plu-sm">(mis par '+esc(whoShort(s.by))+' le '+esc(fmtDT(s.at))+')</span>':'')+' <b>→</b> '+stPill(it.stc.to)+'</div>'; };
+    var fLines=function(it){ return (it.f||[]).map(function(x){ return '<div class="plu-ch"><b>'+updLbl(x.f)+'</b> : '+(x.a?'<del>'+esc(fv(x.f,x.a))+'</del>':'<i class="plu-sm">vide</i>')+' <b>→</b> '+(x.b?'<ins>'+esc(fv(x.f,x.b))+'</ins>':'<i class="plu-sm">vide</i>')+'</div>'; }).join(''); };
+    var sec=function(list,ic,ttl,sub,body){ if(!list.length) return ''; return '<details class="plu-sec" open><summary><span class="plu-ic">'+ic+'</span>'+ttl+' <span class="plu-c">'+list.length+'</span>'+(sub?'<span class="plu-sub">'+sub+'</span>':'')+'</summary>'+list.map(body).join('')+'</details>'; };
+    var of=function(kd){ return P.items.filter(function(it){ return it.kind===kd; }); };
+    var card=function(n,l,bg,fg,always){ return (n||always)?'<div class="plu-k" style="background:'+bg+';color:'+fg+'"><b>'+n+'</b><span>'+l+'</span></div>':''; };
+    var h='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-size:17px;font-weight:900">⬆ Nouvelle version de la punch list</div><span style="flex:1"></span><button class="dcu-btn2" onclick="PunchList._closeModal()" aria-label="Fermer">✕</button></div>'
+      +'<div style="font-size:12.5px;color:#6B6790;margin-top:4px">« '+esc(D._title||S.cur.title||'Punch list')+' » · fichier « '+esc(UPD.fname)+' »'
+      +(rOld||rNew?' · révision '+(rOld&&rOld!==rNew?'<b>'+esc(rOld)+'</b> → ':'')+'<b>'+esc(rNew||'?')+'</b>'+(cv.revDate?' du '+esc(fr(cv.revDate)):''):'')+'</div>';
+    h+='<div class="plu-ks">'+card(C.nw,'nouveaux','#DBEAFE','#1D4ED8')+card(C.reop,'rouverts','#FEE2E2','#B91C1C')+card(C.clo,'fermés par le client','#DCFCE7','#15803D')
+      +card(C.st,'statuts changés','#E2E8F0','#334155')+card(C.mod,'modifiés','#FEF3C7','#92400E')+card(C.back,'revenus','#EDE9FE','#6D28D9')
+      +card(C.gone,'retirés par le client','#F1F5F9','#475569')+card(P.same,'inchangés','#F8FAFC','#64748B',true)+'</div>';
+    if(P.active>=5&&P.matched<P.active*0.3) h+='<div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 10px">⚠ Seulement '+P.matched+' point(s) sur '+P.active+' retrouvés : est-ce bien une nouvelle version de CETTE punch list ?</div>';
+    if(rOld&&rNew&&rOld===rNew) h+='<div class="dcu-msg" style="background:#FFFBEB;border:1px solid #FCD34D;color:#92400E;max-width:none;margin:0 0 10px">Même révision ('+esc(rNew)+') que la version déjà importée.</div>';
+    h+='<div class="plu-ok">✓ Sur les points déjà présents, le site <b>garde vos réponses ELS, vos photos et la traduction</b> (refaite seulement pour les textes modifiés par le client).<br>Le <b>statut suit le nouveau fichier du client</b> : un point que vous aviez fermé et que le client remet « Open » est rouvert.</div>';
+    if(!P.changes) h+='<div class="dcu-msg" style="background:#F8FAFC;border:1px solid #E2E8F0;color:#334155;max-width:none;margin:0 0 10px">Aucun changement : ce fichier contient les mêmes points, avec les mêmes textes et les mêmes statuts.</div>';
+    else h+='<div class="plu-body">'
+      +sec(of('nw'),'🆕','Nouveaux points','ajoutés par le client',function(it){ var l=it.l; return item(it,'<div class="plu-ch plu-sm">'+[l.prop?'Action : '+esc(l.prop):'',l.pic?'PIC : '+esc(l.pic):'',l.tgt?'cible '+esc(fr(l.tgt)):'','statut '+normSt(l.cst)].filter(Boolean).join(' · ')+'</div>'); })
+      +sec(of('reop'),'🔁','Rouverts par le client','vous les aviez fermés : le client les remet « Open »',function(it){ return item(it,stLine(it)+fLines(it)); })
+      +sec(of('clo'),'✅','Fermés par le client','',function(it){ return item(it,stLine(it)+fLines(it)); })
+      +sec(of('st'),'⇄','Autres changements de statut','',function(it){ return item(it,stLine(it)+fLines(it)); })
+      +sec(of('mod'),'✏️','Modifiés par le client','texte, date cible, PIC…',function(it){ return item(it,fLines(it)); })
+      +sec(of('back'),'↩','Revenus dans le fichier','ils avaient été retirés par le client',function(it){ return item(it,''); })
+      +sec(P.gone,'➖','Retirés par le client','absents du nouveau fichier : gardés dans la liste, marqués « retiré »',function(it){ return item(it,'<div class="plu-ch">Statut actuel : '+stPill(it.st)+'</div>'); })
+      +'</div>';
+    if(res.warn&&res.warn.length) h+='<div class="dcu-msg" style="background:#FFFBEB;border:1px solid #FCD34D;color:#92400E;max-width:none;margin:10px 0 0">'+res.warn.map(esc).join('<br>')+'</div>';
+    h+='<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:14px"><button class="dcu-btn2" onclick="PunchList._closeModal()">Annuler</button>'
+      +'<button id="pl-u-go" class="dcu-btn" onclick="PunchList._updApply()">'+(P.changes?'✓ Appliquer la mise à jour':'✓ Mettre à jour (fichier du client)')+'</button></div>';
+    return h;
+  }
+  function updPick(){
+    if(!ENV.canEdit()||!S.cur) return;
+    var i=document.createElement('input'); i.type='file'; i.accept='.xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+    i.onchange=function(){ if(i.files&&i.files[0]) updRead(i.files[0]); };
+    i.click();
+  }
+  async function updRead(file,parsed){
+    if(!ENV.canEdit()||!S.cur) return;
+    var errBox=function(msg){ modal('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Nouvelle version de la punch list</div><div class="dcu-msg" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;max-width:none;margin:0 0 14px">'+msg+'</div><div style="text-align:right"><button class="dcu-btn2" onclick="PunchList._closeModal()">Fermer</button></div>'); };
+    modal('<div style="font-size:16px;font-weight:900;margin-bottom:8px">Nouvelle version de la punch list</div><div style="font-size:13px;color:#4A4766">Lecture de « '+esc(file.name)+' »…</div>');
+    try{
+      if(Object.keys(S.dirty).length){ clearTimeout(S.saveT); await saveNow(); }
+      var res=parsed||file.__parsed||await readExcel(file); // __parsed : banc de test uniquement
+      if(!res.lines.length){ errBox('Aucune ligne trouvée dans ce fichier.'+(res.warn&&res.warn.length?'<br>'+res.warn.map(esc).join('<br>'):'')); return; }
+      UPD={id:S.cur.id,res:res,file:file,fname:file.name||'punch_list.xlsx',plan:updPlan(D,res)};
+      modal(updPreviewHtml(),'xl');
+    }catch(e){ errBox('Lecture impossible : '+esc(e&&e.message||e)); }
+  }
+  async function updApply(){
+    if(!UPD||!S.cur||!ENV.canEdit()) return;
+    if(S.cur.id!==UPD.id){ closeModal(); return; }
+    var trP=trCreate(); // traducteur demandé PENDANT le clic (voir TRADUCTION)
+    var res=UPD.res,file=UPD.file,fname=UPD.fname,P=updPlan(D,res); // recalculé sur les données à jour (un collègue a pu répondre entre-temps)
+    UPD=null; closeModal();
+    var at=new Date().toISOString(),today=todayIso(),rev=(res.cover||{}).rev||'',order=[];
+    P.items.forEach(function(it){
+      if(it.kind==='nw'){ var nk=uid()+Math.random().toString(36).slice(2,4); setVal('i:'+nk,Object.assign({add:today},it.l,{chg:{at:at,rev:rev,kind:'nw'}})); order.push(nk); return; }
+      var k=it.k,ni=Object.assign({},it.i,it.l); delete ni.gone;
+      if(it.kind!=='same'){ var old={}; it.f.forEach(function(x){ old[x.f]=x.a; }); ni.chg={at:at,rev:rev,kind:it.kind,f:it.f.map(function(x){ return x.f; }),old:old,st:it.stc}; if(it.back) ni.chg.back=1; }
+      setVal('i:'+k,ni);
+      // statut : celui du client (notre statut est retiré s'il est différent ; gardé, avec qui / quand, s'il est le même)
+      var s=D['s:'+k]; if(s&&normSt(s.st)!==normSt(it.l.cst)) setVal('s:'+k,'');
+      // traduction refaite seulement pour les textes que le client a changés
+      var tf=it.f.filter(function(x){ return TRF.indexOf(x.f)>=0; });
+      if(tf.length&&D['tr:'+k]){ var o=Object.assign({},D['tr:'+k]); tf.forEach(function(x){ delete o[x.f]; }); setVal('tr:'+k,o); }
+      order.push(k);
+    });
+    P.gone.forEach(function(g){ setVal('i:'+g.k,Object.assign({},g.i,{gone:today,chg:{at:at,rev:rev,kind:'gone'}})); });
+    keys(D).forEach(function(k){ if(order.indexOf(k)<0) order.push(k); }); // points retirés : à la fin
+    setVal('order',order);
+    setVal('_cover',res.cover||{});
+    var ls=Object.assign({},D._lists||{}); Object.keys(res.lists||{}).forEach(function(f){ ls[f]=res.lists[f]; }); setVal('_lists',ls);
+    setVal('_file',fname);
+    setVal('_hist',(D._hist||[]).concat([{at:at,by:ENV.who(),file:fname,rev:rev,cnt:P.cnt,same:P.same}]));
+    scheduleSave(100);
+    if(P.changes) S.f='chg'; // on montre d'abord ce qui a changé
+    drawDetail();
+    translateAll(trP);
+    // le nouveau fichier du client devient le modèle de l'export
+    if(file&&file.size){ try{ setVal('_src',await srcUpload(S.cur.id,file)); scheduleSave(50); }catch(e){ console.warn('Punch list : nouveau fichier du client non gardé',e); } }
+  }
+  // Import depuis la liste : une punch list du même nom existe déjà dans l'affaire → proposer de la mettre à jour
+  function updBoxHtml(aff,title){
+    var t=normK(title); if(!aff||!t) return '';
+    var L=S.list.filter(function(r){ return r.aff===aff&&(normK(r.title)===t||normK((r.meta||{}).title)===t); });
+    if(!L.length) return '';
+    return '<div class="plu-found"><div style="font-weight:900;margin-bottom:4px">📋 Cette punch list existe déjà dans l’affaire</div>'
+      +'<div style="font-size:12.5px;color:#4A4766;margin-bottom:8px">Mettez-la à jour avec ce fichier : vos réponses, commentaires et photos sont gardés, et vous voyez ce qui change avant d’appliquer.</div>'
+      +L.map(function(r){ var m=r.meta||{}; return '<button class="dcu-btn" style="margin:0 6px 6px 0" onclick="PunchList._impUpd(\''+js(r.id)+'\')">⬆ Mettre à jour « '+esc(r.title||m.title||'Punch list')+' »'+(m.rev?' (rév. '+esc(m.rev)+')':'')+'</button>'; }).join('')
+      +'<div style="font-size:11.5px;color:#6B6790">Ou créez une punch list séparée avec le bouton du bas.</div></div>';
+  }
+  async function impUpd(id){
+    if(!IMP||!ENV.canEdit()) return;
+    var res=IMP.res,file=IMP.file||{name:IMP.fname};
+    closeModal();
+    await open(id);
+    if(S.cur&&S.cur.id===id) updRead(file,res);
+  }
+  // Étiquette d'un point changé par la DERNIÈRE version du client (ou retiré)
+  function chgHtml(k){
+    var i=D['i:'+k]||{},c=i.chg,la=lastUpdAt(D);
+    if(i.gone) return '<span class="plx-chg gone" title="Absent de la version du client importée le '+esc(fr(i.gone))+'. Vos réponses et photos sont gardées.">➖ Retiré par le client</span>';
+    if(!c||!la||c.at!==la) return '';
+    var lb={nw:'🆕 Nouveau',reop:'🔁 Rouvert par le client',clo:'✅ Fermé par le client',st:'⇄ Statut changé par le client',mod:'✏️ Modifié par le client',back:'↩ Revenu dans le fichier'}[c.kind]; if(!lb) return '';
+    var fl=(c.f||[]).map(updLbl),tip=(c.f||[]).map(function(f){ var o=(c.old||{})[f],n=i[f]; if(f==='tgt'||f==='dt'){ o=fr(o); n=fr(n); } return updLbl(f)+' : « '+(o||'vide')+' » → « '+(n||'vide')+' »'; });
+    if(c.st) tip.unshift('Statut : '+c.st.from+' → '+c.st.to);
+    return '<span class="plx-chg '+c.kind+'" title="'+esc((c.rev?'Version '+c.rev+' du client':'Dernière version du client')+(tip.length?'\n'+tip.join('\n'):''))+'">'+lb+(c.kind==='mod'&&fl.length?' : '+esc(fl.join(', ').toLowerCase()):'')+'</span>';
+  }
+  function chgCount(){ var la=lastUpdAt(D); if(!la) return 0; return keys(D).filter(function(k){ var i=D['i:'+k]||{}; return !i.gone&&i.chg&&i.chg.at===la; }).length; }
+  function histHtml(){
+    var h=D._hist,x=h&&h[h.length-1]; if(!x) return '';
+    var c=x.cnt||{},L=[[c.nw,'nouveau(x)'],[c.reop,'rouvert(s)'],[c.clo,'fermé(s) par le client'],[c.st,'statut(s) changé(s)'],[c.mod,'modifié(s)'],[c.back,'revenu(s)'],[c.gone,'retiré(s)']].filter(function(a){ return a[0]; }).map(function(a){ return a[0]+' '+a[1]; });
+    return ' · Dernière version du client : « '+esc(x.file||'')+' »'+(x.rev?' (rév. '+esc(x.rev)+')':'')+', importée le '+esc(fmtDT(x.at))+' : '+(L.length?esc(L.join(', ')):'aucun changement');
   }
 
   // ═════════ TRADUCTION EN FRANÇAIS (16/11/2026, demande de l'utilisateur) ═════════
@@ -28868,6 +29046,8 @@ window.PunchList=(function(){
   }
   function lineVisible(k){
     var i=D['i:'+k]||{},st=stOf(D,k);
+    if(S.f==='gone') return !!i.gone; if(i.gone&&S.f!=='all') return false; // (23/11/2026) retirés par le client : seulement dans « Toutes » et « Retirés »
+    if(S.f==='chg'&&!(i.chg&&i.chg.at===lastUpdAt(D))) return false;
     if(S.f==='open'&&st!=='Open') return false;
     if(S.f==='ours'&&!(st==='Open'&&ours(i))) return false;
     if(S.f==='snf'&&!(st==='Open'&&snf(i))) return false;
@@ -28880,8 +29060,8 @@ window.PunchList=(function(){
   function lineHtml(k){
     var i=D['i:'+k]||{},st=stOf(D,k),s=D['s:'+k],t=D['t:'+k]||{},ed=ENV.canEdit(),late=isLate(D,k),ph=photosOf(D,k);
     var kv=function(lb,v){ return v?'<div class="plx-kv"><b>'+lb+'</b><span style="flex:1;min-width:180px;white-space:pre-wrap">'+esc(v)+'</span></div>':''; };
-    var h='<div class="plx-line'+(st!=='Open'?' closed':'')+(late?' late':'')+'" id="plx-'+esc(k)+'">'
-      +'<div class="plx-top"><span class="plx-n">'+(i.n?'#'+esc(i.n):'—')+'</span>'+stPill(st)
+    var h='<div class="plx-line'+(st!=='Open'?' closed':'')+(late?' late':'')+(i.gone?' gone':'')+'" id="plx-'+esc(k)+'">'
+      +'<div class="plx-top"><span class="plx-n">'+(i.n?'#'+esc(i.n):'—')+'</span>'+stPill(st)+chgHtml(k)
       +(i.disc?'<span class="plx-tag" title="'+esc(i.disc)+'">'+esc(trList(i.disc))+'</span>':'')+(i.phase?'<span class="plx-tag" style="background:#fff;border:1px solid #E4E1F0" title="'+esc(i.phase)+'">'+esc(trList(i.phase))+'</span>':'')
       +(i.pic?'<span class="plx-tag" style="background:'+(ours(i)?'#EEF2FF;color:#4338CA':'#FEF3C7;color:#92400E')+'">PIC : '+esc(i.pic)+'</span>':'')
       +'<span style="flex:1"></span>'
@@ -28932,11 +29112,13 @@ window.PunchList=(function(){
         +'<button type="button" class="'+(frOn()?'on-closed':'')+'" aria-pressed="'+frOn()+'" onclick="PunchList._lang(\'fr\')">FR</button>'
         +'<button type="button" class="'+(!frOn()?'on-na':'')+'" aria-pressed="'+(!frOn())+'" onclick="PunchList._lang(\'en\')">EN</button></div>'
       +(ed&&trMissing()&&!(TR.busy&&TR.id===c.id)?'<button class="dcu-btn2" onclick="PunchList._trNow()" title="Traduire en français les lignes pas encore traduites (Google Chrome sur ordinateur)">🌐 Traduire ('+trMissing()+')</button>':'')
+      +(ed?'<button class="dcu-btn2" onclick="PunchList._updPick()" title="Importer la nouvelle version du fichier du client dans CETTE punch list : vos réponses et photos sont gardées, aperçu de ce qui change avant d’appliquer">⬆ Nouvelle version</button>':'')
       +'<button id="pl-xls" class="dcu-btn" onclick="PunchList.exportClient()" title="Le fichier Excel du client, identique, avec vos statuts, vos réponses (colonne Comments) et vos photos">⬇ Excel</button>'
       +'</div>';
     var chip=function(f,n,l){ return '<button type="button" class="plx-chip'+(S.f===f?' on':'')+'" onclick="PunchList._f(\'f\',\''+f+'\')">'+l+' <span style="opacity:.75">'+n+'</span></button>'; };
     h+='<div id="pl-trst" style="font-size:12px;font-weight:700;color:#4B3FC7;margin-top:6px">'+trStatusHtml()+'</div>';
-    h+='<div class="plx-chips" style="margin-top:10px">'+chip('all',st.n,'Toutes')+chip('open',st.open,'Ouvertes')+chip('ours',st.ours,'À nous (ELS)')+chip('snf',st.snf,'Côté SNF')+chip('late',st.late,'En retard')+chip('closed',st.closed+st.na,'Fermées / N/A')+'</div>'
+    var nchg=chgCount();
+    h+='<div class="plx-chips" style="margin-top:10px">'+(nchg||S.f==='chg'?chip('chg',nchg,'🔄 Changés (dernière version)'):'')+chip('all',st.n+st.gone,'Toutes')+chip('open',st.open,'Ouvertes')+chip('ours',st.ours,'À nous (ELS)')+chip('snf',st.snf,'Côté SNF')+chip('late',st.late,'En retard')+chip('closed',st.closed+st.na,'Fermées / N/A')+(st.gone||S.f==='gone'?chip('gone',st.gone,'➖ Retirées par le client'):'')+'</div>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
       +(Object.keys(discs).length>1?'<select class="dcu-in" aria-label="Discipline" onchange="PunchList._f(\'disc\',this.value)"><option value="">Toutes les disciplines</option>'+Object.keys(discs).sort().map(function(d){ return '<option value="'+esc(d)+'"'+(S.disc===d?' selected':'')+'>'+esc(trList(d))+'</option>'; }).join('')+'</select>':'')
       +'<input class="dcu-in" style="flex:1;min-width:160px" placeholder="Rechercher (n°, description, équipement…)" aria-label="Rechercher" value="'+esc(S.q)+'" oninput="PunchList._q(this.value)">'
@@ -28949,7 +29131,7 @@ window.PunchList=(function(){
         +vis.map(rowHtml).join('')+'</tbody></table></div>';
     }
     else vis.forEach(function(k){ h+=lineHtml(k); });
-    h+='<div style="font-size:11.5px;color:#9A96B3;text-align:center;margin-top:8px">'+(D._file?'Importée de « '+esc(D._file)+' »':'')+(D._imp?' le '+esc(fr(D._imp)):'')+'</div>';
+    h+='<div style="font-size:11.5px;color:#9A96B3;text-align:center;margin-top:8px">'+((D._hist&&D._hist.length)?(D._imp?'Punch list créée le '+esc(fr(D._imp)):''):((D._file?'Importée de « '+esc(D._file)+' »':'')+(D._imp?' le '+esc(fr(D._imp)):'')))+histHtml()+'</div>';
     h+='</div></div>';
     return h;
   }
@@ -28971,11 +29153,11 @@ window.PunchList=(function(){
     var i=D['i:'+k]||{},st=stOf(D,k),t=D['t:'+k]||{},ed=ENV.canEdit(),late=isLate(D,k),ph=photosOf(D,k);
     var q=S.queue.filter(function(x){ return x.listId===S.cur.id&&x.k===k; }),ttl=function(f){ return frOn()&&trTxt(k,f)!==i[f]&&i[f]?' title="'+esc(i[f])+'"':''; };
     var stc=st==='Closed'?'cl':st==='N/A'?'na':'op';
-    return '<tr id="plx-'+esc(k)+'" class="r-'+stc+(late?' late':'')+'">'
+    return '<tr id="plx-'+esc(k)+'" class="r-'+stc+(late?' late':'')+(i.gone?' r-gone':'')+'">'
       +'<td class="n">'+(i.n?esc(i.n):'—')+'</td>'
       +'<td>'+(ed?'<select class="plx-sts s-'+stc+'" aria-label="Statut du point '+esc(i.n)+'" onchange="PunchList._st(\''+js(k)+'\',this.value)">'+['Open','Closed','N/A'].map(function(x){ return '<option'+(x===st?' selected':'')+'>'+x+'</option>'; }).join('')+'</select>':stPill(st))
         +(i.cst&&stOf({['i:'+k]:i},k)!==st?'<div class="sm">client : '+esc(i.cst)+'</div>':'')+'</td>'
-      +'<td'+ttl('des')+'><div class="des">'+esc(trTxt(k,'des'))+'</div>'+(i.eq?'<div class="sm">🔧 '+esc(i.eq)+'</div>':'')+'</td>'
+      +'<td'+ttl('des')+'>'+chgHtml(k)+'<div class="des">'+esc(trTxt(k,'des'))+'</div>'+(i.eq?'<div class="sm">🔧 '+esc(i.eq)+'</div>':'')+'</td>'
       +'<td'+ttl('prop')+'>'+esc(trTxt(k,'prop'))+'</td>'
       +'<td>'+esc(trList(i.disc))+(i.phase?'<div class="sm">'+esc(trList(i.phase))+'</div>':'')+'</td>'
       +'<td><span class="plx-tag" style="background:'+(ours(i)?'#EEF2FF;color:#4338CA':'#FEF3C7;color:#92400E')+'">'+esc(i.pic||'—')+'</span></td>'
@@ -29035,7 +29217,7 @@ window.PunchList=(function(){
   // Compteurs du haut sans redessiner les lignes (garde la saisie en cours)
   function drawHeadOnly(){
     var st=stats(D),box=S.host&&S.host.querySelector('.plx-chips'); if(!box) return;
-    var n={all:st.n,open:st.open,ours:st.ours,snf:st.snf,late:st.late,closed:st.closed+st.na};
+    var n={all:st.n+st.gone,open:st.open,ours:st.ours,snf:st.snf,late:st.late,closed:st.closed+st.na,gone:st.gone,chg:chgCount()};
     [].slice.call(box.querySelectorAll('button')).forEach(function(b){ var f=(b.getAttribute('onclick').match(/'f','(\w+)'/)||[])[1],sp=b.querySelector('span'); if(f&&sp) sp.textContent=n[f]; });
   }
   function _txt(k,v){
@@ -29152,7 +29334,7 @@ window.PunchList=(function(){
     if(btn) btn.disabled=true; lbl('Préparation…');
     try{
       var X=await loadExcelJs();
-      var d=row?row.data:D,K=keys(d),cv=d._cover||{},st=stats(d);
+      var d=row?row.data:D,K=keys(d).filter(function(k){ return !isGone(d,k); }),cv=d._cover||{},st=stats(d);
       var wb=new X.Workbook(); wb.creator='Pétrosphère — ELS'; wb.created=new Date();
       var ws=wb.addWorksheet('Punch list',{pageSetup:{orientation:'landscape',paperSize:9,fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}}});
       // Mêmes colonnes et même ordre que le fichier du client (07/10/2026), puis nos colonnes
@@ -29340,7 +29522,7 @@ window.PunchList=(function(){
     var frows=[];
     for(var r=L.hr+1;r<=L.rg.e.r;r++){ var des=val(r,L.map.des); if(!des) continue; frows.push({r:r,n:val(r,L.map.n),des:des,cst:val(r,L.map.cst),ccom:val(r,L.map.ccom),used:false}); }
     // 2) chaque ligne du site → sa ligne du fichier (description + n°, dans l'ordre ; doublons de n° gérés)
-    var K=keys(d),pairs=[],lost=0;
+    var K=keys(d).filter(function(k){ return !isGone(d,k); }),pairs=[],lost=0; // points retirés par le client : pas dans son fichier
     K.forEach(function(k){
       var i=d['i:'+k]||{},nd=normT(i.des),nn=String(i.n||'').trim();
       var f=frows.filter(function(x){ return !x.used&&normT(x.des)===nd&&String(x.n).trim()===nn; })[0]
@@ -29432,9 +29614,11 @@ window.PunchList=(function(){
       return [col];
     }
     // 4) modifications ligne par ligne
-    var changed=0,photoJobs=[];
+    var changed=0,photoJobs=[],ourRows=[];
     pairs.forEach(function(p){
       var rowN=p.f.r+1,s=d['s:'+p.k],t=d['t:'+p.k],ph=photosOf(d,p.k);
+      // (23/11/2026) point modifié par nous (statut changé, réponse / commentaire, photo) : ligne en bleu dans l'export
+      if((s&&s.st&&normT(s.st)!==normT(p.f.cst))||(t&&String(t.txt||'').trim())||ph.length) ourRows.push(rowN);
       if(L.map.cst!=null&&s&&s.st&&normT(s.st)!==normT(p.f.cst)){
         var ref=CL(L.map.cst)+rowN,cur=cellStyle(ref),ns=stStyle[normT(s.st)];
         if(setCell(rowN,L.map.cst,s.st,ns!=null?ns:plainStyle(cur))) changed++;
@@ -29447,6 +29631,57 @@ window.PunchList=(function(){
         if(ph.length) photoJobs.push({rowN:rowN,col:L.map.ccom,ph:ph,txt:comTxt||''});
       }
     });
+    // 4 bis) (23/11/2026, demande de l'utilisateur) lignes des points que NOUS avons modifiés (statut, réponse, photo) en BLEU,
+    // sur toute la largeur du tableau du client. Exception : la case Statut garde sa couleur si le fichier lui en donne une
+    // (vert Closed, rouge Open…). Copie de chaque style avec un remplissage bleu clair ajouté à la fin de <fills>.
+    if(ourRows.length){
+      var hcols=[];
+      for(var hc=L.rg.s.c;hc<=L.rg.e.c;hc++){ if(val(L.hr,hc)) mergeSpan(L.hr+1,hc).forEach(function(c){ if(hcols.indexOf(c)<0) hcols.push(c); }); }
+      var cmin=Math.min.apply(null,hcols),cmax=Math.max.apply(null,hcols);
+      var blueFill=null,blueXf={};
+      var xfList=function(){ var cm=stylesX.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/); return cm?(cm[1].match(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)||[]):[]; };
+      // vraie couleur de fond (vert, rouge…) ; un fond blanc ou « aucun » ne compte pas
+      var hasOwnFill=function(s){ var xf=xfList()[+(s||0)]||'',fid=+((xf.match(/\bfillId="(\d+)"/)||[])[1]||0); if(fid<2) return false;
+        var fm=stylesX.match(/<fills\b[^>]*>([\s\S]*?)<\/fills>/),fl=fm?(fm[1].match(/<fill\b[^>]*?(?:\/>|>[\s\S]*?<\/fill>)/g)||[]):[],fx=fl[fid]||'';
+        if(!/patternType="(?!none)/.test(fx)) return false;
+        var fg=(fx.match(/<fgColor\b[^>]*\/?>/)||[''])[0];
+        if(/\brgb="(?:FF)?FFFFFF"/i.test(fg)||/\btheme="0"/.test(fg)&&!/\btint="-/.test(fg)||/\bindexed="(?:9|64)"/.test(fg)) return false;
+        return true; };
+      var blueStyle=function(s){
+        if(s==null) s='0'; if(blueXf[s]!=null) return blueXf[s];
+        if(blueFill==null){
+          stylesX=stylesX.replace(/<fills\b([^>]*)>([\s\S]*?)<\/fills>/,function(all,attrs,body){ var n=(body.match(/<fill\b/g)||[]).length; blueFill=n;
+            return '<fills'+attrs.replace(/\bcount="\d+"/,'count="'+(n+1)+'"')+'>'+body+'<fill><patternFill patternType="solid"><fgColor rgb="FFBDD7EE"/><bgColor indexed="64"/></patternFill></fill></fills>'; });
+          if(blueFill==null) return s;
+        }
+        var xfs=xfList(),xf=xfs[+s]; if(!xf) return s;
+        var nx=/\bfillId="/.test(xf)?xf.replace(/\bfillId="\d+"/,'fillId="'+blueFill+'"'):xf.replace(/^<xf\b/,'<xf fillId="'+blueFill+'"');
+        nx=/\bapplyFill="/.test(nx)?nx.replace(/\bapplyFill="[^"]*"/,'applyFill="1"'):nx.replace(/^<xf\b/,'<xf applyFill="1"');
+        var idx=xfs.length;
+        stylesX=stylesX.replace(/<cellXfs\b([^>]*)>([\s\S]*?)<\/cellXfs>/,function(all,attrs,body){ return '<cellXfs'+attrs.replace(/\bcount="\d+"/,'count="'+(idx+1)+'"')+'>'+body+nx+'</cellXfs>'; });
+        blueXf[s]=String(idx); return blueXf[s];
+      };
+      var setStyleAt=function(rowN,col,s){ // change le style d'une case (créée vide si elle n'existe pas)
+        var ref=CL(col)+rowN,rm=sx.match(rowRe(rowN)); if(!rm) return;
+        var row=rm[0],m=row.match(cellRe(ref)),nr;
+        if(m){ var c0=m[0],tag=c0.match(/^<c\b[^>]*?\/?>/)[0],nt=/\bs="/.test(tag)?tag.replace(/\bs="\d+"/,'s="'+s+'"'):tag.replace(/^<c\b/,'<c s="'+s+'"');
+          nr=row.replace(c0,function(){ return c0.replace(tag,function(){ return nt; }); }); }
+        else{
+          var cell='<c r="'+ref+'" s="'+s+'"/>';
+          if(/\/>$/.test(row)&&!/<c\b/.test(row)) nr=row.replace(/\/>$/,'>'+cell+'</row>');
+          else{ var re=/<c\b[^>]*\br="([A-Z]+)\d+"/g,mm,at=-1; while((mm=re.exec(row))){ if(X.utils.decode_col(mm[1])>col){ at=mm.index; break; } }
+            nr=at<0?row.replace(/<\/row>$/,cell+'</row>'):row.slice(0,at)+cell+row.slice(at); }
+        }
+        sx=sx.replace(row,function(){ return nr; });
+      };
+      ourRows.forEach(function(rowN){
+        for(var c=cmin;c<=cmax;c++){
+          var cur=cellStyle(CL(c)+rowN);
+          if(c===L.map.cst&&hasOwnFill(cur)) continue; // couleur du statut gardée
+          setStyleAt(rowN,c,blueStyle(cur));
+        }
+      });
+    }
     // 5) photos dans la case Comments : 2 par rangée, sous le texte, la ligne agrandie juste ce qu'il faut
     var nPh=0;
     if(photoJobs.length){
@@ -29523,7 +29758,7 @@ window.PunchList=(function(){
     var blob=await z.generateAsync({type:'blob',compression:'DEFLATE',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     var fn=String((d._src&&d._src.name)||d._file||((d._title||'Punch list')+'.xlsx')).replace(/[\\\/:*?"<>|\r\n]+/g,'_');
     if(!/\.xls[xm]$/i.test(fn)) fn+='.xlsx';
-    return {blob:blob,fn:fn,warn:warn,changed:changed,photos:nPh};
+    return {blob:blob,fn:fn,warn:warn,changed:changed,photos:nPh,blue:ourRows.length};
   }
 
   // Dossier de fin d'affaire : toutes les punch lists d'une affaire, en .xlsx avec photos
@@ -29633,9 +29868,10 @@ window.PunchList=(function(){
     _closeModal:closeModal, _impCreate:impCreate, _impRead:impRead, _read:readExcel, _attach:attach,
     _lang:setLang, _trNow:trNow, _translateAll:translateAll, _TR:TR, _view:_view, _grow:_grow,
     _fNew:function(){ folderForm(''); }, _fRen:folderForm, _fOk:folderOk, _fDel:folderDel, _fToggle:foldToggle, _move:moveAsk, _moveOk:moveOk, _impHere:importHere, _setFolder:setFolder,
-    _impAff:function(a){ var w=$('pl-i-fold-w'),s=$('pl-i-fold'); if(!w||!s) return; s.innerHTML=a?folderOpts(a,a===S.ctxAff?S.impFolder:''):''; w.style.display=(a&&folders(a).length)?'':'none'; },
+    _impAff:function(a){ var u=$('pl-i-upd'); if(u) u.innerHTML=updBoxHtml(a,(($('pl-i-title')||{}).value||'')); var w=$('pl-i-fold-w'),s=$('pl-i-fold'); if(!w||!s) return; s.innerHTML=a?folderOpts(a,a===S.ctxAff?S.impFolder:''):''; w.style.display=(a&&folders(a).length)?'':'none'; },
     _folderName:function(aff,fid){ var f=folderOf(aff,fid); return f?f.name:''; },
     _st:_st, _txt:_txt, _phAdd:_phAdd, _phOpen:_phOpen, _phDel:_phDel,
+    _updPick:updPick, _updRead:updRead, _updApply:updApply, _impUpd:impUpd, _updPlan:function(res){ return updPlan(D,res); },
     _state:function(){ return {S:S,D:D}; }, _stats:stats
   };
 })();
