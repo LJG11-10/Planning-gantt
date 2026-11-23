@@ -29543,6 +29543,17 @@ window.PunchList=(function(){
     if(!tg) throw new Error('feuille « '+L.sn+' » introuvable dans le fichier.');
     var sheetPath=tg[1].replace(/^\//,'').replace(/^xl\//,''); sheetPath='xl/'+sheetPath;
     var sx=await z.file(sheetPath).async('string');
+    // (23/11/2026, signalé par l'utilisateur : « point n°2 sur le site, pas dans l'export ») : le fichier du client gardé
+    // avait un FILTRE Excel actif (Status = Open / On-going) → les lignes Closed étaient cachées dans l'export. On retire
+    // les critères du filtre (les flèches restent) et on ré-affiche les lignes de sa plage : tous les points sont visibles.
+    var unfiltered=0,afm=sx.match(/<autoFilter\b[^>]*?(?:\/>|>[\s\S]*?<\/autoFilter>)/);
+    if(afm&&/<filterColumn\b/.test(afm[0])){
+      var aref=afm[0].match(/\bref="[A-Z]+(\d+):[A-Z]+(\d+)"/),ar1=aref?+aref[1]:L.hr+1,ar2=aref?+aref[2]:1e7;
+      var naf=afm[0].replace(/<filterColumn\b[\s\S]*?<\/filterColumn>/g,'').replace(/<filterColumn\b[^>]*\/>/g,'');
+      sx=sx.replace(afm[0],function(){ return naf; });
+      sx=sx.replace(/<sheetPr\b[^>]*>/,function(tg){ return tg.replace(/\s*\bfilterMode="1"/,''); });
+      sx=sx.replace(/<row\b[^>]*>/g,function(tg){ var rn=+((tg.match(/\br="(\d+)"/)||[])[1]||0); if(rn>ar1&&rn<=ar2&&/\bhidden="1"/.test(tg)){ unfiltered++; return tg.replace(/\s*\bhidden="1"/,''); } return tg; });
+    }
     var stylesX=await z.file('xl/styles.xml').async('string');
     var CL=function(c){ return X.utils.encode_col(c); };
     var rowRe=function(n){ return new RegExp('<row\\b[^>]*\\br="'+n+'"(?:[^>]*?/>|[^>]*>[\\s\\S]*?</row>)'); };
@@ -29758,7 +29769,7 @@ window.PunchList=(function(){
     var blob=await z.generateAsync({type:'blob',compression:'DEFLATE',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     var fn=String((d._src&&d._src.name)||d._file||((d._title||'Punch list')+'.xlsx')).replace(/[\\\/:*?"<>|\r\n]+/g,'_');
     if(!/\.xls[xm]$/i.test(fn)) fn+='.xlsx';
-    return {blob:blob,fn:fn,warn:warn,changed:changed,photos:nPh,blue:ourRows.length};
+    return {blob:blob,fn:fn,warn:warn,changed:changed,photos:nPh,blue:ourRows.length,unfiltered:unfiltered};
   }
 
   // Dossier de fin d'affaire : toutes les punch lists d'une affaire, en .xlsx avec photos
