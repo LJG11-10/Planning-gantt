@@ -18872,7 +18872,7 @@ function gsAskDelete(id){if(typeof gsFlushPending==='function')gsFlushPending();
   var body='';
   if(hrs||started)body+='<div style="background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:10px"><b>Attention :</b> '+(hrs?gcNum(hrs)+' h de feuilles d’heure sont pointées dessus':'')+(hrs&&started?' et ':'')+(started?started+' tâche(s) ont déjà un avancement':'')+'.<br>Les heures restent sur l’affaire (comptées en heures générales).</div>';
   if(r.t!=='act'&&acts.length)body+='<div style="font-size:13px;color:#4A4766;margin-bottom:6px">Tout ce qu’'+(r.t==='ph'?'elle':'il/elle')+' contient sera supprimé aussi ('+acts.length+' tâche(s)).</div>';
-  if(r.t==='ph'&&!custom)body+='<div style="font-size:13px;color:#4A4766;margin-bottom:6px">C’est une phase de base : son contenu est supprimé, la ligne de phase reste (comme avant).</div>';
+  if(r.t==='ph')body+='<div style="font-size:13px;color:#4A4766;margin-bottom:6px">La phase disparaît du planning. Vous pourrez la recréer plus tard avec « + Phase »'+(custom?'':' (même nom, sa couleur d’origine revient)')+'.</div>'; // (24/11/2026) avant : phase de base = seul son contenu était supprimé
   body+='<div style="font-size:12.5px;color:#6B6790">Vous pourrez l’annuler pendant quelques secondes (bouton « Annuler » en bas de l’écran).</div>';
   gsModal('Supprimer '+what+' ?',body,[['Supprimer',function(){gsDoDelete(id);},1]]);
 }
@@ -18909,8 +18909,8 @@ function gsFlushPending(){
   if(P.kind==='custom-ph'){ // = pedDelPhase
     if(p.customPhases)delete p.customPhases[P.arg];
     for(var i=p.data.length-1;i>=0;i--){if(p.data[i].pk===P.arg){removed.push(p.data[i].id);p.data.splice(i,1);}}
-  }else if(P.kind==='base-ph'){ // = pedDelBuiltinPhase (la ligne de phase reste)
-    for(var j=p.data.length-1;j>=0;j--){if(p.data[j].pk===P.arg&&p.data[j].t!=='ph'){removed.push(p.data[j].id);p.data.splice(j,1);}}
+  }else if(P.kind==='base-ph'){ // phase de base : tout, ligne de phase comprise (24/11/2026 ; avant, la ligne de phase restait)
+    for(var j=p.data.length-1;j>=0;j--){if(p.data[j].pk===P.arg){removed.push(p.data[j].id);p.data.splice(j,1);}}
   }else{ // tâche (= pedDel) ou bloc ensemble / sous-phase / sélection (= pedDeleteSelection)
     p.data=p.data.filter(function(x){if(P.ids[x.id]){removed.push(x.id);return false;}return true;});
   }
@@ -18925,7 +18925,8 @@ function gsDoDelete(id){
   var r=gsRow(id);if(!r)return;var lb='« '+(r.lb||r.pk)+' »',aff=STORE.current;
   if(r.t==='ph'){
     var custom=!!(currP().customPhases&&currP().customPhases[r.pk]);
-    var ids=D().filter(function(x){return x.pk===r.pk&&(custom||x.t!=='ph');}).map(function(x){return x.id;});
+    // (24/11/2026, signalé par l'utilisateur : « ça supprime les tâches mais pas la phase ») : phase de base comprise, la ligne de phase est supprimée aussi
+    var ids=D().filter(function(x){return x.pk===r.pk;}).map(function(x){return x.id;});
     gsQueueDelete(aff,custom?'custom-ph':'base-ph',r.pk,ids,lb);
   }else if(r.t==='act')gsQueueDelete(aff,'rows',null,[id],lb);
   else gsQueueDelete(aff,'rows',null,gsBlock(id).map(function(b){return b.id;}),lb);
@@ -20829,6 +20830,7 @@ function pedConfirmAddPhase(){
   // Derive xl (light) and f (very light) from h
   function hexToRgba2(hex,a){try{var r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return'rgba('+r+','+g+','+b+','+a+')';}catch(e){return'rgba(100,100,100,'+a+')';}}
   var p=currP();
+  if(PH_BASE[pk]){ D().push({id:'ph_'+pk+'_'+Date.now(),t:'ph',pk:pk,lb:pk}); saveNow();clearFormArea();renderPlanEditor();refreshAllTabs(); return; } // phase de base recréée (24/11/2026) : ses couleurs d'origine
   if(!p.customPhases)p.customPhases={};
   p.customPhases[pk]={h:h,b:x,f:hexToRgba2(h,0.12),s:hexToRgba2(h,0.22),t:'#ffffff',x:x,xl:hexToRgba2(x,0.35),xd:h};
   D().push({id:'ph_'+pk+'_'+Date.now(),t:'ph',pk:pk,lb:pk});
